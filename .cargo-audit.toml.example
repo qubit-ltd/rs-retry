@@ -1,0 +1,144 @@
+# Cargo Audit Configuration Example
+#
+# This file is used to configure cargo-audit behavior
+# To use it, rename this file to .cargo-audit.toml
+#
+# Documentation: https://github.com/rustsec/rustsec/tree/main/cargo-audit
+
+[advisories]
+# Ignore specific security advisories
+# Format: RUSTSEC-YYYY-NNNN
+#
+# Warning: Only use this when:
+# 1. Risk has been evaluated and confirmed not to affect the project
+# 2. Dependency maintainer has not yet released a fix
+# 3. Waiting for upstream fix and have temporary mitigation measures
+#
+# Example:
+# ignore = [
+#     "RUSTSEC-2020-0071",  # Known issue in time 0.1.x
+#     "RUSTSEC-2021-0139",  # ansi_term unmaintained
+# ]
+ignore = []
+
+# Ignore specific advisory sources
+# Options: ["github", "gitlab", "osv"]
+# ignore-source = []
+
+[database]
+# Advisory Database path
+# Default: ~/.cargo/advisory-db
+# path = "~/.cargo/advisory-db"
+
+# Git URL for fetching advisory database
+# Default: https://github.com/RustSec/advisory-db.git
+# url = "https://github.com/RustSec/advisory-db.git"
+
+# Whether to automatically update database before running
+# Default: true
+# fetch = true
+
+# Continue checking even if local database is stale
+# Default: false
+# stale = false
+
+[output]
+# Output format
+# Options: ["terminal", "json", "toml"]
+# Default: terminal
+# format = "terminal"
+
+# Whether to show detailed information
+# Default: false
+# show-tree = false
+
+# Whether to use colors
+# Default: true (when supported)
+# color = true
+
+[target]
+# Check dependencies for specific target platform
+# Example: x86_64-unknown-linux-gnu
+# Default: all platforms
+# arch = "x86_64"
+# os = "linux"
+
+[yanked]
+# Whether to check for yanked crate versions
+# Default: true
+enabled = true
+
+# Whether to update to new version when yanked crate is found
+# Default: false
+# update-index = false
+
+[unmaintained]
+# Whether to warn about unmaintained crates
+# Default: true
+enabled = true
+
+[unsound]
+# Whether to warn about crates with unsound code
+# Default: true
+enabled = true
+
+[informational]
+# Whether to show informational notices (non-security issues)
+# Default: warn
+# Options: ["deny", "warn", "allow"]
+# severity = "warn"
+
+# Example: Ignore all informational notices
+# severity = "allow"
+
+# Example: Treat informational notices as errors
+# severity = "deny"
+
+# ============================================
+# Usage Examples
+# ============================================
+#
+# Scenario 1: Ignore known issues that cannot be fixed immediately
+# --------------------------------------------
+# [advisories]
+# ignore = [
+#     "RUSTSEC-2023-0001",  # Evaluated, does not affect our use case
+# ]
+#
+# Scenario 2: Only check critical security issues, ignore warnings and info
+# --------------------------------------------
+# [informational]
+# severity = "allow"
+#
+# [unmaintained]
+# enabled = false
+#
+# Scenario 3: Relaxed checks for development, strict checks in CI
+# --------------------------------------------
+# Local development: Use .cargo-audit.toml with relaxed checks
+# CI environment: Don't use this file or use stricter configuration
+#
+# ============================================
+# Important Notes
+# ============================================
+#
+# 1. Regularly review ignore list:
+#    - Check monthly for new fix versions
+#    - Evaluate if risks are still acceptable
+#    - Update dependencies to fixed versions
+#
+# 2. Document ignore reasons:
+#    - Add comments in ignore array explaining reasons
+#    - Record risk assessment in project documentation
+#
+# 3. Version control:
+#    - Commit this file to git (if team-shared configuration)
+#    - Or add to .gitignore (if personal configuration)
+#
+# 4. CI/CD integration:
+#    - Consider using stricter configuration in CI
+#    - Run cargo audit regularly
+#    - Run daily automated security audits in CircleCI
+#
+
+
