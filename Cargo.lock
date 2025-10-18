@@ -546,12 +546,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "prism3-function"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f237fd8c8850b4f6c5be9aca32da029b8fdb29b53d435908441f129e53a882b5"
+
+[[package]]
 name = "prism3-retry"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "prism3-config",
  "prism3-core",
+ "prism3-function",
  "rand",
  "serde",
  "serde_json",
