@@ -48,7 +48,7 @@
 //!
 //! ### Basic Synchronous Retry
 //! ```rust
-//! use prism3_retry::{RetryBuilder, RetryDelayStrategy, RetryResult};
+//! use prism3_retry::{RetryBuilder, RetryDelayStrategy, RetryResult, RetryEvent};
 //! use std::time::Duration;
 //!
 //! // Basic retry configuration
@@ -56,7 +56,7 @@
 //!     .set_max_attempts(3)
 //!     .set_delay_strategy(RetryDelayStrategy::Fixed { delay: Duration::from_secs(1) })
 //!     .failed_on_results(vec!["RETRY".to_string(), "TEMP_FAIL".to_string()])
-//!     .on_retry(|event| println!("Retry attempt {}", event.attempt_count()))
+//!     .on_retry(|event: &RetryEvent<String>| println!("Retry attempt {}", event.attempt_count()))
 //!     .build();
 //!
 //! // 使用 RetryResult 类型别名简化返回类型
