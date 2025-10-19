@@ -2,14 +2,137 @@
 //!
 //! Tests the public API functionality of RetryBuilder.
 
+use prism3_function::ReadonlyConsumer;
 use prism3_retry::{
-    DefaultRetryConfig, RetryBuilder, RetryConfig, RetryDelayStrategy, SimpleRetryConfig,
+    AbortEvent, DefaultRetryConfig, FailureEvent, RetryBuilder, RetryConfig, RetryDelayStrategy,
+    RetryEvent, SimpleRetryConfig, SuccessEvent,
 };
-use std::sync::{Arc, Mutex};
+use std::fmt;
+use std::io;
+use std::io::Error as IoError;
 use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TestResult(String);
+
+// ==================== Test Listener Structs ====================
+// These listeners use 'static lifetime to avoid lifetime issues
+
+/// Test listener for retry events
+#[derive(Clone)]
+struct TestRetryListener;
+
+impl ReadonlyConsumer<RetryEvent<TestResult>> for TestRetryListener {
+    fn accept(&self, _event: &RetryEvent<TestResult>) {
+        // Just a dummy implementation for testing builder setup
+    }
+
+    fn into_box(self) -> prism3_function::BoxReadonlyConsumer<RetryEvent<TestResult>> {
+        prism3_function::BoxReadonlyConsumer::new(|_: &RetryEvent<TestResult>| {})
+    }
+
+    fn into_rc(self) -> prism3_function::RcReadonlyConsumer<RetryEvent<TestResult>> {
+        prism3_function::RcReadonlyConsumer::new(|_: &RetryEvent<TestResult>| {})
+    }
+
+    fn into_arc(self) -> prism3_function::ArcReadonlyConsumer<RetryEvent<TestResult>>
+    where
+        Self: Send + Sync,
+    {
+        prism3_function::ArcReadonlyConsumer::new(|_: &RetryEvent<TestResult>| {})
+    }
+
+    fn into_fn(self) -> impl Fn(&RetryEvent<TestResult>) {
+        |_: &RetryEvent<TestResult>| {}
+    }
+}
+
+/// Test listener for success events
+#[derive(Clone)]
+struct TestSuccessListener;
+
+impl ReadonlyConsumer<SuccessEvent<TestResult>> for TestSuccessListener {
+    fn accept(&self, _event: &SuccessEvent<TestResult>) {
+        // Just a dummy implementation for testing builder setup
+    }
+
+    fn into_box(self) -> prism3_function::BoxReadonlyConsumer<SuccessEvent<TestResult>> {
+        prism3_function::BoxReadonlyConsumer::new(|_: &SuccessEvent<TestResult>| {})
+    }
+
+    fn into_rc(self) -> prism3_function::RcReadonlyConsumer<SuccessEvent<TestResult>> {
+        prism3_function::RcReadonlyConsumer::new(|_: &SuccessEvent<TestResult>| {})
+    }
+
+    fn into_arc(self) -> prism3_function::ArcReadonlyConsumer<SuccessEvent<TestResult>>
+    where
+        Self: Send + Sync,
+    {
+        prism3_function::ArcReadonlyConsumer::new(|_: &SuccessEvent<TestResult>| {})
+    }
+
+    fn into_fn(self) -> impl Fn(&SuccessEvent<TestResult>) {
+        |_: &SuccessEvent<TestResult>| {}
+    }
+}
+
+/// Test listener for failure events
+#[derive(Clone)]
+struct TestFailureListener;
+
+impl ReadonlyConsumer<FailureEvent<TestResult>> for TestFailureListener {
+    fn accept(&self, _event: &FailureEvent<TestResult>) {
+        // Just a dummy implementation for testing builder setup
+    }
+
+    fn into_box(self) -> prism3_function::BoxReadonlyConsumer<FailureEvent<TestResult>> {
+        prism3_function::BoxReadonlyConsumer::new(|_: &FailureEvent<TestResult>| {})
+    }
+
+    fn into_rc(self) -> prism3_function::RcReadonlyConsumer<FailureEvent<TestResult>> {
+        prism3_function::RcReadonlyConsumer::new(|_: &FailureEvent<TestResult>| {})
+    }
+
+    fn into_arc(self) -> prism3_function::ArcReadonlyConsumer<FailureEvent<TestResult>>
+    where
+        Self: Send + Sync,
+    {
+        prism3_function::ArcReadonlyConsumer::new(|_: &FailureEvent<TestResult>| {})
+    }
+
+    fn into_fn(self) -> impl Fn(&FailureEvent<TestResult>) {
+        |_: &FailureEvent<TestResult>| {}
+    }
+}
+
+/// Test listener for abort events
+#[derive(Clone)]
+struct TestAbortListener;
+
+impl ReadonlyConsumer<AbortEvent<TestResult>> for TestAbortListener {
+    fn accept(&self, _event: &AbortEvent<TestResult>) {
+        // Just a dummy implementation for testing builder setup
+    }
+
+    fn into_box(self) -> prism3_function::BoxReadonlyConsumer<AbortEvent<TestResult>> {
+        prism3_function::BoxReadonlyConsumer::new(|_: &AbortEvent<TestResult>| {})
+    }
+
+    fn into_rc(self) -> prism3_function::RcReadonlyConsumer<AbortEvent<TestResult>> {
+        prism3_function::RcReadonlyConsumer::new(|_: &AbortEvent<TestResult>| {})
+    }
+
+    fn into_arc(self) -> prism3_function::ArcReadonlyConsumer<AbortEvent<TestResult>>
+    where
+        Self: Send + Sync,
+    {
+        prism3_function::ArcReadonlyConsumer::new(|_: &AbortEvent<TestResult>| {})
+    }
+
+    fn into_fn(self) -> impl Fn(&AbortEvent<TestResult>) {
+        |_: &AbortEvent<TestResult>| {}
+    }
+}
 
 #[test]
 fn test_retry_builder_creation() {
@@ -264,77 +387,47 @@ fn test_simple_vs_default_config_consistency() {
 
 #[test]
 fn test_on_retry_listener() {
-    let retry_called = Arc::new(Mutex::new(false));
-    let retry_called_clone = retry_called.clone();
+    let listener = TestRetryListener;
 
-    let _builder = RetryBuilder::<TestResult>::new().on_retry(move |_event| {
-        *retry_called_clone.lock().unwrap() = true;
-    });
+    let _builder = RetryBuilder::<TestResult>::new().on_retry(listener);
 
     // Verify listener set successfully (actual invocation tested during execution)
 }
 
 #[test]
 fn test_on_success_listener() {
-    let success_called = Arc::new(Mutex::new(false));
-    let success_called_clone = success_called.clone();
+    let listener = TestSuccessListener;
 
-    let _builder = RetryBuilder::<TestResult>::new().on_success(move |_event| {
-        *success_called_clone.lock().unwrap() = true;
-    });
+    let _builder = RetryBuilder::<TestResult>::new().on_success(listener);
 
     // Verify listener set successfully (reaching here means successful setup)
 }
 
 #[test]
 fn test_on_failure_listener() {
-    let failure_called = Arc::new(Mutex::new(false));
-    let failure_called_clone = failure_called.clone();
+    let listener = TestFailureListener;
 
-    let _builder = RetryBuilder::<TestResult>::new().on_failure(move |_event| {
-        *failure_called_clone.lock().unwrap() = true;
-    });
+    let _builder = RetryBuilder::<TestResult>::new().on_failure(listener);
 
     // Verify listener set successfully (reaching here means successful setup)
 }
 
 #[test]
 fn test_on_abort_listener() {
-    let abort_called = Arc::new(Mutex::new(false));
-    let abort_called_clone = abort_called.clone();
+    let listener = TestAbortListener;
 
-    let _builder = RetryBuilder::<TestResult>::new().on_abort(move |_event| {
-        *abort_called_clone.lock().unwrap() = true;
-    });
+    let _builder = RetryBuilder::<TestResult>::new().on_abort(listener);
 
     // Verify listener set successfully (reaching here means successful setup)
 }
 
 #[test]
 fn test_all_event_listeners_together() {
-    let retry_count = Arc::new(Mutex::new(0));
-    let success_count = Arc::new(Mutex::new(0));
-    let failure_count = Arc::new(Mutex::new(0));
-    let abort_count = Arc::new(Mutex::new(0));
-
-    let retry_count_clone = retry_count.clone();
-    let success_count_clone = success_count.clone();
-    let failure_count_clone = failure_count.clone();
-    let abort_count_clone = abort_count.clone();
-
     let _builder = RetryBuilder::<TestResult>::new()
-        .on_retry(move |_event| {
-            *retry_count_clone.lock().unwrap() += 1;
-        })
-        .on_success(move |_event| {
-            *success_count_clone.lock().unwrap() += 1;
-        })
-        .on_failure(move |_event| {
-            *failure_count_clone.lock().unwrap() += 1;
-        })
-        .on_abort(move |_event| {
-            *abort_count_clone.lock().unwrap() += 1;
-        });
+        .on_retry(TestRetryListener)
+        .on_success(TestSuccessListener)
+        .on_failure(TestFailureListener)
+        .on_abort(TestAbortListener);
 
     // Verify all listeners set successfully (reaching here means all listeners set successfully)
 }
@@ -387,20 +480,10 @@ fn test_abort_on_results_if_override() {
 
 #[test]
 fn test_listener_override() {
-    let count1 = Arc::new(Mutex::new(0));
-    let count2 = Arc::new(Mutex::new(0));
-
-    let count1_clone = count1.clone();
-    let count2_clone = count2.clone();
-
     // First listener setting, then second setting should override first
     let _builder = RetryBuilder::<TestResult>::new()
-        .on_retry(move |_event| {
-            *count1_clone.lock().unwrap() += 1;
-        })
-        .on_retry(move |_event| {
-            *count2_clone.lock().unwrap() += 1;
-        });
+        .on_retry(TestRetryListener)
+        .on_retry(TestRetryListener);
 
     // Verify setup successful (actual override behavior verified during execution, reaching here means successful setup)
 }
@@ -733,9 +816,6 @@ fn test_clear_abort_results() {
 
 #[test]
 fn test_abort_on_errors_multiple() {
-    use std::fmt;
-    use std::io;
-
     let builder = RetryBuilder::<TestResult>::new().abort_on_errors::<io::Error, fmt::Error>();
 
     // This test verifies that multiple error types can be set for abort and executor can be built successfully
@@ -757,8 +837,6 @@ fn test_default_trait() {
 
 #[test]
 fn test_failed_on_error_single_type() {
-    use std::io::Error as IoError;
-
     let builder = RetryBuilder::<TestResult>::new().failed_on_error::<IoError>();
 
     // Verify config successful
@@ -767,8 +845,6 @@ fn test_failed_on_error_single_type() {
 
 #[test]
 fn test_abort_on_error_single_type() {
-    use std::io::Error as IoError;
-
     let builder = RetryBuilder::<TestResult>::new().abort_on_error::<IoError>();
 
     // Verify config successful
