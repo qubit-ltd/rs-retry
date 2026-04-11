@@ -1,7 +1,7 @@
 # Qubit Retry
 
-[![CircleCI](https://circleci.com/gh/qubit-ltd/rust-retry.svg?style=shield)](https://circleci.com/gh/qubit-ltd/rust-retry)
-[![Coverage Status](https://coveralls.io/repos/github/qubit-ltd/rust-retry/badge.svg?branch=main)](https://coveralls.io/github/qubit-ltd/rust-retry?branch=main)
+[![CircleCI](https://circleci.com/gh/qubit-ltd/rs-retry.svg?style=shield)](https://circleci.com/gh/qubit-ltd/rs-retry)
+[![Coverage Status](https://coveralls.io/repos/github/qubit-ltd/rs-retry/badge.svg?branch=main)](https://coveralls.io/github/qubit-ltd/rs-retry?branch=main)
 [![Crates.io](https://img.shields.io/crates/v/qubit-retry.svg?color=blue)](https://crates.io/crates/qubit-retry)
 [![Rust](https://img.shields.io/badge/rust-1.70+-blue.svg?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)

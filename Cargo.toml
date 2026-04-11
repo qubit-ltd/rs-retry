@@ -1,13 +1,13 @@
 [package]
 name = "qubit-retry"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
 license = "Apache-2.0"
-repository = "https://github.com/qubit-ltd/rust-retry"
+repository = "https://github.com/qubit-ltd/rs-retry"
 description = "Retry module, providing a feature-complete, type-safe retry management system with support for multiple delay strategies and event listeners"
-homepage = "https://github.com/qubit-ltd/rust-retry"
+homepage = "https://github.com/qubit-ltd/rs-retry"
 documentation = "https://docs.rs/qubit-retry"
 readme = "README.md"
 keywords = ["retry", "resilience", "backoff", "fault-tolerance", "qubit"]
@@ -27,8 +27,8 @@ name = "qubit_retry"
 doctest = false
 
 [dependencies]
-qubit-config = "0.8.0"
-qubit-function = "0.7.0"
+qubit-config = "0.8.2"
+qubit-function = "0.7.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0.17"

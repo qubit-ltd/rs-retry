@@ -538,9 +538,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-common"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0ca40594368ca5229fa9e3412cfc2ba179d0410b43ffc376e7a1606cdb9ca5f"
+checksum = "8f85f9e2729c599959f67672c3251988128a010c3e0be339ad52225650cf18d6"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -555,9 +555,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-config"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "864e038dbe3d3dd070ee7f9a969e09412832cbd54daf5a5990cca8febda38816"
+checksum = "3664554dd40611e79ec2918c68b02e515cfbbc0d4c7b11ba2cc80b437f7c11c7"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -577,9 +577,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-function"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92932b0dae1e508b78d531d9e667b3efbd38d44f16598d8f64a804b9042ed547"
+checksum = "cfc2e7b88c03c88fa33f654c12454be0dfbc81f6f452ed930edf33fa1fc6ab3e"
 dependencies = [
  "parking_lot",
  "paste",
@@ -587,7 +587,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-retry"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "chrono",
  "qubit-config",
@@ -603,9 +603,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-value"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d75bd081d6b0ee2af2d84795412af244b0ad844c987ebd71d2270a8621e35a1"
+checksum = "77adf775f1bdac68654b1de4df2d4894e3ccab87e1a00e21d1cb8ac343e69d29"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -637,9 +637,9 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rand"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc266eb313df6c5c09c1c7b1fbe2510961e5bcd3add930c1e31f7ed9da0feff8"
+checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
 dependencies = [
  "chacha20",
  "getrandom",
