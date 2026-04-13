@@ -17,7 +17,7 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 
 use qubit_common::BoxError;
-use qubit_function::BiFunction;
+use qubit_function::{BiFunction, Consumer};
 
 use crate::events::RetryListeners;
 use crate::{
@@ -538,7 +538,7 @@ impl<E> RetryExecutor<E> {
     /// Propagates any panic raised by the listener.
     fn emit_success(&self, attempts: u32, elapsed: Duration) {
         if let Some(listener) = &self.listeners.success {
-            listener(&SuccessEvent { attempts, elapsed });
+            listener.accept(&SuccessEvent { attempts, elapsed });
         }
     }
 

@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use qubit_common::BoxError;
-use qubit_function::{ArcBiFunction, BiPredicate};
+use qubit_function::{ArcBiFunction, ArcConsumer, BiPredicate};
 
 use crate::events::RetryListeners;
 use crate::{
@@ -262,7 +262,7 @@ impl<E> RetryExecutorBuilder<E> {
     where
         F: Fn(&SuccessEvent) + Send + Sync + 'static,
     {
-        self.listeners.success = Some(Arc::new(listener));
+        self.listeners.success = Some(ArcConsumer::new(listener));
         self
     }
 

@@ -13,6 +13,8 @@
 
 use std::sync::Arc;
 
+use qubit_function::ArcConsumer;
+
 use super::{AbortEvent, FailureEvent, RetryEvent, SuccessEvent};
 
 /// Listener invoked before sleeping for a retry.
@@ -44,7 +46,7 @@ pub(crate) struct RetryListeners<E> {
     /// Optional callback invoked before sleeping for a retry.
     pub(crate) retry: Option<RetryListener<E>>,
     /// Optional callback invoked when the operation eventually succeeds.
-    pub(crate) success: Option<SuccessListener>,
+    pub(crate) success: Option<ArcConsumer<SuccessEvent>>,
     /// Optional callback invoked when retry limits are exhausted.
     pub(crate) failure: Option<FailureListener<E>>,
     /// Optional callback invoked when the classifier aborts retrying.

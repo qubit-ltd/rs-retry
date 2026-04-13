@@ -102,9 +102,8 @@ fn test_build_and_from_options_allow_borrowed_error_type() {
         .expect("builder should support borrowed error types");
     assert_eq!(built_executor.options().max_attempts.get(), 3);
 
-    let run_result = from_options_executor.run(|| -> Result<(), BorrowedError<'_>> {
-        Err(BorrowedError(message.as_str()))
-    });
+    let run_result = from_options_executor
+        .run(|| -> Result<(), BorrowedError<'_>> { Err(BorrowedError(message.as_str())) });
     let run_error = run_result.expect_err("operation should fail with borrowed error");
     assert_eq!(run_error.attempts(), 2);
     assert_eq!(run_error.last_error(), Some(&BorrowedError("borrowed")));
