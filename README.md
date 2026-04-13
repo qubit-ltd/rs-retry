@@ -20,14 +20,15 @@ The core API is `RetryExecutor<E>`. An executor is bound only to the operation e
 - Delay strategies: `Delay::none`, `Delay::fixed`, `Delay::random`, `Delay::exponential`.
 - Symmetric jitter through `Jitter::factor`.
 - Explicit retry classification with `retry_if` or `classify_error`.
-- Borrowed event callbacks for retry, success, failure, and abort events.
+- Listener contexts for retry/failure/abort plus borrowed failure payloads.
+- Listener callback storage based on `qubit-function` functors (`ArcConsumer` / `ArcBiConsumer`).
 - Immutable `RetryOptions` snapshots with `qubit-config` integration.
 
 ## Installation
 
 ```toml
 [dependencies]
-qubit-retry = "0.2.3"
+qubit-retry = "0.3.0"
 ```
 
 ## Basic Sync Retry
@@ -145,7 +146,14 @@ let response = executor
 
 ## Event Listeners
 
-Events borrow the failure value and carry retry metadata. They never own or clone the success value.
+Retry/failure/abort listeners receive a context object plus a borrowed failure payload. Success listeners still receive only `SuccessEvent`.
+
+```rust
+pub type RetryListener<E> = ArcBiConsumer<RetryContext, AttemptFailure<E>>;
+pub type FailureListener<E> = ArcBiConsumer<FailureContext, Option<AttemptFailure<E>>>;
+pub type AbortListener<E> = ArcBiConsumer<AbortContext, AttemptFailure<E>>;
+pub type SuccessListener = ArcConsumer<SuccessEvent>;
+```
 
 ```rust
 use qubit_retry::{AttemptFailure, Delay, RetryExecutor};
@@ -154,18 +162,29 @@ use std::time::Duration;
 let executor = RetryExecutor::<std::io::Error>::builder()
     .max_attempts(3)
     .delay(Delay::fixed(Duration::from_millis(100)))
-    .on_retry(|event| {
-        if let AttemptFailure::Error(error) = event.failure {
+    .on_retry(|context, failure| {
+        if let AttemptFailure::Error(error) = failure {
             tracing::warn!(
-                attempt = event.attempt,
-                delay_ms = event.next_delay.as_millis(),
+                attempt = context.attempt,
+                delay_ms = context.next_delay.as_millis(),
                 error = %error,
                 "retrying operation",
             );
         }
     })
-    .on_failure(|event| {
-        tracing::error!(attempts = event.attempts, "operation failed after retry");
+    .on_failure(|context, last_failure| {
+        tracing::error!(
+            attempts = context.attempts,
+            has_last_failure = last_failure.is_some(),
+            "operation failed after retry",
+        );
+    })
+    .on_abort(|context, failure| {
+        tracing::warn!(
+            attempts = context.attempts,
+            failure = ?failure,
+            "classifier aborted retry",
+        );
     })
     .on_success(|event| {
         tracing::info!(attempts = event.attempts, "operation succeeded");
@@ -239,5 +258,5 @@ The previous unpublished API tied retry execution to `RetryBuilder<T, C>` and `R
 
 - `RetryExecutor<E>` stores retry behavior and error classification.
 - `run<T, _>` and `run_async<T, _, _>` introduce the success type only at execution time.
-- Event callbacks observe borrowed failures and metadata instead of owned success values.
+- Listener callbacks observe context metadata and borrowed failures instead of owned success values.
 - `RetryOptions` replaces runtime config traits with a validated immutable snapshot.
