@@ -491,10 +491,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "paste"
-version = "1.0.15"
+name = "pastey"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+checksum = "b867cad97c0791bbd3aaa6472142568c6c9e8f71937e98379f584cfb0cf35bec"
 
 [[package]]
 name = "percent-encoding"
@@ -577,19 +577,20 @@ dependencies = [
 
 [[package]]
 name = "qubit-function"
-version = "0.7.3"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfc2e7b88c03c88fa33f654c12454be0dfbc81f6f452ed930edf33fa1fc6ab3e"
+checksum = "0eaa85b2dcd3fe9d7c29a61b9f972c549379dbaeb3ca3d11c16ded58b616769e"
 dependencies = [
  "parking_lot",
- "paste",
+ "pastey",
 ]
 
 [[package]]
 name = "qubit-retry"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "chrono",
+ "qubit-common",
  "qubit-config",
  "qubit-function",
  "rand",

@@ -1,6 +1,6 @@
 [package]
 name = "qubit-retry"
-version = "0.2.3"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -27,8 +27,9 @@ name = "qubit_retry"
 doctest = false
 
 [dependencies]
+qubit-common = "0.5.3"
 qubit-config = "0.8.2"
-qubit-function = "0.7.3"
+qubit-function = "0.8.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0.17"
