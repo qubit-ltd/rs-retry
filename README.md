@@ -24,6 +24,15 @@ The core API is `RetryExecutor<E>`. An executor is bound only to the operation e
 - Listener callback storage based on `qubit-function` functors (`ArcConsumer` / `ArcBiConsumer`).
 - Immutable `RetryOptions` snapshots with `qubit-config` integration.
 
+## Core Concepts
+
+`qubit-retry` is designed around a type-preserving retry executor with clear boundaries between retry policy, error classification, and operation execution:
+
+- `RetryExecutor<E>` stores retry behavior and error classification.
+- `run<T, _>` and `run_async<T, _, _>` introduce the success type only at execution time.
+- Listener callbacks observe context metadata and borrowed failures instead of owned success values.
+- `RetryOptions` provides a validated immutable snapshot for retry configuration.
+
 ## Installation
 
 ```toml
@@ -144,15 +153,15 @@ let response = executor
     .await?;
 ```
 
-## Event Listeners
+## Listeners
 
-Retry/failure/abort listeners receive a context object plus a borrowed failure payload. Success listeners still receive only `SuccessEvent`.
+Retry/failure/abort listeners receive a context object plus a borrowed failure payload. Success listeners still receive only `SuccessContext`.
 
 ```rust
 pub type RetryListener<E> = ArcBiConsumer<RetryContext, AttemptFailure<E>>;
 pub type FailureListener<E> = ArcBiConsumer<FailureContext, Option<AttemptFailure<E>>>;
 pub type AbortListener<E> = ArcBiConsumer<AbortContext, AttemptFailure<E>>;
-pub type SuccessListener = ArcConsumer<SuccessEvent>;
+pub type SuccessListener = ArcConsumer<SuccessContext>;
 ```
 
 ```rust
@@ -186,8 +195,8 @@ let executor = RetryExecutor::<std::io::Error>::builder()
             "classifier aborted retry",
         );
     })
-    .on_success(|event| {
-        tracing::info!(attempts = event.attempts, "operation succeeded");
+    .on_success(|context| {
+        tracing::info!(attempts = context.attempts, "operation succeeded");
     })
     .build()?;
 ```
@@ -251,12 +260,3 @@ match executor.run(|| std::fs::read_to_string("missing.toml")) {
     }
 }
 ```
-
-## Design Notes
-
-The previous unpublished API tied retry execution to `RetryBuilder<T, C>` and `RetryExecutor<T, C>`, which forced success values to satisfy constraints used only by result-based retry. The new API removes those constraints from the core path:
-
-- `RetryExecutor<E>` stores retry behavior and error classification.
-- `run<T, _>` and `run_async<T, _, _>` introduce the success type only at execution time.
-- Listener callbacks observe context metadata and borrowed failures instead of owned success values.
-- `RetryOptions` replaces runtime config traits with a validated immutable snapshot.
