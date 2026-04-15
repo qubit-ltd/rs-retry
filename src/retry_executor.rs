@@ -19,14 +19,14 @@ use std::time::{Duration, Instant};
 use qubit_common::BoxError;
 use qubit_function::{BiConsumer, BiFunction, Consumer};
 
-use crate::events::RetryListeners;
+use crate::event::RetryListeners;
 use crate::{
-    AbortContext, AttemptContext, AttemptFailure, FailureContext, RetryConfigError, RetryContext,
-    RetryDecision, RetryError, RetryOptions, SuccessContext,
+    RetryAbortContext, RetryAttemptContext, RetryAttemptFailure, RetryFailureContext, RetryConfigError, RetryContext,
+    RetryDecision, RetryError, RetryOptions, RetrySuccessContext,
 };
 
-use crate::error::ErrorClassifier;
-use crate::failure_action::FailureAction;
+use crate::error::RetryErrorClassifier;
+use crate::error::RetryFailureAction;
 use crate::retry_executor_builder::RetryExecutorBuilder;
 
 /// Retry executor bound to an error type.
@@ -42,9 +42,9 @@ pub struct RetryExecutor<E = BoxError> {
     /// jitter, optional `max_elapsed`).
     options: RetryOptions,
     /// Classifies application errors after each failed attempt; timeouts from
-    /// [`AttemptFailure::AttemptTimeout`] bypass the classifier and are treated as
+    /// [`RetryAttemptFailure::AttemptTimeout`] bypass the classifier and are treated as
     /// retryable unless executor limits stop execution.
-    classifier: ErrorClassifier<E>,
+    classifier: RetryErrorClassifier<E>,
     /// Optional hooks invoked on success, retry scheduling, terminal failure,
     /// or classifier abort.
     listeners: RetryListeners<E>,
@@ -149,17 +149,17 @@ impl<E> RetryExecutor<E> {
                     return Ok(value);
                 }
                 Err(error) => {
-                    let failure = AttemptFailure::Error(error);
+                    let failure = RetryAttemptFailure::Error(error);
                     // Classifier + limits decide whether to sleep and retry or
                     // finish with a terminal `RetryError`.
                     match self.handle_failure(attempts, start, failure) {
-                        FailureAction::Retry { delay, failure } => {
+                        RetryFailureAction::Retry { delay, failure } => {
                             if !delay.is_zero() {
                                 std::thread::sleep(delay);
                             }
                             last_failure = Some(failure);
                         }
-                        FailureAction::Finished(error) => return Err(error),
+                        RetryFailureAction::Finished(error) => return Err(error),
                     }
                 }
             }
@@ -219,15 +219,15 @@ impl<E> RetryExecutor<E> {
                     return Ok(value);
                 }
                 Err(error) => {
-                    let failure = AttemptFailure::Error(error);
+                    let failure = RetryAttemptFailure::Error(error);
                     // Classifier + limits decide whether to sleep and retry or
                     // finish with a terminal `RetryError`.
                     match self.handle_failure(attempts, start, failure) {
-                        FailureAction::Retry { delay, failure } => {
+                        RetryFailureAction::Retry { delay, failure } => {
                             sleep_async(delay).await;
                             last_failure = Some(failure);
                         }
-                        FailureAction::Finished(error) => return Err(error),
+                        RetryFailureAction::Finished(error) => return Err(error),
                     }
                 }
             }
@@ -239,7 +239,7 @@ impl<E> RetryExecutor<E> {
     /// Like [`Self::run_async`], but each attempt is bounded by
     /// `tokio::time::timeout(attempt_timeout, operation())`. Normal completion
     /// yields the inner `Ok`/`Err`. A timeout becomes
-    /// [`AttemptFailure::AttemptTimeout`] and is fed to `handle_failure` to
+    /// [`RetryAttemptFailure::AttemptTimeout`] and is fed to `handle_failure` to
     /// decide retry versus a terminal error, subject to the same global limits.
     ///
     /// # Parameters
@@ -257,7 +257,7 @@ impl<E> RetryExecutor<E> {
     /// application error, [`RetryError::AttemptsExceeded`] when the attempt
     /// limit is reached, or [`RetryError::MaxElapsedExceeded`] when the total
     /// elapsed-time budget is exhausted. Attempt timeouts are represented as
-    /// [`AttemptFailure::AttemptTimeout`] and are considered retryable until
+    /// [`RetryAttemptFailure::AttemptTimeout`] and are considered retryable until
     /// limits stop execution.
     ///
     /// # Panics
@@ -297,27 +297,27 @@ impl<E> RetryExecutor<E> {
                     return Ok(value);
                 }
                 Ok(Err(error)) => {
-                    let failure = AttemptFailure::Error(error);
+                    let failure = RetryAttemptFailure::Error(error);
                     match self.handle_failure(attempts, start, failure) {
-                        FailureAction::Retry { delay, failure } => {
+                        RetryFailureAction::Retry { delay, failure } => {
                             sleep_async(delay).await;
                             last_failure = Some(failure);
                         }
-                        FailureAction::Finished(error) => return Err(error),
+                        RetryFailureAction::Finished(error) => return Err(error),
                     }
                 }
                 Err(_) => {
                     // Per-attempt budget exceeded before the future completed.
-                    let failure = AttemptFailure::AttemptTimeout {
+                    let failure = RetryAttemptFailure::AttemptTimeout {
                         elapsed: attempt_start.elapsed(),
                         timeout: attempt_timeout,
                     };
                     match self.handle_failure(attempts, start, failure) {
-                        FailureAction::Retry { delay, failure } => {
+                        RetryFailureAction::Retry { delay, failure } => {
                             sleep_async(delay).await;
                             last_failure = Some(failure);
                         }
-                        FailureAction::Finished(error) => return Err(error),
+                        RetryFailureAction::Finished(error) => return Err(error),
                     }
                 }
             }
@@ -339,7 +339,7 @@ impl<E> RetryExecutor<E> {
     /// before constructing the executor.
     pub(super) fn new(
         options: RetryOptions,
-        classifier: ErrorClassifier<E>,
+        classifier: RetryErrorClassifier<E>,
         listeners: RetryListeners<E>,
     ) -> Self {
         Self {
@@ -352,20 +352,20 @@ impl<E> RetryExecutor<E> {
     /// Classifies a failed attempt and decides the next executor action.
     ///
     /// # Processing
-    /// 1. Builds [`AttemptContext`] from elapsed time and attempt counts, then
-    ///    classifies the failure: application errors go through [`ErrorClassifier`];
-    ///    [`AttemptFailure::AttemptTimeout`] is treated as retryable unless
+    /// 1. Builds [`RetryAttemptContext`] from elapsed time and attempt counts, then
+    ///    classifies the failure: application errors go through [`RetryErrorClassifier`];
+    ///    [`RetryAttemptFailure::AttemptTimeout`] is treated as retryable unless
     ///    limits below apply.
     /// 2. If the decision is [`RetryDecision::Abort`], emits the abort listener
-    ///    and returns [`FailureAction::Finished`] with [`RetryError::Aborted`].
+    ///    and returns [`RetryFailureAction::Finished`] with [`RetryError::Aborted`].
     /// 3. If `attempts` has reached `max_attempts`, emits the failure listener
-    ///    and returns [`FailureAction::Finished`] with
+    ///    and returns [`RetryFailureAction::Finished`] with
     ///    [`RetryError::AttemptsExceeded`].
     /// 4. Otherwise computes base delay for this attempt, applies jitter, and if
     ///    `max_elapsed` is set and sleeping would exceed the total time budget,
-    ///    emits the failure listener and returns [`FailureAction::Finished`]
+    ///    emits the failure listener and returns [`RetryFailureAction::Finished`]
     ///    with [`RetryError::MaxElapsedExceeded`].
-    /// 5. Otherwise emits the retry listener and returns [`FailureAction::Retry`]
+    /// 5. Otherwise emits the retry listener and returns [`RetryFailureAction::Retry`]
     ///    with the computed delay and the same failure payload.
     ///
     /// # Parameters
@@ -374,13 +374,13 @@ impl<E> RetryExecutor<E> {
     /// - `failure`: Failure produced by the latest attempt.
     ///
     /// # Returns
-    /// [`FailureAction::Retry`] with the computed delay when retrying should
-    /// continue, or [`FailureAction::Finished`] with the terminal
+    /// [`RetryFailureAction::Retry`] with the computed delay when retrying should
+    /// continue, or [`RetryFailureAction::Finished`] with the terminal
     /// [`RetryError`].
     ///
     /// # Errors
     /// This function does not return errors directly; terminal retry errors are
-    /// returned inside [`FailureAction::Finished`].
+    /// returned inside [`RetryFailureAction::Finished`].
     ///
     /// # Side Effects
     /// Invokes retry, failure, or abort listeners depending on the decision.
@@ -388,10 +388,10 @@ impl<E> RetryExecutor<E> {
         &self,
         attempts: u32,
         start: Instant,
-        failure: AttemptFailure<E>,
-    ) -> FailureAction<E> {
+        failure: RetryAttemptFailure<E>,
+    ) -> RetryFailureAction<E> {
         let elapsed = start.elapsed();
-        let context = AttemptContext {
+        let context = RetryAttemptContext {
             attempt: attempts,
             max_attempts: self.options.max_attempts.get(),
             elapsed,
@@ -399,12 +399,12 @@ impl<E> RetryExecutor<E> {
         // Application errors consult the classifier; attempt timeouts are
         // always retryable unless limits below say otherwise.
         let decision = match &failure {
-            AttemptFailure::Error(error) => self.classifier.apply(error, &context),
-            AttemptFailure::AttemptTimeout { .. } => RetryDecision::Retry,
+            RetryAttemptFailure::Error(error) => self.classifier.apply(error, &context),
+            RetryAttemptFailure::AttemptTimeout { .. } => RetryDecision::Retry,
         };
         if decision == RetryDecision::Abort {
             self.emit_abort(attempts, elapsed, &failure);
-            return FailureAction::Finished(RetryError::Aborted {
+            return RetryFailureAction::Finished(RetryError::Aborted {
                 attempts,
                 elapsed,
                 failure,
@@ -418,7 +418,7 @@ impl<E> RetryExecutor<E> {
             let Some(failure) = self.emit_failure(attempts, elapsed, Some(failure)) else {
                 unreachable!("failure must exist when attempts exceed max_attempts");
             };
-            return FailureAction::Finished(RetryError::AttemptsExceeded {
+            return RetryFailureAction::Finished(RetryError::AttemptsExceeded {
                 attempts,
                 max_attempts,
                 elapsed,
@@ -439,12 +439,12 @@ impl<E> RetryExecutor<E> {
                     max_elapsed,
                     last_failure,
                 };
-                return FailureAction::Finished(error);
+                return RetryFailureAction::Finished(error);
             }
         }
 
         self.emit_retry(attempts, elapsed, delay, &failure);
-        FailureAction::Retry { delay, failure }
+        RetryFailureAction::Retry { delay, failure }
     }
 
     /// Checks whether the total elapsed-time budget has already been reached.
@@ -469,7 +469,7 @@ impl<E> RetryExecutor<E> {
         &self,
         start: Instant,
         attempts: u32,
-        last_failure: &mut Option<AttemptFailure<E>>,
+        last_failure: &mut Option<RetryAttemptFailure<E>>,
     ) -> Option<RetryError<E>> {
         let max_elapsed = self.options.max_elapsed?;
         let elapsed = start.elapsed();
@@ -494,7 +494,7 @@ impl<E> RetryExecutor<E> {
     /// # Parameters
     /// - `attempt`: Attempt that just failed.
     /// - `elapsed`: Total elapsed duration before sleeping.
-    /// - `next_delay`: Delay that will be slept before the next attempt.
+    /// - `next_delay`: RetryDelay that will be slept before the next attempt.
     /// - `failure`: Failure that triggered the retry.
     ///
     /// # Returns
@@ -510,7 +510,7 @@ impl<E> RetryExecutor<E> {
         attempt: u32,
         elapsed: Duration,
         next_delay: Duration,
-        failure: &AttemptFailure<E>,
+        failure: &RetryAttemptFailure<E>,
     ) {
         if let Some(listener) = &self.listeners.retry {
             listener.accept(
@@ -541,7 +541,7 @@ impl<E> RetryExecutor<E> {
     /// Propagates any panic raised by the listener.
     fn emit_success(&self, attempts: u32, elapsed: Duration) {
         if let Some(listener) = &self.listeners.success {
-            listener.accept(&SuccessContext { attempts, elapsed });
+            listener.accept(&RetrySuccessContext { attempts, elapsed });
         }
     }
 
@@ -564,10 +564,10 @@ impl<E> RetryExecutor<E> {
         &self,
         attempts: u32,
         elapsed: Duration,
-        failure: Option<AttemptFailure<E>>,
-    ) -> Option<AttemptFailure<E>> {
+        failure: Option<RetryAttemptFailure<E>>,
+    ) -> Option<RetryAttemptFailure<E>> {
         if let Some(listener) = &self.listeners.failure {
-            listener.accept(&FailureContext { attempts, elapsed }, &failure);
+            listener.accept(&RetryFailureContext { attempts, elapsed }, &failure);
         }
         failure
     }
@@ -587,9 +587,9 @@ impl<E> RetryExecutor<E> {
     ///
     /// # Panics
     /// Propagates any panic raised by the listener.
-    fn emit_abort(&self, attempts: u32, elapsed: Duration, failure: &AttemptFailure<E>) {
+    fn emit_abort(&self, attempts: u32, elapsed: Duration, failure: &RetryAttemptFailure<E>) {
         if let Some(listener) = &self.listeners.abort {
-            listener.accept(&AbortContext { attempts, elapsed }, failure);
+            listener.accept(&RetryAbortContext { attempts, elapsed }, failure);
         }
     }
 }
@@ -616,7 +616,7 @@ impl<E> fmt::Debug for RetryExecutor<E> {
 ///
 /// # Parameters
 /// - `elapsed`: Duration already consumed by the retry execution.
-/// - `delay`: Delay that would be slept before the next attempt.
+/// - `delay`: RetryDelay that would be slept before the next attempt.
 /// - `max_elapsed`: Configured total elapsed-time budget.
 ///
 /// # Returns
@@ -711,7 +711,7 @@ mod tests {
     fn test_box_error_executor_runs_success_and_failure_paths() {
         let executor: RetryExecutor<BoxError> = RetryExecutor::builder()
             .max_attempts(1)
-            .delay(crate::Delay::none())
+            .delay(crate::RetryDelay::none())
             .build()
             .expect("executor should be built");
 
