@@ -577,9 +577,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-function"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f29c43790c143fc8f2a7aec97f625ed775387b530ad10a800c99d80e61605a3"
+checksum = "01e30c6a929661b27c7fc1b7438887c035188fed8e3e7f8df7bc4775755fff16"
 dependencies = [
  "parking_lot",
  "pastey",
@@ -587,7 +587,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-retry"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "qubit-common",

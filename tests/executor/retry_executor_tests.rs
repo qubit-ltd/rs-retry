@@ -191,11 +191,11 @@ fn test_retry_if_can_abort_and_preserve_original_error() {
 /// The test fails through assertions when context values or abort decisions are
 /// incorrect.
 #[test]
-fn test_classify_error_can_use_attempt_context() {
+fn test_retry_decide_can_use_attempt_context() {
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(4)
         .delay(Delay::none())
-        .classify_error(|_, context| {
+        .retry_decide(|_: &TestError, context: &AttemptContext| {
             assert!(context.attempt <= context.max_attempts);
             if context.attempt < 2 {
                 RetryDecision::Retry

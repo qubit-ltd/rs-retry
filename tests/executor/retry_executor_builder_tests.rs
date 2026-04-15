@@ -81,8 +81,8 @@ fn test_default_and_debug_work() {
 /// This test returns nothing.
 ///
 /// # Errors
-/// The test fails through assertions when `from_options` or `build` requires
-/// `E: 'static` for borrowed error types.
+/// The test fails through assertions when `from_options` or `build` does not
+/// accept borrowed (non-`'static`) error types.
 #[test]
 fn test_build_and_from_options_allow_borrowed_error_type() {
     #[derive(Debug, PartialEq, Eq)]

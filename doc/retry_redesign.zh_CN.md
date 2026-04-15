@@ -96,11 +96,11 @@ let executor = RetryExecutor::<HttpError>::builder()
     .build()?;
 ```
 
-其中 `retry_if` 是便捷接口，接收返回 `bool` 的闭包：`true` 映射为 `RetryDecision::Retry`，`false` 映射为 `RetryDecision::Abort`。如果调用方需要更明确的命名，也可以提供 `classify_error`：
+其中 `retry_if` 是便捷接口，接收返回 `bool` 的闭包：`true` 映射为 `RetryDecision::Retry`，`false` 映射为 `RetryDecision::Abort`。如果调用方需要更明确的命名，也可以提供 `retry_decide`：
 
 ```rust
 let executor = RetryExecutor::<HttpError>::builder()
-    .classify_error(|error, _ctx| {
+    .retry_decide(|error, _ctx| {
         if error.retry_hint() == RetryHint::Retryable {
             RetryDecision::Retry
         } else {
@@ -558,7 +558,7 @@ match result {
 
 1. 以 `RetryExecutor<E>` + `RetryExecutorBuilder<E>` 替代旧 `RetryBuilder<T, C>` / `RetryExecutor<T, C>` 形态。
 2. 以不可变 `RetryOptions` + `RetryOptions::from_config` 替代 `RetryConfig` trait 与多层默认配置类型。
-3. 以 `classify_error` / `retry_if` + `ErrorClassifier` 闭包替代 TypeId 集合式错误匹配。
+3. 以 `retry_decide` / `retry_if` + `ErrorClassifier` 闭包替代 TypeId 集合式错误匹配。
 4. 以 `Delay` + `Jitter` 替代一体的 `RetryDelayStrategy` 语义。
 5. 文档与集成测试已按当前 API 维护。
 

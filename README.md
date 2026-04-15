@@ -19,7 +19,7 @@ The core API is `RetryExecutor<E>`. An executor is bound only to the operation e
 - Real async per-attempt timeout via `RetryExecutor::run_async_with_timeout`.
 - Delay strategies: `Delay::none`, `Delay::fixed`, `Delay::random`, `Delay::exponential`.
 - Symmetric jitter through `Jitter::factor`.
-- Explicit retry classification with `retry_if` or `classify_error`.
+- Explicit retry classification with `retry_if` or `retry_decide`.
 - Listener contexts for retry/failure/abort plus borrowed failure payloads.
 - Listener callback storage based on `qubit-function` functors (`ArcConsumer` / `ArcBiConsumer`).
 - Immutable `RetryOptions` snapshots with `qubit-config` integration.
@@ -37,7 +37,7 @@ The core API is `RetryExecutor<E>`. An executor is bound only to the operation e
 
 ```toml
 [dependencies]
-qubit-retry = "0.3.0"
+qubit-retry = "0.4.0"
 ```
 
 ## Basic Sync Retry
@@ -98,14 +98,14 @@ let executor = RetryExecutor::<ServiceError>::builder()
     .build()?;
 ```
 
-Use `classify_error` when the classifier needs to return a named decision:
+Use `retry_decide` when the classifier needs to return a named decision:
 
 ```rust
 use qubit_retry::{RetryDecision, RetryExecutor};
 
 let executor = RetryExecutor::<ServiceError>::builder()
     .max_attempts(3)
-    .classify_error(|error, context| {
+    .retry_decide(|error, context| {
         if context.attempt == 1 && is_retryable(error) {
             RetryDecision::Retry
         } else {

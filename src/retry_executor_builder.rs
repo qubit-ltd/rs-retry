@@ -14,7 +14,7 @@
 use std::time::Duration;
 
 use qubit_common::BoxError;
-use qubit_function::{ArcBiFunction, BiPredicate};
+use qubit_function::{ArcBiFunction, BiFunction, BiPredicate};
 
 use crate::events::RetryListeners;
 use crate::{
@@ -200,11 +200,16 @@ impl<E> RetryExecutorBuilder<E> {
         self
     }
 
-    /// Uses a classifier returning [`RetryDecision`].
+    /// Chooses [`RetryDecision`] for each failed attempt from the error and
+    /// [`AttemptContext`].
     ///
     /// # Parameters
-    /// - `classifier`: Callback that receives the application error and
-    ///   attempt context and returns a retry decision.
+    /// - `decider`: Any [`BiFunction`] over the application error and
+    ///   [`AttemptContext`] (including closures); it is converted with
+    ///   [`BiFunction::into_arc`]. The decider itself must be `Send + Sync +
+    ///   'static`; the application error type `E` is not required to be `'static`.
+    ///   If type inference fails for a closure, annotate parameters (for example
+    ///   `|e: &E, ctx: &AttemptContext|`).
     ///
     /// # Returns
     /// The updated builder.
@@ -213,12 +218,12 @@ impl<E> RetryExecutorBuilder<E> {
     /// This method does not return errors.
     ///
     /// # Panics
-    /// The built executor propagates any panic raised by `classifier`.
-    pub fn classify_error<F>(mut self, classifier: F) -> Self
+    /// The built executor propagates any panic raised by `decider`.
+    pub fn retry_decide<B>(mut self, decider: B) -> Self
     where
-        F: Fn(&E, &AttemptContext) -> RetryDecision + Send + Sync + 'static,
+        B: BiFunction<E, AttemptContext, RetryDecision> + Send + Sync + 'static,
     {
-        self.classifier = Some(ArcBiFunction::new(classifier));
+        self.classifier = Some(decider.into_arc());
         self
     }
 
