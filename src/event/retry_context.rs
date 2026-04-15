@@ -25,6 +25,6 @@ pub struct RetryContext {
     pub max_attempts: u32,
     /// Elapsed time observed before sleeping.
     pub elapsed: Duration,
-    /// Delay that will be slept before the next attempt.
+    /// RetryDelay that will be slept before the next attempt.
     pub next_delay: Duration,
 }

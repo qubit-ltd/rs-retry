@@ -20,7 +20,7 @@ use std::time::Duration;
 /// Timeout failures do not contain an `E` value because they are produced by
 /// the retry executor while waiting for an asynchronous attempt.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AttemptFailure<E> {
+pub enum RetryAttemptFailure<E> {
     /// The operation returned an application error.
     Error(E),
 
@@ -34,15 +34,15 @@ pub enum AttemptFailure<E> {
     },
 }
 
-impl<E> AttemptFailure<E> {
+impl<E> RetryAttemptFailure<E> {
     /// Returns the application error when this failure wraps one.
     ///
     /// # Parameters
     /// This method has no parameters.
     ///
     /// # Returns
-    /// `Some(&E)` for [`AttemptFailure::Error`], or `None` for
-    /// [`AttemptFailure::AttemptTimeout`].
+    /// `Some(&E)` for [`RetryAttemptFailure::Error`], or `None` for
+    /// [`RetryAttemptFailure::AttemptTimeout`].
     ///
     /// # Errors
     /// This method does not return errors.
@@ -60,8 +60,8 @@ impl<E> AttemptFailure<E> {
     /// This method has no parameters.
     ///
     /// # Returns
-    /// `Some(E)` for [`AttemptFailure::Error`], or `None` for
-    /// [`AttemptFailure::AttemptTimeout`].
+    /// `Some(E)` for [`RetryAttemptFailure::Error`], or `None` for
+    /// [`RetryAttemptFailure::AttemptTimeout`].
     ///
     /// # Errors
     /// This method does not return errors.
@@ -74,7 +74,7 @@ impl<E> AttemptFailure<E> {
     }
 }
 
-impl<E> fmt::Display for AttemptFailure<E>
+impl<E> fmt::Display for RetryAttemptFailure<E>
 where
     E: fmt::Display,
 {

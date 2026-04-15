@@ -7,7 +7,7 @@
  *
  ******************************************************************************/
 
-use crate::events::{AttemptContext, RetryDecision};
+use crate::event::{RetryAttemptContext, RetryDecision};
 use qubit_function::ArcBiFunction;
 
 /// Classifies an application error as retryable or non-retryable.
@@ -20,4 +20,4 @@ use qubit_function::ArcBiFunction;
 ///
 /// The classifier is stored as an [`ArcBiFunction`] so cloned
 /// [`crate::RetryExecutor`] instances can share it safely.
-pub type ErrorClassifier<E> = ArcBiFunction<E, AttemptContext, RetryDecision>;
+pub type RetryErrorClassifier<E> = ArcBiFunction<E, RetryAttemptContext, RetryDecision>;

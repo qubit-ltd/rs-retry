@@ -14,42 +14,42 @@
 
 use qubit_function::{ArcBiConsumer, ArcConsumer};
 
-use crate::AttemptFailure;
+use crate::RetryAttemptFailure;
 
-use super::{AbortContext, FailureContext, RetryContext, SuccessContext};
+use super::{RetryAbortContext, RetryFailureContext, RetryContext, RetrySuccessContext};
 
 /// Listener invoked before sleeping for a retry.
 ///
 /// The callback receives retry metadata and the triggering failure separately.
-pub type RetryListener<E> = ArcBiConsumer<RetryContext, AttemptFailure<E>>;
+pub type RetryListener<E> = ArcBiConsumer<RetryContext, RetryAttemptFailure<E>>;
 
 /// Listener invoked when the operation eventually succeeds.
 ///
-/// The callback receives a borrowed [`SuccessContext`] and is invoked exactly
+/// The callback receives a borrowed [`RetrySuccessContext`] and is invoked exactly
 /// once for a successful executor execution.
-pub type SuccessListener = ArcConsumer<SuccessContext>;
+pub type RetrySuccessListener = ArcConsumer<RetrySuccessContext>;
 
 /// Listener invoked when retry limits are exhausted.
 ///
 /// The callback receives failure metadata plus an optional final failure
 /// payload (`None` means stopped before the first attempt).
-pub type FailureListener<E> = ArcBiConsumer<FailureContext, Option<AttemptFailure<E>>>;
+pub type RetryFailureListener<E> = ArcBiConsumer<RetryFailureContext, Option<RetryAttemptFailure<E>>>;
 
 /// Listener invoked when the classifier aborts retrying.
 ///
 /// The callback receives abort metadata and the triggering failure separately.
-pub type AbortListener<E> = ArcBiConsumer<AbortContext, AttemptFailure<E>>;
+pub type RetryAbortListener<E> = ArcBiConsumer<RetryAbortContext, RetryAttemptFailure<E>>;
 
 #[derive(Clone)]
 pub(crate) struct RetryListeners<E> {
     /// Optional callback invoked before sleeping for a retry.
     pub(crate) retry: Option<RetryListener<E>>,
     /// Optional callback invoked when the operation eventually succeeds.
-    pub(crate) success: Option<SuccessListener>,
+    pub(crate) success: Option<RetrySuccessListener>,
     /// Optional callback invoked when retry limits are exhausted.
-    pub(crate) failure: Option<FailureListener<E>>,
+    pub(crate) failure: Option<RetryFailureListener<E>>,
     /// Optional callback invoked when the classifier aborts retrying.
-    pub(crate) abort: Option<AbortListener<E>>,
+    pub(crate) abort: Option<RetryAbortListener<E>>,
 }
 
 impl<E> Default for RetryListeners<E> {

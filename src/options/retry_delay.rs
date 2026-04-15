@@ -6,10 +6,10 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-//! Delay strategies for retry attempts.
+//! RetryDelay strategies for retry attempts.
 //!
-//! A [`Delay`] produces the base sleep duration after a failed attempt. The
-//! base duration is calculated before [`crate::Jitter`] is applied by a retry
+//! A [`RetryDelay`] produces the base sleep duration after a failed attempt. The
+//! base duration is calculated before [`crate::RetryJitter`] is applied by a retry
 //! executor.
 
 use std::time::Duration;
@@ -18,11 +18,11 @@ use rand::RngExt;
 
 /// Base delay strategy before jitter is applied.
 ///
-/// Delay strategies are value types that can be reused across executors. Random
-/// and exponential strategies are validated separately by [`Delay::validate`],
+/// RetryDelay strategies are value types that can be reused across executors. Random
+/// and exponential strategies are validated separately by [`RetryDelay::validate`],
 /// which is called when building [`crate::RetryOptions`].
 #[derive(Debug, Clone, PartialEq)]
-pub enum Delay {
+pub enum RetryDelay {
     /// Retry immediately.
     None,
 
@@ -39,7 +39,7 @@ pub enum Delay {
 
     /// Exponential backoff capped by `max`.
     Exponential {
-        /// Delay used for the first retry.
+        /// RetryDelay used for the first retry.
         initial: Duration,
         /// Maximum delay.
         max: Duration,
@@ -48,14 +48,14 @@ pub enum Delay {
     },
 }
 
-impl Delay {
+impl RetryDelay {
     /// Creates a no-delay strategy.
     ///
     /// # Parameters
     /// This function has no parameters.
     ///
     /// # Returns
-    /// A [`Delay::None`] strategy.
+    /// A [`RetryDelay::None`] strategy.
     ///
     /// # Errors
     /// This function does not return errors.
@@ -70,10 +70,10 @@ impl Delay {
     /// - `delay`: Duration slept after each failed attempt.
     ///
     /// # Returns
-    /// A [`Delay::Fixed`] strategy.
+    /// A [`RetryDelay::Fixed`] strategy.
     ///
     /// # Errors
-    /// This constructor does not validate `delay`; use [`Delay::validate`] to
+    /// This constructor does not validate `delay`; use [`RetryDelay::validate`] to
     /// reject a zero duration.
     #[inline]
     pub fn fixed(delay: Duration) -> Self {
@@ -87,10 +87,10 @@ impl Delay {
     /// - `max`: Inclusive upper bound for generated delays.
     ///
     /// # Returns
-    /// A [`Delay::Random`] strategy.
+    /// A [`RetryDelay::Random`] strategy.
     ///
     /// # Errors
-    /// This constructor does not validate the range; use [`Delay::validate`] to
+    /// This constructor does not validate the range; use [`RetryDelay::validate`] to
     /// reject a zero minimum or a minimum greater than the maximum.
     #[inline]
     pub fn random(min: Duration, max: Duration) -> Self {
@@ -100,16 +100,16 @@ impl Delay {
     /// Creates an exponential-backoff strategy.
     ///
     /// # Parameters
-    /// - `initial`: Delay used for the first retry.
+    /// - `initial`: RetryDelay used for the first retry.
     /// - `max`: Upper bound applied to every calculated delay.
     /// - `multiplier`: Factor applied for each subsequent failed attempt.
     ///
     /// # Returns
-    /// A [`Delay::Exponential`] strategy.
+    /// A [`RetryDelay::Exponential`] strategy.
     ///
     /// # Errors
     /// This constructor does not validate the parameters; use
-    /// [`Delay::validate`] to reject a zero initial delay, `max < initial`, or
+    /// [`RetryDelay::validate`] to reject a zero initial delay, `max < initial`, or
     /// a multiplier that is non-finite or less than or equal to `1.0`.
     #[inline]
     pub fn exponential(initial: Duration, max: Duration, multiplier: f64) -> Self {
@@ -135,7 +135,7 @@ impl Delay {
     ///
     /// # Errors
     /// This function does not return errors. Invalid strategies should be
-    /// rejected with [`Delay::validate`] before they are used in an executor.
+    /// rejected with [`RetryDelay::validate`] before they are used in an executor.
     pub fn base_delay(&self, attempt: u32) -> Duration {
         match self {
             Self::None => Duration::ZERO,
@@ -161,7 +161,7 @@ impl Delay {
     ///
     /// Values larger than [`u64::MAX`] nanoseconds are saturated to
     /// [`u64::MAX`] so the result fits in `u64` for uniform random delay sampling
-    /// in [`Delay::base_delay`].
+    /// in [`RetryDelay::base_delay`].
     ///
     /// # Parameters
     /// - `duration`: Duration to convert.
@@ -178,15 +178,15 @@ impl Delay {
     /// Computes the exponential backoff delay for a given failed-attempt index.
     ///
     /// The effective exponent is `attempt.saturating_sub(1)`, so attempts `0`
-    /// and `1` both yield the initial delay (matching [`Delay::base_delay`]).
+    /// and `1` both yield the initial delay (matching [`RetryDelay::base_delay`]).
     /// Each further attempt multiplies the base nanosecond count by
     /// `multiplier` that many times, then the result is capped at `max`.
     ///
     /// # Parameters
-    /// - `initial`: Delay for the first retry step (attempts `0` and `1`).
+    /// - `initial`: RetryDelay for the first retry step (attempts `0` and `1`).
     /// - `max`: Upper bound on the returned delay.
     /// - `multiplier`: Factor applied per additional attempt beyond the first.
-    /// - `attempt`: Failed attempt number (see [`Delay::base_delay`]).
+    /// - `attempt`: Failed attempt number (see [`RetryDelay::base_delay`]).
     ///
     /// # Returns
     /// The computed delay, or `max` when the scaled value is not finite or is
@@ -194,7 +194,7 @@ impl Delay {
     ///
     /// # Errors
     /// This function does not return errors. Callers must ensure parameters
-    /// satisfy [`Delay::validate`] when constructing a public executor.
+    /// satisfy [`RetryDelay::validate`] when constructing a public executor.
     fn exponential_delay(
         initial: Duration,
         max: Duration,
@@ -268,11 +268,11 @@ impl Delay {
     }
 }
 
-impl Default for Delay {
+impl Default for RetryDelay {
     /// Creates the default exponential-backoff strategy.
     ///
     /// # Returns
-    /// `Delay::Exponential` with one second initial delay, sixty second cap,
+    /// `RetryDelay::Exponential` with one second initial delay, sixty second cap,
     /// and multiplier `2.0`.
     ///
     /// # Parameters

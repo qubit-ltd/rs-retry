@@ -6,22 +6,22 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-//! Jitter applied to retry delays.
+//! RetryJitter applied to retry delays.
 //!
-//! Jitter is applied after the base [`crate::Delay`] has been calculated. It
+//! RetryJitter is applied after the base [`crate::RetryDelay`] has been calculated. It
 //! helps callers avoid retry bursts when multiple tasks fail at the same time.
 
 use std::time::Duration;
 
 use rand::RngExt;
 
-/// Jitter applied after a base [`crate::Delay`] has been calculated.
+/// RetryJitter applied after a base [`crate::RetryDelay`] has been calculated.
 ///
 /// The current implementation supports no jitter and symmetric factor-based
 /// jitter. Factor jitter keeps the lower bound at zero to avoid negative
 /// durations after randomization.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Jitter {
+pub enum RetryJitter {
     /// No jitter.
     None,
 
@@ -29,14 +29,14 @@ pub enum Jitter {
     Factor(f64),
 }
 
-impl Jitter {
+impl RetryJitter {
     /// Creates a no-jitter strategy.
     ///
     /// # Parameters
     /// This function has no parameters.
     ///
     /// # Returns
-    /// A [`Jitter::None`] strategy.
+    /// A [`RetryJitter::None`] strategy.
     ///
     /// # Errors
     /// This function does not return errors.
@@ -54,10 +54,10 @@ impl Jitter {
     ///   `base +/- 20%`.
     ///
     /// # Returns
-    /// A [`Jitter::Factor`] strategy.
+    /// A [`RetryJitter::Factor`] strategy.
     ///
     /// # Errors
-    /// This constructor does not validate `factor`; use [`Jitter::validate`]
+    /// This constructor does not validate `factor`; use [`RetryJitter::validate`]
     /// before applying values that come from configuration or user input.
     #[inline]
     pub fn factor(factor: f64) -> Self {
@@ -70,7 +70,7 @@ impl Jitter {
     /// from the inclusive range `[-base * factor, base * factor]`.
     ///
     /// # Parameters
-    /// - `base`: Base delay calculated by [`crate::Delay`].
+    /// - `base`: Base delay calculated by [`crate::RetryDelay`].
     ///
     /// # Returns
     /// The jittered delay, never below zero.
@@ -79,7 +79,7 @@ impl Jitter {
     /// This function does not return errors.
     ///
     /// # Panics
-    /// May panic if a [`Jitter::Factor`] value has not been validated and the
+    /// May panic if a [`RetryJitter::Factor`] value has not been validated and the
     /// factor is non-finite, because the random range cannot be sampled.
     pub fn apply(&self, base: Duration) -> Duration {
         match self {
@@ -123,11 +123,11 @@ impl Jitter {
     }
 }
 
-impl Default for Jitter {
+impl Default for RetryJitter {
     /// Creates the default jitter strategy.
     ///
     /// # Returns
-    /// [`Jitter::None`].
+    /// [`RetryJitter::None`].
     ///
     /// # Parameters
     /// This function has no parameters.

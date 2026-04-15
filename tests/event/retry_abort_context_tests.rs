@@ -9,9 +9,9 @@
 
 use std::time::Duration;
 
-use qubit_retry::FailureContext;
+use qubit_retry::RetryAbortContext;
 
-/// Verifies failure context carries expected terminal metadata fields.
+/// Verifies abort context carries expected terminal metadata fields.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -20,13 +20,13 @@ use qubit_retry::FailureContext;
 /// This test returns nothing.
 ///
 /// # Errors
-/// The test fails through assertions when failure context fields mismatch.
+/// The test fails through assertions when abort context fields mismatch.
 #[test]
-fn test_failure_context_fields() {
-    let context = FailureContext {
-        attempts: 3,
-        elapsed: Duration::from_millis(11),
+fn test_abort_context_fields() {
+    let context = RetryAbortContext {
+        attempts: 1,
+        elapsed: Duration::from_millis(7),
     };
-    assert_eq!(context.attempts, 3);
-    assert_eq!(context.elapsed, Duration::from_millis(11));
+    assert_eq!(context.attempts, 1);
+    assert_eq!(context.elapsed, Duration::from_millis(7));
 }

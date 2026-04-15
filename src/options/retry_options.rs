@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use qubit_config::{ConfigReader, ConfigResult};
 
-use crate::{Delay, Jitter, RetryConfigError};
+use crate::{RetryDelay, RetryJitter, RetryConfigError};
 
 /// Immutable retry option snapshot used by [`crate::RetryExecutor`].
 ///
@@ -32,9 +32,9 @@ pub struct RetryOptions {
     /// Maximum total elapsed time for the retry flow, in milliseconds.
     pub max_elapsed: Option<Duration>,
     /// Base delay strategy between attempts.
-    pub delay: Delay,
-    /// Jitter applied to each base delay.
-    pub jitter: Jitter,
+    pub delay: RetryDelay,
+    /// RetryJitter applied to each base delay.
+    pub jitter: RetryJitter,
 }
 
 impl RetryOptions {
@@ -71,7 +71,7 @@ impl RetryOptions {
     /// - `max_elapsed`: Optional total elapsed-time budget for all attempts
     ///   and sleeps.
     /// - `delay`: Base delay strategy used between attempts.
-    /// - `jitter`: Jitter strategy applied to each base delay.
+    /// - `jitter`: RetryJitter strategy applied to each base delay.
     ///
     /// # Returns
     /// A validated [`RetryOptions`] value.
@@ -82,8 +82,8 @@ impl RetryOptions {
     pub fn new(
         max_attempts: u32,
         max_elapsed: Option<Duration>,
-        delay: Delay,
-        jitter: Jitter,
+        delay: RetryDelay,
+        jitter: RetryJitter,
     ) -> Result<Self, RetryConfigError> {
         let max_attempts = NonZeroU32::new(max_attempts).ok_or_else(|| {
             RetryConfigError::invalid_value(
@@ -170,8 +170,8 @@ impl Default for RetryOptions {
         Self {
             max_attempts: NonZeroU32::new(3).expect("default retry attempts must be non-zero"),
             max_elapsed: None,
-            delay: Delay::default(),
-            jitter: Jitter::None,
+            delay: RetryDelay::default(),
+            jitter: RetryJitter::None,
         }
     }
 }
@@ -291,12 +291,12 @@ impl RetryConfigValues {
     ///   delay configuration is present.
     ///
     /// # Returns
-    /// The explicit, implicit, or default [`Delay`] strategy.
+    /// The explicit, implicit, or default [`RetryDelay`] strategy.
     ///
     /// # Errors
     /// Returns [`RetryConfigError`] when the explicit delay strategy name is
     /// unsupported.
-    fn delay(&self, default: &RetryOptions) -> Result<Delay, RetryConfigError> {
+    fn delay(&self, default: &RetryOptions) -> Result<RetryDelay, RetryConfigError> {
         let strategy = self
             .delay
             .as_deref()
@@ -307,15 +307,15 @@ impl RetryConfigValues {
             None => Ok(self
                 .implicit_delay()
                 .unwrap_or_else(|| default.delay.clone())),
-            Some("none") => Ok(Delay::None),
-            Some("fixed") => Ok(Delay::fixed(Duration::from_millis(
+            Some("none") => Ok(RetryDelay::None),
+            Some("fixed") => Ok(RetryDelay::fixed(Duration::from_millis(
                 self.fixed_delay_millis.unwrap_or(1000),
             ))),
-            Some("random") => Ok(Delay::random(
+            Some("random") => Ok(RetryDelay::random(
                 Duration::from_millis(self.random_min_delay_millis.unwrap_or(1000)),
                 Duration::from_millis(self.random_max_delay_millis.unwrap_or(10000)),
             )),
-            Some("exponential") | Some("exponential_backoff") => Ok(Delay::exponential(
+            Some("exponential") | Some("exponential_backoff") => Ok(RetryDelay::exponential(
                 Duration::from_millis(self.exponential_initial_delay_millis.unwrap_or(1000)),
                 Duration::from_millis(self.exponential_max_delay_millis.unwrap_or(60000)),
                 self.exponential_multiplier.unwrap_or(2.0),
@@ -333,17 +333,17 @@ impl RetryConfigValues {
     /// This method has no parameters.
     ///
     /// # Returns
-    /// `Some(Delay)` when any delay parameter key is present; otherwise `None`.
+    /// `Some(RetryDelay)` when any delay parameter key is present; otherwise `None`.
     ///
     /// # Errors
     /// This method does not return errors because all config reads have already
     /// succeeded.
-    fn implicit_delay(&self) -> Option<Delay> {
+    fn implicit_delay(&self) -> Option<RetryDelay> {
         if let Some(millis) = self.fixed_delay_millis {
-            return Some(Delay::fixed(Duration::from_millis(millis)));
+            return Some(RetryDelay::fixed(Duration::from_millis(millis)));
         }
         if self.random_min_delay_millis.is_some() || self.random_max_delay_millis.is_some() {
-            return Some(Delay::random(
+            return Some(RetryDelay::random(
                 Duration::from_millis(self.random_min_delay_millis.unwrap_or(1000)),
                 Duration::from_millis(self.random_max_delay_millis.unwrap_or(10000)),
             ));
@@ -352,7 +352,7 @@ impl RetryConfigValues {
             || self.exponential_max_delay_millis.is_some()
             || self.exponential_multiplier.is_some()
         {
-            return Some(Delay::exponential(
+            return Some(RetryDelay::exponential(
                 Duration::from_millis(self.exponential_initial_delay_millis.unwrap_or(1000)),
                 Duration::from_millis(self.exponential_max_delay_millis.unwrap_or(60000)),
                 self.exponential_multiplier.unwrap_or(2.0),
@@ -368,15 +368,15 @@ impl RetryConfigValues {
     ///   configured jitter factor is `0.0`.
     ///
     /// # Returns
-    /// The configured or default [`Jitter`] strategy.
+    /// The configured or default [`RetryJitter`] strategy.
     ///
     /// # Errors
-    /// This method does not return errors. Jitter value validation is handled
+    /// This method does not return errors. RetryJitter value validation is handled
     /// by [`RetryOptions::new`].
-    fn jitter(&self, default: &RetryOptions) -> Jitter {
+    fn jitter(&self, default: &RetryOptions) -> RetryJitter {
         match self.jitter_factor {
             Some(0.0) | None => default.jitter,
-            Some(factor) => Jitter::Factor(factor),
+            Some(factor) => RetryJitter::Factor(factor),
         }
     }
 }

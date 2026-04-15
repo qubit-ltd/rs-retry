@@ -18,7 +18,7 @@ use std::time::Duration;
 /// Values are snapshots taken before the classifier is invoked for a failed
 /// attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AttemptContext {
+pub struct RetryAttemptContext {
     /// Current attempt number, starting at 1.
     pub attempt: u32,
     /// Configured maximum attempts.

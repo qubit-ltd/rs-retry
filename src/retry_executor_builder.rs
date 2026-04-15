@@ -16,14 +16,14 @@ use std::time::Duration;
 use qubit_common::BoxError;
 use qubit_function::{ArcBiFunction, BiFunction, BiPredicate};
 
-use crate::events::RetryListeners;
+use crate::event::RetryListeners;
 use crate::{
-    AbortContext, AbortListener, AttemptContext, AttemptFailure, Delay, FailureContext,
-    FailureListener, Jitter, RetryConfigError, RetryContext, RetryDecision, RetryListener,
-    RetryOptions, SuccessContext, SuccessListener,
+    RetryAbortContext, RetryAbortListener, RetryAttemptContext, RetryAttemptFailure, RetryDelay, RetryFailureContext,
+    RetryFailureListener, RetryJitter, RetryConfigError, RetryContext, RetryDecision, RetryListener,
+    RetryOptions, RetrySuccessContext, RetrySuccessListener,
 };
 
-use crate::error::ErrorClassifier;
+use crate::error::RetryErrorClassifier;
 use crate::retry_executor::RetryExecutor;
 
 /// Builder for [`RetryExecutor`].
@@ -35,7 +35,7 @@ pub struct RetryExecutorBuilder<E = BoxError> {
     /// Retry limits, delays, jitter, and other tunables accumulated by the builder.
     options: RetryOptions,
     /// Optional classifier; when absent, every application error is treated as retryable.
-    classifier: Option<ErrorClassifier<E>>,
+    classifier: Option<RetryErrorClassifier<E>>,
     /// Hooks invoked on success, failure, abort, and each retry attempt.
     listeners: RetryListeners<E>,
     /// Set when `max_attempts` was configured as zero; surfaced from [`Self::build`].
@@ -129,10 +129,10 @@ impl<E> RetryExecutorBuilder<E> {
     /// The updated builder.
     ///
     /// # Errors
-    /// This method does not return errors immediately. Delay validation occurs
+    /// This method does not return errors immediately. RetryDelay validation occurs
     /// in [`RetryExecutorBuilder::build`].
     #[inline]
-    pub fn delay(mut self, delay: Delay) -> Self {
+    pub fn delay(mut self, delay: RetryDelay) -> Self {
         self.options.delay = delay;
         self
     }
@@ -140,16 +140,16 @@ impl<E> RetryExecutorBuilder<E> {
     /// Sets the jitter strategy.
     ///
     /// # Parameters
-    /// - `jitter`: Jitter strategy to apply to each base delay.
+    /// - `jitter`: RetryJitter strategy to apply to each base delay.
     ///
     /// # Returns
     /// The updated builder.
     ///
     /// # Errors
-    /// This method does not return errors immediately. Jitter validation occurs
+    /// This method does not return errors immediately. RetryJitter validation occurs
     /// in [`RetryExecutorBuilder::build`].
     #[inline]
-    pub fn jitter(mut self, jitter: Jitter) -> Self {
+    pub fn jitter(mut self, jitter: RetryJitter) -> Self {
         self.options.jitter = jitter;
         self
     }
@@ -168,7 +168,7 @@ impl<E> RetryExecutorBuilder<E> {
     /// in [`RetryExecutorBuilder::build`].
     #[inline]
     pub fn jitter_factor(self, factor: f64) -> Self {
-        self.jitter(Jitter::Factor(factor))
+        self.jitter(RetryJitter::Factor(factor))
     }
 
     /// Uses a boolean retry tester where `true` means retry.
@@ -188,7 +188,7 @@ impl<E> RetryExecutorBuilder<E> {
     /// The built executor propagates any panic raised by `retry_tester`.
     pub fn retry_if<P>(mut self, retry_tester: P) -> Self
     where
-        P: BiPredicate<E, AttemptContext> + Send + Sync + 'static,
+        P: BiPredicate<E, RetryAttemptContext> + Send + Sync + 'static,
     {
         self.classifier = Some(ArcBiFunction::new(move |error, context| {
             if retry_tester.test(error, context) {
@@ -201,15 +201,15 @@ impl<E> RetryExecutorBuilder<E> {
     }
 
     /// Chooses [`RetryDecision`] for each failed attempt from the error and
-    /// [`AttemptContext`].
+    /// [`RetryAttemptContext`].
     ///
     /// # Parameters
     /// - `decider`: Any [`BiFunction`] over the application error and
-    ///   [`AttemptContext`] (including closures); it is converted with
+    ///   [`RetryAttemptContext`] (including closures); it is converted with
     ///   [`BiFunction::into_arc`]. The decider itself must be `Send + Sync +
     ///   'static`; the application error type `E` is not required to be `'static`.
     ///   If type inference fails for a closure, annotate parameters (for example
-    ///   `|e: &E, ctx: &AttemptContext|`).
+    ///   `|e: &E, ctx: &RetryAttemptContext|`).
     ///
     /// # Returns
     /// The updated builder.
@@ -221,7 +221,7 @@ impl<E> RetryExecutorBuilder<E> {
     /// The built executor propagates any panic raised by `decider`.
     pub fn retry_decide<B>(mut self, decider: B) -> Self
     where
-        B: BiFunction<E, AttemptContext, RetryDecision> + Send + Sync + 'static,
+        B: BiFunction<E, RetryAttemptContext, RetryDecision> + Send + Sync + 'static,
     {
         self.classifier = Some(decider.into_arc());
         self
@@ -231,7 +231,7 @@ impl<E> RetryExecutorBuilder<E> {
     ///
     /// # Parameters
     /// - `listener`: Callback invoked with [`RetryContext`] plus the triggering
-    ///   [`AttemptFailure`] after a failed attempt and before sleeping.
+    ///   [`RetryAttemptFailure`] after a failed attempt and before sleeping.
     ///
     /// # Returns
     /// The updated builder.
@@ -243,7 +243,7 @@ impl<E> RetryExecutorBuilder<E> {
     /// The built executor propagates any panic raised by `listener`.
     pub fn on_retry<F>(mut self, listener: F) -> Self
     where
-        F: Fn(&RetryContext, &AttemptFailure<E>) + Send + Sync + 'static,
+        F: Fn(&RetryContext, &RetryAttemptFailure<E>) + Send + Sync + 'static,
     {
         self.listeners.retry = Some(RetryListener::new(listener));
         self
@@ -252,7 +252,7 @@ impl<E> RetryExecutorBuilder<E> {
     /// Registers a listener invoked when the operation succeeds.
     ///
     /// # Parameters
-    /// - `listener`: Callback invoked with a [`SuccessContext`] when the
+    /// - `listener`: Callback invoked with a [`RetrySuccessContext`] when the
     ///   operation eventually succeeds.
     ///
     /// # Returns
@@ -265,17 +265,17 @@ impl<E> RetryExecutorBuilder<E> {
     /// The built executor propagates any panic raised by `listener`.
     pub fn on_success<F>(mut self, listener: F) -> Self
     where
-        F: Fn(&SuccessContext) + Send + Sync + 'static,
+        F: Fn(&RetrySuccessContext) + Send + Sync + 'static,
     {
-        self.listeners.success = Some(SuccessListener::new(listener));
+        self.listeners.success = Some(RetrySuccessListener::new(listener));
         self
     }
 
     /// Registers a listener invoked when retry limits are exhausted.
     ///
     /// # Parameters
-    /// - `listener`: Callback invoked with [`FailureContext`] metadata plus
-    ///   `Option<AttemptFailure<E>>` when retry limits stop execution.
+    /// - `listener`: Callback invoked with [`RetryFailureContext`] metadata plus
+    ///   `Option<RetryAttemptFailure<E>>` when retry limits stop execution.
     ///
     /// # Returns
     /// The updated builder.
@@ -287,16 +287,16 @@ impl<E> RetryExecutorBuilder<E> {
     /// The built executor propagates any panic raised by `listener`.
     pub fn on_failure<F>(mut self, listener: F) -> Self
     where
-        F: Fn(&FailureContext, &Option<AttemptFailure<E>>) + Send + Sync + 'static,
+        F: Fn(&RetryFailureContext, &Option<RetryAttemptFailure<E>>) + Send + Sync + 'static,
     {
-        self.listeners.failure = Some(FailureListener::new(listener));
+        self.listeners.failure = Some(RetryFailureListener::new(listener));
         self
     }
 
     /// Registers a listener invoked when the classifier aborts retrying.
     ///
     /// # Parameters
-    /// - `listener`: Callback invoked with [`AbortContext`] metadata plus the
+    /// - `listener`: Callback invoked with [`RetryAbortContext`] metadata plus the
     ///   failure when the classifier aborts retrying.
     ///
     /// # Returns
@@ -309,9 +309,9 @@ impl<E> RetryExecutorBuilder<E> {
     /// The built executor propagates any panic raised by `listener`.
     pub fn on_abort<F>(mut self, listener: F) -> Self
     where
-        F: Fn(&AbortContext, &AttemptFailure<E>) + Send + Sync + 'static,
+        F: Fn(&RetryAbortContext, &RetryAttemptFailure<E>) + Send + Sync + 'static,
     {
-        self.listeners.abort = Some(AbortListener::new(listener));
+        self.listeners.abort = Some(RetryAbortListener::new(listener));
         self
     }
 

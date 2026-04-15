@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use qubit_retry::{
-    AttemptContext, AttemptFailure, Delay, RetryDecision, RetryError, RetryExecutor,
+    RetryAttemptContext, RetryAttemptFailure, RetryDelay, RetryDecision, RetryError, RetryExecutor,
 };
 
 use crate::support::{NonCloneValue, TestError};
@@ -34,7 +34,7 @@ fn test_run_returns_success_without_requiring_success_traits() {
     let success_events_for_listener = Arc::clone(&success_events);
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(3)
-        .delay(Delay::none())
+        .delay(RetryDelay::none())
         .on_success(move |event| {
             assert_eq!(event.attempts, 1);
             success_events_for_listener.fetch_add(1, Ordering::SeqCst);
@@ -71,8 +71,8 @@ fn test_run_uses_nonzero_sleep_and_retry_if_retry_branch() {
     let attempts_for_operation = Arc::clone(&attempts);
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(2)
-        .delay(Delay::fixed(Duration::from_millis(1)))
-        .retry_if(|_: &TestError, _: &AttemptContext| true)
+        .delay(RetryDelay::fixed(Duration::from_millis(1)))
+        .retry_if(|_: &TestError, _: &RetryAttemptContext| true)
         .build()
         .expect("executor should be built");
 
@@ -108,9 +108,9 @@ fn test_run_retries_until_success_and_emits_retry_events() {
     let attempts_for_operation = Arc::clone(&attempts);
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(4)
-        .delay(Delay::none())
+        .delay(RetryDelay::none())
         .on_retry(move |event, failure| {
-            if let AttemptFailure::Error(error) = failure {
+            if let RetryAttemptFailure::Error(error) = failure {
                 retry_events_for_listener
                     .lock()
                     .expect("retry event list should be lockable")
@@ -159,11 +159,11 @@ fn test_retry_if_can_abort_and_preserve_original_error() {
     let abort_events_for_listener = Arc::clone(&abort_events);
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(3)
-        .delay(Delay::none())
-        .retry_if(|error: &TestError, _: &AttemptContext| error.0 == "retry")
+        .delay(RetryDelay::none())
+        .retry_if(|error: &TestError, _: &RetryAttemptContext| error.0 == "retry")
         .on_abort(move |event, failure| {
             assert_eq!(event.attempts, 1);
-            assert!(matches!(failure, AttemptFailure::Error(TestError("fatal"))));
+            assert!(matches!(failure, RetryAttemptFailure::Error(TestError("fatal"))));
             abort_events_for_listener.fetch_add(1, Ordering::SeqCst);
         })
         .build()
@@ -194,8 +194,8 @@ fn test_retry_if_can_abort_and_preserve_original_error() {
 fn test_retry_decide_can_use_attempt_context() {
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(4)
-        .delay(Delay::none())
-        .retry_decide(|_: &TestError, context: &AttemptContext| {
+        .delay(RetryDelay::none())
+        .retry_decide(|_: &TestError, context: &RetryAttemptContext| {
             assert!(context.attempt <= context.max_attempts);
             if context.attempt < 2 {
                 RetryDecision::Retry
@@ -232,10 +232,10 @@ fn test_attempts_exceeded_emits_failure_event_and_preserves_last_error() {
     let failures_for_listener = Arc::clone(&failures);
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(2)
-        .delay(Delay::none())
+        .delay(RetryDelay::none())
         .on_failure(move |event, failure| {
             let failure = match failure {
-                Some(AttemptFailure::Error(error)) => error.0,
+                Some(RetryAttemptFailure::Error(error)) => error.0,
                 _ => "missing",
             };
             failures_for_listener
@@ -338,7 +338,7 @@ fn test_max_elapsed_stops_when_retry_sleep_would_exceed_budget() {
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(3)
         .max_elapsed(Some(Duration::from_millis(1)))
-        .delay(Delay::fixed(Duration::from_millis(10)))
+        .delay(RetryDelay::fixed(Duration::from_millis(10)))
         .on_retry(move |_, _| {
             retry_events_for_listener.fetch_add(1, Ordering::SeqCst);
         })
@@ -354,7 +354,7 @@ fn test_max_elapsed_stops_when_retry_sleep_would_exceed_budget() {
         error,
         RetryError::MaxElapsedExceeded {
             attempts: 1,
-            last_failure: Some(AttemptFailure::Error(TestError("late"))),
+            last_failure: Some(RetryAttemptFailure::Error(TestError("late"))),
             ..
         }
     ));
@@ -380,7 +380,7 @@ fn test_max_elapsed_allows_retry_sleep_within_budget() {
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(2)
         .max_elapsed(Some(Duration::from_millis(100)))
-        .delay(Delay::fixed(Duration::from_millis(1)))
+        .delay(RetryDelay::fixed(Duration::from_millis(1)))
         .on_retry(move |_, _| {
             retry_events_for_listener.fetch_add(1, Ordering::SeqCst);
         })
@@ -420,7 +420,7 @@ async fn test_run_async_retries_until_success() {
     let attempts_for_operation = Arc::clone(&attempts);
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(3)
-        .delay(Delay::none())
+        .delay(RetryDelay::none())
         .build()
         .expect("executor should be built");
 
@@ -500,7 +500,7 @@ async fn test_run_async_uses_nonzero_sleep_between_attempts() {
     let attempts_for_operation = Arc::clone(&attempts);
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(2)
-        .delay(Delay::fixed(Duration::from_millis(1)))
+        .delay(RetryDelay::fixed(Duration::from_millis(1)))
         .build()
         .expect("executor should be built");
 
@@ -538,7 +538,7 @@ async fn test_run_async_uses_nonzero_sleep_between_attempts() {
 async fn test_run_async_returns_finished_error_from_failed_attempt() {
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(1)
-        .delay(Delay::none())
+        .delay(RetryDelay::none())
         .build()
         .expect("executor should be built");
 
@@ -552,7 +552,7 @@ async fn test_run_async_returns_finished_error_from_failed_attempt() {
         RetryError::AttemptsExceeded {
             attempts: 1,
             max_attempts: 1,
-            last_failure: AttemptFailure::Error(TestError("async-exhausted")),
+            last_failure: RetryAttemptFailure::Error(TestError("async-exhausted")),
             ..
         }
     ));
@@ -577,9 +577,9 @@ async fn test_run_async_with_timeout_can_retry_and_succeed() {
     let retry_timeouts_for_listener = Arc::clone(&retry_timeouts);
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(2)
-        .delay(Delay::fixed(Duration::from_millis(1)))
+        .delay(RetryDelay::fixed(Duration::from_millis(1)))
         .on_retry(move |_, failure| {
-            if matches!(failure, AttemptFailure::AttemptTimeout { .. }) {
+            if matches!(failure, RetryAttemptFailure::AttemptTimeout { .. }) {
                 retry_timeouts_for_listener.fetch_add(1, Ordering::SeqCst);
             }
         })
@@ -624,7 +624,7 @@ async fn test_run_async_with_timeout_can_retry_operation_errors_with_sleep() {
     let attempts_for_operation = Arc::clone(&attempts);
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(2)
-        .delay(Delay::fixed(Duration::from_millis(1)))
+        .delay(RetryDelay::fixed(Duration::from_millis(1)))
         .build()
         .expect("executor should be built");
 
@@ -662,7 +662,7 @@ async fn test_run_async_with_timeout_can_retry_operation_errors_with_sleep() {
 async fn test_run_async_with_timeout_returns_finished_error_from_operation_error() {
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(1)
-        .delay(Delay::none())
+        .delay(RetryDelay::none())
         .build()
         .expect("executor should be built");
 
@@ -678,7 +678,7 @@ async fn test_run_async_with_timeout_returns_finished_error_from_operation_error
         RetryError::AttemptsExceeded {
             attempts: 1,
             max_attempts: 1,
-            last_failure: AttemptFailure::Error(TestError("timeout-operation-error")),
+            last_failure: RetryAttemptFailure::Error(TestError("timeout-operation-error")),
             ..
         }
     ));
@@ -737,7 +737,7 @@ async fn test_run_async_with_timeout_can_stop_before_first_attempt() {
 async fn test_run_async_with_timeout_exhaustion_returns_timeout_failure() {
     let executor = RetryExecutor::<TestError>::builder()
         .max_attempts(1)
-        .delay(Delay::none())
+        .delay(RetryDelay::none())
         .build()
         .expect("executor should be built");
 
@@ -754,7 +754,7 @@ async fn test_run_async_with_timeout_exhaustion_returns_timeout_failure() {
         RetryError::AttemptsExceeded {
             attempts: 1,
             max_attempts: 1,
-            last_failure: AttemptFailure::AttemptTimeout { .. },
+            last_failure: RetryAttemptFailure::AttemptTimeout { .. },
             ..
         }
     ));

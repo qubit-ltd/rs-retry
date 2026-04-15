@@ -18,7 +18,7 @@ use std::time::Duration;
 /// Carries abort metadata while the triggering failure is passed separately to
 /// abort listeners.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AbortContext {
+pub struct RetryAbortContext {
     /// Number of attempts that were executed.
     pub attempts: u32,
     /// Total elapsed time observed by the retry executor.

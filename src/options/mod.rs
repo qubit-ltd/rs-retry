@@ -6,5 +6,12 @@
  *    All rights reserved.
  *
  ******************************************************************************/
+//! Retry option modules and public re-exports.
 
-mod retry_delay_tests;
+mod retry_delay;
+mod retry_jitter;
+mod retry_options;
+
+pub use retry_delay::RetryDelay;
+pub use retry_jitter::RetryJitter;
+pub use retry_options::RetryOptions;

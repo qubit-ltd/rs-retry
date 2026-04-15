@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use qubit_retry::{AttemptFailure, RetryError};
+use qubit_retry::{RetryAttemptFailure, RetryError};
 
 use crate::support::TestError;
 
@@ -30,7 +30,7 @@ fn test_display_source_and_last_error_helpers_work() {
         attempts: 2,
         max_attempts: 2,
         elapsed: Duration::from_millis(3),
-        last_failure: AttemptFailure::Error(TestError("boom")),
+        last_failure: RetryAttemptFailure::Error(TestError("boom")),
     };
 
     assert_eq!(error.attempts(), 2);
@@ -48,7 +48,7 @@ fn test_display_source_and_last_error_helpers_work() {
         attempts: 1,
         elapsed: Duration::from_millis(4),
         max_elapsed: Duration::from_millis(4),
-        last_failure: Some(AttemptFailure::AttemptTimeout {
+        last_failure: Some(RetryAttemptFailure::AttemptTimeout {
             elapsed: Duration::from_millis(4),
             timeout: Duration::from_millis(2),
         }),
@@ -60,7 +60,7 @@ fn test_display_source_and_last_error_helpers_work() {
     let aborted = RetryError::Aborted {
         attempts: 1,
         elapsed: Duration::from_millis(1),
-        failure: AttemptFailure::Error(TestError("fatal")),
+        failure: RetryAttemptFailure::Error(TestError("fatal")),
     };
     assert_eq!(aborted.elapsed(), Duration::from_millis(1));
     assert!(aborted.to_string().contains("aborted"));

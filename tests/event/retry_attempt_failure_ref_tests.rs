@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use qubit_retry::AttemptFailure;
+use qubit_retry::RetryAttemptFailure;
 
 use crate::support::TestError;
 
@@ -26,19 +26,19 @@ use crate::support::TestError;
 /// source failures.
 #[test]
 fn test_borrowed_attempt_failure_preserves_error_and_timeout_metadata() {
-    let failure = AttemptFailure::Error(TestError("borrowed"));
+    let failure = RetryAttemptFailure::Error(TestError("borrowed"));
     assert!(matches!(
         &failure,
-        AttemptFailure::Error(TestError("borrowed"))
+        RetryAttemptFailure::Error(TestError("borrowed"))
     ));
 
-    let timeout = AttemptFailure::<TestError>::AttemptTimeout {
+    let timeout = RetryAttemptFailure::<TestError>::AttemptTimeout {
         elapsed: Duration::from_millis(3),
         timeout: Duration::from_millis(2),
     };
     assert!(matches!(
         &timeout,
-        AttemptFailure::AttemptTimeout { elapsed, timeout }
+        RetryAttemptFailure::AttemptTimeout { elapsed, timeout }
             if *elapsed == Duration::from_millis(3) && *timeout == Duration::from_millis(2)
     ));
 }

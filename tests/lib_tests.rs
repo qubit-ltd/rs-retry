@@ -10,7 +10,7 @@
 
 mod delay;
 mod error;
-mod events;
+mod event;
 mod executor;
 mod jitter;
 mod options;

@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use qubit_retry::SuccessContext;
+use qubit_retry::RetrySuccessContext;
 
 /// Verifies success context carries expected execution metadata fields.
 ///
@@ -23,7 +23,7 @@ use qubit_retry::SuccessContext;
 /// The test fails through assertions when success context fields mismatch.
 #[test]
 fn test_success_context_fields() {
-    let context = SuccessContext {
+    let context = RetrySuccessContext {
         attempts: 2,
         elapsed: Duration::from_millis(8),
     };

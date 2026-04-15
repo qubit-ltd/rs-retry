@@ -16,12 +16,12 @@ use std::error::Error;
 use std::fmt;
 use std::time::Duration;
 
-use super::AttemptFailure;
+use super::RetryAttemptFailure;
 
 /// Error returned when a retry executor terminates without a successful result.
 ///
 /// The generic parameter `E` is the caller's application error type. It is
-/// preserved in the final [`AttemptFailure`] whenever the terminal failure came
+/// preserved in the final [`RetryAttemptFailure`] whenever the terminal failure came
 /// from the user operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RetryError<E> {
@@ -32,7 +32,7 @@ pub enum RetryError<E> {
         /// Total elapsed time observed by the retry executor.
         elapsed: Duration,
         /// Failure that caused the abort.
-        failure: AttemptFailure<E>,
+        failure: RetryAttemptFailure<E>,
     },
 
     /// The maximum number of attempts has been exhausted.
@@ -44,7 +44,7 @@ pub enum RetryError<E> {
         /// Total elapsed time observed by the retry executor.
         elapsed: Duration,
         /// Last observed failure.
-        last_failure: AttemptFailure<E>,
+        last_failure: RetryAttemptFailure<E>,
     },
 
     /// The total elapsed retry budget has been exhausted.
@@ -56,7 +56,7 @@ pub enum RetryError<E> {
         /// Configured elapsed budget.
         max_elapsed: Duration,
         /// Last failure, if any attempt ran before the budget was exhausted.
-        last_failure: Option<AttemptFailure<E>>,
+        last_failure: Option<RetryAttemptFailure<E>>,
     },
 }
 
@@ -105,14 +105,14 @@ impl<E> RetryError<E> {
     /// This method has no parameters.
     ///
     /// # Returns
-    /// `Some(&AttemptFailure<E>)` when at least one attempt failure was
+    /// `Some(&RetryAttemptFailure<E>)` when at least one attempt failure was
     /// observed; `None` when the elapsed budget was exhausted before any
     /// attempt ran.
     ///
     /// # Errors
     /// This method does not return errors.
     #[inline]
-    pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
+    pub fn last_failure(&self) -> Option<&RetryAttemptFailure<E>> {
         match self {
             Self::Aborted { failure, .. } => Some(failure),
             Self::AttemptsExceeded { last_failure, .. } => Some(last_failure),
@@ -133,7 +133,7 @@ impl<E> RetryError<E> {
     /// This method does not return errors.
     #[inline]
     pub fn last_error(&self) -> Option<&E> {
-        self.last_failure().and_then(AttemptFailure::as_error)
+        self.last_failure().and_then(RetryAttemptFailure::as_error)
     }
 
     /// Consumes the retry error and returns the last application error when
@@ -154,7 +154,7 @@ impl<E> RetryError<E> {
             Self::Aborted { failure, .. } => failure.into_error(),
             Self::AttemptsExceeded { last_failure, .. } => last_failure.into_error(),
             Self::MaxElapsedExceeded { last_failure, .. } => {
-                last_failure.and_then(AttemptFailure::into_error)
+                last_failure.and_then(RetryAttemptFailure::into_error)
             }
         }
     }

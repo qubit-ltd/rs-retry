@@ -6,19 +6,19 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-//! Failure context payload.
+//! Success context payload.
 //!
-//! Failure contexts are emitted when retry limits stop the operation without a
-//! successful result.
+//! Success contexts are emitted once a retry executor receives an `Ok` result from
+//! the operation.
 
 use std::time::Duration;
 
-/// Context emitted when retry limits are exhausted.
+/// Context emitted when an operation succeeds.
 ///
-/// Carries failure metadata while the final failure payload is passed
-/// separately to failure listeners.
+/// The context contains execution metadata only; it does not borrow or clone the
+/// successful result value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FailureContext {
+pub struct RetrySuccessContext {
     /// Number of attempts that were executed.
     pub attempts: u32,
     /// Total elapsed time observed by the retry executor.

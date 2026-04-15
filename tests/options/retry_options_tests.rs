@@ -10,7 +10,7 @@
 use std::time::Duration;
 
 use qubit_config::Config;
-use qubit_retry::{Delay, Jitter, RetryOptions};
+use qubit_retry::{RetryDelay, RetryJitter, RetryOptions};
 
 /// Verifies default options and direct construction.
 ///
@@ -28,13 +28,13 @@ fn test_validate_default_and_new() {
     let options = RetryOptions::default();
     assert_eq!(options.max_attempts.get(), 3);
     assert_eq!(options.max_elapsed, None);
-    assert!(matches!(options.jitter, Jitter::None));
+    assert!(matches!(options.jitter, RetryJitter::None));
 
-    let options = RetryOptions::new(2, None, Delay::none(), Jitter::none())
+    let options = RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none())
         .expect("valid retry options should be created");
     assert_eq!(options.max_attempts.get(), 2);
 
-    let zero = RetryOptions::new(0, None, Delay::none(), Jitter::none())
+    let zero = RetryOptions::new(0, None, RetryDelay::none(), RetryJitter::none())
         .expect_err("zero attempts should be rejected");
     assert_eq!(zero.path(), RetryOptions::KEY_MAX_ATTEMPTS);
 }
@@ -74,8 +74,8 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
 
     assert_eq!(options.max_attempts.get(), 4);
     assert_eq!(options.max_elapsed, Some(Duration::from_millis(250)));
-    assert_eq!(options.delay, Delay::fixed(Duration::from_millis(15)));
-    assert_eq!(options.jitter, Jitter::factor(0.25));
+    assert_eq!(options.delay, RetryDelay::fixed(Duration::from_millis(15)));
+    assert_eq!(options.jitter, RetryJitter::factor(0.25));
 }
 
 /// Verifies non-fixed delay config forms and config read errors.
@@ -105,7 +105,7 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
         RetryOptions::from_config(&random_config)
             .expect("random delay config should be parsed")
             .delay,
-        Delay::random(Duration::from_millis(3), Duration::from_millis(9))
+        RetryDelay::random(Duration::from_millis(3), Duration::from_millis(9))
     );
 
     let mut exponential_config = Config::new();
@@ -125,7 +125,7 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
         RetryOptions::from_config(&exponential_config)
             .expect("exponential delay config should be parsed")
             .delay,
-        Delay::exponential(Duration::from_millis(10), Duration::from_millis(80), 3.0)
+        RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 3.0)
     );
 
     let mut implicit_config = Config::new();
@@ -136,7 +136,7 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
         RetryOptions::from_config(&implicit_config)
             .expect("implicit fixed delay config should be parsed")
             .delay,
-        Delay::fixed(Duration::from_millis(6))
+        RetryDelay::fixed(Duration::from_millis(6))
     );
 
     let mut disabled_elapsed = Config::new();
@@ -189,7 +189,7 @@ fn test_from_config_reads_explicit_and_implicit_delay_defaults() {
         RetryOptions::from_config(&fixed_default)
             .expect("fixed delay defaults should be parsed")
             .delay,
-        Delay::fixed(Duration::from_millis(1000))
+        RetryDelay::fixed(Duration::from_millis(1000))
     );
 
     let mut random_default = Config::new();
@@ -200,7 +200,7 @@ fn test_from_config_reads_explicit_and_implicit_delay_defaults() {
         RetryOptions::from_config(&random_default)
             .expect("random delay defaults should be parsed")
             .delay,
-        Delay::random(Duration::from_millis(1000), Duration::from_millis(10000))
+        RetryDelay::random(Duration::from_millis(1000), Duration::from_millis(10000))
     );
 
     let mut exponential_default = Config::new();
@@ -211,7 +211,7 @@ fn test_from_config_reads_explicit_and_implicit_delay_defaults() {
         RetryOptions::from_config(&exponential_default)
             .expect("exponential delay defaults should be parsed")
             .delay,
-        Delay::exponential(
+        RetryDelay::exponential(
             Duration::from_millis(1000),
             Duration::from_millis(60000),
             2.0
@@ -226,7 +226,7 @@ fn test_from_config_reads_explicit_and_implicit_delay_defaults() {
         RetryOptions::from_config(&implicit_random)
             .expect("implicit random delay should be parsed")
             .delay,
-        Delay::random(Duration::from_millis(1000), Duration::from_millis(12000))
+        RetryDelay::random(Duration::from_millis(1000), Duration::from_millis(12000))
     );
 
     let mut implicit_exponential = Config::new();
@@ -237,7 +237,7 @@ fn test_from_config_reads_explicit_and_implicit_delay_defaults() {
         RetryOptions::from_config(&implicit_exponential)
             .expect("implicit exponential delay should be parsed")
             .delay,
-        Delay::exponential(
+        RetryDelay::exponential(
             Duration::from_millis(1000),
             Duration::from_millis(60000),
             4.0

@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use qubit_retry::{Delay, Jitter, RetryExecutor, RetryOptions};
+use qubit_retry::{RetryDelay, RetryJitter, RetryExecutor, RetryOptions};
 
 use crate::support::TestError;
 
@@ -26,14 +26,14 @@ use crate::support::TestError;
 /// options or reports the wrong key.
 #[test]
 fn test_build_validates_options_and_reports_builder_errors() {
-    let options = RetryOptions::new(2, None, Delay::none(), Jitter::none())
+    let options = RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none())
         .expect("valid retry options should be created");
     let executor = RetryExecutor::<TestError>::from_options(options.clone())
         .expect("executor should be created from valid options");
     assert_eq!(executor.options(), &options);
 
     let invalid_delay = RetryExecutor::<TestError>::builder()
-        .delay(Delay::fixed(Duration::ZERO))
+        .delay(RetryDelay::fixed(Duration::ZERO))
         .build()
         .expect_err("zero fixed delay should be rejected");
     assert_eq!(invalid_delay.path(), RetryOptions::KEY_DELAY);
@@ -65,7 +65,7 @@ fn test_build_validates_options_and_reports_builder_errors() {
 #[test]
 fn test_default_and_debug_work() {
     let executor = qubit_retry::RetryExecutorBuilder::<TestError>::default()
-        .delay(Delay::none())
+        .delay(RetryDelay::none())
         .build()
         .expect("default builder should create an executor");
 
@@ -89,7 +89,7 @@ fn test_build_and_from_options_allow_borrowed_error_type() {
     struct BorrowedError<'a>(&'a str);
 
     let message = String::from("borrowed");
-    let options = RetryOptions::new(2, None, Delay::none(), Jitter::none())
+    let options = RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none())
         .expect("valid retry options should be created");
 
     let from_options_executor = RetryExecutor::<BorrowedError<'_>>::from_options(options.clone())
@@ -97,7 +97,7 @@ fn test_build_and_from_options_allow_borrowed_error_type() {
     assert_eq!(from_options_executor.options(), &options);
 
     let built_executor = RetryExecutor::<BorrowedError<'_>>::builder()
-        .delay(Delay::none())
+        .delay(RetryDelay::none())
         .build()
         .expect("builder should support borrowed error types");
     assert_eq!(built_executor.options().max_attempts.get(), 3);
