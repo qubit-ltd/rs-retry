@@ -19,7 +19,7 @@ use crate::{RetryAttemptFailure, RetryError};
 ///
 /// The generic parameter `E` is the caller's application error type preserved
 /// inside attempt failures and terminal retry errors.
-pub(super) enum RetryFailureAction<E> {
+pub(crate) enum RetryFailureAction<E> {
     /// Continue retrying after sleeping for the computed delay.
     Retry {
         /// RetryDelay to sleep before running the next attempt.

@@ -9,13 +9,13 @@
 //! Error types used by retry executors.
 
 mod retry_attempt_failure;
-mod retry_error_classifier;
 mod retry_config_error;
 mod retry_error;
+mod retry_error_classifier;
 mod retry_failure_action;
 
 pub use retry_attempt_failure::RetryAttemptFailure;
-pub use retry_error_classifier::RetryErrorClassifier;
 pub use retry_config_error::RetryConfigError;
 pub use retry_error::RetryError;
-pub(crate) use retry_failure_action::RetryFailureAction;
+pub use retry_error_classifier::RetryErrorClassifier;
+pub(super) use retry_failure_action::RetryFailureAction;
