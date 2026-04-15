@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use qubit_retry::RetryJitter;
+use qubit_retry::{RetryDelay, RetryJitter};
 
 /// Verifies factor jitter application and validation bounds.
 ///
@@ -44,4 +44,41 @@ fn test_apply_symmetric_factor_and_validate_bounds() {
     assert!(RetryJitter::factor(-0.1).validate().is_err());
     assert!(RetryJitter::factor(1.1).validate().is_err());
     assert!(RetryJitter::factor(f64::NAN).validate().is_err());
+}
+
+/// Verifies `delay_for_attempt` combines base-delay strategy and jitter.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when composed delay calculation is
+/// incorrect.
+#[test]
+fn test_delay_for_attempt_combines_delay_strategy_and_jitter() {
+    let fixed = RetryDelay::fixed(Duration::from_millis(50));
+    assert_eq!(
+        RetryJitter::none().delay_for_attempt(&fixed, 1),
+        Duration::from_millis(50)
+    );
+
+    let exponential =
+        RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 2.0);
+    assert_eq!(
+        RetryJitter::none().delay_for_attempt(&exponential, 1),
+        Duration::from_millis(10)
+    );
+    assert_eq!(
+        RetryJitter::none().delay_for_attempt(&exponential, 4),
+        Duration::from_millis(80)
+    );
+
+    for _ in 0..30 {
+        let delay = RetryJitter::factor(0.2).delay_for_attempt(&fixed, 2);
+        assert!(delay >= Duration::from_millis(40));
+        assert!(delay <= Duration::from_millis(60));
+    }
 }

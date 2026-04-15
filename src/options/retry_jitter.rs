@@ -15,6 +15,8 @@ use std::time::Duration;
 
 use rand::RngExt;
 
+use crate::RetryDelay;
+
 /// RetryJitter applied after a base [`crate::RetryDelay`] has been calculated.
 ///
 /// The current implementation supports no jitter and symmetric factor-based
@@ -93,6 +95,31 @@ impl RetryJitter {
                 Duration::from_nanos((base_nanos + jitter).max(0.0) as u64)
             }
         }
+    }
+
+    /// Calculates and jitters the delay for one retry attempt.
+    ///
+    /// This method combines base-delay strategy selection and jitter application
+    /// into one step.
+    ///
+    /// # Parameters
+    /// - `delay_strategy`: Base delay strategy used to calculate the attempt
+    ///   delay.
+    /// - `attempt`: Failed-attempt index passed to
+    ///   [`RetryDelay::base_delay`].
+    ///
+    /// # Returns
+    /// The delay for the attempt after jitter is applied.
+    ///
+    /// # Errors
+    /// This function does not return errors.
+    ///
+    /// # Panics
+    /// May panic if a [`RetryJitter::Factor`] value has not been validated and
+    /// its factor is non-finite.
+    pub fn delay_for_attempt(&self, delay_strategy: &RetryDelay, attempt: u32) -> Duration {
+        let base_delay = delay_strategy.base_delay(attempt);
+        self.apply(base_delay)
     }
 
     /// Validates jitter parameters.

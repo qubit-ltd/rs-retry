@@ -426,8 +426,10 @@ impl<E> RetryExecutor<E> {
             });
         }
 
-        let base_delay = self.options.delay.base_delay(attempts);
-        let delay = self.options.jitter.apply(base_delay);
+        let delay = self
+            .options
+            .jitter
+            .delay_for_attempt(&self.options.delay, attempts);
         // If sleeping would push total elapsed past the budget, finish now
         // instead of sleeping once and failing on the next loop iteration.
         if let Some(max_elapsed) = self.options.max_elapsed {
