@@ -36,9 +36,13 @@ use std::time::Duration;
 pub const KEY_MAX_ATTEMPTS: &str = "max_attempts";
 
 /// Config key for the maximum elapsed budget option value, in milliseconds. When
-/// absent, the merge uses `default.max_elapsed`. A stored value of `0` means
-/// unlimited (`None`).
+/// absent, the merge uses `default.max_elapsed`. A stored value of `0` means a
+/// zero-millisecond elapsed budget.
 pub const KEY_MAX_ELAPSED_MILLIS: &str = "max_elapsed_millis";
+
+/// Config key for explicitly forcing an unlimited elapsed budget. When `true`,
+/// merge logic ignores [`KEY_MAX_ELAPSED_MILLIS`] and uses unlimited (`None`).
+pub const KEY_MAX_ELAPSED_UNLIMITED: &str = "max_elapsed_unlimited";
 
 /// Config key for the delay strategy option value (strategy name / encoded form).
 pub const KEY_DELAY: &str = "delay";

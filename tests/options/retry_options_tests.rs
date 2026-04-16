@@ -13,6 +13,7 @@ use qubit_config::Config;
 use qubit_retry::constants::{
     KEY_DELAY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
     KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_MAX_ATTEMPTS,
+    KEY_MAX_ELAPSED_UNLIMITED,
     KEY_RANDOM_MAX_DELAY_MILLIS, KEY_RANDOM_MIN_DELAY_MILLIS,
 };
 use qubit_retry::{RetryDelay, RetryJitter, RetryOptions};
@@ -152,7 +153,32 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
         RetryOptions::from_config(&disabled_elapsed)
             .expect("zero max elapsed should be allowed")
             .max_elapsed(),
+        Some(Duration::ZERO)
+    );
+
+    let mut unlimited_elapsed = Config::new();
+    unlimited_elapsed
+        .set("max_elapsed_millis", 0u64)
+        .expect("test config value should be set");
+    unlimited_elapsed
+        .set("max_elapsed_unlimited", true)
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&unlimited_elapsed)
+            .expect("explicit unlimited max elapsed should be allowed")
+            .max_elapsed(),
         None
+    );
+
+    let mut zero_jitter = Config::new();
+    zero_jitter
+        .set("jitter_factor", 0.0)
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&zero_jitter)
+            .expect("zero jitter should be parsed")
+            .jitter(),
+        RetryJitter::None
     );
 
     let mut invalid_strategy = Config::new();
@@ -171,6 +197,14 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
     let error =
         RetryOptions::from_config(&bad_type).expect_err("wrong max_attempts type should fail");
     assert_eq!(error.path(), KEY_MAX_ATTEMPTS);
+
+    let mut unlimited_bad_type = Config::new();
+    unlimited_bad_type
+        .set("max_elapsed_unlimited", "bad")
+        .expect("test config value should be set");
+    let error = RetryOptions::from_config(&unlimited_bad_type)
+        .expect_err("wrong max_elapsed_unlimited type should fail");
+    assert_eq!(error.path(), KEY_MAX_ELAPSED_UNLIMITED);
 }
 
 /// Verifies explicit and implicit delay defaults from configuration.

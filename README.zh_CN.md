@@ -226,7 +226,8 @@ let executor = RetryExecutor::<std::io::Error>::from_options(options)?;
 支持的相对配置键：
 
 - `max_attempts`
-- `max_elapsed_millis`
+- `max_elapsed_millis`（`0` 表示 0ms 预算）
+- `max_elapsed_unlimited`（`true` 表示显式无限总耗时）
 - `delay`：`none`、`fixed`、`random`、`exponential` 或 `exponential_backoff`
 - `fixed_delay_millis`
 - `random_min_delay_millis`

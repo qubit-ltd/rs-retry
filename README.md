@@ -226,7 +226,8 @@ let executor = RetryExecutor::<std::io::Error>::from_options(options)?;
 Supported relative keys:
 
 - `max_attempts`
-- `max_elapsed_millis`
+- `max_elapsed_millis` (`0` means a zero-millisecond budget)
+- `max_elapsed_unlimited` (`true` forces unlimited elapsed budget)
 - `delay`: `none`, `fixed`, `random`, `exponential`, or `exponential_backoff`
 - `fixed_delay_millis`
 - `random_min_delay_millis`

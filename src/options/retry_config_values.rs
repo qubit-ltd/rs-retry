@@ -22,8 +22,8 @@ use super::retry_options::RetryOptions;
 use crate::constants::{
     KEY_DELAY, KEY_DELAY_STRATEGY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
     KEY_EXPONENTIAL_MAX_DELAY_MILLIS, KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS,
-    KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS, KEY_MAX_ELAPSED_MILLIS, KEY_RANDOM_MAX_DELAY_MILLIS,
-    KEY_RANDOM_MIN_DELAY_MILLIS,
+    KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS, KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED,
+    KEY_RANDOM_MAX_DELAY_MILLIS, KEY_RANDOM_MIN_DELAY_MILLIS,
 };
 use crate::RetryConfigError;
 
@@ -44,6 +44,8 @@ pub struct RetryConfigValues {
     pub max_attempts: Option<u32>,
     /// Optional elapsed-time budget in milliseconds.
     pub max_elapsed_millis: Option<u64>,
+    /// Optional explicit switch for unlimited elapsed-time budget.
+    pub max_elapsed_unlimited: Option<bool>,
     /// Optional primary delay strategy name.
     pub delay: Option<String>,
     /// Optional backward-compatible delay strategy alias.
@@ -86,6 +88,7 @@ impl RetryConfigValues {
         Ok(Self {
             max_attempts: config.get_optional(KEY_MAX_ATTEMPTS)?,
             max_elapsed_millis: config.get_optional(KEY_MAX_ELAPSED_MILLIS)?,
+            max_elapsed_unlimited: config.get_optional(KEY_MAX_ELAPSED_UNLIMITED)?,
             delay: config.get_optional_string(KEY_DELAY)?,
             delay_strategy: config.get_optional_string(KEY_DELAY_STRATEGY)?,
             fixed_delay_millis: config.get_optional(KEY_FIXED_DELAY_MILLIS)?,
@@ -124,15 +127,17 @@ impl RetryConfigValues {
     /// - `default`: Fallback when `max_elapsed_millis` is absent from config.
     ///
     /// # Returns
-    /// - `Some(Duration)` when `max_elapsed_millis` is present and non-zero.
-    /// - `None` when the key is present as `0` (unlimited override).
+    /// - `None` when `max_elapsed_unlimited` is configured as `true`.
+    /// - `Some(Duration)` when `max_elapsed_millis` is present (including zero).
     /// - `default.max_elapsed` when the key is absent.
     ///
     /// # Errors
     /// This method does not return errors.
     fn get_max_elapsed(&self, default: &RetryOptions) -> Option<Duration> {
+        if self.max_elapsed_unlimited.unwrap_or(false) {
+            return None;
+        }
         match self.max_elapsed_millis {
-            Some(0) => None,
             Some(millis) => Some(Duration::from_millis(millis)),
             None => default.max_elapsed(),
         }
@@ -219,7 +224,7 @@ impl RetryConfigValues {
     ///
     /// # Parameters
     /// - `default`: Default options used when no jitter key is present or the
-    ///   configured jitter factor is `0.0`.
+    ///   jitter factor key is absent.
     ///
     /// # Returns
     /// The configured or default [`RetryJitter`] strategy.
@@ -229,7 +234,8 @@ impl RetryConfigValues {
     /// by [`RetryOptions::new`].
     fn get_jitter(&self, default: &RetryOptions) -> RetryJitter {
         match self.jitter_factor {
-            Some(0.0) | None => default.jitter(),
+            Some(0.0) => RetryJitter::None,
+            None => default.jitter(),
             Some(factor) => RetryJitter::Factor(factor),
         }
     }
