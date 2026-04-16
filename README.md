@@ -41,6 +41,13 @@ The core API is `RetryExecutor<E>`. An executor is bound only to the operation e
 qubit-retry = "0.6.0"
 ```
 
+Sync-only builds can disable default features:
+
+```toml
+[dependencies]
+qubit-retry = { version = "0.6.0", default-features = false }
+```
+
 ## Basic Sync Retry
 
 ```rust

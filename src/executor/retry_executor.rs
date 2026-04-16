@@ -13,8 +13,9 @@
 //! operations on Tokio.
 
 use std::fmt;
-use std::future::Future;
 use std::time::{Duration, Instant};
+#[cfg(feature = "async-tokio")]
+use std::future::Future;
 
 use qubit_common::BoxError;
 use qubit_function::{BiConsumer, BiFunction, Consumer};
@@ -197,6 +198,7 @@ impl<E> RetryExecutor<E> {
     /// # Async
     /// Uses `tokio::time::sleep` between attempts when the computed delay is
     /// non-zero.
+    #[cfg(feature = "async-tokio")]
     pub async fn run_async<T, F, Fut>(&self, mut operation: F) -> Result<T, RetryError<E>>
     where
         F: FnMut() -> Fut,
@@ -269,6 +271,7 @@ impl<E> RetryExecutor<E> {
     /// # Async
     /// Uses `tokio::time::timeout` for each attempt and `tokio::time::sleep`
     /// between retries when the computed delay is non-zero.
+    #[cfg(feature = "async-tokio")]
     pub async fn run_async_with_timeout<T, F, Fut>(
         &self,
         attempt_timeout: Duration,
@@ -653,6 +656,7 @@ fn will_exceed_elapsed(elapsed: Duration, delay: Duration, max_elapsed: Duration
 /// # Panics
 /// Tokio may panic if this future is polled outside a runtime with a time
 /// driver and `delay` is non-zero.
+#[cfg(feature = "async-tokio")]
 async fn sleep_async(delay: Duration) {
     if !delay.is_zero() {
         tokio::time::sleep(delay).await;
@@ -695,6 +699,7 @@ mod tests {
     ///
     /// # Errors
     /// The test fails if Tokio's timer does not complete either sleep.
+    #[cfg(feature = "async-tokio")]
     #[tokio::test]
     async fn test_sleep_async_handles_zero_and_nonzero_delays() {
         sleep_async(Duration::ZERO).await;
