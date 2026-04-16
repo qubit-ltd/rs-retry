@@ -142,6 +142,49 @@ fn test_run_retries_until_success_and_emits_retry_events() {
     );
 }
 
+/// Verifies multiple retry listeners are all invoked for one retry event.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when later listeners are overwritten.
+#[test]
+fn test_on_retry_invokes_all_registered_listeners() {
+    let listener_total = Arc::new(AtomicUsize::new(0));
+    let listener_total_for_first = Arc::clone(&listener_total);
+    let listener_total_for_second = Arc::clone(&listener_total);
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let attempts_for_run = Arc::clone(&attempts);
+
+    let executor = RetryExecutor::<TestError>::builder()
+        .max_attempts(2)
+        .delay(RetryDelay::none())
+        .on_retry(move |_, _| {
+            listener_total_for_first.fetch_add(1, Ordering::SeqCst);
+        })
+        .on_retry(move |_, _| {
+            listener_total_for_second.fetch_add(10, Ordering::SeqCst);
+        })
+        .build()
+        .expect("executor should be built");
+
+    let result = executor.run(|| {
+        let attempt = attempts_for_run.fetch_add(1, Ordering::SeqCst) + 1;
+        if attempt == 1 {
+            Err(TestError("retry"))
+        } else {
+            Ok("ok")
+        }
+    });
+
+    assert_eq!(result.expect("retry should eventually succeed"), "ok");
+    assert_eq!(listener_total.load(Ordering::SeqCst), 11);
+}
+
 /// Verifies retry_if can abort and preserve the original application error.
 ///
 /// # Parameters
@@ -608,6 +651,61 @@ async fn test_run_async_with_timeout_can_retry_and_succeed() {
     assert_eq!(result, "ok");
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
     assert_eq!(retry_timeouts.load(Ordering::SeqCst), 1);
+}
+
+/// Verifies listener panic isolation can keep execution alive.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when panic isolation does not work.
+#[test]
+fn test_listener_panic_isolation_switch() {
+    let panicking_executor = RetryExecutor::<TestError>::builder()
+        .max_attempts(2)
+        .delay(RetryDelay::none())
+        .on_retry(|_, _| {
+            panic!("listener panic");
+        })
+        .build()
+        .expect("executor should be built");
+    let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = panicking_executor.run(|| -> Result<(), TestError> { Err(TestError("retry")) });
+    }));
+    assert!(panic_result.is_err());
+
+    let isolated_hits = Arc::new(AtomicUsize::new(0));
+    let isolated_hits_for_listener = Arc::clone(&isolated_hits);
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let attempts_for_run = Arc::clone(&attempts);
+    let isolated_executor = RetryExecutor::<TestError>::builder()
+        .max_attempts(2)
+        .delay(RetryDelay::none())
+        .isolate_listener_panics()
+        .on_retry(|_, _| {
+            panic!("listener panic");
+        })
+        .on_retry(move |_, _| {
+            isolated_hits_for_listener.fetch_add(1, Ordering::SeqCst);
+        })
+        .build()
+        .expect("executor should be built");
+
+    let result = isolated_executor.run(|| {
+        let attempt = attempts_for_run.fetch_add(1, Ordering::SeqCst) + 1;
+        if attempt == 1 {
+            Err(TestError("retry"))
+        } else {
+            Ok("ok")
+        }
+    });
+
+    assert_eq!(result.expect("execution should survive listener panic"), "ok");
+    assert_eq!(isolated_hits.load(Ordering::SeqCst), 1);
 }
 
 /// Verifies timed async attempts retry operation errors with sleep.

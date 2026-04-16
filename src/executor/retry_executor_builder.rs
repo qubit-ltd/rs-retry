@@ -42,6 +42,8 @@ pub struct RetryExecutorBuilder<E = BoxError> {
     timeout_decision: RetryDecision,
     /// Hooks invoked on success, failure, abort, and each retry attempt.
     listeners: RetryListeners<E>,
+    /// Whether listener panics should be isolated instead of propagated.
+    isolate_listener_panics: bool,
     /// Set when `max_attempts` was configured as zero; surfaced from [`Self::build`].
     max_attempts_error: Option<RetryConfigError>,
 }
@@ -61,6 +63,7 @@ impl<E> RetryExecutorBuilder<E> {
             retry_decider: None,
             timeout_decision: RetryDecision::Retry,
             listeners: RetryListeners::default(),
+            isolate_listener_panics: false,
             max_attempts_error: None,
         }
     }
@@ -282,7 +285,7 @@ impl<E> RetryExecutorBuilder<E> {
     where
         F: Fn(&RetryContext, &RetryAttemptFailure<E>) + Send + Sync + 'static,
     {
-        self.listeners.retry = Some(RetryListener::new(listener));
+        self.listeners.retry.push(RetryListener::new(listener));
         self
     }
 
@@ -304,7 +307,7 @@ impl<E> RetryExecutorBuilder<E> {
     where
         F: Fn(&RetrySuccessContext) + Send + Sync + 'static,
     {
-        self.listeners.success = Some(RetrySuccessListener::new(listener));
+        self.listeners.success.push(RetrySuccessListener::new(listener));
         self
     }
 
@@ -326,7 +329,7 @@ impl<E> RetryExecutorBuilder<E> {
     where
         F: Fn(&RetryFailureContext, &Option<RetryAttemptFailure<E>>) + Send + Sync + 'static,
     {
-        self.listeners.failure = Some(RetryFailureListener::new(listener));
+        self.listeners.failure.push(RetryFailureListener::new(listener));
         self
     }
 
@@ -348,7 +351,23 @@ impl<E> RetryExecutorBuilder<E> {
     where
         F: Fn(&RetryAbortContext, &RetryAttemptFailure<E>) + Send + Sync + 'static,
     {
-        self.listeners.abort = Some(RetryAbortListener::new(listener));
+        self.listeners.abort.push(RetryAbortListener::new(listener));
+        self
+    }
+
+    /// Enables panic isolation for all registered listeners.
+    ///
+    /// # Parameters
+    /// This method has no parameters.
+    ///
+    /// # Returns
+    /// The updated builder.
+    ///
+    /// # Errors
+    /// This method does not return errors.
+    #[inline]
+    pub fn isolate_listener_panics(mut self) -> Self {
+        self.isolate_listener_panics = true;
         self
     }
 
@@ -376,6 +395,7 @@ impl<E> RetryExecutorBuilder<E> {
             self.options,
             retry_decider,
             self.timeout_decision,
+            self.isolate_listener_panics,
             self.listeners,
         ))
     }

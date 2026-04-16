@@ -47,6 +47,8 @@ pub struct RetryExecutor<E = BoxError> {
     retry_decider: RetryDecider<E>,
     /// Decision used when one attempt fails with [`RetryAttemptFailure::AttemptTimeout`].
     timeout_decision: RetryDecision,
+    /// Whether listener panics should be isolated instead of propagated.
+    isolate_listener_panics: bool,
     /// Optional hooks invoked on success, retry scheduling, terminal failure,
     /// or decider-initiated abort.
     listeners: RetryListeners<E>,
@@ -334,6 +336,7 @@ impl<E> RetryExecutor<E> {
     /// - `options`: Retry options used by the executor.
     /// - `retry_decider`: [`RetryDecider`] shared by cloned executors (uses each application error `E`).
     /// - `timeout_decision`: Decision used for [`RetryAttemptFailure::AttemptTimeout`].
+    /// - `isolate_listener_panics`: Whether listener panics are isolated.
     /// - `listeners`: Optional callbacks invoked during execution.
     ///
     /// # Returns
@@ -346,12 +349,14 @@ impl<E> RetryExecutor<E> {
         options: RetryOptions,
         retry_decider: RetryDecider<E>,
         timeout_decision: RetryDecision,
+        isolate_listener_panics: bool,
         listeners: RetryListeners<E>,
     ) -> Self {
         Self {
             options,
             retry_decider,
             timeout_decision,
+            isolate_listener_panics,
             listeners,
         }
     }
@@ -521,16 +526,18 @@ impl<E> RetryExecutor<E> {
         next_delay: Duration,
         failure: &RetryAttemptFailure<E>,
     ) {
-        if let Some(listener) = &self.listeners.retry {
-            listener.accept(
-                &RetryContext {
-                    attempt,
-                    max_attempts: self.options.max_attempts.get(),
-                    elapsed,
-                    next_delay,
-                },
-                failure,
-            );
+        for listener in &self.listeners.retry {
+            self.invoke_listener(|| {
+                listener.accept(
+                    &RetryContext {
+                        attempt,
+                        max_attempts: self.options.max_attempts.get(),
+                        elapsed,
+                        next_delay,
+                    },
+                    failure,
+                );
+            });
         }
     }
 
@@ -549,8 +556,10 @@ impl<E> RetryExecutor<E> {
     /// # Panics
     /// Propagates any panic raised by the listener.
     fn emit_success(&self, attempts: u32, elapsed: Duration) {
-        if let Some(listener) = &self.listeners.success {
-            listener.accept(&RetrySuccessContext { attempts, elapsed });
+        for listener in &self.listeners.success {
+            self.invoke_listener(|| {
+                listener.accept(&RetrySuccessContext { attempts, elapsed });
+            });
         }
     }
 
@@ -575,8 +584,10 @@ impl<E> RetryExecutor<E> {
         elapsed: Duration,
         failure: Option<RetryAttemptFailure<E>>,
     ) -> Option<RetryAttemptFailure<E>> {
-        if let Some(listener) = &self.listeners.failure {
-            listener.accept(&RetryFailureContext { attempts, elapsed }, &failure);
+        for listener in &self.listeners.failure {
+            self.invoke_listener(|| {
+                listener.accept(&RetryFailureContext { attempts, elapsed }, &failure);
+            });
         }
         failure
     }
@@ -597,8 +608,28 @@ impl<E> RetryExecutor<E> {
     /// # Panics
     /// Propagates any panic raised by the listener.
     fn emit_abort(&self, attempts: u32, elapsed: Duration, failure: &RetryAttemptFailure<E>) {
-        if let Some(listener) = &self.listeners.abort {
-            listener.accept(&RetryAbortContext { attempts, elapsed }, failure);
+        for listener in &self.listeners.abort {
+            self.invoke_listener(|| {
+                listener.accept(&RetryAbortContext { attempts, elapsed }, failure);
+            });
+        }
+    }
+
+    /// Invokes one listener and optionally isolates panics.
+    ///
+    /// # Parameters
+    /// - `call`: Listener invocation closure.
+    ///
+    /// # Returns
+    /// This function returns nothing.
+    ///
+    /// # Errors
+    /// This function does not return errors.
+    fn invoke_listener(&self, call: impl FnOnce()) {
+        if self.isolate_listener_panics {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(call));
+        } else {
+            call();
         }
     }
 }

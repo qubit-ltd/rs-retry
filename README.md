@@ -22,6 +22,8 @@ The core API is `RetryExecutor<E>`. An executor is bound only to the operation e
 - Symmetric jitter through `RetryJitter::factor`.
 - Explicit retry classification with `retry_if` or `retry_decide`.
 - Listener contexts for retry/failure/abort plus borrowed failure payloads.
+- Multiple listeners per event type (registration order preserved).
+- Optional listener panic isolation via `isolate_listener_panics`.
 - Listener callback storage based on `qubit-function` functors (`ArcConsumer` / `ArcBiConsumer`).
 - Immutable `RetryOptions` snapshots with `qubit-config` integration.
 

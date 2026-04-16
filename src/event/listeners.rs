@@ -43,14 +43,14 @@ pub type RetryAbortListener<E> = ArcBiConsumer<RetryAbortContext, RetryAttemptFa
 
 #[derive(Clone)]
 pub(crate) struct RetryListeners<E> {
-    /// Optional callback invoked before sleeping for a retry.
-    pub(crate) retry: Option<RetryListener<E>>,
-    /// Optional callback invoked when the operation eventually succeeds.
-    pub(crate) success: Option<RetrySuccessListener>,
-    /// Optional callback invoked when retry limits are exhausted.
-    pub(crate) failure: Option<RetryFailureListener<E>>,
-    /// Optional callback invoked when the retry decider aborts retrying.
-    pub(crate) abort: Option<RetryAbortListener<E>>,
+    /// Callbacks invoked before sleeping for a retry.
+    pub(crate) retry: Vec<RetryListener<E>>,
+    /// Callbacks invoked when the operation eventually succeeds.
+    pub(crate) success: Vec<RetrySuccessListener>,
+    /// Callbacks invoked when retry limits are exhausted.
+    pub(crate) failure: Vec<RetryFailureListener<E>>,
+    /// Callbacks invoked when the retry decider aborts retrying.
+    pub(crate) abort: Vec<RetryAbortListener<E>>,
 }
 
 impl<E> Default for RetryListeners<E> {
@@ -67,10 +67,10 @@ impl<E> Default for RetryListeners<E> {
     #[inline]
     fn default() -> Self {
         Self {
-            retry: None,
-            success: None,
-            failure: None,
-            abort: None,
+            retry: Vec::new(),
+            success: Vec::new(),
+            failure: Vec::new(),
+            abort: Vec::new(),
         }
     }
 }
