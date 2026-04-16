@@ -11,64 +11,126 @@
 //! A [`RetryDelay`] produces the base sleep duration after a failed attempt. The
 //! base duration is calculated before [`crate::RetryJitter`] is applied by a retry
 //! executor.
+//!
+//! # Text interchange
+//!
+//! [`std::fmt::Display`] and [`std::str::FromStr`] share a canonical string form:
+//!
+//! - `none`
+//! - `fixed(<millis>ms)`
+//! - `random(<min_millis>ms..=<max_millis>ms)`
+//! - `exponential(initial=<millis>ms, max=<millis>ms, multiplier=<f64>)`
+//!
+//! Duration fields are always rendered in whole milliseconds with the `ms` suffix.
 
+use std::fmt;
+use std::str::FromStr;
 use std::time::Duration;
 
+use parse_display::{Display, DisplayFormat, FromStr, FromStrFormat, ParseError};
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
 
-use crate::constants::{
-    DEFAULT_RETRY_EXPONENTIAL_INITIAL, DEFAULT_RETRY_EXPONENTIAL_MAX,
-    DEFAULT_RETRY_EXPONENTIAL_MULTIPLIER,
-};
+use crate::constants::DEFAULT_RETRY_DELAY;
+
+/// Formats retry-delay duration fields as `<millis>ms` and parses the same grammar.
+struct RetryDelayDurationFormat;
+
+impl DisplayFormat<Duration> for RetryDelayDurationFormat {
+    /// Writes the duration as saturated whole milliseconds with an `ms` suffix.
+    ///
+    /// # Parameters
+    /// - `f`: Output formatter.
+    /// - `value`: Duration to format.
+    ///
+    /// # Returns
+    /// `Ok(())` on success, or [`fmt::Error`] if formatting fails.
+    ///
+    /// # Errors
+    /// Returns [`fmt::Error`] only if the formatter rejects output.
+    fn write(&self, f: &mut fmt::Formatter<'_>, value: &Duration) -> fmt::Result {
+        let millis = value.as_millis().min(u128::from(u64::MAX)) as u64;
+        write!(f, "{millis}ms")
+    }
+}
+
+impl FromStrFormat<Duration> for RetryDelayDurationFormat {
+    /// Error returned by duration parsing.
+    type Err = ParseError;
+
+    /// Parses a duration from `<millis>ms`.
+    ///
+    /// # Parameters
+    /// - `s`: Text captured for a duration field.
+    ///
+    /// # Returns
+    /// A [`Duration`] on success.
+    ///
+    /// # Errors
+    /// Returns [`ParseError`] when the text does not end with `ms` or the numeric
+    /// part is not a valid `u64`.
+    fn parse(&self, s: &str) -> Result<Duration, Self::Err> {
+        let Some(raw_millis) = s.strip_suffix("ms") else {
+            return Err(ParseError::with_message(
+                "invalid retry delay duration, expected `<millis>ms`",
+            ));
+        };
+        let millis = raw_millis.parse::<u64>().map_err(|_| {
+            ParseError::with_message("invalid retry delay duration, expected `<millis>ms`")
+        })?;
+        Ok(Duration::from_millis(millis))
+    }
+
+    /// Regex used by `parse-display` for duration fields.
+    ///
+    /// # Returns
+    /// A regex matching `<millis>ms`.
+    fn regex(&self) -> Option<String> {
+        Some(r"[0-9]+ms".to_string())
+    }
+}
 
 /// Base delay strategy before jitter is applied.
 ///
 /// RetryDelay strategies are value types that can be reused across executors. Random
 /// and exponential strategies are validated separately by [`RetryDelay::validate`],
 /// which is called when building [`crate::RetryOptions`].
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Display,
-    EnumString,
-    Serialize,
-    Deserialize,
-)]
-#[strum(serialize_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Display, FromStr, Serialize, Deserialize)]
 pub enum RetryDelay {
     /// Retry immediately.
+    #[display("none")]
     None,
 
     /// Wait for a constant delay after every failed attempt.
-    #[strum(to_string = "fixed({0:?})")]
-    #[strum(disabled)]
-    Fixed(#[serde(with = "crate::serde_millis")] Duration),
+    #[display("fixed({0})")]
+    Fixed(
+        #[display(with = RetryDelayDurationFormat)]
+        #[serde(with = "crate::serde_millis")]
+        Duration,
+    ),
 
     /// Pick a delay uniformly from the inclusive range.
-    #[strum(to_string = "random({min:?}..={max:?})")]
-    #[strum(disabled)]
+    #[display("random({min}..={max})")]
     Random {
         /// Lower bound for the delay.
+        #[display(with = RetryDelayDurationFormat)]
         #[serde(with = "crate::serde_millis")]
         min: Duration,
         /// Upper bound for the delay.
+        #[display(with = RetryDelayDurationFormat)]
         #[serde(with = "crate::serde_millis")]
         max: Duration,
     },
 
     /// Exponential backoff capped by `max`.
-    #[strum(
-        to_string = "exponential(initial={initial:?}, max={max:?}, multiplier={multiplier})"
-    )]
-    #[strum(disabled)]
+    #[display("exponential(initial={initial}, max={max}, multiplier={multiplier})")]
     Exponential {
         /// RetryDelay used for the first retry.
+        #[display(with = RetryDelayDurationFormat)]
         #[serde(with = "crate::serde_millis")]
         initial: Duration,
         /// Maximum delay.
+        #[display(with = RetryDelayDurationFormat)]
         #[serde(with = "crate::serde_millis")]
         max: Duration,
         /// Multiplicative factor applied per failed attempt.
@@ -300,20 +362,21 @@ impl Default for RetryDelay {
     /// Creates the default exponential-backoff strategy.
     ///
     /// # Returns
-    /// `RetryDelay::Exponential` with one second initial delay, sixty second cap,
-    /// and multiplier `2.0`.
+    /// The value obtained by parsing [`crate::constants::DEFAULT_RETRY_DELAY`]
+    /// using [`RetryDelay::from_str`].
     ///
     /// # Parameters
     /// This function has no parameters.
     ///
     /// # Errors
     /// This function does not return errors.
+    ///
+    /// # Panics
+    /// Panics if [`crate::constants::DEFAULT_RETRY_DELAY`] is not a valid
+    /// [`RetryDelay`] string. That indicates a crate bug, not a caller mistake.
     #[inline]
     fn default() -> Self {
-        Self::Exponential {
-            initial: DEFAULT_RETRY_EXPONENTIAL_INITIAL,
-            max: DEFAULT_RETRY_EXPONENTIAL_MAX,
-            multiplier: DEFAULT_RETRY_EXPONENTIAL_MULTIPLIER,
-        }
+        Self::from_str(DEFAULT_RETRY_DELAY)
+            .expect("DEFAULT_RETRY_DELAY must be a valid RetryDelay string")
     }
 }

@@ -18,17 +18,7 @@ use strum::{Display, EnumString};
 ///
 /// The decision is advisory for retrying: [`RetryDecision::Retry`] still obeys
 /// attempt and elapsed-time limits.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Display,
-    EnumString,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display, EnumString, Serialize, Deserialize)]
 #[strum(serialize_all = "snake_case")]
 pub enum RetryDecision {
     /// Retry the operation if limits still allow it.

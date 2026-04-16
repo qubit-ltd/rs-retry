@@ -17,11 +17,11 @@
 //! import it from `qubit-common` directly.
 
 pub mod constants;
-mod serde_millis;
 pub mod error;
 pub mod event;
 pub mod executor;
 pub mod options;
+mod serde_millis;
 
 pub use error::{RetryAttemptFailure, RetryConfigError, RetryDecider, RetryError};
 pub use event::{
@@ -29,8 +29,10 @@ pub use event::{
     RetryFailureContext, RetryFailureListener, RetryListener, RetrySuccessContext,
     RetrySuccessListener,
 };
-pub use options::{ParseRetryJitterError, RetryConfigValues, RetryDelay, RetryJitter, RetryOptions};
 pub use executor::{RetryExecutor, RetryExecutorBuilder};
+pub use options::{
+    ParseRetryJitterError, RetryConfigValues, RetryDelay, RetryJitter, RetryOptions,
+};
 
 /// Result alias returned by retry executor execution.
 ///

@@ -25,8 +25,8 @@ use crate::{
     RetrySuccessListener,
 };
 
-use crate::error::RetryDecider;
 use super::retry_executor::RetryExecutor;
+use crate::error::RetryDecider;
 
 /// Builder for [`RetryExecutor`].
 ///

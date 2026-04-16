@@ -7,11 +7,10 @@
  *
  ******************************************************************************/
 
-use std::convert::TryFrom;
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::str::FromStr;
 use std::time::Duration;
 
+use qubit_retry::constants::DEFAULT_RETRY_DELAY;
 use qubit_retry::RetryDelay;
 use serde_json;
 
@@ -105,7 +104,7 @@ fn test_validate_rejects_invalid_values() {
     assert!(RetryDelay::default().validate().is_ok());
 }
 
-/// Verifies [`std::fmt::Display`] for [`RetryDelay::None`] (`strum` snake_case).
+/// Verifies [`std::fmt::Display`] for every [`RetryDelay`] variant.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -116,58 +115,24 @@ fn test_validate_rejects_invalid_values() {
 /// # Errors
 /// The test fails through assertions when the display string is incorrect.
 #[test]
-fn test_retry_delay_display_none() {
+fn test_retry_delay_display_variants() {
     assert_eq!(RetryDelay::none().to_string(), "none");
+    assert_eq!(
+        RetryDelay::fixed(Duration::from_millis(12)).to_string(),
+        "fixed(12ms)"
+    );
+    assert_eq!(
+        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8)).to_string(),
+        "random(5ms..=8ms)"
+    );
+    assert_eq!(
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0)
+            .to_string(),
+        "exponential(initial=100ms, max=500ms, multiplier=2)"
+    );
 }
 
-/// Documents current `strum` behavior: variants marked `#[strum(disabled)]` are
-/// omitted from the generated [`std::fmt::Display`] match, so formatting
-/// `Fixed` / `Random` / `Exponential` panics with a fixed message.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when formatting does not panic as expected.
-#[test]
-fn test_retry_delay_display_strum_disabled_variants_panic_on_fmt() {
-    let cases = [
-        (
-            "fixed",
-            RetryDelay::fixed(Duration::from_millis(1)),
-        ),
-        (
-            "random",
-            RetryDelay::random(Duration::from_millis(1), Duration::from_millis(2)),
-        ),
-        (
-            "exponential",
-            RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(20), 2.0),
-        ),
-    ];
-    for (name, delay) in cases {
-        let err = catch_unwind(AssertUnwindSafe(|| {
-            let _ = format!("{delay}");
-        }))
-        .unwrap_err();
-        let msg = err
-            .downcast_ref::<&'static str>()
-            .copied()
-            .or_else(|| err.downcast_ref::<String>().map(String::as_str))
-            .unwrap_or("");
-        assert!(
-            msg.contains("disabled variant"),
-            "unexpected panic payload for {name}: {msg:?}"
-        );
-    }
-}
-
-/// Verifies [`std::str::FromStr`] / [`std::convert::TryFrom<&str>`] for [`RetryDelay`]:
-/// only the unit variant is registered with `strum::EnumString`; tuple variants are
-/// `#[strum(disabled)]` and do not parse from plain text.
+/// Verifies [`std::str::FromStr`] for every [`RetryDelay`] variant.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -178,17 +143,27 @@ fn test_retry_delay_display_strum_disabled_variants_panic_on_fmt() {
 /// # Errors
 /// The test fails through assertions when parsing does not match the expected rules.
 #[test]
-fn test_retry_delay_from_str_and_try_from_none_only() {
+fn test_retry_delay_from_str_variants() {
     assert_eq!(RetryDelay::from_str("none").unwrap(), RetryDelay::none());
     assert_eq!(
-        RetryDelay::try_from("none").unwrap(),
-        RetryDelay::none()
+        RetryDelay::from_str("fixed(12ms)").unwrap(),
+        RetryDelay::fixed(Duration::from_millis(12))
     );
-    assert_eq!("none".parse::<RetryDelay>().unwrap(), RetryDelay::none());
+    assert_eq!(
+        RetryDelay::from_str("random(5ms..=8ms)").unwrap(),
+        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8))
+    );
+    assert_eq!(
+        RetryDelay::from_str("exponential(initial=100ms, max=500ms, multiplier=2)").unwrap(),
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0)
+    );
+    assert_eq!(
+        RetryDelay::from_str("exponential(initial=100ms, max=500ms, multiplier=2.0)").unwrap(),
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0)
+    );
 }
 
-/// Verifies [`std::str::FromStr`] rejects whitespace padding, unknown tokens, and
-/// strings that resemble parameterized variants (those variants are not parseable).
+/// Verifies [`std::str::FromStr`] rejects malformed retry-delay strings.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -208,9 +183,12 @@ fn test_retry_delay_from_str_rejects_invalid_inputs() {
         "None",
         "nope",
         "fixed",
-        "fixed(12ms)",
-        "random(5ms..=8ms)",
-        "exponential(initial=100ms, max=500ms, multiplier=2)",
+        "fixed(12)",
+        "fixed(ms)",
+        "random(5..=8)",
+        "random(5ms..8ms)",
+        "exponential(initial=100ms,max=500ms,multiplier=2)",
+        "exponential(initial=100ms, max=500ms, multiplier=)",
     ] {
         assert!(
             RetryDelay::from_str(s).is_err(),
@@ -219,8 +197,7 @@ fn test_retry_delay_from_str_rejects_invalid_inputs() {
     }
 }
 
-/// Verifies display → parse round-trip for [`RetryDelay::None`] only (other variants
-/// are not `FromStr`-parseable by design).
+/// Verifies display → parse round-trip for representative [`RetryDelay`] values.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -231,10 +208,17 @@ fn test_retry_delay_from_str_rejects_invalid_inputs() {
 /// # Errors
 /// The test fails through assertions when the round-trip does not hold.
 #[test]
-fn test_retry_delay_display_parse_round_trip_none() {
-    let delay = RetryDelay::none();
-    let s = delay.to_string();
-    assert_eq!(RetryDelay::from_str(&s).unwrap(), delay);
+fn test_retry_delay_display_parse_round_trip_variants() {
+    let cases = [
+        RetryDelay::none(),
+        RetryDelay::fixed(Duration::from_millis(12)),
+        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8)),
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0),
+    ];
+    for delay in cases {
+        let s = delay.to_string();
+        assert_eq!(RetryDelay::from_str(&s).unwrap(), delay);
+    }
 }
 
 /// Verifies JSON serialization and deserialization for [`RetryDelay`] (millisecond
@@ -276,7 +260,10 @@ fn test_retry_delay_serde_json_roundtrip_variants() {
 /// The test fails through assertions when serialized JSON drifts from expectations.
 #[test]
 fn test_retry_delay_serde_json_literal_shapes() {
-    assert_eq!(serde_json::to_string(&RetryDelay::none()).unwrap(), r#""None""#);
+    assert_eq!(
+        serde_json::to_string(&RetryDelay::none()).unwrap(),
+        r#""None""#
+    );
     assert_eq!(
         serde_json::to_string(&RetryDelay::fixed(Duration::from_millis(12))).unwrap(),
         r#"{"Fixed":12}"#
@@ -297,5 +284,33 @@ fn test_retry_delay_serde_json_literal_shapes() {
         ))
         .unwrap(),
         r#"{"Exponential":{"initial":100,"max":500,"multiplier":2.0}}"#
+    );
+}
+
+/// Verifies [`qubit_retry::constants::DEFAULT_RETRY_DELAY`] matches
+/// [`RetryDelay::default`].
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when the default string and `Default`
+/// drift apart.
+#[test]
+fn test_default_retry_delay_string_matches_retry_delay_default() {
+    assert_eq!(
+        RetryDelay::from_str(DEFAULT_RETRY_DELAY).unwrap(),
+        RetryDelay::default()
+    );
+    assert_eq!(
+        RetryDelay::default(),
+        RetryDelay::exponential(
+            Duration::from_millis(1000),
+            Duration::from_millis(60000),
+            2.0
+        )
     );
 }

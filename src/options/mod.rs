@@ -8,9 +8,9 @@
  ******************************************************************************/
 //! Retry option modules and public re-exports.
 
+mod retry_config_values;
 mod retry_delay;
 mod retry_jitter;
-mod retry_config_values;
 mod retry_options;
 
 pub use retry_config_values::RetryConfigValues;

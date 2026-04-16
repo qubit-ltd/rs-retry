@@ -18,9 +18,9 @@
 //!
 //! **Default constants here are the source of truth.** Each type's
 //! [`std::default::Default`] implementation should assign from these values (for
-//! example [`crate::RetryDelay::default`] uses the `DEFAULT_RETRY_EXPONENTIAL_*`
-//! constants, and [`crate::RetryJitter::default`] parses [`DEFAULT_RETRY_JITTER`]
-//! via [`std::str::FromStr`]), rather than the reverse. This module
+//! example [`crate::RetryDelay::default`] parses [`DEFAULT_RETRY_DELAY`] and
+//! [`crate::RetryJitter::default`] parses [`DEFAULT_RETRY_JITTER`] via
+//! [`std::str::FromStr`]), rather than the reverse. This module
 //! avoids depending on option types such as [`crate::RetryJitter`] so there is no
 //! cycle with their `Default` impls. Composed defaults such as
 //! [`crate::RetryOptions::default`] should prefer delegating to those `Default`
@@ -79,14 +79,20 @@ pub const DEFAULT_RETRY_MAX_ATTEMPTS: u32 = 3;
 /// unlimited (`None`).
 pub const DEFAULT_RETRY_MAX_ELAPSED: Option<Duration> = None;
 
-/// Default initial delay for [`crate::RetryDelay::default`] exponential backoff.
-pub const DEFAULT_RETRY_EXPONENTIAL_INITIAL: Duration = Duration::from_secs(1);
-
-/// Default cap for [`crate::RetryDelay::default`] exponential backoff.
-pub const DEFAULT_RETRY_EXPONENTIAL_MAX: Duration = Duration::from_secs(60);
-
-/// Default multiplier for [`crate::RetryDelay::default`] exponential backoff.
-pub const DEFAULT_RETRY_EXPONENTIAL_MULTIPLIER: f64 = 2.0;
+/// Default delay text for [`crate::RetryDelay::default`] and any code that should
+/// match the library's built-in delay default.
+///
+/// Parsed with [`std::str::FromStr`] as implemented for [`crate::RetryDelay`].
+/// Grammar (same as that type's `Display` / `from_str` contract):
+///
+/// - `none`
+/// - `fixed(<millis>ms)`
+/// - `random(<min_millis>ms..=<max_millis>ms)`
+/// - `exponential(initial=<millis>ms, max=<millis>ms, multiplier=<f64>)`
+///
+/// Invalid text makes [`crate::RetryDelay::default`] panic at runtime; keep this
+/// constant in sync with [`crate::RetryDelay`] parsing rules when you change it.
+pub const DEFAULT_RETRY_DELAY: &str = "exponential(initial=1000ms, max=60000ms, multiplier=2.0)";
 
 /// Default jitter text for [`crate::RetryJitter::default`] and any code that should
 /// match the library's built-in jitter default.

@@ -73,8 +73,6 @@ fn test_to_options_zero_max_elapsed_millis_overrides_default_to_unlimited() {
     .expect("valid default");
     let mut values = sample_retry_config_values_none_delay();
     values.max_elapsed_millis = Some(0);
-    let options = values
-        .to_options(&default)
-        .expect("valid merged options");
+    let options = values.to_options(&default).expect("valid merged options");
     assert_eq!(options.max_elapsed, None);
 }

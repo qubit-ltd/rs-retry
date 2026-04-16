@@ -25,9 +25,9 @@ use crate::{
     RetryDecision, RetryError, RetryFailureContext, RetryOptions, RetrySuccessContext,
 };
 
+use super::retry_executor_builder::RetryExecutorBuilder;
 use crate::error::RetryDecider;
 use crate::error::RetryFailureAction;
-use super::retry_executor_builder::RetryExecutorBuilder;
 
 /// Retry executor bound to an error type.
 ///

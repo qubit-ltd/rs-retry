@@ -25,14 +25,12 @@
 //!
 //! Author: Haixing Hu
 
-use std::fmt;
-use std::num::ParseFloatError;
 use std::str::FromStr;
 use std::time::Duration;
 
+use parse_display::{Display, DisplayFormat, FromStr as DeriveFromStr, FromStrFormat, ParseError};
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use crate::constants::DEFAULT_RETRY_JITTER;
 use crate::RetryDelay;
@@ -41,9 +39,11 @@ use crate::RetryDelay;
 ///
 /// Supports [`RetryJitter::None`] and symmetric [`RetryJitter::Factor`] jitter.
 /// After randomization, delays are clamped to **non-negative** values.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Display, DeriveFromStr, Serialize, Deserialize)]
 pub enum RetryJitter {
     /// No jitter: [`RetryJitter::apply`] returns the base delay unchanged.
+    #[display("none")]
+    #[from_str(regex = r"(?i)\s*none\s*")]
     None,
 
     /// Symmetric relative jitter around the base delay.
@@ -51,25 +51,60 @@ pub enum RetryJitter {
     /// The inner `f64` is the relative half-span: jitter is drawn uniformly from
     /// `[-base * factor, base * factor]` nanoseconds (see [`RetryJitter::apply`]).
     /// It must be finite and lie in **`[0.0, 1.0]`** for validated configurations.
-    Factor(f64),
+    #[display("factor:{0}")]
+    #[from_str(regex = r"\s*factor:\s*(?<0>\S(?:.*\S)?)\s*")]
+    Factor(#[display(with = RetryJitterFactorFormat)] f64),
 }
 
-/// Failure to parse a [`RetryJitter`] from its text form ([`std::str::FromStr`]).
-#[derive(Debug, Error)]
-pub enum ParseRetryJitterError {
-    /// After [`str::trim`], the input is neither `none` in any ASCII letter case nor
-    /// a string beginning with the literal ASCII prefix `factor:`.
-    #[error("invalid retry jitter format, expected `none` or `factor:<number>`")]
-    InvalidFormat,
+/// Failure to parse a [`RetryJitter`] from text.
+pub type ParseRetryJitterError = ParseError;
 
-    /// The substring after `factor:` is not a valid `f64` (after trimming).
-    #[error("invalid retry jitter factor")]
-    InvalidNumber(#[from] ParseFloatError),
+/// Formats jitter factors as `f64` text and parses with range validation.
+struct RetryJitterFactorFormat;
 
-    /// Parsed factor is not in the inclusive interval **`[0.0, 1.0]`** (includes
-    /// non-finite values such as NaN and infinity, which fail the range check).
-    #[error("retry jitter factor must be in range [0.0, 1.0], got {value}")]
-    OutOfRange { value: f64 },
+impl DisplayFormat<f64> for RetryJitterFactorFormat {
+    /// Writes the factor using the default `f64` formatter.
+    ///
+    /// # Parameters
+    /// - `f`: Output formatter.
+    /// - `value`: Factor value.
+    ///
+    /// # Returns
+    /// `Ok(())` on success, or [`std::fmt::Error`] if formatting fails.
+    ///
+    /// # Errors
+    /// Returns [`std::fmt::Error`] only if the formatter rejects output.
+    fn write(&self, f: &mut std::fmt::Formatter<'_>, value: &f64) -> std::fmt::Result {
+        write!(f, "{value}")
+    }
+}
+
+impl FromStrFormat<f64> for RetryJitterFactorFormat {
+    /// Error returned by factor parsing.
+    type Err = ParseError;
+
+    /// Parses and validates a factor in range `[0.0, 1.0]`.
+    ///
+    /// # Parameters
+    /// - `s`: Raw factor text captured by `parse-display`.
+    ///
+    /// # Returns
+    /// The parsed factor.
+    ///
+    /// # Errors
+    /// Returns [`ParseError`] when the input is not a valid `f64` or lies outside
+    /// `[0.0, 1.0]`, including non-finite values.
+    fn parse(&self, s: &str) -> Result<f64, Self::Err> {
+        let value = s
+            .parse::<f64>()
+            .map_err(|_| ParseError::with_message("invalid retry jitter factor"))?;
+        if !(0.0..=1.0).contains(&value) {
+            return Err(ParseError::with_message(
+                "retry jitter factor must be in range [0.0, 1.0]",
+            ));
+        }
+        Ok(value)
+    }
 }
 
 impl RetryJitter {
@@ -216,70 +251,5 @@ impl Default for RetryJitter {
     fn default() -> Self {
         Self::from_str(DEFAULT_RETRY_JITTER)
             .expect("DEFAULT_RETRY_JITTER must be a valid RetryJitter string")
-    }
-}
-
-impl fmt::Display for RetryJitter {
-    /// Writes the canonical text form: `none`, or `factor:` followed by the factor
-    /// using the default `f64` formatter.
-    ///
-    /// # Parameters
-    /// - `f`: Output formatter.
-    ///
-    /// # Returns
-    /// `Ok(())` on success, or [`fmt::Error`] if the formatter rejects output.
-    ///
-    /// # Errors
-    /// Returns [`fmt::Error`] only when the underlying [`write!`] fails.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::None => write!(f, "none"),
-            Self::Factor(v) => write!(f, "factor:{v}"),
-        }
-    }
-}
-
-impl FromStr for RetryJitter {
-    /// Parse error type for invalid or out-of-range text.
-    type Err = ParseRetryJitterError;
-
-    /// Parses a [`RetryJitter`] from a single token string.
-    ///
-    /// Leading and trailing Unicode whitespace is removed with [`str::trim`]. The
-    /// `none` branch matches with [`str::eq_ignore_ascii_case`]. The `factor:` prefix
-    /// must match exactly in ASCII case; the number may be surrounded by ASCII
-    /// whitespace after the colon.
-    ///
-    /// # Parameters
-    /// - `s`: Input text (for example from configuration or CLI).
-    ///
-    /// # Returns
-    /// `Ok(Self)` on success, or [`ParseRetryJitterError`] describing the failure.
-    ///
-    /// # Errors
-    /// - [`ParseRetryJitterError::InvalidFormat`] when the token is neither `none`
-    ///   (ASCII case-insensitive) nor `factor:` followed by a number.
-    /// - [`ParseRetryJitterError::InvalidNumber`] when the factor is not a valid
-    ///   `f64`.
-    /// - [`ParseRetryJitterError::OutOfRange`] when the parsed factor is outside
-    ///   **`[0.0, 1.0]`** or is non-finite (NaN / infinity).
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.trim();
-
-        if s.eq_ignore_ascii_case("none") {
-            return Ok(Self::None);
-        }
-
-        let Some(raw) = s.strip_prefix("factor:") else {
-            return Err(ParseRetryJitterError::InvalidFormat);
-        };
-
-        let value: f64 = raw.trim().parse()?;
-
-        if !(0.0..=1.0).contains(&value) {
-            return Err(ParseRetryJitterError::OutOfRange { value });
-        }
-
-        Ok(Self::Factor(value))
     }
 }
