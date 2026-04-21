@@ -12,7 +12,6 @@ use std::time::Duration;
 
 use qubit_retry::constants::DEFAULT_RETRY_DELAY;
 use qubit_retry::RetryDelay;
-use serde_json;
 
 /// Verifies every delay variant calculates the expected base delay.
 ///

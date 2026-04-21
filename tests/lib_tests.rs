@@ -8,11 +8,9 @@
  ******************************************************************************/
 //! Integration tests for `qubit-retry`.
 
-mod delay;
 mod error;
 mod event;
 mod executor;
-mod jitter;
 mod options;
 mod readme;
 mod support;

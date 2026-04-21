@@ -9,8 +9,8 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use qubit_retry::{RetryAttemptFailure, RetryDelay, RetryExecutor};
@@ -29,8 +29,8 @@ use qubit_retry::{RetryAttemptFailure, RetryDelay, RetryExecutor};
 fn test_readme_uses_current_public_api_names() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let readme = fs::read_to_string(root.join("README.md")).expect("README.md should be readable");
-    let readme_zh =
-        fs::read_to_string(root.join("README.zh_CN.md")).expect("README.zh_CN.md should be readable");
+    let readme_zh = fs::read_to_string(root.join("README.zh_CN.md"))
+        .expect("README.zh_CN.md should be readable");
 
     for content in [&readme, &readme_zh] {
         assert!(content.contains("RetryDelay::none"));
@@ -78,7 +78,10 @@ fn test_readme_listener_example_compiles_and_runs() {
     let result = executor.run(|| {
         let attempt = attempt_count_for_run.fetch_add(1, Ordering::SeqCst) + 1;
         if attempt == 1 {
-            Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "temporary"))
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "temporary",
+            ))
         } else {
             Ok("ok")
         }

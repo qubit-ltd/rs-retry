@@ -704,7 +704,10 @@ fn test_listener_panic_isolation_switch() {
         }
     });
 
-    assert_eq!(result.expect("execution should survive listener panic"), "ok");
+    assert_eq!(
+        result.expect("execution should survive listener panic"),
+        "ok"
+    );
     assert_eq!(isolated_hits.load(Ordering::SeqCst), 1);
 }
 
@@ -885,7 +888,10 @@ async fn test_run_async_with_timeout_can_abort_on_timeout() {
         .delay(RetryDelay::fixed(Duration::from_millis(1)))
         .abort_on_timeout()
         .on_abort(move |_, failure| {
-            assert!(matches!(failure, RetryAttemptFailure::AttemptTimeout { .. }));
+            assert!(matches!(
+                failure,
+                RetryAttemptFailure::AttemptTimeout { .. }
+            ));
             abort_events_for_listener.fetch_add(1, Ordering::SeqCst);
         })
         .on_retry(move |_, _| {

@@ -13,8 +13,7 @@ use qubit_config::Config;
 use qubit_retry::constants::{
     KEY_DELAY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
     KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_MAX_ATTEMPTS,
-    KEY_MAX_ELAPSED_UNLIMITED,
-    KEY_RANDOM_MAX_DELAY_MILLIS, KEY_RANDOM_MIN_DELAY_MILLIS,
+    KEY_MAX_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS, KEY_RANDOM_MIN_DELAY_MILLIS,
 };
 use qubit_retry::{RetryDelay, RetryJitter, RetryOptions};
 
@@ -80,7 +79,10 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
 
     assert_eq!(options.max_attempts(), 4);
     assert_eq!(options.max_elapsed(), Some(Duration::from_millis(250)));
-    assert_eq!(options.delay(), &RetryDelay::fixed(Duration::from_millis(15)));
+    assert_eq!(
+        options.delay(),
+        &RetryDelay::fixed(Duration::from_millis(15))
+    );
     assert_eq!(options.jitter(), RetryJitter::factor(0.25));
 }
 
