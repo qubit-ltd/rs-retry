@@ -8,8 +8,8 @@
  ******************************************************************************/
 //! Retry executor and builder modules and public re-exports.
 
-mod retry_executor;
-mod retry_executor_builder;
+mod retry;
+mod retry_builder;
 
-pub use retry_executor::RetryExecutor;
-pub use retry_executor_builder::RetryExecutorBuilder;
+pub use retry::Retry;
+pub use retry_builder::RetryBuilder;

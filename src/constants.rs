@@ -9,10 +9,9 @@
 //! Configuration keys and built-in defaults for retry options.
 //!
 //! The `KEY_*` strings are the **relative configuration keys** for each retry
-//! option's stored value: under a [`qubit_config::ConfigReader`] prefix (for example
-//! `retry.`), they name the property whose value is read when building
-//! [`crate::RetryOptions`] (see [`crate::RetryOptions::from_config`] and
-//! [`crate::RetryConfigValues`]). They are not
+//! option's stored value: under a `qubit_config::ConfigReader` prefix (for
+//! example `retry.`), they name the property whose value is read when building
+//! [`crate::RetryOptions`] through the optional config integration. They are not
 //! delay/jitter strategy tokens themselves; those live in the option value (for
 //! example the string behind [`KEY_DELAY`]).
 //!

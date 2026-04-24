@@ -6,10 +6,10 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-//! Type-preserving retry executors for synchronous and asynchronous operations.
+//! Type-preserving retry policy for synchronous and asynchronous operations.
 //!
-//! `RetryExecutor<E>` binds only the operation error type. The success type `T`
-//! is introduced on `run` / `run_async`, so normal error retry does not require
+//! `Retry<E>` binds only the operation error type. The success type `T` is
+//! introduced on `run` / `run_async`, so normal error retry does not require
 //! `T: Clone + Eq + Hash`.
 //!
 //! The default error type is `BoxError` from the `qubit-common` crate. It is not
@@ -21,18 +21,16 @@ pub mod error;
 pub mod event;
 pub mod executor;
 pub mod options;
-mod serde_millis;
 
-pub use error::{RetryAttemptFailure, RetryConfigError, RetryDecider, RetryError};
+pub use error::{AttemptFailure, RetryConfigError, RetryError, RetryErrorReason};
 pub use event::{
-    RetryAbortContext, RetryAbortListener, RetryAttemptContext, RetryContext, RetryDecision,
-    RetryFailureContext, RetryFailureListener, RetryListener, RetrySuccessContext,
-    RetrySuccessListener,
+    AttemptFailureDecision, AttemptFailureListener, AttemptSuccessListener, BeforeAttemptListener,
+    RetryAfterHint, RetryContext, RetryErrorListener,
 };
-pub use executor::{RetryExecutor, RetryExecutorBuilder};
-pub use options::{
-    ParseRetryJitterError, RetryConfigValues, RetryDelay, RetryJitter, RetryOptions,
-};
+pub use executor::{Retry, RetryBuilder};
+#[cfg(feature = "config")]
+pub use options::RetryConfigValues;
+pub use options::{ParseRetryJitterError, RetryDelay, RetryJitter, RetryOptions};
 
 /// Result alias returned by retry executor execution.
 ///

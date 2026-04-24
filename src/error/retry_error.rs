@@ -12,123 +12,95 @@
 //! successful result. The original application error type is preserved in the
 //! generic parameter `E`.
 
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt;
-use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use crate::{AttemptFailure, RetryContext, RetryErrorReason};
 
-use super::RetryAttemptFailure;
-
-/// Error returned when a retry executor terminates without a successful result.
+/// Error returned when a retry flow terminates without a successful result.
 ///
 /// The generic parameter `E` is the caller's application error type. It is
-/// preserved in the final [`RetryAttemptFailure`] whenever the terminal failure came
-/// from the user operation.
+/// preserved in [`AttemptFailure::Error`] when the terminal failure came from the
+/// user operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(
     serialize = "E: serde::Serialize",
     deserialize = "E: serde::de::DeserializeOwned"
 ))]
-pub enum RetryError<E> {
-    /// The configured [`crate::RetryDecider`] returned [`crate::RetryDecision::Abort`]
-    /// for the last application error.
-    Aborted {
-        /// Number of attempts that were executed.
-        attempts: u32,
-        /// Total elapsed time observed by the retry executor.
-        #[serde(with = "crate::serde_millis")]
-        elapsed: Duration,
-        /// Failure that caused the abort.
-        failure: RetryAttemptFailure<E>,
-    },
-
-    /// The maximum number of attempts has been exhausted.
-    AttemptsExceeded {
-        /// Number of attempts that were executed.
-        attempts: u32,
-        /// Configured attempt limit.
-        max_attempts: u32,
-        /// Total elapsed time observed by the retry executor.
-        #[serde(with = "crate::serde_millis")]
-        elapsed: Duration,
-        /// Last observed failure.
-        last_failure: RetryAttemptFailure<E>,
-    },
-
-    /// The total elapsed retry budget has been exhausted.
-    MaxElapsedExceeded {
-        /// Number of attempts that were executed.
-        attempts: u32,
-        /// Total elapsed time observed by the retry executor.
-        #[serde(with = "crate::serde_millis")]
-        elapsed: Duration,
-        /// Configured elapsed budget.
-        #[serde(with = "crate::serde_millis")]
-        max_elapsed: Duration,
-        /// Last failure, if any attempt ran before the budget was exhausted.
-        last_failure: Option<RetryAttemptFailure<E>>,
-    },
+pub struct RetryError<E> {
+    /// Terminal reason selected by the retry flow.
+    reason: RetryErrorReason,
+    /// Last attempt failure, if any attempt ran before termination.
+    last_failure: Option<AttemptFailure<E>>,
+    /// Context snapshot captured when the retry flow stopped.
+    context: RetryContext,
 }
 
 impl<E> RetryError<E> {
-    /// Returns the number of attempts that were executed.
+    /// Creates a retry error.
     ///
     /// # Parameters
-    /// This method has no parameters.
+    /// - `reason`: Terminal reason.
+    /// - `last_failure`: Last observed attempt failure, if any.
+    /// - `context`: Retry context captured at termination.
     ///
     /// # Returns
-    /// The number of operation attempts observed before termination.
-    ///
-    /// # Errors
-    /// This method does not return errors.
+    /// A retry error preserving the terminal reason and context.
     #[inline]
-    pub fn attempts(&self) -> u32 {
-        match self {
-            Self::Aborted { attempts, .. }
-            | Self::AttemptsExceeded { attempts, .. }
-            | Self::MaxElapsedExceeded { attempts, .. } => *attempts,
+    pub(crate) fn new(
+        reason: RetryErrorReason,
+        last_failure: Option<AttemptFailure<E>>,
+        context: RetryContext,
+    ) -> Self {
+        Self {
+            reason,
+            last_failure,
+            context,
         }
     }
 
-    /// Returns the elapsed time recorded at termination.
+    /// Returns the terminal retry error reason.
     ///
     /// # Parameters
     /// This method has no parameters.
     ///
     /// # Returns
-    /// The elapsed duration recorded by the retry executor when it stopped.
-    ///
-    /// # Errors
-    /// This method does not return errors.
+    /// The reason the retry flow stopped.
     #[inline]
-    pub fn elapsed(&self) -> Duration {
-        match self {
-            Self::Aborted { elapsed, .. }
-            | Self::AttemptsExceeded { elapsed, .. }
-            | Self::MaxElapsedExceeded { elapsed, .. } => *elapsed,
-        }
+    pub fn reason(&self) -> RetryErrorReason {
+        self.reason
+    }
+
+    /// Returns the retry context captured at termination.
+    ///
+    /// # Parameters
+    /// This method has no parameters.
+    ///
+    /// # Returns
+    /// A context snapshot with attempt counts and timing metadata.
+    #[inline]
+    pub fn context(&self) -> &RetryContext {
+        &self.context
+    }
+
+    /// Returns the number of attempts that were executed.
+    ///
+    /// # Returns
+    /// The number of operation attempts observed before termination.
+    #[inline]
+    pub fn attempts(&self) -> u32 {
+        self.context.attempt()
     }
 
     /// Returns the last failure, if one exists.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
-    /// `Some(&RetryAttemptFailure<E>)` when at least one attempt failure was
-    /// observed; `None` when the elapsed budget was exhausted before any
-    /// attempt ran.
-    ///
-    /// # Errors
-    /// This method does not return errors.
+    /// `Some(&AttemptFailure<E>)` when at least one attempt failure was observed;
+    /// `None` when the retry flow stopped before any attempt ran.
     #[inline]
-    pub fn last_failure(&self) -> Option<&RetryAttemptFailure<E>> {
-        match self {
-            Self::Aborted { failure, .. } => Some(failure),
-            Self::AttemptsExceeded { last_failure, .. } => Some(last_failure),
-            Self::MaxElapsedExceeded { last_failure, .. } => last_failure.as_ref(),
-        }
+    pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
+        self.last_failure.as_ref()
     }
 
     /// Returns the last application error, if one exists.
@@ -144,7 +116,7 @@ impl<E> RetryError<E> {
     /// This method does not return errors.
     #[inline]
     pub fn last_error(&self) -> Option<&E> {
-        self.last_failure().and_then(RetryAttemptFailure::as_error)
+        self.last_failure().and_then(AttemptFailure::as_error)
     }
 
     /// Consumes the retry error and returns the last application error when
@@ -161,13 +133,7 @@ impl<E> RetryError<E> {
     /// This method does not return errors.
     #[inline]
     pub fn into_last_error(self) -> Option<E> {
-        match self {
-            Self::Aborted { failure, .. } => failure.into_error(),
-            Self::AttemptsExceeded { last_failure, .. } => last_failure.into_error(),
-            Self::MaxElapsedExceeded { last_failure, .. } => {
-                last_failure.and_then(RetryAttemptFailure::into_error)
-            }
-        }
+        self.last_failure.and_then(AttemptFailure::into_error)
     }
 }
 
@@ -186,43 +152,22 @@ where
     /// # Errors
     /// Returns a formatting error if the underlying formatter fails.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Aborted {
-                attempts,
-                failure,
-                ..
-            } => write!(
+        let attempts = self.attempts();
+        match self.reason {
+            RetryErrorReason::Aborted => write!(f, "retry aborted after {attempts} attempt(s)")?,
+            RetryErrorReason::AttemptsExceeded => write!(
                 f,
-                "retry aborted after {attempts} attempt(s); failure: {failure}"
-            ),
-            Self::AttemptsExceeded {
-                attempts,
-                max_attempts,
-                last_failure,
-                ..
-            } => write!(
-                f,
-                "retry attempts exceeded: {attempts} attempt(s), max {max_attempts}; last failure: {last_failure}"
-            ),
-            Self::MaxElapsedExceeded {
-                attempts,
-                max_elapsed,
-                last_failure,
-                ..
-            } => {
-                if let Some(failure) = last_failure {
-                    write!(
-                        f,
-                        "retry max elapsed exceeded after {attempts} attempt(s); max {max_elapsed:?}; last failure: {failure}"
-                    )
-                } else {
-                    write!(
-                        f,
-                        "retry max elapsed exceeded after {attempts} attempt(s); max {max_elapsed:?}"
-                    )
-                }
+                "retry attempts exceeded after {attempts} attempt(s), max {}",
+                self.context.max_attempts()
+            )?,
+            RetryErrorReason::MaxElapsedExceeded => {
+                write!(f, "retry max elapsed exceeded after {attempts} attempt(s)")?
             }
         }
+        if let Some(failure) = &self.last_failure {
+            write!(f, "; last failure: {failure}")?;
+        }
+        Ok(())
     }
 }
 

@@ -12,5 +12,4 @@ mod error;
 mod event;
 mod executor;
 mod options;
-mod readme;
 mod support;

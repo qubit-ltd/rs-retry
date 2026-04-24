@@ -7,8 +7,4 @@
  *
  ******************************************************************************/
 
-mod retry_abort_context_tests;
-mod retry_attempt_failure_ref_tests;
 mod retry_context_tests;
-mod retry_failure_context_tests;
-mod retry_success_context_tests;

@@ -6,5 +6,13 @@
  *    All rights reserved.
  *
  ******************************************************************************/
+//! Before-attempt listener alias.
 
-mod retry_delay_tests;
+use qubit_function::ArcConsumer;
+
+use crate::RetryContext;
+
+/// Listener invoked before every operation attempt.
+///
+/// The first attempt also triggers this listener.
+pub type BeforeAttemptListener = ArcConsumer<RetryContext>;

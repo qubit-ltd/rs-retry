@@ -66,9 +66,9 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "cc"
-version = "1.2.60"
+version = "1.2.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43c5703da9466b66a946814e1adf53ea2c90f10063b86290cc9eb67ce3478a20"
+checksum = "d16d90359e986641506914ba71350897565610e87ce0ad9e6f28569db3dd5c6d"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -384,9 +384,9 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "libc"
-version = "0.2.185"
+version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52ff2c0fe9bc6cb6b14a0592c2ff4fa9ceb83eea9db979b0487cd054946a2b8f"
+checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
 name = "libm"
@@ -543,9 +543,9 @@ dependencies = [
 
 [[package]]
 name = "pastey"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b867cad97c0791bbd3aaa6472142568c6c9e8f71937e98379f584cfb0cf35bec"
+checksum = "c5a797f0e07bdf071d15742978fc3128ec6c22891c31a3a931513263904c982a"
 
 [[package]]
 name = "percent-encoding"
@@ -589,9 +589,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-common"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e25dc20c07b3f91f1ab570ec1946c136d288793352b52bbdb27f3f32792538b"
+version = "0.6.2"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -605,9 +603,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-config"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4d29e163051bcf620e593993a99b83b3f4b8c58dc87d3dde7f3c4318ed28520"
+checksum = "96920cc48b4af1af63eda72f85424dbbe9aa8448113f74c24f6029eedb0acc5e"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -627,9 +625,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-function"
-version = "0.10.1"
+version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5dee4b9323ede3c42a8fc1b0bd17cf39ca4b8d4ebaec52d06c52f71d26fa01c6"
+checksum = "b597b48e86b813801c61a7c0ce3ec8a37be6c53ae1f10343a90560b3c1dea7b4"
 dependencies = [
  "parking_lot",
  "pastey",
@@ -653,9 +651,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-value"
-version = "0.4.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd738c20d5e847ba172fa4549e8a954aa54346e20382cf1b9ea0566294e56213"
+checksum = "7fec42009a21f4a58c690cd58d6206681a5622f73fd185bb3fb0cff41e2e95a1"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -1345,9 +1343,9 @@ dependencies = [
 
 [[package]]
 name = "winnow"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09dac053f1cd375980747450bfc7250c264eaae0583872e845c0c7cd578872b5"
+checksum = "2ee1708bef14716a11bae175f579062d4554d95be2c6829f518df847b7b3fdd0"
 
 [[package]]
 name = "wit-bindgen"

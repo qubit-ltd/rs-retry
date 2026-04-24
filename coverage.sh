@@ -12,7 +12,7 @@
 # Uses cargo-llvm-cov to generate code coverage reports
 #
 
-set -e
+set -euo pipefail
 
 echo "🔍 Starting code coverage testing..."
 
@@ -81,11 +81,14 @@ else
     echo "ℹ️  Using cached build (use --clean option if you need to clean cache)"
 fi
 
+# cargo-llvm-cov does not create parent directories for --json/--lcov/--cobertura outputs
+mkdir -p target/llvm-cov
+
 # Run tests and generate coverage reports
 case "$FORMAT_ARG" in
     html)
         echo "📊 Generating HTML format coverage report..."
-        cargo llvm-cov --package "$PACKAGE_NAME" --html --open \
+        cargo llvm-cov --package "$PACKAGE_NAME" --all-features --html --open \
             --ignore-filename-regex "$EXCLUDE_PATTERN"
         echo "✅ HTML report generated and opened in browser"
         echo "   Report location: target/llvm-cov/html/index.html"
@@ -93,13 +96,13 @@ case "$FORMAT_ARG" in
 
     text)
         echo "📊 Generating text format coverage report..."
-        cargo llvm-cov --package "$PACKAGE_NAME" \
+        cargo llvm-cov --package "$PACKAGE_NAME" --all-features \
             --ignore-filename-regex "$EXCLUDE_PATTERN"
         ;;
 
     lcov)
         echo "📊 Generating LCOV format coverage report..."
-        cargo llvm-cov --package "$PACKAGE_NAME" --lcov --output-path target/llvm-cov/lcov.info \
+        cargo llvm-cov --package "$PACKAGE_NAME" --all-features --lcov --output-path target/llvm-cov/lcov.info \
             --ignore-filename-regex "$EXCLUDE_PATTERN"
         echo "✅ LCOV report generated"
         echo "   Report location: target/llvm-cov/lcov.info"
@@ -107,7 +110,7 @@ case "$FORMAT_ARG" in
 
     json)
         echo "📊 Generating JSON format coverage report..."
-        cargo llvm-cov --package "$PACKAGE_NAME" --json --output-path target/llvm-cov/coverage.json \
+        cargo llvm-cov --package "$PACKAGE_NAME" --all-features --json --output-path target/llvm-cov/coverage.json \
             --ignore-filename-regex "$EXCLUDE_PATTERN"
         echo "✅ JSON report generated"
         echo "   Report location: target/llvm-cov/coverage.json"
@@ -115,7 +118,7 @@ case "$FORMAT_ARG" in
 
     cobertura)
         echo "📊 Generating Cobertura XML format coverage report..."
-        cargo llvm-cov --package "$PACKAGE_NAME" --cobertura --output-path target/llvm-cov/cobertura.xml \
+        cargo llvm-cov --package "$PACKAGE_NAME" --all-features --cobertura --output-path target/llvm-cov/cobertura.xml \
             --ignore-filename-regex "$EXCLUDE_PATTERN"
         echo "✅ Cobertura report generated"
         echo "   Report location: target/llvm-cov/cobertura.xml"
@@ -126,22 +129,22 @@ case "$FORMAT_ARG" in
 
         # HTML
         echo "  - Generating HTML report..."
-        cargo llvm-cov --package "$PACKAGE_NAME" --html \
+        cargo llvm-cov --package "$PACKAGE_NAME" --all-features --html \
             --ignore-filename-regex "$EXCLUDE_PATTERN"
 
         # LCOV
         echo "  - Generating LCOV report..."
-        cargo llvm-cov --package "$PACKAGE_NAME" --lcov --output-path target/llvm-cov/lcov.info \
+        cargo llvm-cov --package "$PACKAGE_NAME" --all-features --lcov --output-path target/llvm-cov/lcov.info \
             --ignore-filename-regex "$EXCLUDE_PATTERN"
 
         # JSON
         echo "  - Generating JSON report..."
-        cargo llvm-cov --package "$PACKAGE_NAME" --json --output-path target/llvm-cov/coverage.json \
+        cargo llvm-cov --package "$PACKAGE_NAME" --all-features --json --output-path target/llvm-cov/coverage.json \
             --ignore-filename-regex "$EXCLUDE_PATTERN"
 
         # Cobertura
         echo "  - Generating Cobertura XML report..."
-        cargo llvm-cov --package "$PACKAGE_NAME" --cobertura --output-path target/llvm-cov/cobertura.xml \
+        cargo llvm-cov --package "$PACKAGE_NAME" --all-features --cobertura --output-path target/llvm-cov/cobertura.xml \
             --ignore-filename-regex "$EXCLUDE_PATTERN"
 
         echo "✅ All format reports generated"
@@ -167,6 +170,10 @@ case "$FORMAT_ARG" in
         echo "  --clean    Clean old coverage data and build cache before running"
         echo "             By default, cached builds are used to speed up compilation"
         echo ""
+        echo "Feature coverage:"
+        echo "  All reports run cargo llvm-cov with --all-features so optional"
+        echo "  tokio and config code paths are included in coverage data."
+        echo ""
         echo "Performance tips:"
         echo "  • First run will be slower (needs to compile all dependencies)"
         echo "  • Subsequent runs will be much faster (using cache)"
@@ -189,4 +196,3 @@ case "$FORMAT_ARG" in
 esac
 
 echo "✅ Code coverage testing completed!"
-

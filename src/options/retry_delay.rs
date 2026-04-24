@@ -105,7 +105,7 @@ pub enum RetryDelay {
     #[display("fixed({0})")]
     Fixed(
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "crate::serde_millis")]
+        #[serde(with = "qubit_common::serde::duration_millis")]
         Duration,
     ),
 
@@ -114,11 +114,11 @@ pub enum RetryDelay {
     Random {
         /// Lower bound for the delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "crate::serde_millis")]
+        #[serde(with = "qubit_common::serde::duration_millis")]
         min: Duration,
         /// Upper bound for the delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "crate::serde_millis")]
+        #[serde(with = "qubit_common::serde::duration_millis")]
         max: Duration,
     },
 
@@ -127,11 +127,11 @@ pub enum RetryDelay {
     Exponential {
         /// RetryDelay used for the first retry.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "crate::serde_millis")]
+        #[serde(with = "qubit_common::serde::duration_millis")]
         initial: Duration,
         /// Maximum delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "crate::serde_millis")]
+        #[serde(with = "qubit_common::serde::duration_millis")]
         max: Duration,
         /// Multiplicative factor applied per failed attempt.
         multiplier: f64,

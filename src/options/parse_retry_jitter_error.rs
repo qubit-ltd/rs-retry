@@ -6,5 +6,9 @@
  *    All rights reserved.
  *
  ******************************************************************************/
+//! Retry jitter parse error alias.
 
-mod readme_examples_tests;
+use parse_display::ParseError;
+
+/// Failure to parse a [`crate::RetryJitter`] from text.
+pub type ParseRetryJitterError = ParseError;

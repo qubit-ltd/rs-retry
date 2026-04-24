@@ -19,13 +19,13 @@ use super::retry_delay::RetryDelay;
 use super::retry_jitter::RetryJitter;
 use super::retry_options::RetryOptions;
 
+use crate::RetryConfigError;
 use crate::constants::{
     KEY_DELAY, KEY_DELAY_STRATEGY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
     KEY_EXPONENTIAL_MAX_DELAY_MILLIS, KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS,
     KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS, KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED,
     KEY_RANDOM_MAX_DELAY_MILLIS, KEY_RANDOM_MIN_DELAY_MILLIS,
 };
-use crate::RetryConfigError;
 
 /// Raw retry configuration values read from `qubit-config`.
 ///

@@ -6,25 +6,180 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-//! Retry context payload.
+//! Retry event context payload.
 //!
-//! Retry contexts are emitted after an attempt fails and before the executor sleeps
-//! for the next attempt.
+//! A retry context is the shared metadata snapshot passed to attempt, failure,
+//! and terminal-error listeners.
 
 use std::time::Duration;
 
-/// Context emitted before a retry sleep.
+use serde::{Deserialize, Serialize};
+
+/// Context emitted for retry lifecycle events.
 ///
-/// Carries retry metadata while the triggering failure is passed separately to
-/// retry listeners.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// `attempt` is one-based for attempt-related events and zero when a retry flow
+/// stops before any attempt is executed. `total_elapsed` measures the whole retry
+/// flow. `attempt_elapsed` is set after an attempt completes and is zero before
+/// an attempt starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetryContext {
-    /// Attempt that just failed.
-    pub attempt: u32,
+    /// Current attempt number, or zero if no attempt has run.
+    attempt: u32,
     /// Configured maximum attempts.
-    pub max_attempts: u32,
-    /// Elapsed time observed before sleeping.
-    pub elapsed: Duration,
-    /// RetryDelay that will be slept before the next attempt.
-    pub next_delay: Duration,
+    max_attempts: u32,
+    /// Configured maximum total elapsed time.
+    max_elapsed: Option<Duration>,
+    /// Elapsed time since the retry flow started.
+    total_elapsed: Duration,
+    /// Elapsed time spent in the current attempt.
+    attempt_elapsed: Duration,
+    /// Timeout configured for the current attempt.
+    attempt_timeout: Option<Duration>,
+    /// Delay selected before the next attempt, when known.
+    next_delay: Option<Duration>,
+    /// Optional retry-after hint extracted before failure policy runs.
+    retry_after_hint: Option<Duration>,
+}
+
+impl RetryContext {
+    /// Creates a retry context snapshot.
+    ///
+    /// # Parameters
+    /// - `attempt`: Current attempt number, starting at 1, or 0 before any
+    ///   attempt has run.
+    /// - `max_attempts`: Configured maximum attempts.
+    /// - `max_elapsed`: Optional total elapsed-time budget.
+    /// - `total_elapsed`: Elapsed time since the retry flow started.
+    /// - `attempt_elapsed`: Elapsed time for the current attempt.
+    /// - `attempt_timeout`: Optional timeout for the current attempt.
+    ///
+    /// # Returns
+    /// A retry context with no selected next delay or retry-after hint.
+    pub fn new(
+        attempt: u32,
+        max_attempts: u32,
+        max_elapsed: Option<Duration>,
+        total_elapsed: Duration,
+        attempt_elapsed: Duration,
+        attempt_timeout: Option<Duration>,
+    ) -> Self {
+        Self {
+            attempt,
+            max_attempts,
+            max_elapsed,
+            total_elapsed,
+            attempt_elapsed,
+            attempt_timeout,
+            next_delay: None,
+            retry_after_hint: None,
+        }
+    }
+
+    /// Returns this event's attempt number.
+    ///
+    /// # Returns
+    /// A one-based attempt number, or zero if no attempt has run.
+    #[inline]
+    pub fn attempt(&self) -> u32 {
+        self.attempt
+    }
+
+    /// Returns the maximum number of attempts.
+    ///
+    /// # Returns
+    /// The configured maximum attempts, including the initial attempt.
+    #[inline]
+    pub fn max_attempts(&self) -> u32 {
+        self.max_attempts
+    }
+
+    /// Returns the maximum number of retries.
+    ///
+    /// # Returns
+    /// The configured maximum retry count after the initial attempt.
+    #[inline]
+    pub fn max_retries(&self) -> u32 {
+        self.max_attempts.saturating_sub(1)
+    }
+
+    /// Returns the optional total elapsed-time budget.
+    ///
+    /// # Returns
+    /// `Some(Duration)` for bounded retry flows, or `None` for unlimited flows.
+    #[inline]
+    pub fn max_elapsed(&self) -> Option<Duration> {
+        self.max_elapsed
+    }
+
+    /// Returns elapsed time since the retry flow started.
+    ///
+    /// # Returns
+    /// Total elapsed time observed at this event.
+    #[inline]
+    pub fn total_elapsed(&self) -> Duration {
+        self.total_elapsed
+    }
+
+    /// Returns elapsed time spent in the current attempt.
+    ///
+    /// # Returns
+    /// Attempt elapsed time. Before-attempt events report zero.
+    #[inline]
+    pub fn attempt_elapsed(&self) -> Duration {
+        self.attempt_elapsed
+    }
+
+    /// Returns the timeout configured for the current attempt.
+    ///
+    /// # Returns
+    /// `Some(Duration)` when this retry flow has a per-attempt timeout.
+    #[inline]
+    pub fn attempt_timeout(&self) -> Option<Duration> {
+        self.attempt_timeout
+    }
+
+    /// Returns the delay selected before the next attempt.
+    ///
+    /// # Returns
+    /// `Some(Duration)` after retry scheduling has selected a delay; otherwise
+    /// `None`.
+    #[inline]
+    pub fn next_delay(&self) -> Option<Duration> {
+        self.next_delay
+    }
+
+    /// Returns a retry-after hint extracted from the failure.
+    ///
+    /// # Returns
+    /// `Some(Duration)` when a configured hint extractor produced a value.
+    #[inline]
+    pub fn retry_after_hint(&self) -> Option<Duration> {
+        self.retry_after_hint
+    }
+
+    /// Returns a copy of this context with a selected retry delay.
+    ///
+    /// # Parameters
+    /// - `delay`: Delay selected before the next attempt.
+    ///
+    /// # Returns
+    /// A context carrying the selected delay.
+    #[inline]
+    pub(crate) fn with_next_delay(mut self, delay: Duration) -> Self {
+        self.next_delay = Some(delay);
+        self
+    }
+
+    /// Returns a copy of this context with a retry-after hint.
+    ///
+    /// # Parameters
+    /// - `hint`: Optional retry-after hint.
+    ///
+    /// # Returns
+    /// A context carrying the hint.
+    #[inline]
+    pub(crate) fn with_retry_after_hint(mut self, hint: Option<Duration>) -> Self {
+        self.retry_after_hint = hint;
+        self
+    }
 }

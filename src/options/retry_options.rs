@@ -8,7 +8,7 @@
  ******************************************************************************/
 //! Retry option snapshot and configuration loading helpers.
 //!
-//! This module contains the immutable options consumed by [`crate::RetryExecutor`].
+//! This module contains the immutable options consumed by [`crate::Retry`].
 //! Raw config merge logic lives in [`crate::options::retry_config_values`].
 //!
 //! Author: Haixing Hu
@@ -16,8 +16,10 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
+#[cfg(feature = "config")]
 use qubit_config::ConfigReader;
 
+#[cfg(feature = "config")]
 use super::retry_config_values::RetryConfigValues;
 
 use crate::constants::{
@@ -26,7 +28,7 @@ use crate::constants::{
 };
 use crate::{RetryConfigError, RetryDelay, RetryJitter};
 
-/// Immutable retry option snapshot used by [`crate::RetryExecutor`].
+/// Immutable retry option snapshot used by [`crate::Retry`].
 ///
 /// `RetryOptions` owns all executor configuration that is independent of the
 /// application error type: attempt limits, total elapsed-time budget, delay
@@ -162,6 +164,7 @@ impl RetryOptions {
     /// Returns [`RetryConfigError`] when a key cannot be read as the expected
     /// type, the delay strategy name is unsupported, or the resulting options
     /// fail validation.
+    #[cfg(feature = "config")]
     pub fn from_config<R>(config: &R) -> Result<Self, RetryConfigError>
     where
         R: ConfigReader + ?Sized,
@@ -235,11 +238,7 @@ impl RetryOptions {
             } => {
                 let bounded_current = current.min(*max);
                 let next = bounded_current.mul_f64(*multiplier);
-                if next > *max {
-                    *max
-                } else {
-                    next
-                }
+                if next > *max { *max } else { next }
             }
         }
     }

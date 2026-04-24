@@ -8,12 +8,16 @@
  ******************************************************************************/
 //! Retry option modules and public re-exports.
 
+mod parse_retry_jitter_error;
+#[cfg(feature = "config")]
 mod retry_config_values;
 mod retry_delay;
 mod retry_jitter;
 mod retry_options;
 
+pub use parse_retry_jitter_error::ParseRetryJitterError;
+#[cfg(feature = "config")]
 pub use retry_config_values::RetryConfigValues;
 pub use retry_delay::RetryDelay;
-pub use retry_jitter::{ParseRetryJitterError, RetryJitter};
+pub use retry_jitter::RetryJitter;
 pub use retry_options::RetryOptions;

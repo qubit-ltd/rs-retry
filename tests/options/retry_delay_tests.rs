@@ -10,8 +10,8 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use qubit_retry::constants::DEFAULT_RETRY_DELAY;
 use qubit_retry::RetryDelay;
+use qubit_retry::constants::DEFAULT_RETRY_DELAY;
 
 /// Verifies every delay variant calculates the expected base delay.
 ///
@@ -88,9 +88,11 @@ fn test_exponential_delay_handles_large_durations() {
 #[test]
 fn test_validate_rejects_invalid_values() {
     assert!(RetryDelay::fixed(Duration::ZERO).validate().is_err());
-    assert!(RetryDelay::random(Duration::ZERO, Duration::from_millis(1))
-        .validate()
-        .is_err());
+    assert!(
+        RetryDelay::random(Duration::ZERO, Duration::from_millis(1))
+            .validate()
+            .is_err()
+    );
     assert!(
         RetryDelay::random(Duration::from_millis(2), Duration::from_millis(1))
             .validate()
@@ -116,13 +118,15 @@ fn test_validate_rejects_invalid_values() {
             .validate()
             .is_err()
     );
-    assert!(RetryDelay::exponential(
-        Duration::from_secs(1),
-        Duration::from_secs(2),
-        f64::INFINITY
-    )
-    .validate()
-    .is_err());
+    assert!(
+        RetryDelay::exponential(
+            Duration::from_secs(1),
+            Duration::from_secs(2),
+            f64::INFINITY
+        )
+        .validate()
+        .is_err()
+    );
     assert!(RetryDelay::default().validate().is_ok());
 }
 

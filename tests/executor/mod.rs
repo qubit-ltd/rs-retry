@@ -7,5 +7,5 @@
  *
  ******************************************************************************/
 
-mod retry_executor;
-mod retry_executor_builder;
+mod retry_builder_tests;
+mod retry_tests;

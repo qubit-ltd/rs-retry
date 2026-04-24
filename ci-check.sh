@@ -12,7 +12,7 @@
 # Run this script before committing code to ensure it passes all CircleCI checks
 #
 
-set -e  # Exit immediately on error
+set -euo pipefail
 
 # Color definitions
 RED='\033[0;31m'
@@ -100,13 +100,22 @@ fi
 echo ""
 
 # Check 4: Run tests
-print_step "4/6 Running tests (cargo test)..."
-if cargo test --verbose; then
-    print_success "All tests passed"
-else
-    print_error "Tests failed"
-    exit 1
-fi
+print_step "4/6 Running tests across feature combinations..."
+TEST_COMMANDS=(
+    "cargo test --verbose"
+    "cargo test --features tokio --verbose"
+    "cargo test --features config --verbose"
+    "cargo test --all-features --verbose"
+)
+for test_command in "${TEST_COMMANDS[@]}"; do
+    print_step "Running: $test_command"
+    if eval "$test_command"; then
+        print_success "Passed: $test_command"
+    else
+        print_error "Failed: $test_command"
+        exit 1
+    fi
+done
 echo ""
 
 # Check 5: Code coverage
@@ -115,7 +124,7 @@ if command -v cargo-llvm-cov &> /dev/null; then
     PACKAGE_NAME=$(grep "^name = " Cargo.toml | head -n 1 | sed 's/name = "\(.*\)"/\1/')
 
     # Generate text format coverage report
-    COVERAGE_OUTPUT=$(cargo llvm-cov --package "$PACKAGE_NAME" \
+    COVERAGE_OUTPUT=$(cargo llvm-cov --package "$PACKAGE_NAME" --all-features \
         --ignore-filename-regex "(\.cargo/registry|\.rustup/)" 2>&1)
 
     # Extract coverage percentage
@@ -173,4 +182,3 @@ echo ""
 
 # Clean up temporary files
 rm -f /tmp/clippy-output.txt
-

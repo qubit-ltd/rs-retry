@@ -15,6 +15,7 @@
 use std::error::Error;
 use std::fmt;
 
+#[cfg(feature = "config")]
 use qubit_config::ConfigError;
 
 /// Invalid retry configuration.
@@ -59,6 +60,7 @@ impl RetryConfigError {
     /// # Errors
     /// This function does not return errors.
     #[inline]
+    #[cfg(feature = "config")]
     pub fn from_config(path: impl Into<String>, source: ConfigError) -> Self {
         Self {
             path: path.into(),
@@ -124,6 +126,7 @@ impl fmt::Display for RetryConfigError {
 
 impl Error for RetryConfigError {}
 
+#[cfg(feature = "config")]
 impl From<ConfigError> for RetryConfigError {
     /// Converts a `qubit-config` error into a retry configuration error.
     ///

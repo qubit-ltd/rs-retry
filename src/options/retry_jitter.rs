@@ -32,8 +32,8 @@ use parse_display::{Display, DisplayFormat, FromStr as DeriveFromStr, FromStrFor
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 
-use crate::constants::DEFAULT_RETRY_JITTER;
 use crate::RetryDelay;
+use crate::constants::DEFAULT_RETRY_JITTER;
 
 /// Jitter strategy applied after a base [`crate::RetryDelay`] has been calculated.
 ///
@@ -55,9 +55,6 @@ pub enum RetryJitter {
     #[from_str(regex = r"\s*factor:\s*(?<0>\S(?:.*\S)?)\s*")]
     Factor(#[display(with = RetryJitterFactorFormat)] f64),
 }
-
-/// Failure to parse a [`RetryJitter`] from text.
-pub type ParseRetryJitterError = ParseError;
 
 /// Formats jitter factors as `f64` text and parses with range validation.
 struct RetryJitterFactorFormat;
