@@ -211,10 +211,13 @@ fn test_retry_delay_from_str_rejects_invalid_inputs() {
         "fixed",
         "fixed(12)",
         "fixed(ms)",
+        "fixed(18446744073709551616ms)",
         "random(5..=8)",
         "random(5ms..8ms)",
+        "random(5ms..=18446744073709551616ms)",
         "exponential(initial=100ms,max=500ms,multiplier=2)",
         "exponential(initial=100ms, max=500ms, multiplier=)",
+        "exponential(initial=18446744073709551616ms, max=500ms, multiplier=2)",
     ] {
         assert!(
             RetryDelay::from_str(s).is_err(),

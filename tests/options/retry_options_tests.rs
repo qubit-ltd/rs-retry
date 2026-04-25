@@ -11,9 +11,10 @@ use std::time::Duration;
 
 use qubit_config::Config;
 use qubit_retry::constants::{
-    KEY_DELAY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
-    KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_MAX_ATTEMPTS,
-    KEY_MAX_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS, KEY_RANDOM_MIN_DELAY_MILLIS,
+    KEY_DELAY, KEY_DELAY_STRATEGY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
+    KEY_EXPONENTIAL_MAX_DELAY_MILLIS, KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS,
+    KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS, KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED,
+    KEY_RANDOM_MAX_DELAY_MILLIS, KEY_RANDOM_MIN_DELAY_MILLIS,
 };
 use qubit_retry::{RetryDelay, RetryJitter, RetryOptions};
 
@@ -42,6 +43,11 @@ fn test_validate_default_and_new() {
     let zero = RetryOptions::new(0, None, RetryDelay::none(), RetryJitter::none())
         .expect_err("zero attempts should be rejected");
     assert_eq!(zero.path(), KEY_MAX_ATTEMPTS);
+
+    let invalid_jitter =
+        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::factor(f64::NAN))
+            .expect_err("invalid jitter should be rejected");
+    assert_eq!(invalid_jitter.path(), KEY_JITTER_FACTOR);
 }
 
 /// Verifies prefixed configuration values are read into fixed-delay options.
@@ -299,6 +305,39 @@ fn test_from_config_reads_explicit_and_implicit_delay_defaults() {
 /// with the wrong path.
 #[test]
 fn test_from_config_reports_delay_parameter_type_errors() {
+    let mut elapsed_bad = Config::new();
+    elapsed_bad
+        .set("max_elapsed_millis", "bad")
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&elapsed_bad)
+            .expect_err("invalid max elapsed type should fail")
+            .path(),
+        KEY_MAX_ELAPSED_MILLIS
+    );
+
+    let mut delay_bad = Config::new();
+    delay_bad
+        .set("delay", 123u64)
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&delay_bad)
+            .expect_err("invalid delay type should fail")
+            .path(),
+        KEY_DELAY
+    );
+
+    let mut delay_strategy_bad = Config::new();
+    delay_strategy_bad
+        .set("delay_strategy", 123u64)
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&delay_strategy_bad)
+            .expect_err("invalid delay strategy type should fail")
+            .path(),
+        KEY_DELAY_STRATEGY
+    );
+
     let mut fixed_bad = Config::new();
     fixed_bad
         .set("delay", "fixed")
@@ -382,6 +421,17 @@ fn test_from_config_reports_delay_parameter_type_errors() {
             .path(),
         KEY_EXPONENTIAL_MULTIPLIER
     );
+
+    let mut jitter_bad = Config::new();
+    jitter_bad
+        .set("jitter_factor", "bad")
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&jitter_bad)
+            .expect_err("invalid jitter factor type should fail")
+            .path(),
+        KEY_JITTER_FACTOR
+    );
 }
 
 /// Verifies retry delay calculation helpers on [`RetryOptions`].
@@ -434,5 +484,24 @@ fn test_retry_options_delay_calculation_helpers() {
     assert_eq!(
         fixed.next_base_delay_from_current(Duration::from_millis(99)),
         Duration::from_millis(7)
+    );
+
+    let none = RetryOptions::new(3, None, RetryDelay::none(), RetryJitter::none())
+        .expect("none retry options should be valid");
+    assert_eq!(
+        none.next_base_delay_from_current(Duration::from_millis(99)),
+        Duration::ZERO
+    );
+
+    let random = RetryOptions::new(
+        3,
+        None,
+        RetryDelay::random(Duration::from_millis(4), Duration::from_millis(4)),
+        RetryJitter::none(),
+    )
+    .expect("random retry options should be valid");
+    assert_eq!(
+        random.next_base_delay_from_current(Duration::from_millis(99)),
+        Duration::from_millis(4)
     );
 }

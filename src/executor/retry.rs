@@ -15,6 +15,8 @@
 use std::fmt;
 #[cfg(feature = "tokio")]
 use std::future::Future;
+#[cfg(feature = "tokio")]
+use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 use qubit_common::BoxError;
@@ -98,6 +100,19 @@ impl<E> Retry<E> {
     where
         F: FnMut() -> Result<T, E>,
     {
+        let mut operation = SyncValueOperation::new(&mut operation);
+        self.run_sync_operation(&mut operation)?;
+        Ok(operation.into_value())
+    }
+
+    /// Runs a synchronous value-erased operation with retry.
+    ///
+    /// # Parameters
+    /// - `operation`: Operation adapter called once per attempt.
+    ///
+    /// # Returns
+    /// `Ok(())` after a successful attempt, or [`RetryError`] when retrying stops.
+    fn run_sync_operation(&self, operation: &mut dyn SyncAttempt<E>) -> Result<(), RetryError<E>> {
         let start = Instant::now();
         let mut attempts = 0;
         let mut last_failure = None;
@@ -112,14 +127,13 @@ impl<E> Retry<E> {
             self.emit_before_attempt(&before_context);
 
             let attempt_start = Instant::now();
-            match operation() {
-                Ok(value) => {
+            match operation.call() {
+                Ok(()) => {
                     let context = self.context(start, attempts, attempt_start.elapsed(), None);
                     self.emit_attempt_success(&context);
-                    return Ok(value);
+                    return Ok(());
                 }
-                Err(error) => {
-                    let failure = AttemptFailure::Error(error);
+                Err(failure) => {
                     let context = self.context(start, attempts, attempt_start.elapsed(), None);
                     match self.handle_failure(start, attempts, failure, context) {
                         RetryFlowAction::Retry { delay, failure } => {
@@ -153,6 +167,23 @@ impl<E> Retry<E> {
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
+        let mut operation = AsyncValueOperation::new(&mut operation);
+        self.run_async_operation(&mut operation).await?;
+        Ok(operation.into_value())
+    }
+
+    /// Runs an asynchronous value-erased operation with retry.
+    ///
+    /// # Parameters
+    /// - `operation`: Async operation adapter called once per attempt.
+    ///
+    /// # Returns
+    /// `Ok(())` after a successful attempt, or [`RetryError`] when retrying stops.
+    #[cfg(feature = "tokio")]
+    async fn run_async_operation(
+        &self,
+        operation: &mut dyn AsyncAttempt<E>,
+    ) -> Result<(), RetryError<E>> {
         let start = Instant::now();
         let mut attempts = 0;
         let mut last_failure = None;
@@ -171,12 +202,12 @@ impl<E> Retry<E> {
 
             let attempt_start = Instant::now();
             let result = if let Some(timeout) = self.attempt_timeout {
-                match tokio::time::timeout(timeout, operation()).await {
-                    Ok(result) => result.map_err(AttemptFailure::Error),
+                match tokio::time::timeout(timeout, operation.call()).await {
+                    Ok(result) => result,
                     Err(_) => Err(AttemptFailure::Timeout),
                 }
             } else {
-                operation().await.map_err(AttemptFailure::Error)
+                operation.call().await
             };
 
             let context = self.context(
@@ -186,9 +217,9 @@ impl<E> Retry<E> {
                 self.attempt_timeout,
             );
             match result {
-                Ok(value) => {
+                Ok(()) => {
                     self.emit_attempt_success(&context);
-                    return Ok(value);
+                    return Ok(());
                 }
                 Err(failure) => match self.handle_failure(start, attempts, failure, context) {
                     RetryFlowAction::Retry { delay, failure } => {
@@ -465,6 +496,148 @@ impl<E> fmt::Debug for Retry<E> {
             .field("options", &self.options)
             .field("attempt_timeout", &self.attempt_timeout)
             .finish_non_exhaustive()
+    }
+}
+
+/// Type-erased synchronous attempt used by the retry loop.
+trait SyncAttempt<E> {
+    /// Calls the wrapped operation once.
+    ///
+    /// # Returns
+    /// `Ok(())` when the operation succeeded, or an attempt failure otherwise.
+    fn call(&mut self) -> Result<(), AttemptFailure<E>>;
+}
+
+/// Adapter that stores the successful value outside the type-erased retry loop.
+struct SyncValueOperation<T, F> {
+    /// Wrapped caller operation.
+    operation: F,
+    /// Successful value produced by the operation.
+    value: Option<T>,
+}
+
+impl<T, F> SyncValueOperation<T, F> {
+    /// Creates a synchronous value-capturing operation adapter.
+    ///
+    /// # Parameters
+    /// - `operation`: Operation to wrap.
+    ///
+    /// # Returns
+    /// A new adapter with no captured value.
+    fn new(operation: F) -> Self {
+        Self {
+            operation,
+            value: None,
+        }
+    }
+
+    /// Returns the value captured from a successful operation.
+    ///
+    /// # Returns
+    /// The captured value.
+    ///
+    /// # Panics
+    /// Panics only if the retry loop reports success without a successful
+    /// operation result, which would indicate an internal logic error.
+    fn into_value(self) -> T {
+        self.value
+            .expect("retry loop succeeded without an operation value")
+    }
+}
+
+impl<T, E, F> SyncAttempt<E> for SyncValueOperation<T, F>
+where
+    F: FnMut() -> Result<T, E>,
+{
+    /// Calls the wrapped operation and stores successful values.
+    ///
+    /// # Returns
+    /// `Ok(())` after storing a successful value, or an application failure.
+    fn call(&mut self) -> Result<(), AttemptFailure<E>> {
+        match (self.operation)() {
+            Ok(value) => {
+                self.value = Some(value);
+                Ok(())
+            }
+            Err(error) => Err(AttemptFailure::Error(error)),
+        }
+    }
+}
+
+/// Boxed future returned by a value-erased async attempt.
+#[cfg(feature = "tokio")]
+type AsyncAttemptFuture<'a, E> = Pin<Box<dyn Future<Output = Result<(), AttemptFailure<E>>> + 'a>>;
+
+/// Type-erased asynchronous attempt used by the retry loop.
+#[cfg(feature = "tokio")]
+trait AsyncAttempt<E> {
+    /// Calls the wrapped async operation once.
+    ///
+    /// # Returns
+    /// A future resolving to `Ok(())` on success or an attempt failure.
+    fn call(&mut self) -> AsyncAttemptFuture<'_, E>;
+}
+
+/// Adapter that stores async operation success values outside the retry loop.
+#[cfg(feature = "tokio")]
+struct AsyncValueOperation<T, F> {
+    /// Wrapped caller operation.
+    operation: F,
+    /// Successful value produced by the operation.
+    value: Option<T>,
+}
+
+#[cfg(feature = "tokio")]
+impl<T, F> AsyncValueOperation<T, F> {
+    /// Creates an asynchronous value-capturing operation adapter.
+    ///
+    /// # Parameters
+    /// - `operation`: Operation factory to wrap.
+    ///
+    /// # Returns
+    /// A new adapter with no captured value.
+    fn new(operation: F) -> Self {
+        Self {
+            operation,
+            value: None,
+        }
+    }
+
+    /// Returns the value captured from a successful async operation.
+    ///
+    /// # Returns
+    /// The captured value.
+    ///
+    /// # Panics
+    /// Panics only if the retry loop reports success without a successful
+    /// operation result, which would indicate an internal logic error.
+    fn into_value(self) -> T {
+        self.value
+            .expect("retry loop succeeded without an operation value")
+    }
+}
+
+#[cfg(feature = "tokio")]
+impl<T, E, F, Fut> AsyncAttempt<E> for AsyncValueOperation<T, F>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    /// Calls the wrapped async operation and stores successful values.
+    ///
+    /// # Returns
+    /// A future resolving to `Ok(())` after storing a successful value, or an
+    /// application failure.
+    fn call(&mut self) -> AsyncAttemptFuture<'_, E> {
+        Box::pin(async move {
+            match (self.operation)().await {
+                Ok(value) => {
+                    self.value = Some(value);
+                    Ok(())
+                }
+                Err(error) => Err(AttemptFailure::Error(error)),
+            }
+        })
     }
 }
 

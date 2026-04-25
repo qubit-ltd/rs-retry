@@ -7,4 +7,5 @@
  *
  ******************************************************************************/
 
+mod attempt_failure_decision_tests;
 mod retry_context_tests;

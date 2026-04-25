@@ -10,6 +10,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use qubit_common::BoxError;
 use qubit_retry::{
     AttemptFailure, AttemptFailureDecision, Retry, RetryContext, RetryError, RetryErrorReason,
 };
@@ -71,6 +72,169 @@ fn test_run_retries_until_success_and_emits_attempt_events() {
     assert_eq!(
         *successes.lock().expect("success events should be lockable"),
         vec![3]
+    );
+}
+
+/// Verifies the default boxed error type works through the retry executor.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when default error handling changes.
+#[test]
+fn test_run_default_boxed_error_type_exhausts_attempts() {
+    let retry = Retry::builder()
+        .max_attempts(1)
+        .no_delay()
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run(|| -> Result<(), BoxError> { Err(Box::new(TestError("boxed"))) })
+        .expect_err("single boxed error should exhaust attempts");
+
+    assert_eq!(error.reason(), RetryErrorReason::AttemptsExceeded);
+    assert_eq!(error.attempts(), 1);
+    assert_eq!(
+        error
+            .last_error()
+            .expect("boxed error should be preserved")
+            .to_string(),
+        "boxed"
+    );
+}
+
+/// Verifies the default boxed error type exercises listener and retry-delay paths.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when boxed-error retry behavior changes.
+#[test]
+fn test_run_default_boxed_error_type_observes_listeners_and_hints() {
+    let before_attempts = Arc::new(Mutex::new(Vec::new()));
+    let successes = Arc::new(Mutex::new(Vec::new()));
+    let failures = Arc::new(Mutex::new(Vec::new()));
+    let terminal_errors = Arc::new(Mutex::new(Vec::new()));
+
+    let before_events = Arc::clone(&before_attempts);
+    let success_events = Arc::clone(&successes);
+    let failure_events = Arc::clone(&failures);
+    let error_events = Arc::clone(&terminal_errors);
+    let retry = Retry::<BoxError>::builder()
+        .max_attempts(2)
+        .no_delay()
+        .retry_after_from_error(|error: &BoxError| {
+            if error.to_string() == "hinted" {
+                Some(Duration::ZERO)
+            } else {
+                None
+            }
+        })
+        .before_attempt(move |context: &RetryContext| {
+            before_events
+                .lock()
+                .expect("before events should be lockable")
+                .push(context.attempt());
+        })
+        .on_success(move |context: &RetryContext| {
+            success_events
+                .lock()
+                .expect("success events should be lockable")
+                .push(context.attempt());
+        })
+        .on_failure(
+            move |failure: &AttemptFailure<BoxError>, context: &RetryContext| {
+                let message = failure
+                    .as_error()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| "timeout".to_string());
+                failure_events
+                    .lock()
+                    .expect("failure events should be lockable")
+                    .push((context.attempt(), context.retry_after_hint(), message));
+                AttemptFailureDecision::UseDefault
+            },
+        )
+        .on_error(
+            move |error: &RetryError<BoxError>, context: &RetryContext| {
+                error_events
+                    .lock()
+                    .expect("terminal errors should be lockable")
+                    .push((
+                        error.reason(),
+                        context.attempt(),
+                        error
+                            .last_error()
+                            .map(ToString::to_string)
+                            .expect("terminal boxed error should exist"),
+                    ));
+            },
+        )
+        .build()
+        .expect("retry should build");
+
+    let mut success_attempts = 0;
+    let value = retry
+        .run(|| -> Result<&'static str, BoxError> {
+            success_attempts += 1;
+            if success_attempts == 1 {
+                Err(Box::new(TestError("hinted")))
+            } else {
+                Ok("done")
+            }
+        })
+        .expect("second attempt should succeed");
+
+    let mut failure_attempts = 0;
+    let error = retry
+        .run(|| -> Result<(), BoxError> {
+            failure_attempts += 1;
+            if failure_attempts == 1 {
+                Err(Box::new(TestError("plain")))
+            } else {
+                Err(Box::new(TestError("terminal")))
+            }
+        })
+        .expect_err("second run should exhaust attempts");
+
+    assert_eq!(value, "done");
+    assert_eq!(error.reason(), RetryErrorReason::AttemptsExceeded);
+    assert_eq!(
+        *before_attempts
+            .lock()
+            .expect("before events should be lockable"),
+        vec![1, 2, 1, 2]
+    );
+    assert_eq!(
+        *successes.lock().expect("success events should be lockable"),
+        vec![2]
+    );
+    assert_eq!(
+        *failures.lock().expect("failure events should be lockable"),
+        vec![
+            (1, Some(Duration::ZERO), "hinted".to_string()),
+            (1, None, "plain".to_string()),
+            (2, None, "terminal".to_string()),
+        ]
+    );
+    assert_eq!(
+        *terminal_errors
+            .lock()
+            .expect("terminal errors should be lockable"),
+        vec![(
+            RetryErrorReason::AttemptsExceeded,
+            2,
+            "terminal".to_string()
+        )]
     );
 }
 
@@ -261,6 +425,145 @@ async fn test_run_async_attempt_timeout_can_abort() {
         error.context().attempt_timeout(),
         Some(Duration::from_millis(1))
     );
+}
+
+/// Verifies async retry succeeds without per-attempt timeout after a retry delay.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when async retry does not reach success.
+#[cfg(feature = "tokio")]
+#[tokio::test(start_paused = true)]
+async fn test_run_async_without_timeout_retries_until_success() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .fixed_delay(Duration::from_millis(1))
+        .build()
+        .expect("retry should build");
+    let mut attempts = 0;
+
+    let value = retry
+        .run_async(|| {
+            attempts += 1;
+            let current_attempt = attempts;
+            async move {
+                if current_attempt == 1 {
+                    Err(TestError("temporary"))
+                } else {
+                    Ok("done")
+                }
+            }
+        })
+        .await
+        .expect("second async attempt should succeed");
+
+    assert_eq!(value, "done");
+    assert_eq!(attempts, 2);
+}
+
+/// Verifies async timeout wrapping preserves fast successful results.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when timeout wrapping changes success output.
+#[cfg(feature = "tokio")]
+#[tokio::test(start_paused = true)]
+async fn test_run_async_with_timeout_allows_fast_success() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .attempt_timeout(Some(Duration::from_millis(10)))
+        .no_delay()
+        .build()
+        .expect("retry should build");
+
+    let value = retry
+        .run_async(|| async { Ok::<_, TestError>("fast") })
+        .await
+        .expect("fast async attempt should succeed");
+
+    assert_eq!(value, "fast");
+}
+
+/// Verifies async execution can stop before the first attempt on elapsed budget.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when async elapsed-budget handling differs.
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn test_run_async_max_elapsed_can_stop_before_first_attempt() {
+    let retry = Retry::<TestError>::builder()
+        .max_elapsed(Some(Duration::ZERO))
+        .attempt_timeout(Some(Duration::from_millis(1)))
+        .no_delay()
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_async::<(), _, _>(|| async { panic!("operation must not run") })
+        .await
+        .expect_err("zero elapsed budget should stop before first attempt");
+
+    assert_eq!(error.reason(), RetryErrorReason::MaxElapsedExceeded);
+    assert_eq!(error.attempts(), 0);
+    assert_eq!(
+        error.context().attempt_timeout(),
+        Some(Duration::from_millis(1))
+    );
+}
+
+/// Verifies async retry handles zero retry delay without sleeping.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when zero-delay async retry does not proceed.
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn test_run_async_zero_delay_retry_skips_sleep() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .no_delay()
+        .build()
+        .expect("retry should build");
+    let mut attempts = 0;
+
+    let value = retry
+        .run_async(|| {
+            attempts += 1;
+            let current_attempt = attempts;
+            async move {
+                if current_attempt == 1 {
+                    Err(TestError("temporary"))
+                } else {
+                    Ok("done")
+                }
+            }
+        })
+        .await
+        .expect("second async attempt should succeed");
+
+    assert_eq!(value, "done");
+    assert_eq!(attempts, 2);
 }
 
 /// Verifies elapsed budget can stop before the first attempt.

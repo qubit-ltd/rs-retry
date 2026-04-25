@@ -81,12 +81,14 @@ impl FromStrFormat<Duration> for RetryDelayDurationFormat {
         Ok(Duration::from_millis(millis))
     }
 
-    /// Regex used by `parse-display` for duration fields.
+    /// Regex used by `parse-display` for duration candidate fields.
     ///
     /// # Returns
-    /// A regex matching `<millis>ms`.
+    /// A regex matching alphanumeric duration tokens. Final validation still
+    /// happens in [`RetryDelayDurationFormat::parse`] so malformed units are
+    /// reported through the same parse error path as malformed numbers.
     fn regex(&self) -> Option<String> {
-        Some(r"[0-9]+ms".to_string())
+        Some(r"[0-9A-Za-z]+".to_string())
     }
 }
 

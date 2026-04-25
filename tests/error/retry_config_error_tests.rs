@@ -5,7 +5,9 @@
  *
  *    All rights reserved.
  *
- ******************************************************************************/
+******************************************************************************/
+
+use qubit_common::DataType;
 
 /// Verifies configuration error display output for empty and non-empty paths.
 ///
@@ -64,4 +66,32 @@ fn test_from_config_error_preserves_path_variants() {
             message: "bad object".to_string(),
         });
     assert_eq!(deserialize.path(), "object.path");
+}
+
+/// Verifies typed config conversion errors preserve the key field.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when typed config errors lose key context.
+#[test]
+fn test_from_config_error_preserves_typed_key_variants() {
+    let type_mismatch =
+        qubit_retry::RetryConfigError::from(qubit_config::ConfigError::TypeMismatch {
+            key: "typed.key".to_string(),
+            expected: DataType::UInt32,
+            actual: DataType::String,
+        });
+    assert_eq!(type_mismatch.path(), "typed.key");
+
+    let conversion =
+        qubit_retry::RetryConfigError::from(qubit_config::ConfigError::ConversionError {
+            key: "converted.key".to_string(),
+            message: "bad value".to_string(),
+        });
+    assert_eq!(conversion.path(), "converted.key");
 }
