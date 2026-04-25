@@ -132,16 +132,30 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
 
 ## Retry-After Hint
 
-如果 operation error 中携带 retry-after 信息，可以注册 hint extractor。当所有 failure listener 都返回 `UseDefault` 时，默认策略会优先使用这个 hint。
+如果 attempt failure 中携带 retry-after 信息，可以通过 `retry_after_hint` 注册 hint extractor。extractor 的返回值是 `Option<Duration>`：`Some(delay)` 表示“下一次重试前等待这段时间”，`None` 表示“没有可用 hint”。当所有 failure listener 都返回 `UseDefault` 时，默认策略会优先使用 `Some(delay)`；否则回退到已配置的 delay 策略。
 
 ```rust
-use qubit_retry::Retry;
+use qubit_retry::{AttemptFailure, Retry, RetryContext};
 use std::time::Duration;
 
 let retry = Retry::<ServiceError>::builder()
     .max_attempts(3)
-    .retry_after_from_error(|error: &ServiceError| error.retry_after())
     .fixed_delay(Duration::from_millis(100))
+    .retry_after_hint(
+        |failure: &AttemptFailure<ServiceError>, _context: &RetryContext| {
+            failure.as_error().and_then(ServiceError::retry_after)
+        },
+    )
+    .build()?;
+```
+
+如果 hint 只依赖 operation error，可以使用 `retry_after_from_error`，它是 `retry_after_hint` 的便捷封装：
+
+```rust
+let retry = Retry::<ServiceError>::builder()
+    .max_attempts(3)
+    .fixed_delay(Duration::from_millis(100))
+    .retry_after_from_error(|error: &ServiceError| error.retry_after())
     .build()?;
 ```
 

@@ -132,16 +132,30 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
 
 ## Retry-After Hints
 
-If the operation error type carries retry-after information, register a hint extractor. The default policy uses the hint when all failure listeners return `UseDefault`.
+If an attempt failure carries retry-after information, register a hint extractor with `retry_after_hint`. The extractor returns `Option<Duration>`: `Some(delay)` means "wait this long before the next retry", while `None` means "no hint is available". The default policy uses `Some(delay)` when all failure listeners return `UseDefault`; otherwise it falls back to the configured delay strategy.
 
 ```rust
-use qubit_retry::Retry;
+use qubit_retry::{AttemptFailure, Retry, RetryContext};
 use std::time::Duration;
 
 let retry = Retry::<ServiceError>::builder()
     .max_attempts(3)
-    .retry_after_from_error(|error: &ServiceError| error.retry_after())
     .fixed_delay(Duration::from_millis(100))
+    .retry_after_hint(
+        |failure: &AttemptFailure<ServiceError>, _context: &RetryContext| {
+            failure.as_error().and_then(ServiceError::retry_after)
+        },
+    )
+    .build()?;
+```
+
+When the hint depends only on the operation error, `retry_after_from_error` is a convenience wrapper around `retry_after_hint`:
+
+```rust
+let retry = Retry::<ServiceError>::builder()
+    .max_attempts(3)
+    .fixed_delay(Duration::from_millis(100))
+    .retry_after_from_error(|error: &ServiceError| error.retry_after())
     .build()?;
 ```
 
