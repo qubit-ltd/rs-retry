@@ -176,7 +176,19 @@ fn test_retry_delay_from_str_variants() {
         RetryDelay::fixed(Duration::from_millis(12))
     );
     assert_eq!(
+        RetryDelay::from_str("fixed(12)").unwrap(),
+        RetryDelay::fixed(Duration::from_millis(12))
+    );
+    assert_eq!(
+        RetryDelay::from_str("fixed(1s)").unwrap(),
+        RetryDelay::fixed(Duration::from_secs(1))
+    );
+    assert_eq!(
         RetryDelay::from_str("random(5ms..=8ms)").unwrap(),
+        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8))
+    );
+    assert_eq!(
+        RetryDelay::from_str("random(5..=8)").unwrap(),
         RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8))
     );
     assert_eq!(
@@ -209,10 +221,8 @@ fn test_retry_delay_from_str_rejects_invalid_inputs() {
         "None",
         "nope",
         "fixed",
-        "fixed(12)",
         "fixed(ms)",
         "fixed(18446744073709551616ms)",
-        "random(5..=8)",
         "random(5ms..8ms)",
         "random(5ms..=18446744073709551616ms)",
         "exponential(initial=100ms,max=500ms,multiplier=2)",

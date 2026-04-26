@@ -17,78 +17,55 @@
 //! [`std::fmt::Display`] and [`std::str::FromStr`] share a canonical string form:
 //!
 //! - `none`
-//! - `fixed(<millis>ms)`
-//! - `random(<min_millis>ms..=<max_millis>ms)`
-//! - `exponential(initial=<millis>ms, max=<millis>ms, multiplier=<f64>)`
+//! - `fixed(<duration>)` — duration fields are displayed as saturated whole milliseconds
+//!   with an `ms` suffix; `FromStr` accepts any duration string parsed by
+//!   [`qubit_common::serde::duration_with_unit`]
+//! - `random(<min>..=<max>)` — same rules for the two duration fields
+//! - `exponential(initial=<...>, max=<...>, multiplier=<f64>)` — same for `initial` and `max`
 //!
-//! Duration fields are always rendered in whole milliseconds with the `ms` suffix.
+//! For [`std::str::FromStr`], substrings for duration fields follow
+//! [`qubit_common::serde::duration_with_unit`] (bare integer as milliseconds, unit
+//! suffixes, etc.; see that module). [`std::fmt::Display`] normalizes to whole
+//! millisecond + `ms` for those fields.
 
 use std::fmt;
 use std::str::FromStr;
 use std::time::Duration;
 
 use parse_display::{Display, DisplayFormat, FromStr, FromStrFormat, ParseError};
+use qubit_common::serde::duration_with_unit;
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 
 use crate::constants::DEFAULT_RETRY_DELAY;
 
-/// Formats retry-delay duration fields as `<millis>ms` and parses the same grammar.
+/// Bridges `parse_display` for [`Duration`] fields to [`duration_with_unit`].
+/// `regex` returns `None` so the default non-greedy `.*?` capture is used, which
+/// supports multi-unit text and characters such as `µ` in `µs` (unlike a strict ASCII token).
 struct RetryDelayDurationFormat;
 
 impl DisplayFormat<Duration> for RetryDelayDurationFormat {
-    /// Writes the duration as saturated whole milliseconds with an `ms` suffix.
-    ///
-    /// # Parameters
-    /// - `f`: Output formatter.
-    /// - `value`: Duration to format.
-    ///
-    /// # Returns
-    /// `Ok(())` on success, or [`fmt::Error`] if formatting fails.
-    ///
-    /// # Errors
-    /// Returns [`fmt::Error`] only if the formatter rejects output.
+    /// Same output as [`duration_with_unit::format`]: saturated whole milliseconds and `ms`.
     fn write(&self, f: &mut fmt::Formatter<'_>, value: &Duration) -> fmt::Result {
-        let millis = value.as_millis().min(u128::from(u64::MAX)) as u64;
-        write!(f, "{millis}ms")
+        f.write_str(&duration_with_unit::format(value))
     }
 }
 
 impl FromStrFormat<Duration> for RetryDelayDurationFormat {
-    /// Error returned by duration parsing.
     type Err = ParseError;
 
-    /// Parses a duration from `<millis>ms`.
-    ///
-    /// # Parameters
-    /// - `s`: Text captured for a duration field.
-    ///
-    /// # Returns
-    /// A [`Duration`] on success.
-    ///
-    /// # Errors
-    /// Returns [`ParseError`] when the text does not end with `ms` or the numeric
-    /// part is not a valid `u64`.
+    /// Uses [`duration_with_unit::parse`]. Dynamic parse errors are collapsed to a
+    /// fixed [`parse_display::ParseError`] because its message is `&'static str` only.
     fn parse(&self, s: &str) -> Result<Duration, Self::Err> {
-        let Some(raw_millis) = s.strip_suffix("ms") else {
-            return Err(ParseError::with_message(
-                "invalid retry delay duration, expected `<millis>ms`",
-            ));
-        };
-        let millis = raw_millis.parse::<u64>().map_err(|_| {
-            ParseError::with_message("invalid retry delay duration, expected `<millis>ms`")
-        })?;
-        Ok(Duration::from_millis(millis))
+        duration_with_unit::parse(s).map_err(|_| {
+            ParseError::with_message(
+                "invalid retry delay duration: expected a value accepted by `duration_with_unit`",
+            )
+        })
     }
 
-    /// Regex used by `parse-display` for duration candidate fields.
-    ///
-    /// # Returns
-    /// A regex matching alphanumeric duration tokens. Final validation still
-    /// happens in [`RetryDelayDurationFormat::parse`] so malformed units are
-    /// reported through the same parse error path as malformed numbers.
     fn regex(&self) -> Option<String> {
-        Some(r"[0-9A-Za-z]+".to_string())
+        None
     }
 }
 
