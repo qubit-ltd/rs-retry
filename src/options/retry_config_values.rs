@@ -11,10 +11,13 @@
 //!
 //! Author: Haixing Hu
 
+use std::str::FromStr;
 use std::time::Duration;
 
 use qubit_config::{ConfigReader, ConfigResult};
 
+use super::attempt_timeout_option::AttemptTimeoutOption;
+use super::attempt_timeout_policy::AttemptTimeoutPolicy;
 use super::retry_delay::RetryDelay;
 use super::retry_jitter::RetryJitter;
 use super::retry_options::RetryOptions;
@@ -24,11 +27,11 @@ use crate::constants::{
     DEFAULT_RETRY_EXPONENTIAL_INITIAL_DELAY_MILLIS, DEFAULT_RETRY_EXPONENTIAL_MAX_DELAY_MILLIS,
     DEFAULT_RETRY_EXPONENTIAL_MULTIPLIER, DEFAULT_RETRY_FIXED_DELAY_MILLIS,
     DEFAULT_RETRY_JITTER_FACTOR, DEFAULT_RETRY_RANDOM_MAX_DELAY_MILLIS,
-    DEFAULT_RETRY_RANDOM_MIN_DELAY_MILLIS, KEY_DELAY, KEY_DELAY_STRATEGY,
-    KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
-    KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
-    KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS,
-    KEY_RANDOM_MIN_DELAY_MILLIS,
+    DEFAULT_RETRY_RANDOM_MIN_DELAY_MILLIS, KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_ATTEMPT_TIMEOUT_POLICY,
+    KEY_DELAY, KEY_DELAY_STRATEGY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
+    KEY_EXPONENTIAL_MAX_DELAY_MILLIS, KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS,
+    KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS, KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED,
+    KEY_RANDOM_MAX_DELAY_MILLIS, KEY_RANDOM_MIN_DELAY_MILLIS,
 };
 
 /// Raw retry configuration values read from `qubit-config`.
@@ -50,6 +53,10 @@ pub struct RetryConfigValues {
     pub max_elapsed_millis: Option<u64>,
     /// Optional explicit switch for unlimited elapsed-time budget.
     pub max_elapsed_unlimited: Option<bool>,
+    /// Optional attempt timeout in milliseconds.
+    pub attempt_timeout_millis: Option<u64>,
+    /// Optional action selected when one attempt times out.
+    pub attempt_timeout_policy: Option<String>,
     /// Optional primary delay strategy name.
     pub delay: Option<String>,
     /// Optional backward-compatible delay strategy alias.
@@ -93,6 +100,8 @@ impl RetryConfigValues {
             max_attempts: config.get_optional(KEY_MAX_ATTEMPTS)?,
             max_elapsed_millis: config.get_optional(KEY_MAX_ELAPSED_MILLIS)?,
             max_elapsed_unlimited: config.get_optional(KEY_MAX_ELAPSED_UNLIMITED)?,
+            attempt_timeout_millis: config.get_optional(KEY_ATTEMPT_TIMEOUT_MILLIS)?,
+            attempt_timeout_policy: config.get_optional_string(KEY_ATTEMPT_TIMEOUT_POLICY)?,
             delay: config.get_optional_string(KEY_DELAY)?,
             delay_strategy: config.get_optional_string(KEY_DELAY_STRATEGY)?,
             fixed_delay_millis: config.get_optional(KEY_FIXED_DELAY_MILLIS)?,
@@ -120,9 +129,16 @@ impl RetryConfigValues {
     pub fn to_options(&self, default: &RetryOptions) -> Result<RetryOptions, RetryConfigError> {
         let max_attempts = self.max_attempts.unwrap_or(default.max_attempts());
         let max_elapsed = self.get_max_elapsed(default);
+        let attempt_timeout = self.get_attempt_timeout(default)?;
         let delay = self.get_delay(default)?;
         let jitter = self.get_jitter(default);
-        RetryOptions::new(max_attempts, max_elapsed, delay, jitter)
+        RetryOptions::new_with_attempt_timeout(
+            max_attempts,
+            max_elapsed,
+            delay,
+            jitter,
+            attempt_timeout,
+        )
     }
 
     /// Resolves the elapsed-time budget.
@@ -144,6 +160,57 @@ impl RetryConfigValues {
         match self.max_elapsed_millis {
             Some(millis) => Some(Duration::from_millis(millis)),
             None => default.max_elapsed(),
+        }
+    }
+
+    /// Resolves per-attempt timeout settings.
+    ///
+    /// # Parameters
+    /// - `default`: Default options used when timeout keys are absent.
+    ///
+    /// # Returns
+    /// `Ok(Some(AttemptTimeoutOption))` when a timeout is configured, or
+    /// `Ok(None)` when per-attempt timeout is disabled.
+    ///
+    /// # Errors
+    /// Returns [`RetryConfigError`] when policy text is unsupported or when a
+    /// policy is configured without a timeout and no default timeout exists.
+    fn get_attempt_timeout(
+        &self,
+        default: &RetryOptions,
+    ) -> Result<Option<AttemptTimeoutOption>, RetryConfigError> {
+        let default_attempt_timeout = default.attempt_timeout();
+        let policy = self
+            .attempt_timeout_policy
+            .as_deref()
+            .map(parse_attempt_timeout_policy)
+            .transpose()?;
+
+        match self.attempt_timeout_millis {
+            Some(timeout_millis) => {
+                let policy = policy
+                    .or_else(|| {
+                        default_attempt_timeout.map(|attempt_timeout| attempt_timeout.policy())
+                    })
+                    .unwrap_or_default();
+                Ok(Some(AttemptTimeoutOption::new(
+                    Duration::from_millis(timeout_millis),
+                    policy,
+                )))
+            }
+            None => {
+                if let Some(policy) = policy {
+                    let Some(default_attempt_timeout) = default_attempt_timeout else {
+                        return Err(RetryConfigError::invalid_value(
+                            KEY_ATTEMPT_TIMEOUT_POLICY,
+                            "attempt_timeout_policy requires attempt_timeout_millis when the default has no attempt timeout",
+                        ));
+                    };
+                    Ok(Some(default_attempt_timeout.with_policy(policy)))
+                } else {
+                    Ok(default_attempt_timeout)
+                }
+            }
         }
     }
 
@@ -270,4 +337,19 @@ impl RetryConfigValues {
             Some(factor) => RetryJitter::Factor(factor),
         }
     }
+}
+
+/// Parses a configured attempt-timeout policy.
+///
+/// # Parameters
+/// - `value`: Raw policy text read from configuration.
+///
+/// # Returns
+/// A parsed [`AttemptTimeoutPolicy`].
+///
+/// # Errors
+/// Returns [`RetryConfigError`] when the policy text is unsupported.
+fn parse_attempt_timeout_policy(value: &str) -> Result<AttemptTimeoutPolicy, RetryConfigError> {
+    AttemptTimeoutPolicy::from_str(value)
+        .map_err(|message| RetryConfigError::invalid_value(KEY_ATTEMPT_TIMEOUT_POLICY, message))
 }

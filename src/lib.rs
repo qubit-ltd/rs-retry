@@ -22,15 +22,18 @@ pub mod event;
 pub mod executor;
 pub mod options;
 
-pub use error::{AttemptFailure, RetryConfigError, RetryError, RetryErrorReason};
+pub use error::{AttemptFailure, AttemptPanic, RetryConfigError, RetryError, RetryErrorReason};
 pub use event::{
     AttemptFailureDecision, AttemptFailureListener, AttemptSuccessListener, BeforeAttemptListener,
     RetryAfterHint, RetryContext, RetryErrorListener,
 };
-pub use executor::{Retry, RetryBuilder};
+pub use executor::{AttemptCancelToken, Retry, RetryBuilder};
 #[cfg(feature = "config")]
 pub use options::RetryConfigValues;
-pub use options::{ParseRetryJitterError, RetryDelay, RetryJitter, RetryOptions};
+pub use options::{
+    AttemptTimeoutOption, AttemptTimeoutPolicy, ParseRetryJitterError, RetryDelay, RetryJitter,
+    RetryOptions,
+};
 
 /// Result alias returned by retry executor execution.
 ///

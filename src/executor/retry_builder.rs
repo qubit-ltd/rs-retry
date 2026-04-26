@@ -19,8 +19,9 @@ use qubit_function::{BiConsumer, BiFunction, BiPredicate, Consumer};
 use crate::constants::KEY_MAX_ATTEMPTS;
 use crate::event::RetryListeners;
 use crate::{
-    AttemptFailure, AttemptFailureDecision, Retry, RetryAfterHint, RetryConfigError, RetryContext,
-    RetryDelay, RetryError, RetryJitter, RetryOptions,
+    AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption, AttemptTimeoutPolicy, Retry,
+    RetryAfterHint, RetryConfigError, RetryContext, RetryDelay, RetryError, RetryJitter,
+    RetryOptions,
 };
 
 /// Builder for [`Retry`].
@@ -32,8 +33,8 @@ use crate::{
 pub struct RetryBuilder<E = BoxError> {
     /// Retry limits, delay strategy, jitter, and elapsed-time budget.
     options: RetryOptions,
-    /// Per-attempt timeout used by async execution.
-    attempt_timeout: Option<Duration>,
+    /// Pending policy used when timeout duration is configured later.
+    pending_attempt_timeout_policy: AttemptTimeoutPolicy,
     /// Optional retry-after hint extractor.
     retry_after_hint: Option<RetryAfterHint<E>>,
     /// Lifecycle listeners registered on the builder.
@@ -53,7 +54,7 @@ impl<E> RetryBuilder<E> {
     pub fn new() -> Self {
         Self {
             options: RetryOptions::default(),
-            attempt_timeout: None,
+            pending_attempt_timeout_policy: AttemptTimeoutPolicy::default(),
             retry_after_hint: None,
             listeners: RetryListeners::default(),
             isolate_listener_panics: false,
@@ -70,6 +71,10 @@ impl<E> RetryBuilder<E> {
     /// The updated builder.
     #[inline]
     pub fn options(mut self, options: RetryOptions) -> Self {
+        self.pending_attempt_timeout_policy = options
+            .attempt_timeout()
+            .map(|attempt_timeout| attempt_timeout.policy())
+            .unwrap_or_default();
         self.options = options;
         self.max_attempts_error = None;
         self
@@ -224,17 +229,55 @@ impl<E> RetryBuilder<E> {
         self.jitter(RetryJitter::factor(factor))
     }
 
-    /// Sets an async per-attempt timeout.
+    /// Sets a per-attempt timeout.
     ///
     /// # Parameters
-    /// - `attempt_timeout`: Timeout applied to each async attempt. `None`
-    ///   disables per-attempt timeout.
+    /// - `attempt_timeout`: Timeout applied by `run_async`, `run_in_worker`,
+    ///   and `run_blocking_with_timeout`. `None` disables per-attempt timeout.
     ///
     /// # Returns
     /// The updated builder.
     #[inline]
     pub fn attempt_timeout(mut self, attempt_timeout: Option<Duration>) -> Self {
-        self.attempt_timeout = attempt_timeout;
+        self.options.attempt_timeout = attempt_timeout
+            .map(|timeout| AttemptTimeoutOption::new(timeout, self.pending_attempt_timeout_policy));
+        self
+    }
+
+    /// Sets the complete per-attempt timeout option.
+    ///
+    /// # Parameters
+    /// - `attempt_timeout`: Timeout option. `None` disables per-attempt timeout.
+    ///
+    /// # Returns
+    /// The updated builder.
+    #[inline]
+    pub fn attempt_timeout_option(mut self, attempt_timeout: Option<AttemptTimeoutOption>) -> Self {
+        if let Some(attempt_timeout) = attempt_timeout {
+            self.pending_attempt_timeout_policy = attempt_timeout.policy();
+        }
+        self.options.attempt_timeout = attempt_timeout;
+        self
+    }
+
+    /// Sets the policy used when an attempt times out.
+    ///
+    /// If a timeout duration is already configured, this updates the complete
+    /// timeout option. Otherwise the policy is kept and applied when
+    /// [`RetryBuilder::attempt_timeout`] is called later.
+    ///
+    /// # Parameters
+    /// - `policy`: Timeout policy to use.
+    ///
+    /// # Returns
+    /// The updated builder.
+    #[inline]
+    pub fn attempt_timeout_policy(mut self, policy: AttemptTimeoutPolicy) -> Self {
+        self.pending_attempt_timeout_policy = policy;
+        self.options.attempt_timeout = self
+            .options
+            .attempt_timeout
+            .map(|attempt_timeout| attempt_timeout.with_policy(policy));
         self
     }
 
@@ -340,7 +383,9 @@ impl<E> RetryBuilder<E> {
                         AttemptFailureDecision::Abort
                     }
                 }
-                AttemptFailure::Timeout => AttemptFailureDecision::UseDefault,
+                AttemptFailure::Timeout | AttemptFailure::Panic(_) => {
+                    AttemptFailureDecision::UseDefault
+                }
             },
         )
     }
@@ -365,12 +410,7 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     pub fn abort_on_timeout(self) -> Self {
-        self.on_failure(
-            |failure: &AttemptFailure<E>, _context: &RetryContext| match failure {
-                AttemptFailure::Timeout => AttemptFailureDecision::Abort,
-                AttemptFailure::Error(_) => AttemptFailureDecision::UseDefault,
-            },
-        )
+        self.attempt_timeout_policy(AttemptTimeoutPolicy::Abort)
     }
 
     /// Retries timed-out attempts while limits allow it.
@@ -378,12 +418,7 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     pub fn retry_on_timeout(self) -> Self {
-        self.on_failure(
-            |failure: &AttemptFailure<E>, _context: &RetryContext| match failure {
-                AttemptFailure::Timeout => AttemptFailureDecision::Retry,
-                AttemptFailure::Error(_) => AttemptFailureDecision::UseDefault,
-            },
-        )
+        self.attempt_timeout_policy(AttemptTimeoutPolicy::Retry)
     }
 
     /// Enables panic isolation for all registered listeners.
@@ -410,7 +445,6 @@ impl<E> RetryBuilder<E> {
         self.options.validate()?;
         Ok(Retry::new(
             self.options,
-            self.attempt_timeout,
             self.retry_after_hint,
             self.isolate_listener_panics,
             self.listeners,

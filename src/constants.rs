@@ -43,6 +43,12 @@ pub const KEY_MAX_ELAPSED_MILLIS: &str = "max_elapsed_millis";
 /// merge logic ignores [`KEY_MAX_ELAPSED_MILLIS`] and uses unlimited (`None`).
 pub const KEY_MAX_ELAPSED_UNLIMITED: &str = "max_elapsed_unlimited";
 
+/// Config key for the per-attempt timeout value, in milliseconds.
+pub const KEY_ATTEMPT_TIMEOUT_MILLIS: &str = "attempt_timeout_millis";
+
+/// Config key for the action selected when one attempt times out.
+pub const KEY_ATTEMPT_TIMEOUT_POLICY: &str = "attempt_timeout_policy";
+
 /// Config key for the delay strategy option value (strategy name / encoded form).
 pub const KEY_DELAY: &str = "delay";
 

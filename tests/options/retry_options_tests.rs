@@ -11,13 +11,13 @@ use std::time::Duration;
 
 use qubit_config::Config;
 use qubit_retry::constants::{
-    DEFAULT_RETRY_MAX_ATTEMPTS, KEY_DELAY, KEY_DELAY_STRATEGY,
-    KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
+    DEFAULT_RETRY_MAX_ATTEMPTS, KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_ATTEMPT_TIMEOUT_POLICY, KEY_DELAY,
+    KEY_DELAY_STRATEGY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
     KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
     KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS,
     KEY_RANDOM_MIN_DELAY_MILLIS,
 };
-use qubit_retry::{RetryDelay, RetryJitter, RetryOptions};
+use qubit_retry::{AttemptTimeoutOption, RetryDelay, RetryJitter, RetryOptions};
 
 /// Verifies default options and direct construction.
 ///
@@ -35,6 +35,7 @@ fn test_validate_default_and_new() {
     let options = RetryOptions::default();
     assert_eq!(options.max_attempts(), DEFAULT_RETRY_MAX_ATTEMPTS);
     assert_eq!(options.max_elapsed(), None);
+    assert_eq!(options.attempt_timeout(), None);
     assert!(matches!(options.jitter(), RetryJitter::None));
 
     let options = RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none())
@@ -49,6 +50,27 @@ fn test_validate_default_and_new() {
         RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::factor(f64::NAN))
             .expect_err("invalid jitter should be rejected");
     assert_eq!(invalid_jitter.path(), KEY_JITTER_FACTOR);
+
+    let timeout = AttemptTimeoutOption::abort(Duration::from_millis(10));
+    let options = RetryOptions::new_with_attempt_timeout(
+        2,
+        None,
+        RetryDelay::none(),
+        RetryJitter::none(),
+        Some(timeout),
+    )
+    .expect("valid timeout options should be created");
+    assert_eq!(options.attempt_timeout(), Some(timeout));
+
+    let invalid_timeout = RetryOptions::new_with_attempt_timeout(
+        2,
+        None,
+        RetryDelay::none(),
+        RetryJitter::none(),
+        Some(AttemptTimeoutOption::retry(Duration::ZERO)),
+    )
+    .expect_err("zero attempt timeout should be rejected");
+    assert_eq!(invalid_timeout.path(), KEY_ATTEMPT_TIMEOUT_MILLIS);
 }
 
 /// Verifies prefixed configuration values are read into fixed-delay options.
@@ -80,6 +102,12 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
     config
         .set("retry.jitter_factor", 0.25)
         .expect("test config value should be set");
+    config
+        .set("retry.attempt_timeout_millis", 30u64)
+        .expect("test config value should be set");
+    config
+        .set("retry.attempt_timeout_policy", "abort")
+        .expect("test config value should be set");
 
     let options = RetryOptions::from_config(&config.prefix_view("retry"))
         .expect("prefixed retry config should be parsed");
@@ -91,6 +119,10 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
         &RetryDelay::fixed(Duration::from_millis(15))
     );
     assert_eq!(options.jitter(), RetryJitter::factor(0.25));
+    assert_eq!(
+        options.attempt_timeout(),
+        Some(AttemptTimeoutOption::abort(Duration::from_millis(30)))
+    );
 }
 
 /// Verifies non-fixed delay config forms and config read errors.
@@ -432,6 +464,39 @@ fn test_from_config_reports_delay_parameter_type_errors() {
             .expect_err("invalid jitter factor type should fail")
             .path(),
         KEY_JITTER_FACTOR
+    );
+
+    let mut timeout_bad = Config::new();
+    timeout_bad
+        .set("attempt_timeout_millis", "bad")
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&timeout_bad)
+            .expect_err("invalid attempt timeout type should fail")
+            .path(),
+        KEY_ATTEMPT_TIMEOUT_MILLIS
+    );
+
+    let mut timeout_policy_bad = Config::new();
+    timeout_policy_bad
+        .set("attempt_timeout_policy", "stop")
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&timeout_policy_bad)
+            .expect_err("invalid attempt timeout policy should fail")
+            .path(),
+        KEY_ATTEMPT_TIMEOUT_POLICY
+    );
+
+    let mut timeout_policy_type_bad = Config::new();
+    timeout_policy_type_bad
+        .set("attempt_timeout_policy", 123u64)
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&timeout_policy_type_bad)
+            .expect_err("invalid attempt timeout policy type should fail")
+            .path(),
+        KEY_ATTEMPT_TIMEOUT_POLICY
     );
 }
 

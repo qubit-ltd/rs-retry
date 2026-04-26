@@ -8,6 +8,8 @@
  ******************************************************************************/
 //! Retry option modules and public re-exports.
 
+mod attempt_timeout_option;
+mod attempt_timeout_policy;
 mod parse_retry_jitter_error;
 #[cfg(feature = "config")]
 mod retry_config_values;
@@ -15,6 +17,8 @@ mod retry_delay;
 mod retry_jitter;
 mod retry_options;
 
+pub use attempt_timeout_option::AttemptTimeoutOption;
+pub use attempt_timeout_policy::AttemptTimeoutPolicy;
 pub use parse_retry_jitter_error::ParseRetryJitterError;
 #[cfg(feature = "config")]
 pub use retry_config_values::RetryConfigValues;

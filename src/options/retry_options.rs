@@ -19,12 +19,13 @@ use std::time::Duration;
 #[cfg(feature = "config")]
 use qubit_config::ConfigReader;
 
+use super::attempt_timeout_option::AttemptTimeoutOption;
 #[cfg(feature = "config")]
 use super::retry_config_values::RetryConfigValues;
 
 use crate::constants::{
-    DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_MAX_ELAPSED, KEY_DELAY, KEY_JITTER_FACTOR,
-    KEY_MAX_ATTEMPTS,
+    DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_MAX_ELAPSED, KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_DELAY,
+    KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
 };
 use crate::{RetryConfigError, RetryDelay, RetryJitter};
 
@@ -46,6 +47,8 @@ pub struct RetryOptions {
     pub(crate) delay: RetryDelay,
     /// RetryJitter applied to each base delay.
     pub(crate) jitter: RetryJitter,
+    /// Optional per-attempt timeout settings.
+    pub(crate) attempt_timeout: Option<AttemptTimeoutOption>,
 }
 
 impl RetryOptions {
@@ -109,6 +112,21 @@ impl RetryOptions {
         self.jitter
     }
 
+    /// Returns the optional per-attempt timeout settings.
+    ///
+    /// # Parameters
+    /// This method has no parameters.
+    ///
+    /// # Returns
+    /// `Some(AttemptTimeoutOption)` when per-attempt timeout is configured.
+    ///
+    /// # Errors
+    /// This method does not return errors.
+    #[inline]
+    pub fn attempt_timeout(&self) -> Option<AttemptTimeoutOption> {
+        self.attempt_timeout
+    }
+
     /// Creates and validates a retry option snapshot.
     ///
     /// # Parameters
@@ -131,6 +149,33 @@ impl RetryOptions {
         delay: RetryDelay,
         jitter: RetryJitter,
     ) -> Result<Self, RetryConfigError> {
+        Self::new_with_attempt_timeout(max_attempts, max_elapsed, delay, jitter, None)
+    }
+
+    /// Creates and validates a retry option snapshot with attempt timeout.
+    ///
+    /// # Parameters
+    /// - `max_attempts`: Maximum number of attempts, including the first call.
+    ///   Must be greater than zero.
+    /// - `max_elapsed`: Optional total elapsed-time budget for all attempts
+    ///   and sleeps.
+    /// - `delay`: Base delay strategy used between attempts.
+    /// - `jitter`: RetryJitter strategy applied to each base delay.
+    /// - `attempt_timeout`: Optional per-attempt timeout settings.
+    ///
+    /// # Returns
+    /// A validated [`RetryOptions`] value.
+    ///
+    /// # Errors
+    /// Returns [`RetryConfigError`] when `max_attempts` is zero, when delay or
+    /// jitter contains invalid parameters, or when the attempt timeout is zero.
+    pub fn new_with_attempt_timeout(
+        max_attempts: u32,
+        max_elapsed: Option<Duration>,
+        delay: RetryDelay,
+        jitter: RetryJitter,
+        attempt_timeout: Option<AttemptTimeoutOption>,
+    ) -> Result<Self, RetryConfigError> {
         let max_attempts = NonZeroU32::new(max_attempts).ok_or_else(|| {
             RetryConfigError::invalid_value(
                 KEY_MAX_ATTEMPTS,
@@ -142,6 +187,7 @@ impl RetryOptions {
             max_elapsed,
             delay,
             jitter,
+            attempt_timeout,
         };
         options.validate()?;
         Ok(options)
@@ -192,6 +238,11 @@ impl RetryOptions {
         self.jitter
             .validate()
             .map_err(|message| RetryConfigError::invalid_value(KEY_JITTER_FACTOR, message))?;
+        if let Some(attempt_timeout) = self.attempt_timeout {
+            attempt_timeout.validate().map_err(|message| {
+                RetryConfigError::invalid_value(KEY_ATTEMPT_TIMEOUT_MILLIS, message)
+            })?;
+        }
         Ok(())
     }
 
@@ -290,6 +341,7 @@ impl Default for RetryOptions {
             max_elapsed: DEFAULT_RETRY_MAX_ELAPSED,
             delay: RetryDelay::default(),
             jitter: RetryJitter::default(),
+            attempt_timeout: None,
         }
     }
 }

@@ -7,12 +7,14 @@
  *
  ******************************************************************************/
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use qubit_common::BoxError;
 use qubit_retry::{
-    AttemptFailure, AttemptFailureDecision, Retry, RetryContext, RetryError, RetryErrorReason,
+    AttemptCancelToken, AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption,
+    AttemptTimeoutPolicy, Retry, RetryContext, RetryError, RetryErrorReason,
 };
 
 use crate::support::{NonCloneValue, TestError};
@@ -390,6 +392,195 @@ fn test_sync_run_does_not_report_attempt_timeout() {
     );
 }
 
+/// Verifies worker execution uses a separate thread without timeout settings.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_in_worker_executes_on_worker_without_timeout() {
+    let main_thread = std::thread::current().id();
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .no_delay()
+        .build()
+        .expect("retry should build");
+
+    let worker_thread = retry
+        .run_in_worker(move |token: AttemptCancelToken| {
+            assert!(!token.is_cancelled());
+            Ok::<_, TestError>(std::thread::current().id())
+        })
+        .expect("worker attempt should succeed");
+
+    assert_ne!(worker_thread, main_thread);
+}
+
+/// Verifies worker panics become retry failures and abort by default.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_in_worker_panic_aborts_by_default() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(3)
+        .no_delay()
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_in_worker({
+            let attempts = Arc::clone(&attempts);
+            move |_token: AttemptCancelToken| -> Result<(), TestError> {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                panic!("worker failed");
+            }
+        })
+        .expect_err("worker panic should abort by default");
+
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(error.reason(), RetryErrorReason::Aborted);
+    let panic = error
+        .last_failure()
+        .and_then(AttemptFailure::as_panic)
+        .expect("terminal failure should be a captured panic");
+    assert_eq!(panic.message(), "worker failed");
+}
+
+/// Verifies failure listeners can retry captured worker panics.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_in_worker_panic_can_be_retried_by_listener() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .no_delay()
+        .on_failure(
+            |failure: &AttemptFailure<TestError>, _context: &RetryContext| match failure {
+                AttemptFailure::Panic(panic) if panic.message() == "transient panic" => {
+                    AttemptFailureDecision::Retry
+                }
+                _ => AttemptFailureDecision::UseDefault,
+            },
+        )
+        .build()
+        .expect("retry should build");
+
+    let value = retry
+        .run_in_worker({
+            let attempts = Arc::clone(&attempts);
+            move |_token: AttemptCancelToken| {
+                let current = attempts.fetch_add(1, Ordering::SeqCst) + 1;
+                if current == 1 {
+                    panic!("transient panic");
+                }
+                Ok::<_, TestError>("done")
+            }
+        })
+        .expect("second worker attempt should succeed");
+
+    assert_eq!(value, "done");
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
+/// Verifies blocking timeout aborts and signals the cooperative cancel token.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_blocking_with_timeout_can_abort_and_cancel_token() {
+    let saw_cancel = Arc::new(AtomicBool::new(false));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(3)
+        .no_delay()
+        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(Duration::from_millis(5))))
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_blocking_with_timeout({
+            let saw_cancel = Arc::clone(&saw_cancel);
+            move |token: AttemptCancelToken| {
+                while !token.is_cancelled() {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                saw_cancel.store(true, Ordering::SeqCst);
+                Err::<(), TestError>(TestError("cancelled"))
+            }
+        })
+        .expect_err("timeout should abort");
+
+    assert_eq!(error.reason(), RetryErrorReason::Aborted);
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
+    assert_eq!(
+        error.context().attempt_timeout(),
+        Some(Duration::from_millis(5))
+    );
+    for _ in 0..50 {
+        if saw_cancel.load(Ordering::SeqCst) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(saw_cancel.load(Ordering::SeqCst));
+}
+
+/// Verifies blocking timeout can retry and later return a successful result.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_blocking_with_timeout_retries_timeout_until_success() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .no_delay()
+        .attempt_timeout_option(Some(AttemptTimeoutOption::new(
+            Duration::from_millis(5),
+            AttemptTimeoutPolicy::Retry,
+        )))
+        .build()
+        .expect("retry should build");
+
+    let value = retry
+        .run_blocking_with_timeout({
+            let attempts = Arc::clone(&attempts);
+            move |_token: AttemptCancelToken| {
+                let current = attempts.fetch_add(1, Ordering::SeqCst) + 1;
+                if current == 1 {
+                    std::thread::sleep(Duration::from_millis(20));
+                    Ok::<_, TestError>("late")
+                } else {
+                    Ok::<_, TestError>("done")
+                }
+            }
+        })
+        .expect("second blocking attempt should succeed");
+
+    assert_eq!(value, "done");
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
 /// Verifies async attempt timeout becomes a retry failure.
 ///
 /// # Parameters
@@ -478,7 +669,7 @@ async fn test_run_async_without_timeout_retries_until_success() {
 /// The test fails through assertions when timeout wrapping changes success output.
 #[cfg(feature = "tokio")]
 #[tokio::test(start_paused = true)]
-async fn test_run_async_with_timeout_allows_fast_success() {
+async fn test_run_async_with_attempt_timeout_allows_fast_success() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .attempt_timeout(Some(Duration::from_millis(10)))

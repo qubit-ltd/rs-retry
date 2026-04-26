@@ -7,5 +7,6 @@
  *
  ******************************************************************************/
 
+mod attempt_cancel_token_tests;
 mod retry_builder_tests;
 mod retry_tests;

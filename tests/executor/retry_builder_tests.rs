@@ -11,7 +11,8 @@ use std::time::Duration;
 
 use qubit_retry::constants::DEFAULT_RETRY_MAX_ATTEMPTS;
 use qubit_retry::{
-    AttemptFailure, AttemptFailureDecision, Retry, RetryDelay, RetryJitter, RetryOptions,
+    AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption, AttemptTimeoutPolicy, Retry,
+    RetryDelay, RetryJitter, RetryOptions,
 };
 
 use crate::support::TestError;
@@ -38,6 +39,7 @@ fn test_builder_default_and_delay_helpers_work() {
         &RetryDelay::fixed(Duration::from_millis(1))
     );
     assert_eq!(retry.options().jitter(), RetryJitter::factor(0.0));
+    assert_eq!(retry.options().attempt_timeout(), None);
     assert!(format!("{retry:?}").contains("Retry"));
 }
 
@@ -94,6 +96,16 @@ fn test_builder_options_random_exponential_and_default_work() {
         &RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 3.0)
     );
 
+    let timeout = Retry::<TestError>::builder()
+        .attempt_timeout_policy(AttemptTimeoutPolicy::Abort)
+        .attempt_timeout(Some(Duration::from_millis(7)))
+        .build()
+        .expect("retry with timeout should build");
+    assert_eq!(
+        timeout.options().attempt_timeout(),
+        Some(AttemptTimeoutOption::abort(Duration::from_millis(7)))
+    );
+
     let default_builder: qubit_retry::RetryBuilder<TestError> = Default::default();
     assert_eq!(
         default_builder
@@ -129,7 +141,7 @@ fn test_build_validates_max_attempts_and_options() {
     assert!(invalid.is_err());
 }
 
-/// Verifies timeout convenience listeners map to failure decisions.
+/// Verifies timeout convenience methods configure timeout policies.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -139,13 +151,24 @@ fn test_build_validates_max_attempts_and_options() {
 #[test]
 fn test_timeout_convenience_methods_work() {
     let retry_abort = Retry::<TestError>::builder()
+        .attempt_timeout(Some(Duration::from_millis(1)))
         .abort_on_timeout()
         .build()
         .expect("retry should build");
     let retry_continue = Retry::<TestError>::builder()
+        .attempt_timeout(Some(Duration::from_millis(1)))
         .retry_on_timeout()
         .build()
         .expect("retry should build");
+
+    assert_eq!(
+        retry_abort.options().attempt_timeout(),
+        Some(AttemptTimeoutOption::abort(Duration::from_millis(1)))
+    );
+    assert_eq!(
+        retry_continue.options().attempt_timeout(),
+        Some(AttemptTimeoutOption::retry(Duration::from_millis(1)))
+    );
 
     let abort_decision = retry_abort
         .run(|| -> Result<(), TestError> { Err(TestError("error")) })

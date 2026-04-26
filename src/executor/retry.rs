@@ -15,17 +15,21 @@
 use std::fmt;
 #[cfg(feature = "tokio")]
 use std::future::Future;
+use std::panic;
 #[cfg(feature = "tokio")]
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use qubit_common::BoxError;
 use qubit_function::{BiConsumer, BiFunction, Consumer};
 
+use super::attempt_cancel_token::AttemptCancelToken;
 use crate::event::RetryListeners;
 use crate::{
-    AttemptFailure, AttemptFailureDecision, RetryAfterHint, RetryBuilder, RetryConfigError,
-    RetryContext, RetryError, RetryErrorReason, RetryOptions,
+    AttemptFailure, AttemptFailureDecision, AttemptPanic, AttemptTimeoutPolicy, RetryAfterHint,
+    RetryBuilder, RetryConfigError, RetryContext, RetryError, RetryErrorReason, RetryOptions,
 };
 
 /// Retry policy and executor bound to an operation error type.
@@ -37,8 +41,6 @@ use crate::{
 pub struct Retry<E = BoxError> {
     /// Validated retry limits and backoff settings.
     options: RetryOptions,
-    /// Optional timeout for async attempts.
-    attempt_timeout: Option<Duration>,
     /// Optional retry-after hint extractor.
     retry_after_hint: Option<RetryAfterHint<E>>,
     /// Whether listener panics should be isolated.
@@ -103,6 +105,104 @@ impl<E> Retry<E> {
         let mut operation = SyncValueOperation::new(&mut operation);
         self.run_sync_operation(&mut operation)?;
         Ok(operation.into_value())
+    }
+
+    /// Runs a blocking operation with retry inside worker-thread attempts.
+    ///
+    /// Each attempt runs on a worker thread. Worker panics are captured as
+    /// [`AttemptFailure::Panic`]. If the configured attempt timeout expires,
+    /// the retry executor stops waiting, marks the attempt's
+    /// [`AttemptCancelToken`] as cancelled, and continues according to
+    /// [`AttemptTimeoutPolicy`]. The worker thread may continue running if the
+    /// operation ignores the cancellation token.
+    ///
+    /// # Parameters
+    /// - `operation`: Thread-safe operation called once per attempt. It receives
+    ///   a cooperative cancellation token for that attempt.
+    ///
+    /// # Returns
+    /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
+    ///
+    /// # Panics
+    /// Does not propagate operation panics. Listener panic behavior follows this
+    /// retry policy's listener isolation setting.
+    ///
+    /// # Blocking
+    /// Blocks the current thread while waiting for each worker result or timeout
+    /// and while sleeping between retry attempts.
+    pub fn run_in_worker<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
+    {
+        let operation = Arc::new(operation);
+        let start = Instant::now();
+        let mut attempts = 0;
+        let mut last_failure = None;
+
+        loop {
+            let attempt_timeout = self.attempt_timeout_duration();
+            if let Some(error) =
+                self.elapsed_error(start, attempts, last_failure.take(), attempt_timeout)
+            {
+                return Err(self.emit_error(error));
+            }
+
+            attempts += 1;
+            let before_context = self.context(start, attempts, Duration::ZERO, attempt_timeout);
+            self.emit_before_attempt(&before_context);
+
+            let attempt_start = Instant::now();
+            let result = self.call_blocking_attempt(Arc::clone(&operation));
+            let context = self.context(start, attempts, attempt_start.elapsed(), attempt_timeout);
+            match result {
+                Ok(value) => {
+                    self.emit_attempt_success(&context);
+                    return Ok(value);
+                }
+                Err(failure) => match self.handle_failure(start, attempts, failure, context) {
+                    RetryFlowAction::Retry { delay, failure } => {
+                        if !delay.is_zero() {
+                            std::thread::sleep(delay);
+                        }
+                        last_failure = Some(failure);
+                    }
+                    RetryFlowAction::Finished(error) => return Err(self.emit_error(error)),
+                },
+            }
+        }
+    }
+
+    /// Runs a blocking operation with retry and per-attempt timeout isolation.
+    ///
+    /// This method is a compatibility alias for [`Retry::run_in_worker`]. It
+    /// also runs attempts in worker threads when no timeout is configured, so
+    /// worker panics are reported as [`AttemptFailure::Panic`] instead of
+    /// unwinding through the caller.
+    ///
+    /// # Parameters
+    /// - `operation`: Thread-safe operation called once per attempt. It receives
+    ///   a cooperative cancellation token for that attempt.
+    ///
+    /// # Returns
+    /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
+    ///
+    /// # Panics
+    /// Does not propagate operation panics. Listener panic behavior follows this
+    /// retry policy's listener isolation setting.
+    ///
+    /// # Blocking
+    /// Blocks the current thread while waiting for each worker result or timeout
+    /// and while sleeping between retry attempts.
+    #[inline]
+    pub fn run_blocking_with_timeout<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
+    {
+        self.run_in_worker(operation)
     }
 
     /// Runs a synchronous value-erased operation with retry.
@@ -189,19 +289,19 @@ impl<E> Retry<E> {
         let mut last_failure = None;
 
         loop {
+            let attempt_timeout = self.attempt_timeout_duration();
             if let Some(error) =
-                self.elapsed_error(start, attempts, last_failure.take(), self.attempt_timeout)
+                self.elapsed_error(start, attempts, last_failure.take(), attempt_timeout)
             {
                 return Err(self.emit_error(error));
             }
 
             attempts += 1;
-            let before_context =
-                self.context(start, attempts, Duration::ZERO, self.attempt_timeout);
+            let before_context = self.context(start, attempts, Duration::ZERO, attempt_timeout);
             self.emit_before_attempt(&before_context);
 
             let attempt_start = Instant::now();
-            let result = if let Some(timeout) = self.attempt_timeout {
+            let result = if let Some(timeout) = attempt_timeout {
                 match tokio::time::timeout(timeout, operation.call()).await {
                     Ok(result) => result,
                     Err(_) => Err(AttemptFailure::Timeout),
@@ -210,12 +310,7 @@ impl<E> Retry<E> {
                 operation.call().await
             };
 
-            let context = self.context(
-                start,
-                attempts,
-                attempt_start.elapsed(),
-                self.attempt_timeout,
-            );
+            let context = self.context(start, attempts, attempt_start.elapsed(), attempt_timeout);
             match result {
                 Ok(()) => {
                     self.emit_attempt_success(&context);
@@ -236,7 +331,6 @@ impl<E> Retry<E> {
     ///
     /// # Parameters
     /// - `options`: Retry options.
-    /// - `attempt_timeout`: Optional async attempt timeout.
     /// - `retry_after_hint`: Optional hint extractor.
     /// - `isolate_listener_panics`: Whether listener panics are isolated.
     /// - `listeners`: Lifecycle listeners.
@@ -245,14 +339,12 @@ impl<E> Retry<E> {
     /// A retry policy.
     pub(super) fn new(
         options: RetryOptions,
-        attempt_timeout: Option<Duration>,
         retry_after_hint: Option<RetryAfterHint<E>>,
         isolate_listener_panics: bool,
         listeners: RetryListeners<E>,
     ) -> Self {
         Self {
             options,
-            attempt_timeout,
             retry_after_hint,
             isolate_listener_panics,
             listeners,
@@ -286,6 +378,65 @@ impl<E> Retry<E> {
         )
     }
 
+    /// Returns the configured attempt-timeout duration.
+    ///
+    /// # Returns
+    /// `Some(Duration)` when per-attempt timeout is configured.
+    #[inline]
+    fn attempt_timeout_duration(&self) -> Option<Duration> {
+        self.options
+            .attempt_timeout()
+            .map(|attempt_timeout| attempt_timeout.timeout())
+    }
+
+    /// Runs one blocking attempt on a worker thread.
+    ///
+    /// # Parameters
+    /// - `operation`: Shared blocking operation.
+    ///
+    /// # Returns
+    /// The operation value on success, or an attempt failure.
+    ///
+    /// # Panics
+    /// Converts worker panics into [`AttemptFailure::Panic`].
+    fn call_blocking_attempt<T, F>(&self, operation: Arc<F>) -> Result<T, AttemptFailure<E>>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
+    {
+        let token = AttemptCancelToken::new();
+        let worker_token = token.clone();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| operation(worker_token)));
+            let message = match result {
+                Ok(result) => BlockingAttemptMessage::Result(result),
+                Err(payload) => BlockingAttemptMessage::Panic(AttemptPanic::from_payload(payload)),
+            };
+            let _ = sender.send(message);
+        });
+
+        match self.attempt_timeout_duration() {
+            Some(attempt_timeout) => match receiver.recv_timeout(attempt_timeout) {
+                Ok(message) => worker_message_to_attempt_result(message),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    token.cancel();
+                    Err(AttemptFailure::Timeout)
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    panic!("blocking retry attempt worker stopped without sending a result")
+                }
+            },
+            None => match receiver.recv() {
+                Ok(message) => worker_message_to_attempt_result(message),
+                Err(mpsc::RecvError) => {
+                    panic!("blocking retry attempt worker stopped without sending a result")
+                }
+            },
+        }
+    }
+
     /// Handles one failed attempt.
     ///
     /// # Parameters
@@ -309,7 +460,8 @@ impl<E> Retry<E> {
             .and_then(|hint| hint.apply(&failure, &context));
         let context = context.with_retry_after_hint(hint);
 
-        let decision = self.failure_decision(&failure, &context);
+        let decision =
+            self.resolve_failure_decision(self.failure_decision(&failure, &context), &failure);
         if decision == AttemptFailureDecision::Abort {
             return RetryFlowAction::Finished(RetryError::new(
                 RetryErrorReason::Aborted,
@@ -363,6 +515,36 @@ impl<E> Retry<E> {
             }
         }
         decision
+    }
+
+    /// Resolves the effective failure decision after applying timeout policy.
+    ///
+    /// # Parameters
+    /// - `decision`: Decision returned by failure listeners.
+    /// - `failure`: Attempt failure being handled.
+    ///
+    /// # Returns
+    /// A concrete decision for timeout failures when listeners used the default.
+    fn resolve_failure_decision(
+        &self,
+        decision: AttemptFailureDecision,
+        failure: &AttemptFailure<E>,
+    ) -> AttemptFailureDecision {
+        if decision != AttemptFailureDecision::UseDefault {
+            return decision;
+        }
+        if matches!(failure, AttemptFailure::Timeout)
+            && let Some(attempt_timeout) = self.options.attempt_timeout()
+        {
+            match attempt_timeout.policy() {
+                AttemptTimeoutPolicy::Retry => AttemptFailureDecision::Retry,
+                AttemptTimeoutPolicy::Abort => AttemptFailureDecision::Abort,
+            }
+        } else if matches!(failure, AttemptFailure::Panic(_)) {
+            AttemptFailureDecision::Abort
+        } else {
+            AttemptFailureDecision::UseDefault
+        }
     }
 
     /// Selects the delay used before the next retry.
@@ -494,7 +676,6 @@ impl<E> fmt::Debug for Retry<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Retry")
             .field("options", &self.options)
-            .field("attempt_timeout", &self.attempt_timeout)
             .finish_non_exhaustive()
     }
 }
@@ -652,6 +833,30 @@ enum RetryFlowAction<E> {
     },
     /// Finish with a terminal error.
     Finished(RetryError<E>),
+}
+
+/// Message sent from one blocking attempt worker to the retry executor.
+enum BlockingAttemptMessage<T, E> {
+    /// Operation returned normally.
+    Result(Result<T, E>),
+    /// Operation panicked before timeout.
+    Panic(AttemptPanic),
+}
+
+/// Converts a worker message into an attempt result.
+///
+/// # Parameters
+/// - `message`: Message received from the worker thread.
+///
+/// # Returns
+/// The operation value on success, or an attempt failure.
+fn worker_message_to_attempt_result<T, E>(
+    message: BlockingAttemptMessage<T, E>,
+) -> Result<T, AttemptFailure<E>> {
+    match message {
+        BlockingAttemptMessage::Result(result) => result.map_err(AttemptFailure::Error),
+        BlockingAttemptMessage::Panic(panic) => Err(AttemptFailure::Panic(panic)),
+    }
 }
 
 /// Checks whether sleeping would exhaust the elapsed-time budget.
