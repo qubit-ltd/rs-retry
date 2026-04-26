@@ -230,19 +230,25 @@ impl RetryConfigValues {
         let strategy = self
             .delay
             .as_deref()
-            .or(self.delay_strategy.as_deref())
-            .map(str::trim)
-            .map(|value| value.to_ascii_lowercase());
-        match strategy.as_deref() {
+            .map(|value| (KEY_DELAY, value))
+            .or_else(|| {
+                self.delay_strategy
+                    .as_deref()
+                    .map(|value| (KEY_DELAY_STRATEGY, value))
+            })
+            .map(|(key, value)| (key, value.trim().to_ascii_lowercase()));
+        match strategy {
             None => Ok(self
                 .get_implicit_delay()
                 .unwrap_or_else(|| default.delay().clone())),
-            Some("none") => Ok(RetryDelay::None),
-            Some("fixed") => Ok(RetryDelay::fixed(Duration::from_millis(
-                self.fixed_delay_millis
-                    .unwrap_or(DEFAULT_RETRY_FIXED_DELAY_MILLIS),
-            ))),
-            Some("random") => Ok(RetryDelay::random(
+            Some((_, strategy)) if strategy == "none" => Ok(RetryDelay::None),
+            Some((_, strategy)) if strategy == "fixed" => {
+                Ok(RetryDelay::fixed(Duration::from_millis(
+                    self.fixed_delay_millis
+                        .unwrap_or(DEFAULT_RETRY_FIXED_DELAY_MILLIS),
+                )))
+            }
+            Some((_, strategy)) if strategy == "random" => Ok(RetryDelay::random(
                 Duration::from_millis(
                     self.random_min_delay_millis
                         .unwrap_or(DEFAULT_RETRY_RANDOM_MIN_DELAY_MILLIS),
@@ -252,20 +258,24 @@ impl RetryConfigValues {
                         .unwrap_or(DEFAULT_RETRY_RANDOM_MAX_DELAY_MILLIS),
                 ),
             )),
-            Some("exponential") | Some("exponential_backoff") => Ok(RetryDelay::exponential(
-                Duration::from_millis(
-                    self.exponential_initial_delay_millis
-                        .unwrap_or(DEFAULT_RETRY_EXPONENTIAL_INITIAL_DELAY_MILLIS),
-                ),
-                Duration::from_millis(
-                    self.exponential_max_delay_millis
-                        .unwrap_or(DEFAULT_RETRY_EXPONENTIAL_MAX_DELAY_MILLIS),
-                ),
-                self.exponential_multiplier
-                    .unwrap_or(DEFAULT_RETRY_EXPONENTIAL_MULTIPLIER),
-            )),
-            Some(other) => Err(RetryConfigError::invalid_value(
-                KEY_DELAY,
+            Some((_, strategy))
+                if strategy == "exponential" || strategy == "exponential_backoff" =>
+            {
+                Ok(RetryDelay::exponential(
+                    Duration::from_millis(
+                        self.exponential_initial_delay_millis
+                            .unwrap_or(DEFAULT_RETRY_EXPONENTIAL_INITIAL_DELAY_MILLIS),
+                    ),
+                    Duration::from_millis(
+                        self.exponential_max_delay_millis
+                            .unwrap_or(DEFAULT_RETRY_EXPONENTIAL_MAX_DELAY_MILLIS),
+                    ),
+                    self.exponential_multiplier
+                        .unwrap_or(DEFAULT_RETRY_EXPONENTIAL_MULTIPLIER),
+                ))
+            }
+            Some((key, other)) => Err(RetryConfigError::invalid_value(
+                key,
                 format!("unsupported delay strategy '{other}'"),
             )),
         }
