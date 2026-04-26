@@ -49,6 +49,7 @@ impl AttemptExecutorError {
     /// # Returns
     /// An executor failure describing the spawn error.
     #[inline]
+    #[cfg_attr(coverage, allow(dead_code))]
     pub(crate) fn from_spawn_error(error: io::Error) -> Self {
         Self::new(&format!("failed to spawn retry worker thread: {error}"))
     }

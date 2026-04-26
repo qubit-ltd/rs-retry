@@ -13,3 +13,7 @@ mod event;
 mod executor;
 mod options;
 mod support;
+
+#[cfg(coverage)]
+#[path = "coverage/coverage_support_tests.rs"]
+mod coverage_support_tests;

@@ -61,6 +61,26 @@ impl<E> RetryError<E> {
         }
     }
 
+    /// Creates a retry error for coverage-only defensive-path tests.
+    ///
+    /// # Parameters
+    /// - `reason`: Terminal reason.
+    /// - `last_failure`: Last observed attempt failure, if any.
+    /// - `context`: Retry context captured at termination.
+    ///
+    /// # Returns
+    /// A retry error preserving the terminal reason and context.
+    #[cfg(all(coverage, not(test)))]
+    #[doc(hidden)]
+    #[inline]
+    pub fn coverage_new(
+        reason: RetryErrorReason,
+        last_failure: Option<AttemptFailure<E>>,
+        context: RetryContext,
+    ) -> Self {
+        Self::new(reason, last_failure, context)
+    }
+
     /// Returns the terminal retry error reason.
     ///
     /// # Parameters
@@ -162,17 +182,17 @@ where
     /// Returns a formatting error if the underlying formatter fails.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let attempts = self.attempts();
-        match self.reason {
-            RetryErrorReason::Aborted => write!(f, "retry aborted after {attempts} attempt(s)")?,
-            RetryErrorReason::AttemptsExceeded => write!(
-                f,
+        let message = match self.reason {
+            RetryErrorReason::Aborted => format!("retry aborted after {attempts} attempt(s)"),
+            RetryErrorReason::AttemptsExceeded => format!(
                 "retry attempts exceeded after {attempts} attempt(s), max {}",
                 self.context.max_attempts()
-            )?,
+            ),
             RetryErrorReason::MaxElapsedExceeded => {
-                write!(f, "retry max elapsed exceeded after {attempts} attempt(s)")?
+                format!("retry max elapsed exceeded after {attempts} attempt(s)")
             }
-        }
+        };
+        f.write_str(&message)?;
         if let Some(failure) = &self.last_failure {
             write!(f, "; last failure: {failure}")?;
         }

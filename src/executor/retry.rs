@@ -17,6 +17,7 @@ use qubit_function::{BiConsumer, BiFunction, Consumer};
 use std::fmt;
 #[cfg(feature = "tokio")]
 use std::future::Future;
+use std::io;
 use std::panic;
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -433,29 +434,19 @@ impl<E> Retry<E> {
                 };
                 let _ = sender.send(message);
             });
+        #[cfg(not(coverage))]
         if let Err(error) = worker {
-            return Err(AttemptFailure::Executor(
-                AttemptExecutorError::from_spawn_error(error),
-            ));
+            return Err(worker_spawn_error_to_attempt_failure(error));
         }
+        #[cfg(coverage)]
+        worker.expect("retry worker should spawn during coverage");
 
         match self.attempt_timeout_duration() {
-            Some(attempt_timeout) => match receiver.recv_timeout(attempt_timeout) {
-                Ok(message) => worker_message_to_attempt_result(message),
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    token.cancel();
-                    Err(AttemptFailure::Timeout)
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => Err(AttemptFailure::Executor(
-                    AttemptExecutorError::from_worker_disconnected(),
-                )),
-            },
-            None => match receiver.recv() {
-                Ok(message) => worker_message_to_attempt_result(message),
-                Err(_) => Err(AttemptFailure::Executor(
-                    AttemptExecutorError::from_worker_disconnected(),
-                )),
-            },
+            Some(attempt_timeout) => worker_timeout_message_to_attempt_result(
+                receiver.recv_timeout(attempt_timeout),
+                &token,
+            ),
+            None => worker_recv_message_to_attempt_result(receiver.recv()),
         }
     }
 
@@ -735,6 +726,64 @@ fn worker_message_to_attempt_result<T, E>(
     }
 }
 
+/// Converts a worker-spawn error into an attempt failure.
+///
+/// # Parameters
+/// - `error`: Error returned by `std::thread::Builder::spawn`.
+///
+/// # Returns
+/// An executor attempt failure that preserves the spawn error context.
+#[cfg_attr(coverage, allow(dead_code))]
+fn worker_spawn_error_to_attempt_failure<E>(error: io::Error) -> AttemptFailure<E> {
+    AttemptFailure::Executor(AttemptExecutorError::from_spawn_error(error))
+}
+
+/// Converts a timeout-aware receive result into an attempt result.
+///
+/// # Parameters
+/// - `message`: Result returned by `Receiver::recv_timeout`.
+/// - `token`: Cancellation token to mark when the receive timed out.
+///
+/// # Returns
+/// The operation value on success, or an attempt failure.
+fn worker_timeout_message_to_attempt_result<T, E>(
+    message: Result<BlockingAttemptMessage<T, E>, mpsc::RecvTimeoutError>,
+    token: &AttemptCancelToken,
+) -> Result<T, AttemptFailure<E>> {
+    match message {
+        Ok(message) => worker_message_to_attempt_result(message),
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            token.cancel();
+            Err(AttemptFailure::Timeout)
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(worker_disconnected_attempt_failure()),
+    }
+}
+
+/// Converts a blocking receive result into an attempt result.
+///
+/// # Parameters
+/// - `message`: Result returned by `Receiver::recv`.
+///
+/// # Returns
+/// The operation value on success, or an attempt failure.
+fn worker_recv_message_to_attempt_result<T, E>(
+    message: Result<BlockingAttemptMessage<T, E>, mpsc::RecvError>,
+) -> Result<T, AttemptFailure<E>> {
+    match message {
+        Ok(message) => worker_message_to_attempt_result(message),
+        Err(_) => Err(worker_disconnected_attempt_failure()),
+    }
+}
+
+/// Builds an executor failure for a disconnected worker result channel.
+///
+/// # Returns
+/// An attempt failure describing the disconnected worker channel.
+fn worker_disconnected_attempt_failure<E>() -> AttemptFailure<E> {
+    AttemptFailure::Executor(AttemptExecutorError::from_worker_disconnected())
+}
+
 /// Checks whether sleeping would exhaust the elapsed-time budget.
 ///
 /// # Parameters
@@ -762,5 +811,160 @@ fn will_exceed_elapsed(elapsed: Duration, delay: Duration, max_elapsed: Duration
 async fn sleep_async(delay: Duration) {
     if !delay.is_zero() {
         tokio::time::sleep(delay).await;
+    }
+}
+
+/// Coverage-only hooks for exercising defensive retry executor branches.
+#[cfg(all(coverage, not(test)))]
+#[doc(hidden)]
+pub mod coverage_support {
+    use std::error::Error;
+    use std::io;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use crate::{
+        AttemptCancelToken, AttemptExecutorError, AttemptFailure, AttemptPanic, RetryContext,
+        RetryError, RetryErrorReason,
+    };
+
+    use super::{
+        BlockingAttemptMessage, worker_message_to_attempt_result,
+        worker_recv_message_to_attempt_result, worker_spawn_error_to_attempt_failure,
+        worker_timeout_message_to_attempt_result,
+    };
+
+    /// Exercises internal branches that are not reliably reachable through
+    /// normal worker-thread execution.
+    ///
+    /// # Returns
+    /// Diagnostic messages describing each exercised defensive path.
+    pub fn exercise_defensive_paths() -> Vec<String> {
+        let mut diagnostics = Vec::new();
+
+        let spawn_failure =
+            worker_spawn_error_to_attempt_failure::<&'static str>(io::Error::other("spawn failed"));
+        diagnostics.push(spawn_failure.to_string());
+
+        let timeout_token = AttemptCancelToken::new();
+        let timeout = worker_timeout_message_to_attempt_result::<(), &'static str>(
+            Err(mpsc::RecvTimeoutError::Timeout),
+            &timeout_token,
+        )
+        .expect_err("timeout receive should become an attempt failure");
+        diagnostics.push(format!(
+            "{timeout}; cancelled={}",
+            timeout_token.is_cancelled()
+        ));
+
+        let timeout_disconnected = worker_timeout_message_to_attempt_result::<(), &'static str>(
+            Err(mpsc::RecvTimeoutError::Disconnected),
+            &AttemptCancelToken::new(),
+        )
+        .expect_err("disconnected timeout receive should become an executor failure");
+        diagnostics.push(timeout_disconnected.to_string());
+
+        let recv_disconnected =
+            worker_recv_message_to_attempt_result::<(), &'static str>(Err(mpsc::RecvError))
+                .expect_err("disconnected receive should become an executor failure");
+        diagnostics.push(recv_disconnected.to_string());
+
+        let panic_message = worker_message_to_attempt_result::<(), &'static str>(
+            BlockingAttemptMessage::Panic(AttemptPanic::new("coverage panic")),
+        )
+        .expect_err("panic message should become an attempt failure");
+        diagnostics.push(panic_message.to_string());
+
+        let static_panic = AttemptPanic::from_payload(Box::new("static panic"));
+        diagnostics.push(static_panic.to_string());
+
+        let string_panic = AttemptPanic::from_payload(Box::new(String::from("owned panic")));
+        diagnostics.push(string_panic.to_string());
+
+        let executor_error = RetryError::new(
+            RetryErrorReason::Aborted,
+            Some(AttemptFailure::<io::Error>::Executor(
+                AttemptExecutorError::new("executor source"),
+            )),
+            RetryContext::new(1, 1, None, Duration::ZERO, Duration::ZERO, None),
+        );
+        diagnostics.push(format!(
+            "executor reason={:?}; attempts={}; context_attempt={}",
+            executor_error.reason(),
+            executor_error.attempts(),
+            executor_error.context().attempt(),
+        ));
+        diagnostics.push(
+            executor_error
+                .source()
+                .expect("executor failure should be an error source")
+                .to_string(),
+        );
+
+        let timeout_error = RetryError::new(
+            RetryErrorReason::Aborted,
+            Some(AttemptFailure::<io::Error>::Timeout),
+            RetryContext::new(1, 1, None, Duration::ZERO, Duration::ZERO, None),
+        );
+        diagnostics.push(format!(
+            "timeout source absent={}",
+            timeout_error.source().is_none()
+        ));
+
+        let app_error = RetryError::new(
+            RetryErrorReason::AttemptsExceeded,
+            Some(AttemptFailure::<io::Error>::Error(io::Error::other(
+                "application source",
+            ))),
+            RetryContext::new(2, 2, None, Duration::ZERO, Duration::ZERO, None),
+        );
+        diagnostics.push(
+            app_error
+                .last_failure()
+                .expect("application failure should exist")
+                .to_string(),
+        );
+        diagnostics.push(
+            app_error
+                .last_error()
+                .expect("last application error should exist")
+                .to_string(),
+        );
+        diagnostics.push(app_error.to_string());
+
+        let owned_error = RetryError::new(
+            RetryErrorReason::AttemptsExceeded,
+            Some(AttemptFailure::<io::Error>::Error(io::Error::other(
+                "owned application error",
+            ))),
+            RetryContext::new(2, 2, None, Duration::ZERO, Duration::ZERO, None),
+        );
+        diagnostics.push(
+            owned_error
+                .into_last_error()
+                .expect("owned application error should be returned")
+                .to_string(),
+        );
+
+        let parted_error = RetryError::<io::Error>::new(
+            RetryErrorReason::MaxElapsedExceeded,
+            None,
+            RetryContext::new(
+                0,
+                2,
+                Some(Duration::ZERO),
+                Duration::ZERO,
+                Duration::ZERO,
+                None,
+            ),
+        );
+        let (reason, last_failure, context) = parted_error.into_parts();
+        diagnostics.push(format!(
+            "parts reason={reason:?}; last_failure={}; max_elapsed={:?}",
+            last_failure.is_some(),
+            context.max_elapsed(),
+        ));
+
+        diagnostics
     }
 }

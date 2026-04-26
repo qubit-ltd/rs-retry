@@ -124,11 +124,13 @@ fn test_run_default_boxed_error_type_observes_listeners_and_hints() {
     let before_attempts = Arc::new(Mutex::new(Vec::new()));
     let successes = Arc::new(Mutex::new(Vec::new()));
     let failures = Arc::new(Mutex::new(Vec::new()));
+    let retries = Arc::new(Mutex::new(Vec::new()));
     let terminal_errors = Arc::new(Mutex::new(Vec::new()));
 
     let before_events = Arc::clone(&before_attempts);
     let success_events = Arc::clone(&successes);
     let failure_events = Arc::clone(&failures);
+    let retry_events = Arc::clone(&retries);
     let error_events = Arc::clone(&terminal_errors);
     let retry = Retry::<BoxError>::builder()
         .max_attempts(2)
@@ -163,6 +165,21 @@ fn test_run_default_boxed_error_type_observes_listeners_and_hints() {
                     .expect("failure events should be lockable")
                     .push((context.attempt(), context.retry_after_hint(), message));
                 AttemptFailureDecision::UseDefault
+            },
+        )
+        .on_retry(
+            move |failure: &AttemptFailure<BoxError>, context: &RetryContext| {
+                retry_events
+                    .lock()
+                    .expect("retry events should be lockable")
+                    .push((
+                        context.attempt(),
+                        context.next_delay(),
+                        failure
+                            .as_error()
+                            .map(ToString::to_string)
+                            .expect("retry failure should wrap boxed error"),
+                    ));
             },
         )
         .on_error(
@@ -225,6 +242,13 @@ fn test_run_default_boxed_error_type_observes_listeners_and_hints() {
             (1, Some(Duration::ZERO), "hinted".to_string()),
             (1, None, "plain".to_string()),
             (2, None, "terminal".to_string()),
+        ]
+    );
+    assert_eq!(
+        *retries.lock().expect("retry events should be lockable"),
+        vec![
+            (1, Some(Duration::ZERO), "hinted".to_string()),
+            (1, Some(Duration::ZERO), "plain".to_string()),
         ]
     );
     assert_eq!(

@@ -10,9 +10,15 @@
 use std::error::Error;
 use std::fmt;
 use std::fmt::Write;
+use std::thread;
 use std::time::Duration;
 
-use qubit_retry::{AttemptFailure, AttemptFailureDecision, Retry, RetryContext, RetryErrorReason};
+#[cfg(coverage)]
+use qubit_retry::{AttemptExecutorError, RetryError};
+use qubit_retry::{
+    AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption, Retry, RetryContext,
+    RetryErrorReason,
+};
 
 use crate::support::TestError;
 
@@ -251,6 +257,57 @@ fn test_retry_error_source_returns_terminal_failure() {
         .run(|| -> Result<(), TestError> { panic!("operation must not run") })
         .expect_err("zero elapsed budget should stop before first attempt");
     assert!(without_source.source().is_none());
+
+    let timeout_error = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .no_delay()
+        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(Duration::from_millis(5))))
+        .build()
+        .expect("retry should build")
+        .run_blocking_with_timeout(|token| {
+            while !token.is_cancelled() {
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err::<(), TestError>(TestError("cancelled too late"))
+        })
+        .expect_err("attempt timeout should abort");
+    assert!(matches!(
+        timeout_error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
+    assert!(timeout_error.source().is_none());
+    assert!(timeout_error.last_error().is_none());
+    assert!(timeout_error.into_last_error().is_none());
+}
+
+/// Verifies coverage-only construction can exercise executor source handling.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when source propagation is incorrect.
+#[test]
+#[cfg(coverage)]
+fn test_retry_error_coverage_constructor_exposes_executor_source() {
+    let error = RetryError::coverage_new(
+        RetryErrorReason::Aborted,
+        Some(AttemptFailure::<TestError>::Executor(
+            AttemptExecutorError::new("executor source"),
+        )),
+        RetryContext::new(1, 1, None, Duration::ZERO, Duration::ZERO, None),
+    );
+
+    assert_eq!(
+        error
+            .source()
+            .expect("executor error should be the source")
+            .to_string(),
+        "executor source"
+    );
 }
 
 /// Verifies retry error display propagates formatter failures.

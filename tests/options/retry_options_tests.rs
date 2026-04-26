@@ -231,6 +231,15 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
     assert_eq!(error.path(), KEY_DELAY);
     assert!(error.message().contains("unsupported"));
 
+    let mut encoded_strategy = Config::new();
+    encoded_strategy
+        .set("delay", "fixed(12ms)")
+        .expect("test config value should be set");
+    let error = RetryOptions::from_config(&encoded_strategy)
+        .expect_err("encoded delay form should not be accepted as a strategy name");
+    assert_eq!(error.path(), KEY_DELAY);
+    assert!(error.message().contains("unsupported"));
+
     let mut bad_type = Config::new();
     bad_type
         .set("max_attempts", "not-a-number")

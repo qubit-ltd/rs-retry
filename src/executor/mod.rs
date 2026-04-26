@@ -24,4 +24,7 @@ mod sync_value_operation;
 
 pub use attempt_cancel_token::AttemptCancelToken;
 pub use retry::Retry;
+#[cfg(all(coverage, not(test)))]
+#[doc(hidden)]
+pub use retry::coverage_support;
 pub use retry_builder::RetryBuilder;

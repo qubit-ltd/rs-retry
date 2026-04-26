@@ -7,8 +7,8 @@
  *
  ******************************************************************************/
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -19,6 +19,24 @@ use qubit_retry::{
 
 use crate::support::TestError;
 
+/// Counts calls to the reusable worker-thread probe.
+static WORKER_THREAD_ID_CALLS: AtomicUsize = AtomicUsize::new(0);
+/// Serializes tests that use the reusable worker-thread probe.
+static WORKER_THREAD_ID_LOCK: Mutex<()> = Mutex::new(());
+
+/// Returns the current worker thread id and records that the worker ran.
+///
+/// # Parameters
+/// - `token`: Cancellation token for the worker attempt.
+///
+/// # Returns
+/// The current worker thread id.
+fn record_worker_thread_id(token: AttemptCancelToken) -> Result<thread::ThreadId, TestError> {
+    assert!(!token.is_cancelled());
+    WORKER_THREAD_ID_CALLS.fetch_add(1, Ordering::SeqCst);
+    Ok(thread::current().id())
+}
+
 /// Verifies worker execution uses a separate thread without timeout settings.
 ///
 /// # Parameters
@@ -28,7 +46,11 @@ use crate::support::TestError;
 /// This test returns nothing.
 #[test]
 fn test_run_in_worker_executes_on_worker_without_timeout() {
-    let main_thread = std::thread::current().id();
+    let _guard = WORKER_THREAD_ID_LOCK
+        .lock()
+        .expect("worker probe lock should be available");
+    WORKER_THREAD_ID_CALLS.store(0, Ordering::SeqCst);
+    let main_thread = thread::current().id();
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .no_delay()
@@ -36,13 +58,40 @@ fn test_run_in_worker_executes_on_worker_without_timeout() {
         .expect("retry should build");
 
     let worker_thread = retry
-        .run_in_worker(move |token: AttemptCancelToken| {
-            assert!(!token.is_cancelled());
-            Ok::<_, TestError>(std::thread::current().id())
-        })
+        .run_in_worker(record_worker_thread_id)
         .expect("worker attempt should succeed");
 
     assert_ne!(worker_thread, main_thread);
+    assert_eq!(WORKER_THREAD_ID_CALLS.load(Ordering::SeqCst), 1);
+}
+
+/// Verifies worker execution with a timeout can complete before the deadline.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_in_worker_with_timeout_allows_fast_success() {
+    let _guard = WORKER_THREAD_ID_LOCK
+        .lock()
+        .expect("worker probe lock should be available");
+    WORKER_THREAD_ID_CALLS.store(0, Ordering::SeqCst);
+    let main_thread = thread::current().id();
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .no_delay()
+        .attempt_timeout_option(Some(AttemptTimeoutOption::retry(Duration::from_millis(50))))
+        .build()
+        .expect("retry should build");
+
+    let worker_thread = retry
+        .run_in_worker(record_worker_thread_id)
+        .expect("worker attempt should finish before timeout");
+
+    assert_ne!(worker_thread, main_thread);
+    assert_eq!(WORKER_THREAD_ID_CALLS.load(Ordering::SeqCst), 1);
 }
 
 /// Verifies worker panics become retry failures and abort by default.
@@ -242,7 +291,10 @@ fn test_run_blocking_with_timeout_retries_timeout_until_success() {
 /// Verifies worker mode honors max elapsed before running the first attempt.
 #[test]
 fn test_run_in_worker_max_elapsed_can_stop_before_first_attempt() {
-    let calls = Arc::new(AtomicUsize::new(0));
+    let _guard = WORKER_THREAD_ID_LOCK
+        .lock()
+        .expect("worker probe lock should be available");
+    WORKER_THREAD_ID_CALLS.store(0, Ordering::SeqCst);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_elapsed(Some(Duration::ZERO))
@@ -251,17 +303,11 @@ fn test_run_in_worker_max_elapsed_can_stop_before_first_attempt() {
         .expect("retry should build");
 
     let error = retry
-        .run_in_worker({
-            let calls = Arc::clone(&calls);
-            move |_token: AttemptCancelToken| -> Result<(), TestError> {
-                calls.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            }
-        })
+        .run_in_worker(record_worker_thread_id)
         .expect_err("zero elapsed budget should stop before first attempt");
 
     assert_eq!(error.reason(), RetryErrorReason::MaxElapsedExceeded);
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(WORKER_THREAD_ID_CALLS.load(Ordering::SeqCst), 0);
 }
 
 /// Verifies worker mode sleeps when retrying with non-zero delay.

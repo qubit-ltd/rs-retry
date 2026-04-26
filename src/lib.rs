@@ -30,6 +30,9 @@ pub use event::{
     AttemptFailureDecision, AttemptFailureListener, AttemptSuccessListener, BeforeAttemptListener,
     RetryAfterHint, RetryContext, RetryErrorListener, RetryScheduledListener,
 };
+#[cfg(all(coverage, not(test)))]
+#[doc(hidden)]
+pub use executor::coverage_support;
 pub use executor::{AttemptCancelToken, Retry, RetryBuilder};
 #[cfg(feature = "config")]
 pub use options::RetryConfigValues;

@@ -49,7 +49,11 @@ pub const KEY_ATTEMPT_TIMEOUT_MILLIS: &str = "attempt_timeout_millis";
 /// Config key for the action selected when one attempt times out.
 pub const KEY_ATTEMPT_TIMEOUT_POLICY: &str = "attempt_timeout_policy";
 
-/// Config key for the delay strategy option value (strategy name / encoded form).
+/// Config key for the delay strategy option value.
+///
+/// The config integration accepts strategy names such as `none`, `fixed`,
+/// `random`, `exponential`, and `exponential_backoff`. It does not parse the
+/// textual [`crate::RetryDelay`] display form such as `fixed(100ms)`.
 pub const KEY_DELAY: &str = "delay";
 
 /// Config key: backward-compatible alias for the delay strategy option value (same
