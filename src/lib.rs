@@ -22,7 +22,10 @@ pub mod event;
 pub mod executor;
 pub mod options;
 
-pub use error::{AttemptFailure, AttemptPanic, RetryConfigError, RetryError, RetryErrorReason};
+pub use error::{
+    AttemptExecutorError, AttemptFailure, AttemptPanic, RetryConfigError, RetryError,
+    RetryErrorReason,
+};
 pub use event::{
     AttemptFailureDecision, AttemptFailureListener, AttemptSuccessListener, BeforeAttemptListener,
     RetryAfterHint, RetryContext, RetryErrorListener,

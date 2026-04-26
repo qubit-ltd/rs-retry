@@ -21,8 +21,9 @@ use crate::{AttemptFailure, RetryContext, RetryErrorReason};
 /// Error returned when a retry flow terminates without a successful result.
 ///
 /// The generic parameter `E` is the caller's application error type. It is
-/// preserved in [`AttemptFailure::Error`] when the terminal failure came from the
-/// user operation.
+/// preserved in [`AttemptFailure::Error`] when the terminal failure came from
+/// the user operation. Runtime failures such as timeout, panic, and executor
+/// failures are preserved through [`RetryError::last_failure`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(
     serialize = "E: serde::Serialize",
@@ -110,7 +111,8 @@ impl<E> RetryError<E> {
     ///
     /// # Returns
     /// `Some(&E)` when the terminal failure wraps an application error;
-    /// `None` for timeout failures or elapsed-budget failures with no attempt.
+    /// `None` for timeout, panic, executor failures, or elapsed-budget failures
+    /// with no attempt.
     #[inline]
     pub fn last_error(&self) -> Option<&E> {
         self.last_failure().and_then(AttemptFailure::as_error)
@@ -124,7 +126,8 @@ impl<E> RetryError<E> {
     ///
     /// # Returns
     /// `Some(E)` when the terminal failure owns an application error; `None`
-    /// when the terminal failure was a timeout or when no attempt ran.
+    /// when the terminal failure was a timeout, panic, executor failure, or
+    /// when no attempt ran.
     #[inline]
     pub fn into_last_error(self) -> Option<E> {
         self.last_failure.and_then(AttemptFailure::into_error)

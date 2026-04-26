@@ -7,6 +7,7 @@
  *
  ******************************************************************************/
 
+mod attempt_executor_error_tests;
 mod attempt_failure_tests;
 mod attempt_panic_tests;
 #[cfg(feature = "config")]

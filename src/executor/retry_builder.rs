@@ -27,9 +27,9 @@ use crate::{
 /// Builder for [`Retry`].
 ///
 /// The generic parameter `E` is the operation error type preserved inside
-/// [`AttemptFailure::Error`]. Failure listeners may observe failures, override the
-/// retry decision, or return [`AttemptFailureDecision::UseDefault`] to let the
-/// policy decide from configured limits and delay strategy.
+/// [`AttemptFailure::Error`]. Failure listeners may observe failures, override
+/// the retry decision, or return [`AttemptFailureDecision::UseDefault`] to let
+/// the policy decide from configured limits and delay strategy.
 pub struct RetryBuilder<E = BoxError> {
     /// Retry limits, delay strategy, jitter, and elapsed-time budget.
     options: RetryOptions,
@@ -383,9 +383,9 @@ impl<E> RetryBuilder<E> {
                         AttemptFailureDecision::Abort
                     }
                 }
-                AttemptFailure::Timeout | AttemptFailure::Panic(_) => {
-                    AttemptFailureDecision::UseDefault
-                }
+                AttemptFailure::Timeout
+                | AttemptFailure::Panic(_)
+                | AttemptFailure::Executor(_) => AttemptFailureDecision::UseDefault,
             },
         )
     }

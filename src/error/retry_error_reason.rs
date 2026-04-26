@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// Reason why the whole retry flow stopped with an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RetryErrorReason {
-    /// A failure listener explicitly aborted the retry flow.
+    /// A listener or retry policy aborted the retry flow.
     Aborted,
     /// No attempts remain.
     AttemptsExceeded,

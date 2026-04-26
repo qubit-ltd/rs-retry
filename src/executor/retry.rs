@@ -28,8 +28,9 @@ use qubit_function::{BiConsumer, BiFunction, Consumer};
 use super::attempt_cancel_token::AttemptCancelToken;
 use crate::event::RetryListeners;
 use crate::{
-    AttemptFailure, AttemptFailureDecision, AttemptPanic, AttemptTimeoutPolicy, RetryAfterHint,
-    RetryBuilder, RetryConfigError, RetryContext, RetryError, RetryErrorReason, RetryOptions,
+    AttemptExecutorError, AttemptFailure, AttemptFailureDecision, AttemptPanic,
+    AttemptTimeoutPolicy, RetryAfterHint, RetryBuilder, RetryConfigError, RetryContext, RetryError,
+    RetryErrorReason, RetryOptions,
 };
 
 /// Retry policy and executor bound to an operation error type.
@@ -110,11 +111,13 @@ impl<E> Retry<E> {
     /// Runs a blocking operation with retry inside worker-thread attempts.
     ///
     /// Each attempt runs on a worker thread. Worker panics are captured as
-    /// [`AttemptFailure::Panic`]. If the configured attempt timeout expires,
+    /// [`AttemptFailure::Panic`]. Worker-spawn failures are reported as
+    /// [`AttemptFailure::Executor`]. If the configured attempt timeout expires,
     /// the retry executor stops waiting, marks the attempt's
     /// [`AttemptCancelToken`] as cancelled, and continues according to
-    /// [`AttemptTimeoutPolicy`]. The worker thread may continue running if the
-    /// operation ignores the cancellation token.
+    /// [`AttemptTimeoutPolicy`]. The timed-out worker thread may continue
+    /// running and overlap later attempts if the operation ignores the
+    /// cancellation token.
     ///
     /// # Parameters
     /// - `operation`: Thread-safe operation called once per attempt. It receives
@@ -179,7 +182,8 @@ impl<E> Retry<E> {
     /// This method is a compatibility alias for [`Retry::run_in_worker`]. It
     /// also runs attempts in worker threads when no timeout is configured, so
     /// worker panics are reported as [`AttemptFailure::Panic`] instead of
-    /// unwinding through the caller.
+    /// unwinding through the caller. Worker-spawn failures are reported as
+    /// [`AttemptFailure::Executor`].
     ///
     /// # Parameters
     /// - `operation`: Thread-safe operation called once per attempt. It receives
@@ -258,9 +262,11 @@ impl<E> Retry<E> {
     /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
     ///
     /// # Panics
-    /// Propagates operation panics and listener panics unless listener panic
-    /// isolation is enabled. Tokio may panic if timer APIs are used outside a
-    /// runtime with a time driver.
+    /// Propagates operation panics from the current async task. They are not
+    /// converted to [`AttemptFailure::Panic`] because `run_async` does not
+    /// create an isolation boundary. Listener panics are propagated unless
+    /// listener panic isolation is enabled. Tokio may panic if timer APIs are
+    /// used outside a runtime with a time driver.
     #[cfg(feature = "tokio")]
     pub async fn run_async<T, F, Fut>(&self, mut operation: F) -> Result<T, RetryError<E>>
     where
@@ -398,7 +404,8 @@ impl<E> Retry<E> {
     /// The operation value on success, or an attempt failure.
     ///
     /// # Panics
-    /// Converts worker panics into [`AttemptFailure::Panic`].
+    /// Converts worker panics into [`AttemptFailure::Panic`] and worker-spawn
+    /// failures into [`AttemptFailure::Executor`].
     fn call_blocking_attempt<T, F>(&self, operation: Arc<F>) -> Result<T, AttemptFailure<E>>
     where
         T: Send + 'static,
@@ -406,16 +413,26 @@ impl<E> Retry<E> {
         F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
     {
         let token = AttemptCancelToken::new();
-        let worker_token = token.clone();
         let (sender, receiver) = mpsc::sync_channel(1);
-        std::thread::spawn(move || {
-            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| operation(worker_token)));
-            let message = match result {
-                Ok(result) => BlockingAttemptMessage::Result(result),
-                Err(payload) => BlockingAttemptMessage::Panic(AttemptPanic::from_payload(payload)),
-            };
-            let _ = sender.send(message);
-        });
+        let worker_token = token.clone();
+        let worker = std::thread::Builder::new()
+            .name("qubit-retry-worker".to_string())
+            .spawn(move || {
+                let result =
+                    panic::catch_unwind(panic::AssertUnwindSafe(|| operation(worker_token)));
+                let message = match result {
+                    Ok(result) => BlockingAttemptMessage::Result(result),
+                    Err(payload) => {
+                        BlockingAttemptMessage::Panic(AttemptPanic::from_payload(payload))
+                    }
+                };
+                let _ = sender.send(message);
+            });
+        if let Err(error) = worker {
+            return Err(AttemptFailure::Executor(
+                AttemptExecutorError::from_spawn_error(error),
+            ));
+        }
 
         match self.attempt_timeout_duration() {
             Some(attempt_timeout) => match receiver.recv_timeout(attempt_timeout) {
@@ -457,7 +474,7 @@ impl<E> Retry<E> {
         let hint = self
             .retry_after_hint
             .as_ref()
-            .and_then(|hint| hint.apply(&failure, &context));
+            .and_then(|hint| self.invoke_listener(|| hint.apply(&failure, &context)));
         let context = context.with_retry_after_hint(hint);
 
         let decision =
@@ -540,7 +557,10 @@ impl<E> Retry<E> {
                 AttemptTimeoutPolicy::Retry => AttemptFailureDecision::Retry,
                 AttemptTimeoutPolicy::Abort => AttemptFailureDecision::Abort,
             }
-        } else if matches!(failure, AttemptFailure::Panic(_)) {
+        } else if matches!(
+            failure,
+            AttemptFailure::Panic(_) | AttemptFailure::Executor(_)
+        ) {
             AttemptFailureDecision::Abort
         } else {
             AttemptFailureDecision::UseDefault

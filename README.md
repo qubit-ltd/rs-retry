@@ -18,7 +18,7 @@ The core API is `Retry<E>`. A retry policy is bound only to the operation error 
 - Blocking operations can use `run_in_worker` for thread-isolated execution, panic capture, timeout waiting, and cooperative cancellation.
 - Optional `qubit-config` integration reads retry settings from configuration.
 - Retry callbacks are stored as `rs-function` functors, so both closures and custom function objects are supported.
-- `AttemptFailure<E>` represents one failed attempt: `Error(E)`, `Timeout`, or `Panic(AttemptPanic)`.
+- `AttemptFailure<E>` represents one failed attempt: `Error(E)`, `Timeout`, `Panic(AttemptPanic)`, or `Executor(AttemptExecutorError)`.
 - `RetryError<E>` represents the terminal retry-flow error and carries `reason`, `last_failure`, and `RetryContext`.
 - Lifecycle hooks are explicit: `before_attempt`, `on_success`, `on_failure`, and `on_error`.
 
@@ -94,6 +94,7 @@ let retry = Retry::<ServiceError>::builder()
                 AttemptFailureDecision::Abort
             }
             AttemptFailure::Panic(_) => AttemptFailureDecision::Abort,
+            AttemptFailure::Executor(_) => AttemptFailureDecision::Abort,
             _ => AttemptFailureDecision::UseDefault,
         },
     )
@@ -104,7 +105,7 @@ let retry = Retry::<ServiceError>::builder()
 
 ## Async Retry and Timeout
 
-Async execution requires the `tokio` feature. Per-attempt timeouts are stored in `RetryOptions` through the builder. When an attempt times out, the executor reports `AttemptFailure::Timeout`, and listeners can inspect the configured timeout through `RetryContext::attempt_timeout()`.
+Async execution requires the `tokio` feature. Per-attempt timeouts are stored in `RetryOptions` through the builder. When an attempt times out, the executor reports `AttemptFailure::Timeout`, and listeners can inspect the configured timeout through `RetryContext::attempt_timeout()`. Operation panics still unwind through the current async task; `run_async()` does not convert them to `AttemptFailure::Panic`.
 
 ```rust
 use qubit_retry::Retry;
@@ -136,9 +137,9 @@ Plain `run()` keeps normal same-thread synchronous execution. It is the lowest-o
 
 ## Worker-Thread Retry
 
-`run_in_worker()` runs every attempt on a worker thread. Without an attempt timeout, the caller waits for the worker result and worker panics are captured as `AttemptFailure::Panic`. With an attempt timeout, the retry executor stops waiting when the timeout expires, marks the attempt token as cancelled, and applies the configured `AttemptTimeoutPolicy`.
+`run_in_worker()` runs every attempt on a worker thread. Without an attempt timeout, the caller waits for the worker result and worker panics are captured as `AttemptFailure::Panic`. Worker-spawn failures are reported as `AttemptFailure::Executor`. With an attempt timeout, the retry executor stops waiting when the timeout expires, marks the attempt token as cancelled, and applies the configured `AttemptTimeoutPolicy`.
 
-Rust cannot safely kill a running thread, so a timed-out worker may keep running unless the operation checks the token and returns. Use this path for blocking IO, third-party calls, code that may panic, or work that needs per-attempt timeout isolation. Prefer plain `run()` for low-latency in-memory work.
+Rust cannot safely kill a running thread, so a timed-out worker may keep running unless the operation checks the token and returns. If the timeout policy retries, the timed-out worker may overlap later attempts. Use this path for blocking IO, third-party calls, code that may panic, or work that needs per-attempt timeout isolation. Prefer plain `run()` for low-latency in-memory work.
 
 ```rust
 use qubit_retry::{AttemptCancelToken, Retry};
@@ -307,6 +308,9 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
             }
             Some(AttemptFailure::Panic(panic)) => {
                 eprintln!("last attempt panicked: {}", panic.message());
+            }
+            Some(AttemptFailure::Executor(executor)) => {
+                eprintln!("retry executor failed: {}", executor.message());
             }
             None => {}
         }

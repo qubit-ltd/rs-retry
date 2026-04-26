@@ -10,6 +10,7 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::{panic, thread};
 
 use qubit_common::BoxError;
 use qubit_retry::{
@@ -355,6 +356,59 @@ fn test_retry_after_hint_is_available_to_failure_listener() {
     );
 }
 
+/// Verifies retry-after hint panics propagate by default.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_retry_after_hint_panic_propagates_by_default() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .no_delay()
+        .retry_after_hint(
+            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| panic!("hint panic"),
+        )
+        .build()
+        .expect("retry should build");
+
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        let _ = retry.run(|| -> Result<(), TestError> { Err(TestError("failed")) });
+    }));
+
+    assert!(result.is_err());
+}
+
+/// Verifies listener panic isolation also isolates retry-after hint panics.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_retry_after_hint_panic_is_isolated_when_enabled() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .no_delay()
+        .retry_after_hint(
+            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| panic!("hint panic"),
+        )
+        .isolate_listener_panics()
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run(|| -> Result<(), TestError> { Err(TestError("failed")) })
+        .expect_err("isolated hint panic should fall back to retry failure handling");
+
+    assert_eq!(error.reason(), RetryErrorReason::AttemptsExceeded);
+    assert_eq!(error.last_error(), Some(&TestError("failed")));
+    assert_eq!(error.context().retry_after_hint(), None);
+}
+
 /// Verifies sync execution does not expose async-only attempt timeout metadata.
 ///
 /// # Parameters
@@ -516,7 +570,7 @@ fn test_run_blocking_with_timeout_can_abort_and_cancel_token() {
             let saw_cancel = Arc::clone(&saw_cancel);
             move |token: AttemptCancelToken| {
                 while !token.is_cancelled() {
-                    std::thread::sleep(Duration::from_millis(1));
+                    thread::sleep(Duration::from_millis(1));
                 }
                 saw_cancel.store(true, Ordering::SeqCst);
                 Err::<(), TestError>(TestError("cancelled"))
@@ -537,7 +591,7 @@ fn test_run_blocking_with_timeout_can_abort_and_cancel_token() {
         if saw_cancel.load(Ordering::SeqCst) {
             break;
         }
-        std::thread::sleep(Duration::from_millis(1));
+        thread::sleep(Duration::from_millis(1));
     }
     assert!(saw_cancel.load(Ordering::SeqCst));
 }
@@ -568,7 +622,7 @@ fn test_run_blocking_with_timeout_retries_timeout_until_success() {
             move |_token: AttemptCancelToken| {
                 let current = attempts.fetch_add(1, Ordering::SeqCst) + 1;
                 if current == 1 {
-                    std::thread::sleep(Duration::from_millis(20));
+                    thread::sleep(Duration::from_millis(20));
                     Ok::<_, TestError>("late")
                 } else {
                     Ok::<_, TestError>("done")
@@ -579,6 +633,28 @@ fn test_run_blocking_with_timeout_retries_timeout_until_success() {
 
     assert_eq!(value, "done");
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
+/// Verifies async operation panic still propagates through the current task.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[cfg(feature = "tokio")]
+#[tokio::test]
+#[should_panic(expected = "async operation panic")]
+async fn test_run_async_panic_propagates() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .no_delay()
+        .build()
+        .expect("retry should build");
+
+    let _ = retry
+        .run_async::<(), _, _>(|| async { panic!("async operation panic") })
+        .await;
 }
 
 /// Verifies async attempt timeout becomes a retry failure.

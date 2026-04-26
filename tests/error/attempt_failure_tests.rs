@@ -7,7 +7,7 @@
  *
  ******************************************************************************/
 
-use qubit_retry::{AttemptFailure, AttemptPanic};
+use qubit_retry::{AttemptExecutorError, AttemptFailure, AttemptPanic};
 
 use crate::support::TestError;
 
@@ -30,11 +30,13 @@ fn test_attempt_failure_error_accessors_distinguish_timeout() {
 
     let timeout = AttemptFailure::<TestError>::Timeout;
     assert_eq!(timeout.as_error(), None);
+    assert_eq!(timeout.as_executor_error(), None);
     assert_eq!(timeout.as_panic(), None);
     assert_eq!(timeout.into_error(), None);
 
     let panic = AttemptFailure::<TestError>::Panic(AttemptPanic::new("worker failed"));
     assert_eq!(panic.as_error(), None);
+    assert_eq!(panic.as_executor_error(), None);
     assert_eq!(
         panic
             .as_panic()
@@ -43,6 +45,19 @@ fn test_attempt_failure_error_accessors_distinguish_timeout() {
         "worker failed"
     );
     assert_eq!(panic.into_error(), None);
+
+    let executor =
+        AttemptFailure::<TestError>::Executor(AttemptExecutorError::new("worker spawn failed"));
+    assert_eq!(executor.as_error(), None);
+    assert_eq!(
+        executor
+            .as_executor_error()
+            .expect("executor failure should expose executor error")
+            .message(),
+        "worker spawn failed"
+    );
+    assert_eq!(executor.as_panic(), None);
+    assert_eq!(executor.into_error(), None);
 }
 
 /// Verifies attempt failure display output for error and timeout variants.
@@ -68,5 +83,10 @@ fn test_attempt_failure_display_formats_variants() {
     assert_eq!(
         AttemptFailure::<TestError>::Panic(AttemptPanic::new("worker failed")).to_string(),
         "attempt panicked: worker failed"
+    );
+    assert_eq!(
+        AttemptFailure::<TestError>::Executor(AttemptExecutorError::new("worker spawn failed"))
+            .to_string(),
+        "attempt executor failed: worker spawn failed"
     );
 }
