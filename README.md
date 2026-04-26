@@ -202,11 +202,13 @@ Listeners can also read the extracted value from `RetryContext::retry_after_hint
 
 Listeners are lifecycle hooks, not a separate policy system:
 
-- `before_attempt`: invoked before every attempt, including the first attempt.
+- `before_attempt`: invoked **before** the operation runs for **each** attempt (including the first). Use it to mark the start of attempt *N*; the current attempt has not started yet, so this is not the “we failed and are about to back off” moment.
 - `on_success`: invoked after each successful attempt.
-- `on_failure`: invoked after each `AttemptFailure` and returns `AttemptFailureDecision`.
-- `on_retry`: invoked after a failed attempt has been scheduled for another try; `RetryContext::next_delay()` contains the selected delay.
+- `on_failure`: invoked after each `AttemptFailure` and returns `AttemptFailureDecision`. Runs **before** the inter-attempt delay is chosen and **before** `on_retry`, and can influence abort vs retry and how the policy picks the next delay.
+- `on_retry`: invoked only after a failed attempt will be retried **and** the **delay before the next** `before_attempt` has been **selected** (after `on_failure` / merged decisions); **before** the executor sleeps and **before** the next `before_attempt`. It is **observational** (cannot change backoff/retry); `RetryContext::next_delay()` is the sleep duration. If the flow will not retry (attempts or time budget exhausted, listener abort, etc.), `on_retry` is **not** called.
 - `on_error`: invoked once when the retry flow returns a terminal `RetryError`.
+
+`before_attempt` vs `on_retry` in one line: `before_attempt` fires at the **start of an attempt**; `on_retry` fires **right after a failure** once a **retry is scheduled and the next delay is known**, but **before** the sleep and the next attempt.
 
 ```rust
 use qubit_retry::{
@@ -230,6 +232,16 @@ let retry = Retry::<std::io::Error>::builder()
                 "attempt failed",
             );
             AttemptFailureDecision::UseDefault
+        },
+    )
+    .on_retry(
+        |failure: &AttemptFailure<std::io::Error>, context: &RetryContext| {
+            tracing::info!(
+                failure = %failure,
+                attempt = context.attempt(),
+                next_delay = ?context.next_delay(),
+                "will sleep before next attempt",
+            );
         },
     )
     .on_error(|error: &RetryError<std::io::Error>, context: &RetryContext| {
