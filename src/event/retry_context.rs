@@ -141,8 +141,8 @@ impl RetryContext {
     /// Returns the delay selected before the next attempt.
     ///
     /// # Returns
-    /// `Some(Duration)` after retry scheduling has selected a delay; otherwise
-    /// `None`.
+    /// `Some(Duration)` in retry-scheduled events and terminal errors where a
+    /// selected delay would exceed the elapsed-time budget; otherwise `None`.
     #[inline]
     pub fn next_delay(&self) -> Option<Duration> {
         self.next_delay

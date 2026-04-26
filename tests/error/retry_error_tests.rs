@@ -201,7 +201,7 @@ fn test_retry_error_display_formats_terminal_reasons() {
     );
 }
 
-/// Verifies retry errors expose the last application error as their source.
+/// Verifies retry errors expose terminal failures as their source when possible.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -212,7 +212,7 @@ fn test_retry_error_display_formats_terminal_reasons() {
 /// # Errors
 /// The test fails through assertions when source propagation is incorrect.
 #[test]
-fn test_retry_error_source_returns_last_application_error() {
+fn test_retry_error_source_returns_terminal_failure() {
     let with_source = Retry::<TestError>::builder()
         .max_attempts(1)
         .no_delay()
@@ -226,6 +226,21 @@ fn test_retry_error_source_returns_last_application_error() {
             .expect("last application error should be the source")
             .to_string(),
         "source"
+    );
+
+    let panic_source = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .no_delay()
+        .build()
+        .expect("retry should build")
+        .run_in_worker(|_token| -> Result<(), TestError> { panic!("panic source") })
+        .expect_err("worker panic should abort");
+    assert_eq!(
+        panic_source
+            .source()
+            .expect("captured panic should be the source")
+            .to_string(),
+        "panic source"
     );
 
     let without_source = Retry::<TestError>::builder()

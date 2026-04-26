@@ -363,6 +363,26 @@ impl<E> RetryBuilder<E> {
         self
     }
 
+    /// Registers a listener invoked after a retry delay has been selected.
+    ///
+    /// The listener receives the failed attempt and a context whose
+    /// [`RetryContext::next_delay`] contains the delay that will be slept before
+    /// the next attempt. The listener is observational and cannot change the
+    /// retry decision.
+    ///
+    /// # Parameters
+    /// - `listener`: Listener receiving the failure and scheduled-retry context.
+    ///
+    /// # Returns
+    /// The updated builder.
+    pub fn on_retry<C>(mut self, listener: C) -> Self
+    where
+        C: BiConsumer<AttemptFailure<E>, RetryContext> + Send + Sync + 'static,
+    {
+        self.listeners.retry_scheduled.push(listener.into_arc());
+        self
+    }
+
     /// Registers an error-only predicate where `true` means retry.
     ///
     /// # Parameters

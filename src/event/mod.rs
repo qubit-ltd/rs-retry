@@ -18,7 +18,7 @@ mod retry_error_listener;
 mod retry_listeners;
 
 pub use attempt_failure_decision::AttemptFailureDecision;
-pub use attempt_failure_listener::AttemptFailureListener;
+pub use attempt_failure_listener::{AttemptFailureListener, RetryScheduledListener};
 pub use attempt_success_listener::AttemptSuccessListener;
 pub use before_attempt_listener::BeforeAttemptListener;
 pub use retry_after_hint::RetryAfterHint;

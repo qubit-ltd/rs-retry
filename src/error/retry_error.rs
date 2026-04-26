@@ -184,19 +184,23 @@ impl<E> Error for RetryError<E>
 where
     E: Error + 'static,
 {
-    /// Returns the source application error when one is available.
+    /// Returns the source terminal failure when one is available.
     ///
     /// # Parameters
     /// This method has no parameters.
     ///
     /// # Returns
-    /// `Some(&dyn Error)` when the terminal failure wraps an application error
-    /// that implements [`std::error::Error`]; otherwise `None`.
+    /// `Some(&dyn Error)` when the terminal failure wraps an application error,
+    /// captured panic, or executor failure; otherwise `None`.
     ///
     /// # Errors
     /// This method does not return errors.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.last_error()
-            .map(|error| error as &(dyn Error + 'static))
+        match self.last_failure() {
+            Some(AttemptFailure::Error(error)) => Some(error as &(dyn Error + 'static)),
+            Some(AttemptFailure::Panic(panic)) => Some(panic as &(dyn Error + 'static)),
+            Some(AttemptFailure::Executor(error)) => Some(error as &(dyn Error + 'static)),
+            Some(AttemptFailure::Timeout) | None => None,
+        }
     }
 }

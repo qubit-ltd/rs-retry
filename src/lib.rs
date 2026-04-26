@@ -28,7 +28,7 @@ pub use error::{
 };
 pub use event::{
     AttemptFailureDecision, AttemptFailureListener, AttemptSuccessListener, BeforeAttemptListener,
-    RetryAfterHint, RetryContext, RetryErrorListener,
+    RetryAfterHint, RetryContext, RetryErrorListener, RetryScheduledListener,
 };
 pub use executor::{AttemptCancelToken, Retry, RetryBuilder};
 #[cfg(feature = "config")]

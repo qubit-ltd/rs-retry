@@ -80,6 +80,37 @@ fn test_run_in_worker_panic_aborts_by_default() {
     assert_eq!(panic.message(), "worker failed");
 }
 
+/// Verifies non-string worker panic payloads use the documented fallback text.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_in_worker_non_string_panic_uses_fallback_message() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .no_delay()
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_in_worker(|_token: AttemptCancelToken| -> Result<(), TestError> {
+            std::panic::panic_any(123_u32);
+        })
+        .expect_err("non-string worker panic should abort");
+
+    let panic = error
+        .last_failure()
+        .and_then(AttemptFailure::as_panic)
+        .expect("terminal failure should be a captured panic");
+    assert_eq!(
+        panic.message(),
+        "attempt panicked with a non-string payload"
+    );
+}
+
 /// Verifies failure listeners can retry captured worker panics.
 ///
 /// # Parameters

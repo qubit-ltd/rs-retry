@@ -11,6 +11,7 @@
 //! Author: Haixing Hu
 
 use std::any::Any;
+use std::error::Error;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -96,28 +97,4 @@ impl fmt::Display for AttemptPanic {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::AttemptPanic;
-
-    #[test]
-    fn from_payload_reads_owned_string() {
-        let panic = AttemptPanic::from_payload(Box::new(String::from("owned panic")));
-        assert_eq!(panic.message(), "owned panic");
-    }
-
-    #[test]
-    fn from_payload_reads_static_str() {
-        let panic = AttemptPanic::from_payload(Box::new("static panic"));
-        assert_eq!(panic.message(), "static panic");
-    }
-
-    #[test]
-    fn from_payload_uses_fallback_for_non_string_payload() {
-        let panic = AttemptPanic::from_payload(Box::new(123_u32));
-        assert_eq!(
-            panic.message(),
-            "attempt panicked with a non-string payload"
-        );
-    }
-}
+impl Error for AttemptPanic {}

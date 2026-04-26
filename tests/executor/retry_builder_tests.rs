@@ -352,13 +352,18 @@ async fn test_retry_on_timeout_retries_timeout_failures() {
 #[test]
 fn test_isolate_listener_panics_suppresses_listener_panics() {
     let retry = Retry::<TestError>::builder()
-        .max_attempts(1)
+        .max_attempts(2)
         .no_delay()
         .isolate_listener_panics()
         .before_attempt(|_context: &qubit_retry::RetryContext| panic!("before panic"))
         .on_failure(
             |_failure: &AttemptFailure<TestError>, _context: &qubit_retry::RetryContext| {
                 panic!("failure panic")
+            },
+        )
+        .on_retry(
+            |_failure: &AttemptFailure<TestError>, _context: &qubit_retry::RetryContext| {
+                panic!("retry panic")
             },
         )
         .on_error(
@@ -373,7 +378,7 @@ fn test_isolate_listener_panics_suppresses_listener_panics() {
         .run(|| -> Result<(), TestError> { Err(TestError("isolated")) })
         .expect_err("operation error should still be returned");
 
-    assert_eq!(error.attempts(), 1);
+    assert_eq!(error.attempts(), 2);
     assert_eq!(error.last_error(), Some(&TestError("isolated")));
 }
 

@@ -10,6 +10,7 @@
 
 use super::{
     AttemptFailureListener, AttemptSuccessListener, BeforeAttemptListener, RetryErrorListener,
+    RetryScheduledListener,
 };
 
 #[derive(Clone)]
@@ -20,6 +21,8 @@ pub(crate) struct RetryListeners<E> {
     pub(crate) attempt_success: Vec<AttemptSuccessListener>,
     /// Callbacks invoked after a failed attempt.
     pub(crate) failure: Vec<AttemptFailureListener<E>>,
+    /// Callbacks invoked after a retry has been scheduled.
+    pub(crate) retry_scheduled: Vec<RetryScheduledListener<E>>,
     /// Callbacks invoked when the whole retry flow fails.
     pub(crate) error: Vec<RetryErrorListener<E>>,
 }
@@ -41,6 +44,7 @@ impl<E> Default for RetryListeners<E> {
             before_attempt: Vec::new(),
             attempt_success: Vec::new(),
             failure: Vec::new(),
+            retry_scheduled: Vec::new(),
             error: Vec::new(),
         }
     }

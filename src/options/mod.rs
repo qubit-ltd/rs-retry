@@ -13,8 +13,8 @@ mod attempt_timeout_policy;
 mod parse_retry_jitter_error;
 #[cfg(feature = "config")]
 mod retry_config_values;
-mod retry_delay_duration_format;
 mod retry_delay;
+mod retry_delay_duration_format;
 mod retry_jitter;
 mod retry_options;
 

@@ -280,12 +280,22 @@ fn test_on_failure_can_abort_retry_flow() {
 fn test_retry_after_decision_selects_next_delay() {
     let failures = Arc::new(Mutex::new(Vec::new()));
     let failure_events = Arc::clone(&failures);
+    let scheduled = Arc::new(Mutex::new(Vec::new()));
+    let scheduled_events = Arc::clone(&scheduled);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .fixed_delay(Duration::from_secs(10))
         .on_failure(
             |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
                 AttemptFailureDecision::RetryAfter(Duration::from_millis(1))
+            },
+        )
+        .on_retry(
+            move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
+                scheduled_events
+                    .lock()
+                    .expect("retry scheduled events should be lockable")
+                    .push((failure.as_error().cloned(), context.next_delay()));
             },
         )
         .on_error(
@@ -307,6 +317,15 @@ fn test_retry_after_decision_selects_next_delay() {
     assert_eq!(
         *failures.lock().expect("failure events should be lockable"),
         vec![(RetryErrorReason::AttemptsExceeded, None)]
+    );
+    assert_eq!(
+        *scheduled
+            .lock()
+            .expect("retry scheduled events should be lockable"),
+        vec![(
+            Some(TestError("still-failing")),
+            Some(Duration::from_millis(1))
+        )]
     );
 }
 

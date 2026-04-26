@@ -20,20 +20,20 @@ The core API is `Retry<E>`. A retry policy is bound only to the operation error 
 - Retry callbacks are stored as `rs-function` functors, so both closures and custom function objects are supported.
 - `AttemptFailure<E>` represents one failed attempt: `Error(E)`, `Timeout`, `Panic(AttemptPanic)`, or `Executor(AttemptExecutorError)`.
 - `RetryError<E>` represents the terminal retry-flow error and carries `reason`, `last_failure`, and `RetryContext`.
-- Lifecycle hooks are explicit: `before_attempt`, `on_success`, `on_failure`, and `on_error`.
+- Lifecycle hooks are explicit: `before_attempt`, `on_success`, `on_failure`, `on_retry`, and `on_error`.
 
 ## Installation
 
 ```toml
 [dependencies]
-qubit-retry = "0.7.3"
+qubit-retry = "0.8.0"
 ```
 
 Enable optional integrations as needed:
 
 ```toml
 [dependencies]
-qubit-retry = { version = "0.7.3", features = ["tokio", "config"] }
+qubit-retry = { version = "0.8.0", features = ["tokio", "config"] }
 ```
 
 Optional features:
@@ -205,6 +205,7 @@ Listeners are lifecycle hooks, not a separate policy system:
 - `before_attempt`: invoked before every attempt, including the first attempt.
 - `on_success`: invoked after each successful attempt.
 - `on_failure`: invoked after each `AttemptFailure` and returns `AttemptFailureDecision`.
+- `on_retry`: invoked after a failed attempt has been scheduled for another try; `RetryContext::next_delay()` contains the selected delay.
 - `on_error`: invoked once when the retry flow returns a terminal `RetryError`.
 
 ```rust
