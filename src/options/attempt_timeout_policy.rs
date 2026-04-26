@@ -15,11 +15,12 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-/// Action taken when one attempt exceeds its configured timeout.
+/// Action taken when one attempt exceeds its configured per-attempt timeout.
 ///
-/// The policy is used as the default decision for
-/// [`crate::AttemptFailure::Timeout`]. Explicit failure listeners can still
-/// return their own decision.
+/// The policy is used as the default decision for configured attempt-timeout
+/// failures. Max-elapsed effective timeouts stop the retry flow with
+/// [`crate::RetryErrorReason::MaxElapsedExceeded`] instead. Explicit failure
+/// listeners can still return their own decision for configured timeouts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AttemptTimeoutPolicy {
     /// Retry timed-out attempts while normal retry limits allow it.

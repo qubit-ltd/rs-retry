@@ -427,7 +427,10 @@ impl<E> RetryBuilder<E> {
         self
     }
 
-    /// Aborts the retry flow when an attempt times out.
+    /// Aborts the retry flow when a configured per-attempt timeout expires.
+    ///
+    /// Max-elapsed effective timeouts are not controlled by this policy and stop
+    /// with [`crate::RetryErrorReason::MaxElapsedExceeded`].
     ///
     /// # Returns
     /// The updated builder.
@@ -435,7 +438,10 @@ impl<E> RetryBuilder<E> {
         self.attempt_timeout_policy(AttemptTimeoutPolicy::Abort)
     }
 
-    /// Retries timed-out attempts while limits allow it.
+    /// Retries configured per-attempt timeouts while limits allow it.
+    ///
+    /// Max-elapsed effective timeouts are not controlled by this policy and stop
+    /// with [`crate::RetryErrorReason::MaxElapsedExceeded`].
     ///
     /// # Returns
     /// The updated builder.
