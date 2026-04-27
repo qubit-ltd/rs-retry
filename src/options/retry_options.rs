@@ -24,7 +24,8 @@ use super::attempt_timeout_option::AttemptTimeoutOption;
 use super::retry_config_values::RetryConfigValues;
 
 use crate::constants::{
-    DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_MAX_ELAPSED, KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_DELAY,
+    DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_MAX_ELAPSED,
+    DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS, KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_DELAY,
     KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
 };
 use crate::{RetryConfigError, RetryDelay, RetryJitter};
@@ -49,6 +50,8 @@ pub struct RetryOptions {
     pub(crate) jitter: RetryJitter,
     /// Optional per-attempt timeout settings.
     pub(crate) attempt_timeout: Option<AttemptTimeoutOption>,
+    /// Grace period for a timed-out worker to observe cancellation and exit.
+    pub(crate) worker_cancel_grace: Duration,
 }
 
 impl RetryOptions {
@@ -127,6 +130,19 @@ impl RetryOptions {
         self.attempt_timeout
     }
 
+    /// Returns the worker cancellation grace period.
+    ///
+    /// # Parameters
+    /// This method has no parameters.
+    ///
+    /// # Returns
+    /// Duration the worker-thread executor waits after requesting cooperative
+    /// cancellation for a timed-out worker attempt.
+    #[inline]
+    pub fn worker_cancel_grace(&self) -> Duration {
+        self.worker_cancel_grace
+    }
+
     /// Creates and validates a retry option snapshot.
     ///
     /// # Parameters
@@ -188,6 +204,7 @@ impl RetryOptions {
             delay,
             jitter,
             attempt_timeout,
+            worker_cancel_grace: Duration::from_millis(DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS),
         };
         options.validate()?;
         Ok(options)
@@ -322,7 +339,7 @@ impl Default for RetryOptions {
     ///
     /// # Returns
     /// Options with five attempts, no cumulative user operation time limit,
-    /// exponential delay, and no jitter.
+    /// exponential delay, no jitter, and the default worker cancellation grace.
     ///
     /// # Parameters
     /// This function has no parameters.
@@ -342,6 +359,7 @@ impl Default for RetryOptions {
             delay: RetryDelay::default(),
             jitter: RetryJitter::default(),
             attempt_timeout: None,
+            worker_cancel_grace: Duration::from_millis(DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS),
         }
     }
 }

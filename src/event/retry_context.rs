@@ -42,6 +42,9 @@ pub struct RetryContext {
     retry_after_hint: Option<Duration>,
     /// Source used for the last selected per-attempt timeout.
     attempt_timeout_source: Option<AttemptTimeoutSource>,
+    /// Worker attempts that timed out and were not observed to exit before the
+    /// cancellation grace period ended.
+    unreaped_worker_count: u32,
 }
 
 /// Source of a per-attempt timeout selection.
@@ -86,6 +89,7 @@ impl RetryContext {
             next_delay: None,
             retry_after_hint: None,
             attempt_timeout_source: None,
+            unreaped_worker_count: 0,
         }
     }
 
@@ -168,6 +172,20 @@ impl RetryContext {
         self.attempt_timeout_source
     }
 
+    /// Returns the number of worker attempts not observed to exit after cancellation.
+    ///
+    /// # Parameters
+    /// This method has no parameters.
+    ///
+    /// # Returns
+    /// Count of timed-out worker attempts whose worker thread did not finish
+    /// before the cancellation grace period ended. With the current fail-closed
+    /// worker policy this is either `0` or `1` for a single retry flow.
+    #[inline]
+    pub fn unreaped_worker_count(&self) -> u32 {
+        self.unreaped_worker_count
+    }
+
     /// Returns the delay selected before the next attempt.
     ///
     /// # Returns
@@ -228,6 +246,19 @@ impl RetryContext {
         if let Some(source) = source {
             self.attempt_timeout_source = Some(source);
         }
+        self
+    }
+
+    /// Returns a copy of this context with unreaped worker count.
+    ///
+    /// # Parameters
+    /// - `count`: Number of worker attempts not observed to exit after cancellation.
+    ///
+    /// # Returns
+    /// A context carrying the worker cleanup metric.
+    #[inline]
+    pub(crate) fn with_unreaped_worker_count(mut self, count: u32) -> Self {
+        self.unreaped_worker_count = count;
         self
     }
 }

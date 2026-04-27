@@ -26,6 +26,7 @@ fn sample_retry_config_values_none_delay() -> RetryConfigValues {
         max_elapsed_unlimited: None,
         attempt_timeout_millis: None,
         attempt_timeout_policy: None,
+        worker_cancel_grace_millis: None,
         delay: Some("none".to_string()),
         delay_strategy: None,
         fixed_delay_millis: None,
@@ -36,6 +37,22 @@ fn sample_retry_config_values_none_delay() -> RetryConfigValues {
         exponential_multiplier: None,
         jitter_factor: None,
     }
+}
+
+/// Verifies worker cancel grace inherits from defaults unless configured.
+#[test]
+fn test_to_options_worker_cancel_grace_uses_config_or_default() {
+    let default =
+        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let options = sample_retry_config_values_none_delay()
+        .to_options(&default)
+        .expect("valid merged options");
+    assert_eq!(options.worker_cancel_grace(), default.worker_cancel_grace());
+
+    let mut values = sample_retry_config_values_none_delay();
+    values.worker_cancel_grace_millis = Some(25);
+    let options = values.to_options(&default).expect("valid merged options");
+    assert_eq!(options.worker_cancel_grace(), Duration::from_millis(25));
 }
 
 /// Verifies missing `max_elapsed_millis` inherits `default.max_elapsed` in [`RetryConfigValues::to_options`].

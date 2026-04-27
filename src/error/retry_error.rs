@@ -118,6 +118,19 @@ impl<E> RetryError<E> {
         self.context.attempt_timeout_source()
     }
 
+    /// Returns the number of worker threads not observed to exit after cancellation.
+    ///
+    /// # Parameters
+    /// This method has no parameters.
+    ///
+    /// # Returns
+    /// Count of timed-out worker attempts that did not finish within the worker
+    /// cancellation grace period.
+    #[inline]
+    pub fn unreaped_worker_count(&self) -> u32 {
+        self.context.unreaped_worker_count()
+    }
+
     /// Returns the number of attempts that were executed.
     ///
     /// # Returns
@@ -207,6 +220,12 @@ where
             RetryErrorReason::UnsupportedOperation => {
                 "run() does not support attempt timeout; use run_async() or run_in_worker()"
                     .to_string()
+            }
+            RetryErrorReason::WorkerStillRunning => {
+                format!(
+                    "retry worker still running after timeout cancellation grace, unreaped {}",
+                    self.context.unreaped_worker_count()
+                )
             }
         };
         f.write_str(&message)?;

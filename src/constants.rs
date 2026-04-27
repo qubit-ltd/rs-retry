@@ -50,6 +50,10 @@ pub const KEY_ATTEMPT_TIMEOUT_MILLIS: &str = "attempt_timeout_millis";
 /// Config key for the action selected when one attempt times out.
 pub const KEY_ATTEMPT_TIMEOUT_POLICY: &str = "attempt_timeout_policy";
 
+/// Config key for how long the executor waits for a timed-out worker to exit
+/// after requesting cooperative cancellation.
+pub const KEY_WORKER_CANCEL_GRACE_MILLIS: &str = "worker_cancel_grace_millis";
+
 /// Config key for the delay strategy option value.
 ///
 /// The config integration accepts strategy names such as `none`, `fixed`,
@@ -113,6 +117,13 @@ pub const DEFAULT_RETRY_EXPONENTIAL_MULTIPLIER: f64 = 2.0;
 
 /// Default jitter factor option value (`0.0` means no jitter).
 pub const DEFAULT_RETRY_JITTER_FACTOR: f64 = 0.0;
+
+/// Default worker cancellation grace period, in milliseconds.
+///
+/// This is deliberately short: it gives cooperative blocking operations a small
+/// window to observe [`crate::AttemptCancelToken`] while keeping caller-visible
+/// timeout latency bounded.
+pub const DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS: u64 = 100;
 
 /// Default delay text for [`crate::RetryDelay::default`] and any code that should
 /// match the library's built-in delay default.

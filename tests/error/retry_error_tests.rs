@@ -221,6 +221,23 @@ fn test_retry_error_display_formats_terminal_reasons() {
         unsupported.to_string(),
         "run() does not support attempt timeout; use run_async() or run_in_worker()"
     );
+
+    let worker_still_running = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .no_delay()
+        .attempt_timeout_option(Some(AttemptTimeoutOption::retry(Duration::from_millis(5))))
+        .worker_cancel_grace(Duration::from_millis(5))
+        .build()
+        .expect("retry should build")
+        .run_in_worker(|_token| {
+            thread::sleep(Duration::from_millis(120));
+            Ok::<_, TestError>("late")
+        })
+        .expect_err("uncooperative worker should stop retries");
+    assert_eq!(
+        worker_still_running.to_string(),
+        "retry worker still running after timeout cancellation grace, unreaped 1; last failure: attempt timed out"
+    );
 }
 
 /// Verifies retry errors expose terminal failures as their source when possible.

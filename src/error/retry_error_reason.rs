@@ -24,4 +24,6 @@ pub enum RetryErrorReason {
     /// Currently used when [`Retry::run`](crate::Retry::run) receives
     /// configured per-attempt timeout options.
     UnsupportedOperation,
+    /// A timed-out blocking worker did not exit within the cancellation grace period.
+    WorkerStillRunning,
 }

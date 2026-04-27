@@ -137,9 +137,9 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
 
 ## Worker 线程重试
 
-`run_in_worker()` 会把每次 attempt 都放到 worker 线程中运行。没有配置 attempt timeout 时，调用方等待 worker 返回，并把 worker panic 捕获为 `AttemptFailure::Panic`。worker 线程启动失败会报告为 `AttemptFailure::Executor`。配置了 attempt timeout 时，retry executor 会在超时后停止等待该 worker，标记本次 attempt 的 token 为 cancelled，并按配置的 `AttemptTimeoutPolicy` 继续处理。
+`run_in_worker()` 会把每次 attempt 都放到 worker 线程中运行。没有配置 attempt timeout 时，调用方等待 worker 返回，并把 worker panic 捕获为 `AttemptFailure::Panic`。worker 线程启动失败会报告为 `AttemptFailure::Executor`。配置了 attempt timeout 时，retry executor 会在超时后停止等待该 worker，标记本次 attempt 的 token 为 cancelled，并最多等待 `worker_cancel_grace`（默认 `100ms`）让 worker 退出，然后再按配置的 `AttemptTimeoutPolicy` 继续处理。
 
-Rust 不能安全地强杀运行中的线程，因此如果 operation 不检查 token 并主动返回，超时后的 worker 可能会继续运行。如果超时策略选择 retry，超时后的 worker 还可能和后续 attempt 并发重叠。阻塞 IO、第三方调用、可能 panic 的代码，或需要单次 attempt 超时隔离的任务适合使用这一路径；低延迟内存操作优先使用普通 `run()`。
+Rust 不能安全地强杀运行中的线程，因此如果 operation 不检查 token 并主动返回，超时后的 worker 可能会继续运行。如果 worker 在取消 grace 结束后仍未退出，retry flow 会返回 `RetryErrorReason::WorkerStillRunning`，不会再启动新的 worker；`RetryContext::unreaped_worker_count()` 会记录未回收 worker 数量。阻塞 IO、第三方调用、可能 panic 的代码，或需要单次 attempt 超时隔离的任务适合使用这一路径；低延迟内存操作优先使用普通 `run()`。
 
 ```rust
 use qubit_retry::{AttemptCancelToken, Retry};
@@ -159,6 +159,7 @@ let retry = Retry::<std::io::Error>::builder()
     .max_attempts(3)
     .fixed_delay(Duration::from_millis(50))
     .attempt_timeout(Some(Duration::from_secs(2)))
+    .worker_cancel_grace(Duration::from_millis(25))
     .abort_on_timeout()
     .build()?;
 
@@ -273,6 +274,7 @@ config.set("retry.exponential_multiplier", 2.0)?;
 config.set("retry.jitter_factor", 0.2)?;
 config.set("retry.attempt_timeout_millis", 2_000u64)?;
 config.set("retry.attempt_timeout_policy", "retry")?;
+config.set("retry.worker_cancel_grace_millis", 25u64)?;
 
 let options = RetryOptions::from_config(&config.prefix_view("retry"))?;
 let retry = Retry::<std::io::Error>::from_options(options)?;
@@ -285,6 +287,7 @@ let retry = Retry::<std::io::Error>::from_options(options)?;
 - `max_elapsed_unlimited`
 - `attempt_timeout_millis`
 - `attempt_timeout_policy`：`retry` 或 `abort`
+- `worker_cancel_grace_millis`
 - `delay`：`none`、`fixed`、`random`、`exponential` 或 `exponential_backoff`
 - `fixed_delay_millis`
 - `random_min_delay_millis`

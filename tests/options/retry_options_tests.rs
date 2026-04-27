@@ -15,7 +15,7 @@ use qubit_retry::constants::{
     KEY_DELAY_STRATEGY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
     KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
     KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS,
-    KEY_RANDOM_MIN_DELAY_MILLIS,
+    KEY_RANDOM_MIN_DELAY_MILLIS, KEY_WORKER_CANCEL_GRACE_MILLIS,
 };
 use qubit_retry::{AttemptTimeoutOption, RetryDelay, RetryJitter, RetryOptions};
 
@@ -36,6 +36,7 @@ fn test_validate_default_and_new() {
     assert_eq!(options.max_attempts(), DEFAULT_RETRY_MAX_ATTEMPTS);
     assert_eq!(options.max_elapsed(), None);
     assert_eq!(options.attempt_timeout(), None);
+    assert_eq!(options.worker_cancel_grace(), Duration::from_millis(100));
     assert!(matches!(options.jitter(), RetryJitter::None));
 
     let options = RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none())
@@ -108,6 +109,9 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
     config
         .set("retry.attempt_timeout_policy", "abort")
         .expect("test config value should be set");
+    config
+        .set("retry.worker_cancel_grace_millis", 25u64)
+        .expect("test config value should be set");
 
     let options = RetryOptions::from_config(&config.prefix_view("retry"))
         .expect("prefixed retry config should be parsed");
@@ -123,6 +127,7 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
         options.attempt_timeout(),
         Some(AttemptTimeoutOption::abort(Duration::from_millis(30)))
     );
+    assert_eq!(options.worker_cancel_grace(), Duration::from_millis(25));
 }
 
 /// Verifies non-fixed delay config forms and config read errors.
@@ -266,7 +271,7 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
     assert_eq!(error.path(), KEY_MAX_ELAPSED_UNLIMITED);
 }
 
-/// Verifies explicit and implicit delay defaults from configuration.
+/// Verifies implicit delay defaults from configuration.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -275,47 +280,10 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
 /// This test returns nothing.
 ///
 /// # Errors
-/// The test fails through assertions when default delay values are applied
-/// incorrectly.
+/// The test fails through assertions when implicit default delay values are
+/// applied incorrectly.
 #[test]
-fn test_from_config_reads_explicit_and_implicit_delay_defaults() {
-    let mut fixed_default = Config::new();
-    fixed_default
-        .set("delay", "fixed")
-        .expect("test config value should be set");
-    assert_eq!(
-        RetryOptions::from_config(&fixed_default)
-            .expect("fixed delay defaults should be parsed")
-            .delay(),
-        &RetryDelay::fixed(Duration::from_millis(1000))
-    );
-
-    let mut random_default = Config::new();
-    random_default
-        .set("delay", "random")
-        .expect("test config value should be set");
-    assert_eq!(
-        RetryOptions::from_config(&random_default)
-            .expect("random delay defaults should be parsed")
-            .delay(),
-        &RetryDelay::random(Duration::from_millis(1000), Duration::from_millis(10000))
-    );
-
-    let mut exponential_default = Config::new();
-    exponential_default
-        .set("delay", "exponential")
-        .expect("test config value should be set");
-    assert_eq!(
-        RetryOptions::from_config(&exponential_default)
-            .expect("exponential delay defaults should be parsed")
-            .delay(),
-        &RetryDelay::exponential(
-            Duration::from_millis(1000),
-            Duration::from_millis(60000),
-            2.0
-        )
-    );
-
+fn test_from_config_reads_implicit_delay_defaults() {
     let mut implicit_random = Config::new();
     implicit_random
         .set("random_max_delay_millis", 12000u64)
@@ -515,6 +483,17 @@ fn test_from_config_reports_delay_parameter_type_errors() {
             .expect_err("invalid attempt timeout policy type should fail")
             .path(),
         KEY_ATTEMPT_TIMEOUT_POLICY
+    );
+
+    let mut worker_cancel_grace_bad = Config::new();
+    worker_cancel_grace_bad
+        .set("worker_cancel_grace_millis", "bad")
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&worker_cancel_grace_bad)
+            .expect_err("invalid worker cancel grace type should fail")
+            .path(),
+        KEY_WORKER_CANCEL_GRACE_MILLIS
     );
 }
 

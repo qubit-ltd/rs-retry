@@ -38,6 +38,7 @@ fn test_retry_context_fields() {
     assert_eq!(context.total_elapsed(), Duration::from_millis(8));
     assert_eq!(context.attempt_elapsed(), Duration::from_millis(4));
     assert_eq!(context.attempt_timeout(), Some(Duration::from_millis(10)));
+    assert_eq!(context.unreaped_worker_count(), 0);
     assert_eq!(context.next_delay(), None);
     assert_eq!(context.retry_after_hint(), None);
 }

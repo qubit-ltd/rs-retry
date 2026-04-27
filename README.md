@@ -137,9 +137,9 @@ Plain `run()` keeps normal same-thread synchronous execution. It is the lowest-o
 
 ## Worker-Thread Retry
 
-`run_in_worker()` runs every attempt on a worker thread. Without an attempt timeout, the caller waits for the worker result and worker panics are captured as `AttemptFailure::Panic`. Worker-spawn failures are reported as `AttemptFailure::Executor`. With an attempt timeout, the retry executor stops waiting when the timeout expires, marks the attempt token as cancelled, and applies the configured `AttemptTimeoutPolicy`.
+`run_in_worker()` runs every attempt on a worker thread. Without an attempt timeout, the caller waits for the worker result and worker panics are captured as `AttemptFailure::Panic`. Worker-spawn failures are reported as `AttemptFailure::Executor`. With an attempt timeout, the retry executor stops waiting when the timeout expires, marks the attempt token as cancelled, and waits up to `worker_cancel_grace` (default `100ms`) for the worker to exit before applying the configured `AttemptTimeoutPolicy`.
 
-Rust cannot safely kill a running thread, so a timed-out worker may keep running unless the operation checks the token and returns. If the timeout policy retries, the timed-out worker may overlap later attempts. Use this path for blocking IO, third-party calls, code that may panic, or work that needs per-attempt timeout isolation. Prefer plain `run()` for low-latency in-memory work.
+Rust cannot safely kill a running thread, so a timed-out worker may keep running unless the operation checks the token and returns. If the worker is still running after the cancellation grace period, the retry flow stops with `RetryErrorReason::WorkerStillRunning` instead of starting another worker; `RetryContext::unreaped_worker_count()` reports the unreaped worker count. Use this path for blocking IO, third-party calls, code that may panic, or work that needs per-attempt timeout isolation. Prefer plain `run()` for low-latency in-memory work.
 
 ```rust
 use qubit_retry::{AttemptCancelToken, Retry};
@@ -159,6 +159,7 @@ let retry = Retry::<std::io::Error>::builder()
     .max_attempts(3)
     .fixed_delay(Duration::from_millis(50))
     .attempt_timeout(Some(Duration::from_secs(2)))
+    .worker_cancel_grace(Duration::from_millis(25))
     .abort_on_timeout()
     .build()?;
 
@@ -273,6 +274,7 @@ config.set("retry.exponential_multiplier", 2.0)?;
 config.set("retry.jitter_factor", 0.2)?;
 config.set("retry.attempt_timeout_millis", 2_000u64)?;
 config.set("retry.attempt_timeout_policy", "retry")?;
+config.set("retry.worker_cancel_grace_millis", 25u64)?;
 
 let options = RetryOptions::from_config(&config.prefix_view("retry"))?;
 let retry = Retry::<std::io::Error>::from_options(options)?;
@@ -285,6 +287,7 @@ Supported relative keys:
 - `max_elapsed_unlimited`
 - `attempt_timeout_millis`
 - `attempt_timeout_policy`: `retry` or `abort`
+- `worker_cancel_grace_millis`
 - `delay`: `none`, `fixed`, `random`, `exponential`, or `exponential_backoff`
 - `fixed_delay_millis`
 - `random_min_delay_millis`

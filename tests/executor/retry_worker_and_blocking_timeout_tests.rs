@@ -107,6 +107,7 @@ fn test_run_in_worker_max_elapsed_caps_in_flight_attempt_without_configured_time
         .max_attempts(1)
         .max_elapsed(Some(Duration::from_millis(20)))
         .no_delay()
+        .worker_cancel_grace(Duration::ZERO)
         .build()
         .expect("retry should build");
 
@@ -393,11 +394,13 @@ fn test_run_blocking_with_timeout_retries_timeout_until_success() {
     let value = retry
         .run_blocking_with_timeout({
             let attempts = Arc::clone(&attempts);
-            move |_token: AttemptCancelToken| {
+            move |token: AttemptCancelToken| {
                 let current = attempts.fetch_add(1, Ordering::SeqCst) + 1;
                 if current == 1 {
-                    thread::sleep(Duration::from_millis(200));
-                    Ok::<_, TestError>("late")
+                    while !token.is_cancelled() {
+                        thread::sleep(Duration::from_millis(1));
+                    }
+                    Err::<&'static str, TestError>(TestError("cancelled"))
                 } else {
                     Ok::<_, TestError>("done")
                 }
@@ -407,6 +410,47 @@ fn test_run_blocking_with_timeout_retries_timeout_until_success() {
 
     assert_eq!(value, "done");
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
+/// Verifies a timed-out worker that ignores cancellation stops retries.
+#[test]
+fn test_run_in_worker_unreaped_timeout_worker_stops_retrying() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(3)
+        .no_delay()
+        .attempt_timeout_option(Some(AttemptTimeoutOption::new(
+            Duration::from_millis(5),
+            AttemptTimeoutPolicy::Retry,
+        )))
+        .worker_cancel_grace(Duration::from_millis(5))
+        .build()
+        .expect("retry should build");
+    let start = std::time::Instant::now();
+
+    let error = retry
+        .run_in_worker({
+            let attempts = Arc::clone(&attempts);
+            move |_token: AttemptCancelToken| {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(120));
+                Ok::<_, TestError>("late")
+            }
+        })
+        .expect_err("unreaped timeout worker should stop retries");
+
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(error.reason(), RetryErrorReason::WorkerStillRunning);
+    assert_eq!(error.unreaped_worker_count(), 1);
+    assert_eq!(error.context().unreaped_worker_count(), 1);
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
+    assert!(
+        start.elapsed() < Duration::from_millis(100),
+        "retry should not wait for the uncooperative worker to finish"
+    );
 }
 
 /// Verifies worker mode honors max elapsed before running the first attempt.

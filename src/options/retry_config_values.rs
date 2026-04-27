@@ -31,7 +31,7 @@ use crate::constants::{
     KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
     KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
     KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS,
-    KEY_RANDOM_MIN_DELAY_MILLIS,
+    KEY_RANDOM_MIN_DELAY_MILLIS, KEY_WORKER_CANCEL_GRACE_MILLIS,
 };
 
 /// Raw retry configuration values read from `qubit-config`.
@@ -57,6 +57,8 @@ pub struct RetryConfigValues {
     pub attempt_timeout_millis: Option<u64>,
     /// Optional action selected when one attempt times out.
     pub attempt_timeout_policy: Option<String>,
+    /// Optional worker cancellation grace period in milliseconds.
+    pub worker_cancel_grace_millis: Option<u64>,
     /// Optional primary delay strategy name.
     pub delay: Option<String>,
     /// Optional backward-compatible delay strategy alias.
@@ -102,6 +104,7 @@ impl RetryConfigValues {
             max_elapsed_unlimited: config.get_optional(KEY_MAX_ELAPSED_UNLIMITED)?,
             attempt_timeout_millis: config.get_optional(KEY_ATTEMPT_TIMEOUT_MILLIS)?,
             attempt_timeout_policy: config.get_optional_string(KEY_ATTEMPT_TIMEOUT_POLICY)?,
+            worker_cancel_grace_millis: config.get_optional(KEY_WORKER_CANCEL_GRACE_MILLIS)?,
             delay: config.get_optional_string(KEY_DELAY)?,
             delay_strategy: config.get_optional_string(KEY_DELAY_STRATEGY)?,
             fixed_delay_millis: config.get_optional(KEY_FIXED_DELAY_MILLIS)?,
@@ -130,15 +133,19 @@ impl RetryConfigValues {
         let max_attempts = self.max_attempts.unwrap_or(default.max_attempts());
         let max_elapsed = self.get_max_elapsed(default);
         let attempt_timeout = self.get_attempt_timeout(default)?;
+        let worker_cancel_grace = self.get_worker_cancel_grace(default);
         let delay = self.get_delay(default)?;
         let jitter = self.get_jitter(default);
-        RetryOptions::new_with_attempt_timeout(
+        let mut options = RetryOptions::new_with_attempt_timeout(
             max_attempts,
             max_elapsed,
             delay,
             jitter,
             attempt_timeout,
-        )
+        )?;
+        options.worker_cancel_grace = worker_cancel_grace;
+        options.validate()?;
+        Ok(options)
     }
 
     /// Resolves the cumulative user operation elapsed-time budget.
@@ -212,6 +219,23 @@ impl RetryConfigValues {
                 }
             }
         }
+    }
+
+    /// Resolves the worker cancellation grace period.
+    ///
+    /// # Parameters
+    /// - `default`: Default options used when the config key is absent.
+    ///
+    /// # Returns
+    /// Configured grace duration, or the default option's grace duration.
+    ///
+    /// # Errors
+    /// This method does not return errors because the raw config value was read
+    /// as an unsigned integer before this method is called.
+    fn get_worker_cancel_grace(&self, default: &RetryOptions) -> Duration {
+        self.worker_cancel_grace_millis
+            .map(Duration::from_millis)
+            .unwrap_or_else(|| default.worker_cancel_grace())
     }
 
     /// Resolves the base delay strategy.

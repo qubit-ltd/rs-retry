@@ -30,6 +30,7 @@ fn test_builder_default_and_delay_helpers_work() {
         .max_retries(2)
         .fixed_delay(Duration::from_millis(1))
         .jitter_factor(0.0)
+        .worker_cancel_grace(Duration::from_millis(25))
         .build()
         .expect("retry should build");
 
@@ -40,6 +41,10 @@ fn test_builder_default_and_delay_helpers_work() {
     );
     assert_eq!(retry.options().jitter(), RetryJitter::factor(0.0));
     assert_eq!(retry.options().attempt_timeout(), None);
+    assert_eq!(
+        retry.options().worker_cancel_grace(),
+        Duration::from_millis(25)
+    );
     assert!(format!("{retry:?}").contains("Retry"));
 }
 

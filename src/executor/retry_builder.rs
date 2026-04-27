@@ -290,6 +290,21 @@ impl<E> RetryBuilder<E> {
         self
     }
 
+    /// Sets how long worker-thread execution waits after cancelling a timed-out worker.
+    ///
+    /// # Parameters
+    /// - `grace`: Duration to wait after the attempt timeout fires and the
+    ///   cooperative cancellation token is marked as cancelled. Use zero to skip
+    ///   the grace wait.
+    ///
+    /// # Returns
+    /// The updated builder.
+    #[inline]
+    pub fn worker_cancel_grace(mut self, grace: Duration) -> Self {
+        self.options.worker_cancel_grace = grace;
+        self
+    }
+
     /// Extracts an optional retry-after hint from each failure.
     ///
     /// # Parameters
