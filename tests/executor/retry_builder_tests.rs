@@ -12,7 +12,7 @@ use std::time::Duration;
 use qubit_retry::constants::DEFAULT_RETRY_MAX_ATTEMPTS;
 use qubit_retry::{
     AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption, AttemptTimeoutPolicy, Retry,
-    RetryDelay, RetryJitter, RetryOptions,
+    RetryDelay, RetryErrorReason, RetryJitter, RetryOptions,
 };
 
 use crate::support::TestError;
@@ -172,13 +172,21 @@ fn test_timeout_convenience_methods_work() {
 
     let abort_decision = retry_abort
         .run(|| -> Result<(), TestError> { Err(TestError("error")) })
-        .expect_err("non-timeout should use defaults");
-    assert_eq!(abort_decision.attempts(), DEFAULT_RETRY_MAX_ATTEMPTS);
+        .expect_err("run with attempt timeout must be unsupported");
+    assert_eq!(
+        abort_decision.reason(),
+        RetryErrorReason::UnsupportedOperation
+    );
+    assert_eq!(abort_decision.attempts(), 0);
 
     let continue_decision = retry_continue
         .run(|| -> Result<(), TestError> { Err(TestError("error")) })
-        .expect_err("non-timeout should use defaults");
-    assert_eq!(continue_decision.attempts(), DEFAULT_RETRY_MAX_ATTEMPTS);
+        .expect_err("run with attempt timeout must be unsupported");
+    assert_eq!(
+        continue_decision.reason(),
+        RetryErrorReason::UnsupportedOperation
+    );
+    assert_eq!(continue_decision.attempts(), 0);
 }
 
 /// Verifies custom failure listeners can be registered with rs-function traits.

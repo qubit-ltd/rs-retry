@@ -74,6 +74,30 @@ fn test_exponential_delay_handles_large_durations() {
     assert_eq!(exponential.base_delay(3), max);
 }
 
+/// Verifies exponential retry uses attempt index `0` and `1` consistently and
+/// stops at the configured cap.
+#[test]
+fn test_exponential_delay_uses_first_attempt_indices_and_caps_at_max() {
+    let exponential =
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(180), 1.7);
+
+    assert_eq!(exponential.base_delay(0), Duration::from_millis(100));
+    assert_eq!(exponential.base_delay(1), Duration::from_millis(100));
+    assert_eq!(exponential.base_delay(2), Duration::from_millis(170));
+    assert_eq!(exponential.base_delay(3), Duration::from_millis(180));
+    assert_eq!(exponential.base_delay(4), Duration::from_millis(180));
+}
+
+/// Verifies exponential delay is capped by max immediately when any scaling path exceeds it.
+#[test]
+fn test_exponential_delay_cap_applied_when_scaled_delay_exceeds_max() {
+    let exponential =
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(120), 10.0);
+
+    assert_eq!(exponential.base_delay(2), Duration::from_millis(120));
+    assert_eq!(exponential.base_delay(3), Duration::from_millis(120));
+}
+
 /// Verifies delay validation rejects invalid strategy parameters.
 ///
 /// # Parameters
