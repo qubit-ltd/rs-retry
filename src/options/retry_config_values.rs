@@ -25,13 +25,13 @@ use super::retry_options::RetryOptions;
 use crate::RetryConfigError;
 use crate::constants::{
     DEFAULT_RETRY_EXPONENTIAL_INITIAL_DELAY_MILLIS, DEFAULT_RETRY_EXPONENTIAL_MAX_DELAY_MILLIS,
-    DEFAULT_RETRY_EXPONENTIAL_MULTIPLIER, DEFAULT_RETRY_FIXED_DELAY_MILLIS,
-    DEFAULT_RETRY_JITTER_FACTOR, DEFAULT_RETRY_RANDOM_MAX_DELAY_MILLIS,
-    DEFAULT_RETRY_RANDOM_MIN_DELAY_MILLIS, KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_ATTEMPT_TIMEOUT_POLICY,
-    KEY_DELAY, KEY_DELAY_STRATEGY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
-    KEY_EXPONENTIAL_MAX_DELAY_MILLIS, KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS,
-    KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS, KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED,
-    KEY_RANDOM_MAX_DELAY_MILLIS, KEY_RANDOM_MIN_DELAY_MILLIS,
+    DEFAULT_RETRY_EXPONENTIAL_MULTIPLIER, DEFAULT_RETRY_JITTER_FACTOR,
+    DEFAULT_RETRY_RANDOM_MAX_DELAY_MILLIS, DEFAULT_RETRY_RANDOM_MIN_DELAY_MILLIS,
+    KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_ATTEMPT_TIMEOUT_POLICY, KEY_DELAY, KEY_DELAY_STRATEGY,
+    KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
+    KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
+    KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS,
+    KEY_RANDOM_MIN_DELAY_MILLIS,
 };
 
 /// Raw retry configuration values read from `qubit-config`.
@@ -243,35 +243,53 @@ impl RetryConfigValues {
                 .unwrap_or_else(|| default.delay().clone())),
             Some((_, strategy)) if strategy == "none" => Ok(RetryDelay::None),
             Some((_, strategy)) if strategy == "fixed" => {
-                Ok(RetryDelay::fixed(Duration::from_millis(
-                    self.fixed_delay_millis
-                        .unwrap_or(DEFAULT_RETRY_FIXED_DELAY_MILLIS),
-                )))
+                let Some(fixed_delay_millis) = self.fixed_delay_millis else {
+                    return Err(RetryConfigError::invalid_value(
+                        KEY_FIXED_DELAY_MILLIS,
+                        "fixed delay strategy requires fixed_delay_millis",
+                    ));
+                };
+                Ok(RetryDelay::fixed(Duration::from_millis(fixed_delay_millis)))
             }
             Some((_, strategy)) if strategy == "random" => Ok(RetryDelay::random(
-                Duration::from_millis(
-                    self.random_min_delay_millis
-                        .unwrap_or(DEFAULT_RETRY_RANDOM_MIN_DELAY_MILLIS),
-                ),
-                Duration::from_millis(
-                    self.random_max_delay_millis
-                        .unwrap_or(DEFAULT_RETRY_RANDOM_MAX_DELAY_MILLIS),
-                ),
+                Duration::from_millis(self.random_min_delay_millis.ok_or_else(|| {
+                    RetryConfigError::invalid_value(
+                        KEY_RANDOM_MIN_DELAY_MILLIS,
+                        "random delay strategy requires random_min_delay_millis",
+                    )
+                })?),
+                Duration::from_millis(self.random_max_delay_millis.ok_or_else(|| {
+                    RetryConfigError::invalid_value(
+                        KEY_RANDOM_MAX_DELAY_MILLIS,
+                        "random delay strategy requires random_max_delay_millis",
+                    )
+                })?),
             )),
             Some((_, strategy))
                 if strategy == "exponential" || strategy == "exponential_backoff" =>
             {
+                let initial_delay = self.exponential_initial_delay_millis.ok_or_else(|| {
+                    RetryConfigError::invalid_value(
+                        KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
+                        "exponential delay strategy requires exponential_initial_delay_millis",
+                    )
+                })?;
+                let max_delay = self.exponential_max_delay_millis.ok_or_else(|| {
+                    RetryConfigError::invalid_value(
+                        KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
+                        "exponential delay strategy requires exponential_max_delay_millis",
+                    )
+                })?;
+                let multiplier = self.exponential_multiplier.ok_or_else(|| {
+                    RetryConfigError::invalid_value(
+                        KEY_EXPONENTIAL_MULTIPLIER,
+                        "exponential delay strategy requires exponential_multiplier",
+                    )
+                })?;
                 Ok(RetryDelay::exponential(
-                    Duration::from_millis(
-                        self.exponential_initial_delay_millis
-                            .unwrap_or(DEFAULT_RETRY_EXPONENTIAL_INITIAL_DELAY_MILLIS),
-                    ),
-                    Duration::from_millis(
-                        self.exponential_max_delay_millis
-                            .unwrap_or(DEFAULT_RETRY_EXPONENTIAL_MAX_DELAY_MILLIS),
-                    ),
-                    self.exponential_multiplier
-                        .unwrap_or(DEFAULT_RETRY_EXPONENTIAL_MULTIPLIER),
+                    Duration::from_millis(initial_delay),
+                    Duration::from_millis(max_delay),
+                    multiplier,
                 ))
             }
             Some((key, other)) => Err(RetryConfigError::invalid_value(

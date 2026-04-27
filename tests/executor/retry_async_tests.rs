@@ -10,7 +10,7 @@
 
 use std::time::Duration;
 
-use qubit_retry::{AttemptFailure, Retry, RetryErrorReason};
+use qubit_retry::{AttemptFailure, AttemptTimeoutSource, Retry, RetryErrorReason};
 
 use crate::support::TestError;
 
@@ -69,6 +69,10 @@ async fn test_run_async_attempt_timeout_can_abort() {
         error.context().attempt_timeout(),
         Some(Duration::from_millis(1))
     );
+    assert_eq!(
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::Configured)
+    );
 }
 
 /// Verifies max elapsed caps an in-flight async attempt before a configured timeout.
@@ -108,6 +112,10 @@ async fn test_run_async_max_elapsed_caps_in_flight_attempt_before_configured_tim
         error.context().attempt_timeout(),
         Some(Duration::from_millis(20))
     );
+    assert_eq!(
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::MaxElapsed)
+    );
     assert!(
         elapsed < Duration::from_millis(100),
         "max elapsed should stop before the configured timeout, elapsed: {elapsed:?}"
@@ -145,6 +153,10 @@ async fn test_run_async_configured_timeout_wins_when_shorter_than_max_elapsed() 
         error.context().attempt_timeout(),
         Some(Duration::from_millis(20))
     );
+    assert_eq!(
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::Configured)
+    );
     assert!(matches!(
         error.last_failure(),
         Some(AttemptFailure::Timeout)
@@ -181,6 +193,10 @@ async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_e
     assert_eq!(
         error.context().attempt_timeout(),
         Some(Duration::from_millis(20))
+    );
+    assert_eq!(
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::Configured)
     );
     assert!(matches!(
         error.last_failure(),
@@ -314,9 +330,10 @@ async fn test_run_async_max_elapsed_can_stop_before_first_attempt() {
 
     assert_eq!(error.reason(), RetryErrorReason::MaxElapsedExceeded);
     assert_eq!(error.attempts(), 0);
+    assert_eq!(error.context().attempt_timeout(), Some(Duration::ZERO));
     assert_eq!(
-        error.context().attempt_timeout(),
-        Some(Duration::from_millis(1))
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::MaxElapsed)
     );
 }
 

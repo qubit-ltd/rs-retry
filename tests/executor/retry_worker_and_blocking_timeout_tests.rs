@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use qubit_retry::{
     AttemptCancelToken, AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption,
-    AttemptTimeoutPolicy, Retry, RetryContext, RetryErrorReason,
+    AttemptTimeoutPolicy, AttemptTimeoutSource, Retry, RetryContext, RetryErrorReason,
 };
 
 use crate::support::TestError;
@@ -129,6 +129,10 @@ fn test_run_in_worker_max_elapsed_caps_in_flight_attempt_without_configured_time
         error.context().attempt_timeout(),
         Some(Duration::from_millis(20))
     );
+    assert_eq!(
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::MaxElapsed)
+    );
     assert!(
         elapsed < Duration::from_millis(100),
         "max elapsed should stop before the worker finishes, elapsed: {elapsed:?}"
@@ -164,6 +168,10 @@ fn test_run_in_worker_configured_timeout_policy_wins_when_equal_to_remaining_ela
     assert_eq!(
         error.context().attempt_timeout(),
         Some(Duration::from_millis(20))
+    );
+    assert_eq!(
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::Configured)
     );
     assert!(matches!(
         error.last_failure(),
@@ -349,6 +357,10 @@ fn test_run_blocking_with_timeout_can_abort_and_cancel_token() {
         error.context().attempt_timeout(),
         Some(Duration::from_millis(5))
     );
+    assert_eq!(
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::Configured)
+    );
     for _ in 0..50 {
         if saw_cancel.load(Ordering::SeqCst) {
             break;
@@ -416,6 +428,11 @@ fn test_run_in_worker_max_elapsed_can_stop_before_first_attempt() {
         .expect_err("zero elapsed budget should stop before first attempt");
 
     assert_eq!(error.reason(), RetryErrorReason::MaxElapsedExceeded);
+    assert_eq!(error.context().attempt_timeout(), Some(Duration::ZERO));
+    assert_eq!(
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::MaxElapsed)
+    );
     assert_eq!(WORKER_THREAD_ID_CALLS.load(Ordering::SeqCst), 0);
 }
 

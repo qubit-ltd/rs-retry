@@ -13,7 +13,8 @@ use std::time::Duration;
 
 use qubit_common::BoxError;
 use qubit_retry::{
-    AttemptFailure, AttemptFailureDecision, Retry, RetryContext, RetryError, RetryErrorReason,
+    AttemptFailure, AttemptFailureDecision, AttemptTimeoutSource, Retry, RetryContext, RetryError,
+    RetryErrorReason,
 };
 
 use crate::support::{NonCloneValue, TestError};
@@ -450,7 +451,7 @@ fn test_retry_after_hint_panic_is_isolated_when_enabled() {
     assert_eq!(error.context().retry_after_hint(), None);
 }
 
-/// Verifies sync execution does not expose async-only attempt timeout metadata.
+/// Verifies sync execution rejects configured attempt timeout.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -458,19 +459,30 @@ fn test_retry_after_hint_panic_is_isolated_when_enabled() {
 /// # Returns
 /// This test returns nothing.
 #[test]
-fn test_sync_run_does_not_report_attempt_timeout() {
-    let timeouts = Arc::new(Mutex::new(Vec::new()));
-    let timeout_events = Arc::clone(&timeouts);
+fn test_sync_run_with_attempt_timeout_is_unsupported() {
+    let before_attempts = Arc::new(Mutex::new(Vec::new()));
+    let on_error_contexts = Arc::new(Mutex::new(Vec::new()));
+    let before_events = Arc::clone(&before_attempts);
+    let on_error_events = Arc::clone(&on_error_contexts);
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .attempt_timeout(Some(Duration::from_millis(1)))
-        .on_failure(
-            move |_failure: &AttemptFailure<TestError>, context: &RetryContext| {
-                timeout_events
+        .before_attempt(move |context: &RetryContext| {
+            before_events
+                .lock()
+                .expect("before attempt events should be lockable")
+                .push(context.attempt_timeout_source());
+        })
+        .on_error(
+            move |error: &RetryError<TestError>, context: &RetryContext| {
+                on_error_events
                     .lock()
-                    .expect("timeout events should be lockable")
-                    .push(context.attempt_timeout());
-                AttemptFailureDecision::UseDefault
+                    .expect("error listener events should be lockable")
+                    .push((
+                        error.reason(),
+                        context.attempt_timeout(),
+                        context.attempt_timeout_source(),
+                    ));
             },
         )
         .build()
@@ -480,10 +492,33 @@ fn test_sync_run_does_not_report_attempt_timeout() {
         .run(|| -> Result<(), TestError> { Err(TestError("failed")) })
         .expect_err("operation should fail");
 
-    assert_eq!(error.context().attempt_timeout(), None);
+    assert_eq!(error.reason(), RetryErrorReason::UnsupportedOperation);
+    assert_eq!(error.context().attempt(), 0);
     assert_eq!(
-        *timeouts.lock().expect("timeout events should be lockable"),
-        vec![None]
+        error.context().attempt_timeout(),
+        Some(Duration::from_millis(1))
+    );
+    assert_eq!(
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::Configured)
+    );
+    assert_eq!(error.context().retry_after_hint(), None);
+    assert!(error.last_failure().is_none());
+    assert_eq!(
+        *before_attempts
+            .lock()
+            .expect("before attempt events should be lockable"),
+        vec![]
+    );
+    assert_eq!(
+        *on_error_contexts
+            .lock()
+            .expect("on_error events should be lockable"),
+        vec![(
+            RetryErrorReason::UnsupportedOperation,
+            Some(Duration::from_millis(1)),
+            Some(AttemptTimeoutSource::Configured)
+        )]
     );
 }
 

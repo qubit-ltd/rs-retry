@@ -9,6 +9,11 @@
 
 use std::time::Duration;
 
+use qubit_retry::constants::{
+    KEY_ATTEMPT_TIMEOUT_POLICY, KEY_DELAY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
+    KEY_EXPONENTIAL_MAX_DELAY_MILLIS, KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS,
+    KEY_RANDOM_MAX_DELAY_MILLIS, KEY_RANDOM_MIN_DELAY_MILLIS,
+};
 use qubit_retry::{
     AttemptTimeoutOption, AttemptTimeoutPolicy, RetryConfigValues, RetryDelay, RetryJitter,
     RetryOptions,
@@ -187,4 +192,117 @@ fn test_to_options_attempt_timeout_policy_requires_timeout_without_default() {
         .expect_err("policy alone should be rejected when default has no timeout");
 
     assert!(error.to_string().contains("attempt_timeout_policy"));
+}
+
+/// Verifies explicit fixed delay strategy requires `fixed_delay_millis`.
+#[test]
+fn test_to_options_explicit_fixed_delay_requires_fixed_delay_millis() {
+    let default =
+        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let mut values = sample_retry_config_values_none_delay();
+    values.delay = Some("fixed".to_string());
+
+    let error = values
+        .to_options(&default)
+        .expect_err("fixed delay requires delay value");
+
+    assert_eq!(error.path(), KEY_FIXED_DELAY_MILLIS);
+    assert!(error.message().contains("fixed_delay_millis"));
+}
+
+/// Verifies explicit random delay strategy requires both random bounds.
+#[test]
+fn test_to_options_explicit_random_delay_requires_min_and_max_delay() {
+    let default =
+        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let mut values = sample_retry_config_values_none_delay();
+    values.delay = Some("random".to_string());
+    values.random_min_delay_millis = Some(5);
+
+    let error = values
+        .to_options(&default)
+        .expect_err("random delay requires both bounds");
+    assert_eq!(error.path(), KEY_RANDOM_MAX_DELAY_MILLIS);
+    assert!(error.message().contains("random_max_delay_millis"));
+
+    let mut values = sample_retry_config_values_none_delay();
+    values.delay = Some("random".to_string());
+    values.random_max_delay_millis = Some(8);
+
+    let error = values
+        .to_options(&default)
+        .expect_err("random delay requires both bounds");
+    assert_eq!(error.path(), KEY_RANDOM_MIN_DELAY_MILLIS);
+    assert!(error.message().contains("random_min_delay_millis"));
+}
+
+/// Verifies explicit exponential delay strategy requires all explicit parameters.
+#[test]
+fn test_to_options_explicit_exponential_delay_requires_all_parameters() {
+    let default =
+        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let mut values = sample_retry_config_values_none_delay();
+    values.delay = Some("exponential".to_string());
+    values.exponential_initial_delay_millis = Some(1_000);
+    values.exponential_max_delay_millis = Some(5_000);
+
+    let error = values
+        .to_options(&default)
+        .expect_err("exponential delay requires multiplier");
+    assert_eq!(error.path(), KEY_EXPONENTIAL_MULTIPLIER);
+    assert!(error.message().contains("exponential_multiplier"));
+
+    let mut values = sample_retry_config_values_none_delay();
+    values.delay = Some("exponential_backoff".to_string());
+    values.exponential_initial_delay_millis = Some(1_000);
+    values.exponential_multiplier = Some(2.0);
+
+    let error = values
+        .to_options(&default)
+        .expect_err("exponential delay requires max delay");
+    assert_eq!(error.path(), KEY_EXPONENTIAL_MAX_DELAY_MILLIS);
+    assert!(error.message().contains("exponential_max_delay_millis"));
+
+    let mut values = sample_retry_config_values_none_delay();
+    values.delay = Some("exponential".to_string());
+    values.exponential_max_delay_millis = Some(5_000);
+    values.exponential_multiplier = Some(2.0);
+
+    let error = values
+        .to_options(&default)
+        .expect_err("exponential delay requires initial delay");
+    assert_eq!(error.path(), KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS);
+    assert!(error.message().contains("exponential_initial_delay_millis"));
+}
+
+/// Verifies unsupported explicit delay strategy fails fast with a parse error.
+#[test]
+fn test_to_options_invalid_delay_strategy_is_rejected() {
+    let default =
+        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let mut values = sample_retry_config_values_none_delay();
+    values.delay = Some("unknown".to_string());
+
+    let error = values
+        .to_options(&default)
+        .expect_err("unsupported delay strategy should be rejected");
+
+    assert_eq!(error.path(), KEY_DELAY);
+    assert!(error.message().contains("unsupported delay strategy"));
+}
+
+/// Verifies unsupported attempt-timeout policy fails fast with a parse error.
+#[test]
+fn test_to_options_invalid_attempt_timeout_policy_is_rejected() {
+    let default =
+        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let mut values = sample_retry_config_values_none_delay();
+    values.attempt_timeout_policy = Some("invalid-policy".to_string());
+
+    let error = values
+        .to_options(&default)
+        .expect_err("unsupported attempt timeout policy should be rejected");
+
+    assert_eq!(error.path(), KEY_ATTEMPT_TIMEOUT_POLICY);
+    assert!(error.message().contains("attempt timeout"));
 }

@@ -27,8 +27,9 @@ pub use error::{
     RetryErrorReason,
 };
 pub use event::{
-    AttemptFailureDecision, AttemptFailureListener, AttemptSuccessListener, BeforeAttemptListener,
-    RetryAfterHint, RetryContext, RetryErrorListener, RetryScheduledListener,
+    AttemptFailureDecision, AttemptFailureListener, AttemptSuccessListener, AttemptTimeoutSource,
+    BeforeAttemptListener, RetryAfterHint, RetryContext, RetryErrorListener,
+    RetryScheduledListener,
 };
 #[cfg(all(coverage, not(test)))]
 #[doc(hidden)]

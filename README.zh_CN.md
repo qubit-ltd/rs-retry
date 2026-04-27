@@ -133,7 +133,7 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
 }
 ```
 
-普通 `run()` 保持当前线程上的同步执行语义。它是开销最低的路径，适合 CAS 循环这类高频短操作；但 operation panic 会继续向调用方传播，且不会应用单次 attempt timeout。需要取消异步 future 时使用 `run_async()`；需要把阻塞工作放到 worker 线程中执行时，使用 `run_in_worker()`。
+普通 `run()` 保持当前线程上的同步执行语义。它是开销最低的路径，适合 CAS 循环这类高频短操作。`run()` 不支持配置 `attempt_timeout`，当设置了该选项时会返回 `RetryErrorReason::UnsupportedOperation`。需要取消异步 future 时使用 `run_async()`；需要把阻塞工作放到 worker 线程中执行时，使用 `run_in_worker()`。
 
 ## Worker 线程重试
 
@@ -330,4 +330,3 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
     }
 }
 ```
-

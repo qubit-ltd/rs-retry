@@ -35,8 +35,8 @@ use super::sync_value_operation::SyncValueOperation;
 use crate::event::RetryListeners;
 use crate::{
     AttemptExecutorError, AttemptFailure, AttemptFailureDecision, AttemptPanic,
-    AttemptTimeoutPolicy, RetryAfterHint, RetryBuilder, RetryConfigError, RetryContext, RetryError,
-    RetryErrorReason, RetryOptions,
+    AttemptTimeoutPolicy, AttemptTimeoutSource, RetryAfterHint, RetryBuilder, RetryConfigError,
+    RetryContext, RetryError, RetryErrorReason, RetryOptions,
 };
 
 /// Retry policy and executor bound to an operation error type.
@@ -95,14 +95,7 @@ impl EffectiveAttemptTimeout {
 }
 
 /// Source of an effective attempt timeout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AttemptTimeoutSource {
-    /// Timeout came from explicit per-attempt timeout configuration.
-    Configured,
-    /// Timeout came from the remaining max-elapsed budget.
-    MaxElapsed,
-}
-
+#[allow(clippy::result_large_err)]
 impl<E> Retry<E> {
     /// Creates a retry builder.
     ///
@@ -156,11 +149,31 @@ impl<E> Retry<E> {
     /// # Elapsed Budget
     /// `max_elapsed` counts only user operation execution time. This synchronous
     /// mode cannot interrupt an already-running operation; it checks the budget
-    /// before attempts and after failed attempts.
+    /// before attempts and after failed attempts. If `attempt_timeout` is
+    /// configured, this method returns
+    /// [`RetryErrorReason::UnsupportedOperation`] because timeout enforcement
+    /// requires worker-thread or async execution.
+    /// because timeout enforcement requires worker-thread or async execution.
     pub fn run<T, F>(&self, mut operation: F) -> Result<T, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,
     {
+        if self.options.attempt_timeout().is_some() {
+            let attempt_timeout = self.attempt_timeout_duration();
+            return Err(self.emit_error(RetryError::new(
+                RetryErrorReason::UnsupportedOperation,
+                None,
+                RetryContext::new(
+                    0,
+                    self.options.max_attempts.get(),
+                    self.options.max_elapsed,
+                    Duration::ZERO,
+                    Duration::ZERO,
+                    attempt_timeout,
+                )
+                .with_attempt_timeout_source(Some(AttemptTimeoutSource::Configured)),
+            )));
+        }
         let mut operation = SyncValueOperation::new(&mut operation);
         self.run_sync_operation(&mut operation)
             .map(|()| operation.into_value())
@@ -209,24 +222,26 @@ impl<E> Retry<E> {
         let mut last_failure = None;
 
         loop {
-            let configured_attempt_timeout = self.attempt_timeout_duration();
+            let attempt_timeout = self.effective_attempt_timeout(total_elapsed);
             if let Some(error) = self.elapsed_error(
                 total_elapsed,
                 attempts,
                 last_failure.take(),
-                configured_attempt_timeout,
+                attempt_timeout,
             ) {
                 return Err(self.emit_error(error));
             }
 
             attempts += 1;
             let attempt_timeout = self.effective_attempt_timeout(total_elapsed);
-            let before_context = self.context(
-                total_elapsed,
-                attempts,
-                Duration::ZERO,
-                attempt_timeout.duration,
-            );
+            let before_context = self
+                .context(
+                    total_elapsed,
+                    attempts,
+                    Duration::ZERO,
+                    attempt_timeout.duration,
+                )
+                .with_attempt_timeout_source(attempt_timeout.source);
             self.emit_before_attempt(&before_context);
 
             let attempt_start = Instant::now();
@@ -234,12 +249,14 @@ impl<E> Retry<E> {
                 self.call_blocking_attempt(Arc::clone(&operation), attempt_timeout.duration);
             let attempt_elapsed = attempt_start.elapsed();
             total_elapsed = add_elapsed(total_elapsed, attempt_elapsed);
-            let context = self.context(
-                total_elapsed,
-                attempts,
-                attempt_elapsed,
-                attempt_timeout.duration,
-            );
+            let context = self
+                .context(
+                    total_elapsed,
+                    attempts,
+                    attempt_elapsed,
+                    attempt_timeout.duration,
+                )
+                .with_attempt_timeout_source(attempt_timeout.source);
             match result {
                 Ok(value) => {
                     self.emit_attempt_success(&context);
@@ -317,9 +334,12 @@ impl<E> Retry<E> {
         let mut last_failure = None;
 
         loop {
-            if let Some(error) =
-                self.elapsed_error(total_elapsed, attempts, last_failure.take(), None)
-            {
+            if let Some(error) = self.elapsed_error(
+                total_elapsed,
+                attempts,
+                last_failure.take(),
+                EffectiveAttemptTimeout::new(None, None),
+            ) {
                 return Err(self.emit_error(error));
             }
 
@@ -402,24 +422,26 @@ impl<E> Retry<E> {
         let mut last_failure = None;
 
         loop {
-            let configured_attempt_timeout = self.attempt_timeout_duration();
+            let attempt_timeout = self.effective_attempt_timeout(total_elapsed);
             if let Some(error) = self.elapsed_error(
                 total_elapsed,
                 attempts,
                 last_failure.take(),
-                configured_attempt_timeout,
+                attempt_timeout,
             ) {
                 return Err(self.emit_error(error));
             }
 
             attempts += 1;
             let attempt_timeout = self.effective_attempt_timeout(total_elapsed);
-            let before_context = self.context(
-                total_elapsed,
-                attempts,
-                Duration::ZERO,
-                attempt_timeout.duration,
-            );
+            let before_context = self
+                .context(
+                    total_elapsed,
+                    attempts,
+                    Duration::ZERO,
+                    attempt_timeout.duration,
+                )
+                .with_attempt_timeout_source(attempt_timeout.source);
             self.emit_before_attempt(&before_context);
 
             let attempt_start = Instant::now();
@@ -434,12 +456,14 @@ impl<E> Retry<E> {
 
             let attempt_elapsed = attempt_start.elapsed();
             total_elapsed = add_elapsed(total_elapsed, attempt_elapsed);
-            let context = self.context(
-                total_elapsed,
-                attempts,
-                attempt_elapsed,
-                attempt_timeout.duration,
-            );
+            let context = self
+                .context(
+                    total_elapsed,
+                    attempts,
+                    attempt_elapsed,
+                    attempt_timeout.duration,
+                )
+                .with_attempt_timeout_source(attempt_timeout.source);
             match result {
                 Ok(()) => {
                     self.emit_attempt_success(&context);
@@ -783,7 +807,7 @@ impl<E> Retry<E> {
         total_elapsed: Duration,
         attempts: u32,
         last_failure: Option<AttemptFailure<E>>,
-        attempt_timeout: Option<Duration>,
+        attempt_timeout: EffectiveAttemptTimeout,
     ) -> Option<RetryError<E>> {
         if !self.elapsed_budget_exhausted(total_elapsed) {
             return None;
@@ -791,7 +815,13 @@ impl<E> Retry<E> {
         Some(RetryError::new(
             RetryErrorReason::MaxElapsedExceeded,
             last_failure,
-            self.context(total_elapsed, attempts, Duration::ZERO, attempt_timeout),
+            self.context(
+                total_elapsed,
+                attempts,
+                Duration::ZERO,
+                attempt_timeout.duration,
+            )
+            .with_attempt_timeout_source(attempt_timeout.source),
         ))
     }
 

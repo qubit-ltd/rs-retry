@@ -105,6 +105,19 @@ impl<E> RetryError<E> {
         &self.context
     }
 
+    /// Returns the timeout source that produced the final attempt timeout, if any.
+    ///
+    /// # Parameters
+    /// This method has no parameters.
+    ///
+    /// # Returns
+    /// The timeout source when present, or `None` when no attempt timeout was
+    /// selected for the terminal context.
+    #[inline]
+    pub fn attempt_timeout_source(&self) -> Option<crate::event::AttemptTimeoutSource> {
+        self.context.attempt_timeout_source()
+    }
+
     /// Returns the number of attempts that were executed.
     ///
     /// # Returns
@@ -190,6 +203,10 @@ where
             ),
             RetryErrorReason::MaxElapsedExceeded => {
                 format!("retry max elapsed exceeded after {attempts} attempt(s)")
+            }
+            RetryErrorReason::UnsupportedOperation => {
+                "run() does not support attempt timeout; use run_async() or run_in_worker()"
+                    .to_string()
             }
         };
         f.write_str(&message)?;

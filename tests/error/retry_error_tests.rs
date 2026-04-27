@@ -208,6 +208,19 @@ fn test_retry_error_display_formats_terminal_reasons() {
         elapsed_without_failure.to_string(),
         "retry max elapsed exceeded after 0 attempt(s)"
     );
+
+    let unsupported = Retry::<TestError>::builder()
+        .max_attempts(3)
+        .attempt_timeout(Some(Duration::from_millis(1)))
+        .no_delay()
+        .build()
+        .expect("retry should build")
+        .run::<(), _>(|| Ok::<_, TestError>(()))
+        .expect_err("run() should reject attempt_timeout");
+    assert_eq!(
+        unsupported.to_string(),
+        "run() does not support attempt timeout; use run_async() or run_in_worker()"
+    );
 }
 
 /// Verifies retry errors expose terminal failures as their source when possible.

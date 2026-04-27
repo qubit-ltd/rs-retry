@@ -133,7 +133,7 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
 }
 ```
 
-Plain `run()` keeps normal same-thread synchronous execution. It is the lowest-overhead path and works well for short, high-frequency operations such as CAS loops, but operation panics unwind through the caller and per-attempt timeout is not applied. Use `run_async()` for cancellable async futures, or `run_in_worker()` when blocking work must run on a worker thread.
+Plain `run()` keeps normal same-thread synchronous execution. It is the lowest-overhead path and works well for short, high-frequency operations such as CAS loops. `run()` does not support configured per-attempt timeouts: it returns `RetryErrorReason::UnsupportedOperation` when `attempt_timeout` is set. Use `run_async()` for cancellable async futures, or `run_in_worker()` when blocking work must run on a worker thread.
 
 ## Worker-Thread Retry
 

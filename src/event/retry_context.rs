@@ -40,6 +40,18 @@ pub struct RetryContext {
     next_delay: Option<Duration>,
     /// Optional retry-after hint extracted before failure policy runs.
     retry_after_hint: Option<Duration>,
+    /// Source used for the last selected per-attempt timeout.
+    attempt_timeout_source: Option<AttemptTimeoutSource>,
+}
+
+/// Source of a per-attempt timeout selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AttemptTimeoutSource {
+    /// Timeout selected from [`RetryOptions`](crate::RetryOptions) attempt timeout
+    /// configuration.
+    Configured,
+    /// Timeout selected from remaining max-elapsed budget.
+    MaxElapsed,
 }
 
 impl RetryContext {
@@ -73,6 +85,7 @@ impl RetryContext {
             attempt_timeout,
             next_delay: None,
             retry_after_hint: None,
+            attempt_timeout_source: None,
         }
     }
 
@@ -141,6 +154,20 @@ impl RetryContext {
         self.attempt_timeout
     }
 
+    /// Returns the effective source of the current attempt timeout.
+    ///
+    /// # Parameters
+    /// This method has no parameters.
+    ///
+    /// # Returns
+    /// `Some(AttemptTimeoutSource::Configured)` when the current attempt timeout
+    /// came from configured attempt timeout options, `Some(AttemptTimeoutSource::MaxElapsed)`
+    /// when it came from remaining max-elapsed budget, otherwise `None`.
+    #[inline]
+    pub fn attempt_timeout_source(&self) -> Option<AttemptTimeoutSource> {
+        self.attempt_timeout_source
+    }
+
     /// Returns the delay selected before the next attempt.
     ///
     /// # Returns
@@ -183,6 +210,24 @@ impl RetryContext {
     #[inline]
     pub(crate) fn with_retry_after_hint(mut self, hint: Option<Duration>) -> Self {
         self.retry_after_hint = hint;
+        self
+    }
+
+    /// Returns a copy of this context with a timeout source.
+    ///
+    /// # Parameters
+    /// - `source`: Source of the current attempt timeout, if any.
+    ///
+    /// # Returns
+    /// A context carrying the timeout source when available.
+    #[inline]
+    pub(crate) fn with_attempt_timeout_source(
+        mut self,
+        source: Option<AttemptTimeoutSource>,
+    ) -> Self {
+        if let Some(source) = source {
+            self.attempt_timeout_source = Some(source);
+        }
         self
     }
 }
