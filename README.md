@@ -20,20 +20,21 @@ The core API is `Retry<E>`. A retry policy is bound only to the operation error 
 - Retry callbacks are stored as `rs-function` functors, so both closures and custom function objects are supported.
 - `AttemptFailure<E>` represents one failed attempt: `Error(E)`, `Timeout`, `Panic(AttemptPanic)`, or `Executor(AttemptExecutorError)`.
 - `RetryError<E>` represents the terminal retry-flow error and carries `reason`, `last_failure`, and `RetryContext`.
+- Separate elapsed budgets distinguish user operation time from total retry-flow time.
 - Lifecycle hooks are explicit: `before_attempt`, `on_success`, `on_failure`, `on_retry`, and `on_error`.
 
 ## Installation
 
 ```toml
 [dependencies]
-qubit-retry = "0.8.0"
+qubit-retry = "0.9.0"
 ```
 
 Enable optional integrations as needed:
 
 ```toml
 [dependencies]
-qubit-retry = { version = "0.8.0", features = ["tokio", "config"] }
+qubit-retry = { version = "0.9.0", features = ["tokio", "config"] }
 ```
 
 Optional features:
@@ -134,6 +135,17 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
 ```
 
 Plain `run()` keeps normal same-thread synchronous execution. It is the lowest-overhead path and works well for short, high-frequency operations such as CAS loops. `run()` does not support configured per-attempt timeouts: it returns `RetryErrorReason::UnsupportedOperation` when `attempt_timeout` is set. Use `run_async()` for cancellable async futures, or `run_in_worker()` when blocking work must run on a worker thread.
+
+## Elapsed Budgets
+
+Retry elapsed budgets are measured with monotonic `Instant` time, not wall-clock time:
+
+- `max_operation_elapsed`: cumulative time spent executing user operation attempts. Retry sleeps, retry-after sleeps, and listener time are excluded.
+- `max_total_elapsed`: total retry-flow time. Operation attempts, retry sleeps, retry-after sleeps, retry hint extraction, `on_before_attempt`, `on_failure`, and `on_retry` time are included.
+
+Terminal listeners keep notification semantics. `on_success` and `on_error` can add caller-visible latency, but they do not turn an already successful operation into a retry failure.
+
+Async and worker-thread attempts use the shortest of configured `attempt_timeout`, remaining `max_operation_elapsed`, and remaining `max_total_elapsed` as the effective attempt timeout. If the selected retry or retry-after delay would consume the remaining `max_total_elapsed` budget, the flow fails with `RetryErrorReason::MaxTotalElapsedExceeded` before sleeping. Retry sleeps are not truncated.
 
 ## Worker-Thread Retry
 
@@ -249,7 +261,8 @@ let retry = Retry::<std::io::Error>::builder()
         tracing::error!(
             reason = ?error.reason(),
             attempts = context.attempt(),
-            elapsed_ms = context.total_elapsed().as_millis(),
+            operation_elapsed_ms = context.operation_elapsed().as_millis(),
+            total_elapsed_ms = context.total_elapsed().as_millis(),
             "retry flow failed",
         );
     })
@@ -266,7 +279,8 @@ use qubit_retry::{Retry, RetryOptions};
 
 let mut config = Config::new();
 config.set("retry.max_attempts", 5u32)?;
-config.set("retry.max_elapsed_millis", 30_000u64)?;
+config.set("retry.max_operation_elapsed_millis", 30_000u64)?;
+config.set("retry.max_total_elapsed_millis", 60_000u64)?;
 config.set("retry.delay", "exponential")?;
 config.set("retry.exponential_initial_delay_millis", 200u64)?;
 config.set("retry.exponential_max_delay_millis", 5_000u64)?;
@@ -283,8 +297,10 @@ let retry = Retry::<std::io::Error>::from_options(options)?;
 Supported relative keys:
 
 - `max_attempts`
-- `max_elapsed_millis`
-- `max_elapsed_unlimited`
+- `max_operation_elapsed_millis`
+- `max_operation_elapsed_unlimited`
+- `max_total_elapsed_millis`
+- `max_total_elapsed_unlimited`
 - `attempt_timeout_millis`
 - `attempt_timeout_policy`: `retry` or `abort`
 - `worker_cancel_grace_millis`
@@ -313,7 +329,8 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
     Err(error) => {
         eprintln!("reason: {:?}", error.reason());
         eprintln!("attempts: {}", error.context().attempt());
-        eprintln!("elapsed: {:?}", error.context().total_elapsed());
+        eprintln!("operation elapsed: {:?}", error.context().operation_elapsed());
+        eprintln!("total elapsed: {:?}", error.context().total_elapsed());
 
         match error.last_failure() {
             Some(AttemptFailure::Error(source)) => {

@@ -129,10 +129,10 @@ pub enum RetryError<E> {
         elapsed: Duration,
         last_failure: AttemptFailure<E>,
     },
-    MaxElapsedExceeded {
+    MaxOperationElapsedExceeded {
         attempts: u32,
         elapsed: Duration,
-        max_elapsed: Duration,
+        max_operation_elapsed: Duration,
         last_failure: Option<AttemptFailure<E>>,
     },
 }
@@ -216,7 +216,8 @@ pub type AbortListener<E> =
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetryOptions {
     pub max_attempts: NonZeroU32,
-    pub max_elapsed: Option<Duration>,
+    pub max_operation_elapsed: Option<Duration>,
+    pub max_total_elapsed: Option<Duration>,
     pub delay: Delay,
     pub jitter: Jitter,
     pub attempt_timeout: Option<AttemptTimeoutOption>,
@@ -282,12 +283,17 @@ let delay = options.jitter.apply(base, rng);
 
 如果希望可测试性更强，可以把随机源封装在内部 `RandomSource`，测试里用 seeded RNG；第一阶段可以只保证 delay 范围测试。
 
-### 4.7 timeout 语义
+### 4.7 timeout 与 elapsed 预算语义
 
-建议明确区分：
+当前实现明确区分三类时间约束：
 
-1. `max_elapsed`：整个 retry 流程的总预算，sync/async 都适用。
-2. `attempt_timeout`：单次 attempt 超时，作为 `RetryOptions` 的可选配置；它在 async API 中通过 `tokio::time::timeout` 真正生效，在 blocking API 中通过 worker 线程隔离和等待超时生效。
+1. `max_operation_elapsed`：累计用户 operation attempt 的执行时间预算。retry sleep、Retry-After sleep、retry hint 提取和 listener 时间不计入。
+2. `max_total_elapsed`：整个 retry flow 的单调时间预算。operation attempt、retry sleep、Retry-After sleep、retry hint 提取、`on_before_attempt`、`on_failure` 和 `on_retry` 时间都计入。它使用 `std::time::Instant` 这类单调时钟，不使用 wall-clock 时间，因此不受系统时间调整影响。
+3. `attempt_timeout`：单次 attempt 超时，作为 `RetryOptions` 的可选配置；它在 async API 中通过 `tokio::time::timeout` 真正生效，在 blocking API 中通过 worker 线程隔离和等待超时生效。
+
+async / worker attempt 的有效 timeout 是三者的最小值：配置的 `attempt_timeout`、剩余 `max_operation_elapsed`、剩余 `max_total_elapsed`。若配置 timeout 与 elapsed budget 恰好相等，配置 timeout 优先，以保留 `AttemptTimeoutPolicy` 的可观测语义；若 operation budget 与 total budget 恰好相等，operation budget 优先，保留更窄的诊断。
+
+终态 listener 保持通知语义：`on_success` / `on_error` 的耗时会增加调用方实际等待时间，但不会把已经成功的 operation 反向改写成 retry failure，也不会改变已经选定的 terminal error。
 
 基础 sync API 不支持主动中断单次 attempt，即使 `RetryOptions` 配置了 `attempt_timeout`，普通 `run()` 也保持当前线程上的同步串行语义：
 
@@ -424,10 +430,10 @@ pub enum OutcomeRetryError<T, E> {
         elapsed: Duration,
         last_outcome: Outcome<T, E>,
     },
-    MaxElapsedExceeded {
+    MaxOperationElapsedExceeded {
         attempts: u32,
         elapsed: Duration,
-        max_elapsed: Duration,
+        max_operation_elapsed: Duration,
         last_outcome: Option<Outcome<T, E>>,
     },
 }
@@ -460,13 +466,13 @@ attempt = 1
 last_failure = None
 
 loop:
-  if max_elapsed exceeded:
+  if max_operation_elapsed or max_total_elapsed exceeded:
     调用 failure 监听（FailureContext, last_failure）
-    return RetryError::MaxElapsedExceeded { last_failure, .. }
+    return RetryError::{MaxOperationElapsedExceeded | MaxTotalElapsedExceeded}
 
   result = run attempt
-    - async + attempt_timeout: tokio::time::timeout
-    - blocking + attempt_timeout: worker thread + recv_timeout
+    - async: tokio::time::timeout(effective_attempt_timeout)
+    - blocking: worker thread + recv_timeout(effective_attempt_timeout)
     - sync run(): direct call
 
   if Ok(value):
@@ -484,17 +490,19 @@ loop:
     return RetryError::AttemptsExceeded { last_failure: failure, .. }
 
   delay = calculate_delay(attempt)
-  if max_elapsed would be exceeded by sleeping delay:
+  if max_total_elapsed would be exhausted by sleeping delay:
     调用 failure 监听（FailureContext, Some(failure)）
-    return RetryError::MaxElapsedExceeded { last_failure: Some(failure), .. }
+    return RetryError::MaxTotalElapsedExceeded { last_failure: Some(failure), .. }
 
   调用 retry 监听（RetryContext, failure）
+  if on_retry listener time exhausts max_total_elapsed:
+    return RetryError::MaxTotalElapsedExceeded { last_failure: Some(failure), .. }
   sleep delay
   last_failure = failure
   attempt += 1
 ```
 
-注意：`max_elapsed` 是否允许“截断 sleep 后再试一次”需要明确。推荐第一阶段不截断，预算不足以完成下一次 delay 时直接失败，行为更可预测。
+注意：retry sleep 不截断。预算不足以完成下一次 delay 时，流程在 sleep 前直接失败，行为更可预测。
 
 ## 7. 当前模块结构（与仓库一致）
 
@@ -537,7 +545,7 @@ src/
 fn build_retry_executor(&self) -> RetryExecutor<HttpError> {
     RetryExecutor::<HttpError>::builder()
         .max_attempts(self.options.retry.max_attempts)
-        .max_elapsed(self.options.retry.max_duration)
+        .max_total_elapsed(self.options.retry.max_duration)
         .delay(self.options.retry.delay.clone())
         .jitter(self.options.retry.jitter)
         .retry_if(|error, _ctx| error.retry_hint() == RetryHint::Retryable)
@@ -587,12 +595,14 @@ match result {
 1. 默认策略重试所有错误直到成功。
 2. `retry_if` 返回 `Abort` 时立即返回 `RetryError::Aborted`，并保留原始错误。
 3. 超过 `max_attempts` 时返回 `AttemptsExceeded`，并保留最后一次错误。
-4. `max_elapsed` 在首次 attempt 前超限时返回 `MaxElapsedExceeded { last_failure: None }`。
-5. `max_elapsed` 在一次失败后超限时返回 `MaxElapsedExceeded { last_failure: Some(...) }`。
-6. delay 不足以进入下一次 attempt 时直接失败。
-7. `Delay::None` 不 sleep。
-8. `Delay::Fixed`、`Delay::Random`、`Delay::Exponential` 计算结果正确。
-9. `Jitter::Factor` 输出在合法区间内。
+4. `max_operation_elapsed` 在首次 attempt 前超限时返回 `MaxOperationElapsedExceeded { last_failure: None }`。
+5. `max_operation_elapsed` 在一次失败后超限时返回 `MaxOperationElapsedExceeded { last_failure: Some(...) }`。
+6. `max_total_elapsed` 在首次 attempt 前超限时返回 `MaxTotalElapsedExceeded { last_failure: None }`。
+7. `max_total_elapsed` 能截断 async / worker 中正在执行的 attempt。
+8. delay 或 Retry-After delay 不足以进入下一次 attempt 时，直接以 `MaxTotalElapsedExceeded` 失败且不 sleep。
+9. `Delay::None` 不 sleep。
+10. `Delay::Fixed`、`Delay::Random`、`Delay::Exponential` 计算结果正确。
+11. `Jitter::Factor` 输出在合法区间内。
 
 ### 10.2 async timeout
 
@@ -605,9 +615,9 @@ match result {
 
 ### 10.3 监听器（Context + 失败引用）
 
-1. `on_retry`：`RetryContext`（含 attempt、max_attempts、elapsed、next_delay）与 `AttemptFailure<E>` 引用。
+1. `on_retry`：`RetryContext`（含 attempt、max_attempts、operation_elapsed、total_elapsed、next_delay）与 `AttemptFailure<E>` 引用。
 2. `on_success`：`SuccessContext`（attempts、elapsed）。
-3. `on_failure`：`FailureContext` 与 `Option<AttemptFailure<E>>`（在 attempts 用尽、max_elapsed 在 sleep 前/后触发、或首次 attempt 前预算耗尽等终止场景）。
+3. `on_failure`：`FailureContext` 与 `Option<AttemptFailure<E>>`（在 attempts 用尽、max_operation_elapsed / max_total_elapsed 触发、或首次 attempt 前预算耗尽等终止场景）。
 4. `on_abort`：`AbortContext` 与 `AttemptFailure<E>`（分类器判定 Abort）。
 5. 监听器不要求成功值 `T: Clone`。
 
