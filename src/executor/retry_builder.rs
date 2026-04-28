@@ -31,7 +31,7 @@ use crate::{
 /// the retry decision, or return [`AttemptFailureDecision::UseDefault`] to let
 /// the policy decide from configured limits and delay strategy.
 pub struct RetryBuilder<E = BoxError> {
-    /// Retry limits, delay strategy, jitter, and user operation elapsed budget.
+    /// Retry limits, delay strategy, jitter, and elapsed budgets.
     options: RetryOptions,
     /// Pending policy used when timeout duration is configured later.
     pending_attempt_timeout_policy: AttemptTimeoutPolicy,
@@ -115,13 +115,28 @@ impl<E> RetryBuilder<E> {
     /// Sets the maximum cumulative user operation time.
     ///
     /// # Parameters
-    /// - `max_elapsed`: Optional cumulative user operation time budget.
+    /// - `max_operation_elapsed`: Optional cumulative user operation time budget.
     ///
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn max_elapsed(mut self, max_elapsed: Option<Duration>) -> Self {
-        self.options.max_elapsed = max_elapsed;
+    pub fn max_operation_elapsed(mut self, max_operation_elapsed: Option<Duration>) -> Self {
+        self.options.max_operation_elapsed = max_operation_elapsed;
+        self
+    }
+
+    /// Sets the maximum total monotonic retry-flow elapsed time.
+    ///
+    /// # Parameters
+    /// - `max_total_elapsed`: Optional total retry-flow time budget. Operation
+    ///   execution, retry sleeps, retry-after sleeps, and retry control-path
+    ///   listener time are included.
+    ///
+    /// # Returns
+    /// The updated builder.
+    #[inline]
+    pub fn max_total_elapsed(mut self, max_total_elapsed: Option<Duration>) -> Self {
+        self.options.max_total_elapsed = max_total_elapsed;
         self
     }
 
@@ -452,7 +467,7 @@ impl<E> RetryBuilder<E> {
     /// Aborts the retry flow when a configured per-attempt timeout expires.
     ///
     /// Max-elapsed effective timeouts are not controlled by this policy and stop
-    /// with [`crate::RetryErrorReason::MaxElapsedExceeded`].
+    /// with [`crate::RetryErrorReason::MaxOperationElapsedExceeded`].
     ///
     /// # Returns
     /// The updated builder.
@@ -463,7 +478,7 @@ impl<E> RetryBuilder<E> {
     /// Retries configured per-attempt timeouts while limits allow it.
     ///
     /// Max-elapsed effective timeouts are not controlled by this policy and stop
-    /// with [`crate::RetryErrorReason::MaxElapsedExceeded`].
+    /// with [`crate::RetryErrorReason::MaxOperationElapsedExceeded`].
     ///
     /// # Returns
     /// The updated builder.

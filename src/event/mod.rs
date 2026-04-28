@@ -25,4 +25,5 @@ pub use retry_after_hint::RetryAfterHint;
 pub use retry_context::{AttemptTimeoutSource, RetryContext};
 pub use retry_error_listener::RetryErrorListener;
 
+pub(crate) use retry_context::RetryContextParts;
 pub(crate) use retry_listeners::RetryListeners;

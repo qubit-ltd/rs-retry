@@ -214,8 +214,11 @@ where
                 "retry attempts exceeded after {attempts} attempt(s), max {}",
                 self.context.max_attempts()
             ),
-            RetryErrorReason::MaxElapsedExceeded => {
-                format!("retry max elapsed exceeded after {attempts} attempt(s)")
+            RetryErrorReason::MaxOperationElapsedExceeded => {
+                format!("retry max operation elapsed exceeded after {attempts} attempt(s)")
+            }
+            RetryErrorReason::MaxTotalElapsedExceeded => {
+                format!("retry max total elapsed exceeded after {attempts} attempt(s)")
             }
             RetryErrorReason::UnsupportedOperation => {
                 "run() does not support attempt timeout; use run_async() or run_in_worker()"

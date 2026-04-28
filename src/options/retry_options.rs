@@ -24,18 +24,18 @@ use super::attempt_timeout_option::AttemptTimeoutOption;
 use super::retry_config_values::RetryConfigValues;
 
 use crate::constants::{
-    DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_MAX_ELAPSED,
-    DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS, KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_DELAY,
-    KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
+    DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_MAX_OPERATION_ELAPSED,
+    DEFAULT_RETRY_MAX_TOTAL_ELAPSED, DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS,
+    KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_DELAY, KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
 };
 use crate::{RetryConfigError, RetryDelay, RetryJitter};
 
 /// Immutable retry option snapshot used by [`crate::Retry`].
 ///
 /// `RetryOptions` owns all executor configuration that is independent of the
-/// application error type: attempt limits, cumulative user operation elapsed
-/// budget, delay strategy, and jitter strategy. Construction validates the delay
-/// and jitter values before an executor can use them.
+/// application error type: attempt limits, elapsed budgets, delay strategy, and
+/// jitter strategy. Construction validates the delay and jitter values before
+/// an executor can use them.
 ///
 /// Author: Haixing Hu
 #[derive(Debug, Clone, PartialEq)]
@@ -43,7 +43,9 @@ pub struct RetryOptions {
     /// Maximum attempts, including the initial attempt.
     pub(crate) max_attempts: NonZeroU32,
     /// Maximum cumulative user operation time for the retry flow.
-    pub(crate) max_elapsed: Option<Duration>,
+    pub(crate) max_operation_elapsed: Option<Duration>,
+    /// Maximum monotonic elapsed time for the whole retry flow.
+    pub(crate) max_total_elapsed: Option<Duration>,
     /// Base delay strategy between attempts.
     pub(crate) delay: RetryDelay,
     /// RetryJitter applied to each base delay.
@@ -81,8 +83,27 @@ impl RetryOptions {
     /// # Errors
     /// This method does not return errors.
     #[inline]
-    pub fn max_elapsed(&self) -> Option<Duration> {
-        self.max_elapsed
+    pub fn max_operation_elapsed(&self) -> Option<Duration> {
+        self.max_operation_elapsed
+    }
+
+    /// Returns maximum total retry-flow elapsed time budget.
+    ///
+    /// This budget is measured with monotonic time and includes operation
+    /// execution, retry sleeps, retry-after sleeps, and retry control-path
+    /// listener time.
+    ///
+    /// # Parameters
+    /// This method has no parameters.
+    ///
+    /// # Returns
+    /// `Some(Duration)` for bounded executions, or `None` for unlimited.
+    ///
+    /// # Errors
+    /// This method does not return errors.
+    #[inline]
+    pub fn max_total_elapsed(&self) -> Option<Duration> {
+        self.max_total_elapsed
     }
 
     /// Returns the base delay strategy.
@@ -148,8 +169,11 @@ impl RetryOptions {
     /// # Parameters
     /// - `max_attempts`: Maximum number of attempts, including the first call.
     ///   Must be greater than zero.
-    /// - `max_elapsed`: Optional cumulative user operation time budget for all
+    /// - `max_operation_elapsed`: Optional cumulative user operation time budget for all
     ///   attempts. Listener execution and retry sleeps are excluded.
+    /// - `max_total_elapsed`: Optional monotonic elapsed-time budget for the
+    ///   whole retry flow. Operation execution, retry sleeps, retry-after
+    ///   sleeps, and retry control-path listener time are included.
     /// - `delay`: Base delay strategy used between attempts.
     /// - `jitter`: RetryJitter strategy applied to each base delay.
     ///
@@ -161,11 +185,19 @@ impl RetryOptions {
     /// `delay` or `jitter` contains invalid parameters.
     pub fn new(
         max_attempts: u32,
-        max_elapsed: Option<Duration>,
+        max_operation_elapsed: Option<Duration>,
+        max_total_elapsed: Option<Duration>,
         delay: RetryDelay,
         jitter: RetryJitter,
     ) -> Result<Self, RetryConfigError> {
-        Self::new_with_attempt_timeout(max_attempts, max_elapsed, delay, jitter, None)
+        Self::new_with_attempt_timeout(
+            max_attempts,
+            max_operation_elapsed,
+            max_total_elapsed,
+            delay,
+            jitter,
+            None,
+        )
     }
 
     /// Creates and validates a retry option snapshot with attempt timeout.
@@ -173,8 +205,11 @@ impl RetryOptions {
     /// # Parameters
     /// - `max_attempts`: Maximum number of attempts, including the first call.
     ///   Must be greater than zero.
-    /// - `max_elapsed`: Optional cumulative user operation time budget for all
+    /// - `max_operation_elapsed`: Optional cumulative user operation time budget for all
     ///   attempts. Listener execution and retry sleeps are excluded.
+    /// - `max_total_elapsed`: Optional monotonic elapsed-time budget for the
+    ///   whole retry flow. Operation execution, retry sleeps, retry-after
+    ///   sleeps, and retry control-path listener time are included.
     /// - `delay`: Base delay strategy used between attempts.
     /// - `jitter`: RetryJitter strategy applied to each base delay.
     /// - `attempt_timeout`: Optional per-attempt timeout settings.
@@ -187,7 +222,8 @@ impl RetryOptions {
     /// jitter contains invalid parameters, or when the attempt timeout is zero.
     pub fn new_with_attempt_timeout(
         max_attempts: u32,
-        max_elapsed: Option<Duration>,
+        max_operation_elapsed: Option<Duration>,
+        max_total_elapsed: Option<Duration>,
         delay: RetryDelay,
         jitter: RetryJitter,
         attempt_timeout: Option<AttemptTimeoutOption>,
@@ -200,7 +236,8 @@ impl RetryOptions {
         })?;
         let options = Self {
             max_attempts,
-            max_elapsed,
+            max_operation_elapsed,
+            max_total_elapsed,
             delay,
             jitter,
             attempt_timeout,
@@ -355,7 +392,8 @@ impl Default for RetryOptions {
         Self {
             max_attempts: NonZeroU32::new(DEFAULT_RETRY_MAX_ATTEMPTS)
                 .expect("default retry attempts must be non-zero"),
-            max_elapsed: DEFAULT_RETRY_MAX_ELAPSED,
+            max_operation_elapsed: DEFAULT_RETRY_MAX_OPERATION_ELAPSED,
+            max_total_elapsed: DEFAULT_RETRY_MAX_TOTAL_ELAPSED,
             delay: RetryDelay::default(),
             jitter: RetryJitter::default(),
             attempt_timeout: None,

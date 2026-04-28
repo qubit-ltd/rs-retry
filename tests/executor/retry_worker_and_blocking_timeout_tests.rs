@@ -102,10 +102,10 @@ fn test_run_in_worker_with_timeout_allows_fast_success() {
 /// # Returns
 /// This test returns nothing.
 #[test]
-fn test_run_in_worker_max_elapsed_caps_in_flight_attempt_without_configured_timeout() {
+fn test_run_in_worker_max_operation_elapsed_caps_in_flight_attempt_without_configured_timeout() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
-        .max_elapsed(Some(Duration::from_millis(20)))
+        .max_operation_elapsed(Some(Duration::from_millis(20)))
         .no_delay()
         .worker_cancel_grace(Duration::ZERO)
         .build()
@@ -120,7 +120,10 @@ fn test_run_in_worker_max_elapsed_caps_in_flight_attempt_without_configured_time
         .expect_err("max elapsed should stop the in-flight worker attempt");
     let elapsed = started.elapsed();
 
-    assert_eq!(error.reason(), RetryErrorReason::MaxElapsedExceeded);
+    assert_eq!(
+        error.reason(),
+        RetryErrorReason::MaxOperationElapsedExceeded
+    );
     assert_eq!(error.attempts(), 1);
     assert!(matches!(
         error.last_failure(),
@@ -132,11 +135,58 @@ fn test_run_in_worker_max_elapsed_caps_in_flight_attempt_without_configured_time
     );
     assert_eq!(
         error.context().attempt_timeout_source(),
-        Some(AttemptTimeoutSource::MaxElapsed)
+        Some(AttemptTimeoutSource::MaxOperationElapsed)
     );
     assert!(
         elapsed < Duration::from_millis(100),
         "max elapsed should stop before the worker finishes, elapsed: {elapsed:?}"
+    );
+}
+
+/// Verifies max total elapsed caps an in-flight worker attempt without a configured timeout.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_in_worker_max_total_elapsed_caps_in_flight_attempt_without_configured_timeout() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .max_total_elapsed(Some(Duration::from_millis(20)))
+        .no_delay()
+        .worker_cancel_grace(Duration::ZERO)
+        .build()
+        .expect("retry should build");
+
+    let started = std::time::Instant::now();
+    let error = retry
+        .run_in_worker(|_token: AttemptCancelToken| {
+            thread::sleep(Duration::from_millis(120));
+            Ok::<_, TestError>("late")
+        })
+        .expect_err("max total elapsed should stop the in-flight worker attempt");
+    let elapsed = started.elapsed();
+
+    assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
+    assert_eq!(error.attempts(), 1);
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
+    assert!(
+        error.context().attempt_timeout() <= Some(Duration::from_millis(20)),
+        "max total elapsed timeout should not exceed configured budget: {:?}",
+        error.context().attempt_timeout()
+    );
+    assert_eq!(
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::MaxTotalElapsed)
+    );
+    assert!(
+        elapsed < Duration::from_millis(100),
+        "max total elapsed should stop before the worker finishes, elapsed: {elapsed:?}"
     );
 }
 
@@ -151,7 +201,7 @@ fn test_run_in_worker_max_elapsed_caps_in_flight_attempt_without_configured_time
 fn test_run_in_worker_configured_timeout_policy_wins_when_equal_to_remaining_elapsed() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
-        .max_elapsed(Some(Duration::from_millis(20)))
+        .max_operation_elapsed(Some(Duration::from_millis(20)))
         .attempt_timeout(Some(Duration::from_millis(20)))
         .abort_on_timeout()
         .no_delay()
@@ -191,7 +241,7 @@ fn test_run_in_worker_configured_timeout_policy_wins_when_equal_to_remaining_ela
 fn test_run_in_worker_error_before_remaining_elapsed_timeout_can_retry() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
-        .max_elapsed(Some(Duration::from_millis(200)))
+        .max_operation_elapsed(Some(Duration::from_millis(200)))
         .no_delay()
         .build()
         .expect("retry should build");
@@ -455,14 +505,14 @@ fn test_run_in_worker_unreaped_timeout_worker_stops_retrying() {
 
 /// Verifies worker mode honors max elapsed before running the first attempt.
 #[test]
-fn test_run_in_worker_max_elapsed_can_stop_before_first_attempt() {
+fn test_run_in_worker_max_operation_elapsed_can_stop_before_first_attempt() {
     let _guard = WORKER_THREAD_ID_LOCK
         .lock()
         .expect("worker probe lock should be available");
     WORKER_THREAD_ID_CALLS.store(0, Ordering::SeqCst);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
-        .max_elapsed(Some(Duration::ZERO))
+        .max_operation_elapsed(Some(Duration::ZERO))
         .no_delay()
         .build()
         .expect("retry should build");
@@ -471,13 +521,71 @@ fn test_run_in_worker_max_elapsed_can_stop_before_first_attempt() {
         .run_in_worker(record_worker_thread_id)
         .expect_err("zero elapsed budget should stop before first attempt");
 
-    assert_eq!(error.reason(), RetryErrorReason::MaxElapsedExceeded);
+    assert_eq!(
+        error.reason(),
+        RetryErrorReason::MaxOperationElapsedExceeded
+    );
     assert_eq!(error.context().attempt_timeout(), Some(Duration::ZERO));
     assert_eq!(
         error.context().attempt_timeout_source(),
-        Some(AttemptTimeoutSource::MaxElapsed)
+        Some(AttemptTimeoutSource::MaxOperationElapsed)
     );
     assert_eq!(WORKER_THREAD_ID_CALLS.load(Ordering::SeqCst), 0);
+}
+
+/// Verifies worker mode honors max total elapsed before running the first attempt.
+#[test]
+fn test_run_in_worker_max_total_elapsed_can_stop_before_first_attempt() {
+    let _guard = WORKER_THREAD_ID_LOCK
+        .lock()
+        .expect("worker probe lock should be available");
+    WORKER_THREAD_ID_CALLS.store(0, Ordering::SeqCst);
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .max_total_elapsed(Some(Duration::ZERO))
+        .no_delay()
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_in_worker(record_worker_thread_id)
+        .expect_err("zero total elapsed budget should stop before first attempt");
+
+    assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
+    assert_eq!(error.context().attempt_timeout(), Some(Duration::ZERO));
+    assert_eq!(
+        error.context().attempt_timeout_source(),
+        Some(AttemptTimeoutSource::MaxTotalElapsed)
+    );
+    assert_eq!(WORKER_THREAD_ID_CALLS.load(Ordering::SeqCst), 0);
+}
+
+/// Verifies worker mode includes before-attempt listener time in max total elapsed.
+#[test]
+fn test_run_in_worker_max_total_elapsed_includes_before_attempt_listener_time() {
+    let _guard = WORKER_THREAD_ID_LOCK
+        .lock()
+        .expect("worker probe lock should be available");
+    WORKER_THREAD_ID_CALLS.store(0, Ordering::SeqCst);
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .max_total_elapsed(Some(Duration::from_millis(20)))
+        .no_delay()
+        .before_attempt(|_context: &RetryContext| {
+            thread::sleep(Duration::from_millis(40));
+        })
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_in_worker(record_worker_thread_id)
+        .expect_err("before-attempt listener time should exhaust total elapsed");
+
+    assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
+    assert_eq!(error.attempts(), 1);
+    assert!(error.last_failure().is_none());
+    assert_eq!(WORKER_THREAD_ID_CALLS.load(Ordering::SeqCst), 0);
+    assert!(error.context().total_elapsed() >= Duration::from_millis(20));
 }
 
 /// Verifies worker mode sleeps when retrying with non-zero delay.
