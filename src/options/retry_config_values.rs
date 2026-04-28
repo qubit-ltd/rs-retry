@@ -30,7 +30,8 @@ use crate::constants::{
     KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_ATTEMPT_TIMEOUT_POLICY, KEY_DELAY, KEY_DELAY_STRATEGY,
     KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
     KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
-    KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS,
+    KEY_MAX_OPERATION_ELAPSED_MILLIS, KEY_MAX_OPERATION_ELAPSED_UNLIMITED,
+    KEY_MAX_TOTAL_ELAPSED_MILLIS, KEY_MAX_TOTAL_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS,
     KEY_RANDOM_MIN_DELAY_MILLIS, KEY_WORKER_CANCEL_GRACE_MILLIS,
 };
 
@@ -50,9 +51,13 @@ pub struct RetryConfigValues {
     /// Optional maximum attempts value.
     pub max_attempts: Option<u32>,
     /// Optional cumulative user operation elapsed-time budget in milliseconds.
-    pub max_elapsed_millis: Option<u64>,
+    pub max_operation_elapsed_millis: Option<u64>,
     /// Optional explicit switch for unlimited user operation elapsed-time budget.
-    pub max_elapsed_unlimited: Option<bool>,
+    pub max_operation_elapsed_unlimited: Option<bool>,
+    /// Optional total retry-flow elapsed-time budget in milliseconds.
+    pub max_total_elapsed_millis: Option<u64>,
+    /// Optional explicit switch for unlimited total retry-flow elapsed-time budget.
+    pub max_total_elapsed_unlimited: Option<bool>,
     /// Optional attempt timeout in milliseconds.
     pub attempt_timeout_millis: Option<u64>,
     /// Optional action selected when one attempt times out.
@@ -100,8 +105,11 @@ impl RetryConfigValues {
     {
         Ok(Self {
             max_attempts: config.get_optional(KEY_MAX_ATTEMPTS)?,
-            max_elapsed_millis: config.get_optional(KEY_MAX_ELAPSED_MILLIS)?,
-            max_elapsed_unlimited: config.get_optional(KEY_MAX_ELAPSED_UNLIMITED)?,
+            max_operation_elapsed_millis: config.get_optional(KEY_MAX_OPERATION_ELAPSED_MILLIS)?,
+            max_operation_elapsed_unlimited: config
+                .get_optional(KEY_MAX_OPERATION_ELAPSED_UNLIMITED)?,
+            max_total_elapsed_millis: config.get_optional(KEY_MAX_TOTAL_ELAPSED_MILLIS)?,
+            max_total_elapsed_unlimited: config.get_optional(KEY_MAX_TOTAL_ELAPSED_UNLIMITED)?,
             attempt_timeout_millis: config.get_optional(KEY_ATTEMPT_TIMEOUT_MILLIS)?,
             attempt_timeout_policy: config.get_optional_string(KEY_ATTEMPT_TIMEOUT_POLICY)?,
             worker_cancel_grace_millis: config.get_optional(KEY_WORKER_CANCEL_GRACE_MILLIS)?,
@@ -131,14 +139,16 @@ impl RetryConfigValues {
     /// or the resulting options fail validation.
     pub fn to_options(&self, default: &RetryOptions) -> Result<RetryOptions, RetryConfigError> {
         let max_attempts = self.max_attempts.unwrap_or(default.max_attempts());
-        let max_elapsed = self.get_max_elapsed(default);
+        let max_operation_elapsed = self.get_max_operation_elapsed(default);
+        let max_total_elapsed = self.get_max_total_elapsed(default);
         let attempt_timeout = self.get_attempt_timeout(default)?;
         let worker_cancel_grace = self.get_worker_cancel_grace(default);
         let delay = self.get_delay(default)?;
         let jitter = self.get_jitter(default);
         let mut options = RetryOptions::new_with_attempt_timeout(
             max_attempts,
-            max_elapsed,
+            max_operation_elapsed,
+            max_total_elapsed,
             delay,
             jitter,
             attempt_timeout,
@@ -151,22 +161,44 @@ impl RetryConfigValues {
     /// Resolves the cumulative user operation elapsed-time budget.
     ///
     /// # Parameters
-    /// - `default`: Fallback when `max_elapsed_millis` is absent from config.
+    /// - `default`: Fallback when `max_operation_elapsed_millis` is absent from config.
     ///
     /// # Returns
-    /// - `None` when `max_elapsed_unlimited` is configured as `true`.
-    /// - `Some(Duration)` when `max_elapsed_millis` is present (including zero).
-    /// - `default.max_elapsed` when the key is absent.
+    /// - `None` when `max_operation_elapsed_unlimited` is configured as `true`.
+    /// - `Some(Duration)` when `max_operation_elapsed_millis` is present (including zero).
+    /// - `default.max_operation_elapsed` when the key is absent.
     ///
     /// # Errors
     /// This method does not return errors.
-    fn get_max_elapsed(&self, default: &RetryOptions) -> Option<Duration> {
-        if self.max_elapsed_unlimited.unwrap_or(false) {
+    fn get_max_operation_elapsed(&self, default: &RetryOptions) -> Option<Duration> {
+        if self.max_operation_elapsed_unlimited.unwrap_or(false) {
             return None;
         }
-        match self.max_elapsed_millis {
+        match self.max_operation_elapsed_millis {
             Some(millis) => Some(Duration::from_millis(millis)),
-            None => default.max_elapsed(),
+            None => default.max_operation_elapsed(),
+        }
+    }
+
+    /// Resolves the total retry-flow elapsed-time budget.
+    ///
+    /// # Parameters
+    /// - `default`: Fallback when `max_total_elapsed_millis` is absent from config.
+    ///
+    /// # Returns
+    /// - `None` when `max_total_elapsed_unlimited` is configured as `true`.
+    /// - `Some(Duration)` when `max_total_elapsed_millis` is present (including zero).
+    /// - `default.max_total_elapsed` when the key is absent.
+    ///
+    /// # Errors
+    /// This method does not return errors.
+    fn get_max_total_elapsed(&self, default: &RetryOptions) -> Option<Duration> {
+        if self.max_total_elapsed_unlimited.unwrap_or(false) {
+            return None;
+        }
+        match self.max_total_elapsed_millis {
+            Some(millis) => Some(Duration::from_millis(millis)),
+            None => default.max_total_elapsed(),
         }
     }
 

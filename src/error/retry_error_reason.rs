@@ -18,7 +18,9 @@ pub enum RetryErrorReason {
     /// No attempts remain.
     AttemptsExceeded,
     /// The cumulative user operation elapsed-time budget was exhausted.
-    MaxElapsedExceeded,
+    MaxOperationElapsedExceeded,
+    /// The total monotonic retry-flow elapsed-time budget was exhausted.
+    MaxTotalElapsedExceeded,
     /// The operation mode does not support the configured behavior.
     ///
     /// Currently used when [`Retry::run`](crate::Retry::run) receives

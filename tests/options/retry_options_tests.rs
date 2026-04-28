@@ -14,7 +14,8 @@ use qubit_retry::constants::{
     DEFAULT_RETRY_MAX_ATTEMPTS, KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_ATTEMPT_TIMEOUT_POLICY, KEY_DELAY,
     KEY_DELAY_STRATEGY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
     KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
-    KEY_MAX_ELAPSED_MILLIS, KEY_MAX_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS,
+    KEY_MAX_OPERATION_ELAPSED_MILLIS, KEY_MAX_OPERATION_ELAPSED_UNLIMITED,
+    KEY_MAX_TOTAL_ELAPSED_MILLIS, KEY_MAX_TOTAL_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS,
     KEY_RANDOM_MIN_DELAY_MILLIS, KEY_WORKER_CANCEL_GRACE_MILLIS,
 };
 use qubit_retry::{AttemptTimeoutOption, RetryDelay, RetryJitter, RetryOptions};
@@ -34,27 +35,34 @@ use qubit_retry::{AttemptTimeoutOption, RetryDelay, RetryJitter, RetryOptions};
 fn test_validate_default_and_new() {
     let options = RetryOptions::default();
     assert_eq!(options.max_attempts(), DEFAULT_RETRY_MAX_ATTEMPTS);
-    assert_eq!(options.max_elapsed(), None);
+    assert_eq!(options.max_operation_elapsed(), None);
+    assert_eq!(options.max_total_elapsed(), None);
     assert_eq!(options.attempt_timeout(), None);
     assert_eq!(options.worker_cancel_grace(), Duration::from_millis(100));
     assert!(matches!(options.jitter(), RetryJitter::None));
 
-    let options = RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none())
+    let options = RetryOptions::new(2, None, None, RetryDelay::none(), RetryJitter::none())
         .expect("valid retry options should be created");
     assert_eq!(options.max_attempts(), 2);
 
-    let zero = RetryOptions::new(0, None, RetryDelay::none(), RetryJitter::none())
+    let zero = RetryOptions::new(0, None, None, RetryDelay::none(), RetryJitter::none())
         .expect_err("zero attempts should be rejected");
     assert_eq!(zero.path(), KEY_MAX_ATTEMPTS);
 
-    let invalid_jitter =
-        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::factor(f64::NAN))
-            .expect_err("invalid jitter should be rejected");
+    let invalid_jitter = RetryOptions::new(
+        2,
+        None,
+        None,
+        RetryDelay::none(),
+        RetryJitter::factor(f64::NAN),
+    )
+    .expect_err("invalid jitter should be rejected");
     assert_eq!(invalid_jitter.path(), KEY_JITTER_FACTOR);
 
     let timeout = AttemptTimeoutOption::abort(Duration::from_millis(10));
     let options = RetryOptions::new_with_attempt_timeout(
         2,
+        None,
         None,
         RetryDelay::none(),
         RetryJitter::none(),
@@ -65,6 +73,7 @@ fn test_validate_default_and_new() {
 
     let invalid_timeout = RetryOptions::new_with_attempt_timeout(
         2,
+        None,
         None,
         RetryDelay::none(),
         RetryJitter::none(),
@@ -92,7 +101,10 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
         .set("retry.max_attempts", 4u32)
         .expect("test config value should be set");
     config
-        .set("retry.max_elapsed_millis", 250u64)
+        .set("retry.max_operation_elapsed_millis", 250u64)
+        .expect("test config value should be set");
+    config
+        .set("retry.max_total_elapsed_millis", 500u64)
         .expect("test config value should be set");
     config
         .set("retry.delay", "fixed")
@@ -117,7 +129,14 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
         .expect("prefixed retry config should be parsed");
 
     assert_eq!(options.max_attempts(), 4);
-    assert_eq!(options.max_elapsed(), Some(Duration::from_millis(250)));
+    assert_eq!(
+        options.max_operation_elapsed(),
+        Some(Duration::from_millis(250))
+    );
+    assert_eq!(
+        options.max_total_elapsed(),
+        Some(Duration::from_millis(500))
+    );
     assert_eq!(
         options.delay(),
         &RetryDelay::fixed(Duration::from_millis(15))
@@ -193,26 +212,51 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
 
     let mut disabled_elapsed = Config::new();
     disabled_elapsed
-        .set("max_elapsed_millis", 0u64)
+        .set("max_operation_elapsed_millis", 0u64)
         .expect("test config value should be set");
     assert_eq!(
         RetryOptions::from_config(&disabled_elapsed)
             .expect("zero max elapsed should be allowed")
-            .max_elapsed(),
+            .max_operation_elapsed(),
         Some(Duration::ZERO)
     );
 
     let mut unlimited_elapsed = Config::new();
     unlimited_elapsed
-        .set("max_elapsed_millis", 0u64)
+        .set("max_operation_elapsed_millis", 0u64)
         .expect("test config value should be set");
     unlimited_elapsed
-        .set("max_elapsed_unlimited", true)
+        .set("max_operation_elapsed_unlimited", true)
         .expect("test config value should be set");
     assert_eq!(
         RetryOptions::from_config(&unlimited_elapsed)
             .expect("explicit unlimited max elapsed should be allowed")
-            .max_elapsed(),
+            .max_operation_elapsed(),
+        None
+    );
+
+    let mut disabled_total_elapsed = Config::new();
+    disabled_total_elapsed
+        .set("max_total_elapsed_millis", 0u64)
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&disabled_total_elapsed)
+            .expect("zero max total elapsed should be allowed")
+            .max_total_elapsed(),
+        Some(Duration::ZERO)
+    );
+
+    let mut unlimited_total_elapsed = Config::new();
+    unlimited_total_elapsed
+        .set("max_total_elapsed_millis", 0u64)
+        .expect("test config value should be set");
+    unlimited_total_elapsed
+        .set("max_total_elapsed_unlimited", true)
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&unlimited_total_elapsed)
+            .expect("explicit unlimited max total elapsed should be allowed")
+            .max_total_elapsed(),
         None
     );
 
@@ -264,11 +308,19 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
 
     let mut unlimited_bad_type = Config::new();
     unlimited_bad_type
-        .set("max_elapsed_unlimited", "bad")
+        .set("max_operation_elapsed_unlimited", "bad")
         .expect("test config value should be set");
     let error = RetryOptions::from_config(&unlimited_bad_type)
-        .expect_err("wrong max_elapsed_unlimited type should fail");
-    assert_eq!(error.path(), KEY_MAX_ELAPSED_UNLIMITED);
+        .expect_err("wrong max_operation_elapsed_unlimited type should fail");
+    assert_eq!(error.path(), KEY_MAX_OPERATION_ELAPSED_UNLIMITED);
+
+    let mut total_unlimited_bad_type = Config::new();
+    total_unlimited_bad_type
+        .set("max_total_elapsed_unlimited", "bad")
+        .expect("test config value should be set");
+    let error = RetryOptions::from_config(&total_unlimited_bad_type)
+        .expect_err("wrong max_total_elapsed_unlimited type should fail");
+    assert_eq!(error.path(), KEY_MAX_TOTAL_ELAPSED_UNLIMITED);
 }
 
 /// Verifies implicit delay defaults from configuration.
@@ -326,13 +378,24 @@ fn test_from_config_reads_implicit_delay_defaults() {
 fn test_from_config_reports_delay_parameter_type_errors() {
     let mut elapsed_bad = Config::new();
     elapsed_bad
-        .set("max_elapsed_millis", "bad")
+        .set("max_operation_elapsed_millis", "bad")
         .expect("test config value should be set");
     assert_eq!(
         RetryOptions::from_config(&elapsed_bad)
             .expect_err("invalid max elapsed type should fail")
             .path(),
-        KEY_MAX_ELAPSED_MILLIS
+        KEY_MAX_OPERATION_ELAPSED_MILLIS
+    );
+
+    let mut total_elapsed_bad = Config::new();
+    total_elapsed_bad
+        .set("max_total_elapsed_millis", "bad")
+        .expect("test config value should be set");
+    assert_eq!(
+        RetryOptions::from_config(&total_elapsed_bad)
+            .expect_err("invalid max total elapsed type should fail")
+            .path(),
+        KEY_MAX_TOTAL_ELAPSED_MILLIS
     );
 
     let mut delay_bad = Config::new();
@@ -512,6 +575,7 @@ fn test_retry_options_delay_calculation_helpers() {
     let options = RetryOptions::new(
         4,
         None,
+        None,
         RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 2.0),
         RetryJitter::none(),
     )
@@ -540,6 +604,7 @@ fn test_retry_options_delay_calculation_helpers() {
     let fixed = RetryOptions::new(
         3,
         None,
+        None,
         RetryDelay::fixed(Duration::from_millis(7)),
         RetryJitter::none(),
     )
@@ -549,7 +614,7 @@ fn test_retry_options_delay_calculation_helpers() {
         Duration::from_millis(7)
     );
 
-    let none = RetryOptions::new(3, None, RetryDelay::none(), RetryJitter::none())
+    let none = RetryOptions::new(3, None, None, RetryDelay::none(), RetryJitter::none())
         .expect("none retry options should be valid");
     assert_eq!(
         none.next_base_delay_from_current(Duration::from_millis(99)),
@@ -558,6 +623,7 @@ fn test_retry_options_delay_calculation_helpers() {
 
     let random = RetryOptions::new(
         3,
+        None,
         None,
         RetryDelay::random(Duration::from_millis(4), Duration::from_millis(4)),
         RetryJitter::none(),

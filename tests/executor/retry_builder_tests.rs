@@ -28,6 +28,7 @@ use crate::support::TestError;
 fn test_builder_default_and_delay_helpers_work() {
     let retry = Retry::<TestError>::builder()
         .max_retries(2)
+        .max_total_elapsed(Some(Duration::from_secs(5)))
         .fixed_delay(Duration::from_millis(1))
         .jitter_factor(0.0)
         .worker_cancel_grace(Duration::from_millis(25))
@@ -35,6 +36,10 @@ fn test_builder_default_and_delay_helpers_work() {
         .expect("retry should build");
 
     assert_eq!(retry.options().max_attempts(), 3);
+    assert_eq!(
+        retry.options().max_total_elapsed(),
+        Some(Duration::from_secs(5))
+    );
     assert_eq!(
         retry.options().delay(),
         &RetryDelay::fixed(Duration::from_millis(1))
@@ -63,6 +68,7 @@ fn test_builder_options_random_exponential_and_default_work() {
     let options = RetryOptions::new(
         2,
         Some(Duration::from_millis(42)),
+        None,
         RetryDelay::none(),
         RetryJitter::none(),
     )
@@ -139,6 +145,7 @@ fn test_build_validates_max_attempts_and_options() {
 
     let invalid = RetryOptions::new(
         3,
+        None,
         None,
         RetryDelay::fixed(Duration::ZERO),
         RetryJitter::none(),
@@ -400,6 +407,7 @@ fn test_isolate_listener_panics_suppresses_listener_panics() {
 fn test_options_sets_pending_attempt_timeout_policy() {
     let options = RetryOptions::new_with_attempt_timeout(
         2,
+        None,
         None,
         RetryDelay::none(),
         RetryJitter::none(),

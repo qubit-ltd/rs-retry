@@ -530,9 +530,9 @@ fn test_sync_run_with_attempt_timeout_is_unsupported() {
 /// # Returns
 /// This test returns nothing.
 #[test]
-fn test_max_elapsed_can_stop_before_first_attempt() {
+fn test_max_operation_elapsed_can_stop_before_first_attempt() {
     let retry = Retry::<TestError>::builder()
-        .max_elapsed(Some(Duration::ZERO))
+        .max_operation_elapsed(Some(Duration::ZERO))
         .no_delay()
         .build()
         .expect("retry should build");
@@ -541,7 +541,10 @@ fn test_max_elapsed_can_stop_before_first_attempt() {
         .run(|| -> Result<(), TestError> { panic!("operation must not run") })
         .expect_err("zero elapsed budget should stop before first attempt");
 
-    assert_eq!(error.reason(), RetryErrorReason::MaxElapsedExceeded);
+    assert_eq!(
+        error.reason(),
+        RetryErrorReason::MaxOperationElapsedExceeded
+    );
     assert_eq!(error.attempts(), 0);
     assert!(error.last_failure().is_none());
 }
@@ -559,7 +562,7 @@ fn test_hook_and_retry_sleep_time_do_not_count_against_elapsed_budget() {
     let success_elapsed_events = Arc::clone(&success_elapsed);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
-        .max_elapsed(Some(Duration::from_millis(10)))
+        .max_operation_elapsed(Some(Duration::from_millis(10)))
         .fixed_delay(Duration::from_millis(25))
         .before_attempt(|_context: &RetryContext| {
             std::thread::sleep(Duration::from_millis(25));
@@ -572,7 +575,7 @@ fn test_hook_and_retry_sleep_time_do_not_count_against_elapsed_budget() {
         .on_success(move |context: &RetryContext| {
             *success_elapsed_events
                 .lock()
-                .expect("success elapsed should be lockable") = Some(context.total_elapsed());
+                .expect("success elapsed should be lockable") = Some(context.operation_elapsed());
         })
         .build()
         .expect("retry should build");
@@ -613,7 +616,7 @@ fn test_on_retry_listener_time_does_not_count_against_elapsed_budget() {
     let scheduled_events = Arc::clone(&retry_events);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
-        .max_elapsed(Some(Duration::from_millis(10)))
+        .max_operation_elapsed(Some(Duration::from_millis(10)))
         .fixed_delay(Duration::from_millis(25))
         .on_retry(
             move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
@@ -654,5 +657,250 @@ fn test_on_retry_listener_time_does_not_count_against_elapsed_budget() {
     assert!(
         elapsed >= Duration::from_millis(50),
         "test should exercise retry listener and sleep wall time, elapsed: {elapsed:?}"
+    );
+}
+
+/// Verifies total elapsed budget rejects a retry delay before sleeping it.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_max_total_elapsed_rejects_retry_sleep_before_sleeping() {
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let scheduled_events = Arc::clone(&retry_events);
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .max_total_elapsed(Some(Duration::from_millis(50)))
+        .fixed_delay(Duration::from_millis(200))
+        .on_retry(
+            move |_failure: &AttemptFailure<TestError>, context: &RetryContext| {
+                scheduled_events
+                    .lock()
+                    .expect("retry events should be lockable")
+                    .push(context.next_delay());
+            },
+        )
+        .build()
+        .expect("retry should build");
+
+    let mut attempts = 0;
+    let started = std::time::Instant::now();
+    let error = retry
+        .run(|| -> Result<(), TestError> {
+            attempts += 1;
+            Err(TestError("retry-delay-too-large"))
+        })
+        .expect_err("total elapsed budget should reject the retry delay");
+    let elapsed = started.elapsed();
+
+    assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
+    assert_eq!(error.attempts(), 1);
+    assert_eq!(attempts, 1);
+    assert_eq!(
+        error.last_error(),
+        Some(&TestError("retry-delay-too-large"))
+    );
+    assert_eq!(
+        error.context().next_delay(),
+        Some(Duration::from_millis(200))
+    );
+    assert!(
+        retry_events
+            .lock()
+            .expect("retry events should be lockable")
+            .is_empty()
+    );
+    assert!(
+        elapsed < Duration::from_millis(150),
+        "retry delay should not be slept, elapsed: {elapsed:?}"
+    );
+}
+
+/// Verifies retry-after delay participates in the total elapsed budget.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_max_total_elapsed_rejects_retry_after_sleep_before_sleeping() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .max_total_elapsed(Some(Duration::from_millis(50)))
+        .no_delay()
+        .retry_after_from_error(|_error: &TestError| Some(Duration::from_millis(200)))
+        .build()
+        .expect("retry should build");
+
+    let mut attempts = 0;
+    let error = retry
+        .run(|| -> Result<(), TestError> {
+            attempts += 1;
+            Err(TestError("retry-after-too-large"))
+        })
+        .expect_err("total elapsed budget should reject the retry-after delay");
+
+    assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
+    assert_eq!(error.attempts(), 1);
+    assert_eq!(attempts, 1);
+    assert_eq!(
+        error.last_error(),
+        Some(&TestError("retry-after-too-large"))
+    );
+    assert_eq!(
+        error.context().retry_after_hint(),
+        Some(Duration::from_millis(200))
+    );
+    assert_eq!(
+        error.context().next_delay(),
+        Some(Duration::from_millis(200))
+    );
+}
+
+/// Verifies retry control-path listener time is included in total elapsed.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_max_total_elapsed_includes_failure_listener_time() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .max_total_elapsed(Some(Duration::from_millis(20)))
+        .no_delay()
+        .on_failure(
+            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+                std::thread::sleep(Duration::from_millis(40));
+                AttemptFailureDecision::UseDefault
+            },
+        )
+        .build()
+        .expect("retry should build");
+
+    let mut attempts = 0;
+    let error = retry
+        .run(|| -> Result<(), TestError> {
+            attempts += 1;
+            Err(TestError("slow-listener"))
+        })
+        .expect_err("failure listener time should exhaust the total elapsed budget");
+
+    assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
+    assert_eq!(error.attempts(), 1);
+    assert_eq!(attempts, 1);
+    assert_eq!(error.last_error(), Some(&TestError("slow-listener")));
+    assert!(error.context().total_elapsed() >= Duration::from_millis(20));
+}
+
+/// Verifies before-attempt listener time can exhaust total elapsed before operation runs.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_max_total_elapsed_includes_before_attempt_listener_time() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .max_total_elapsed(Some(Duration::from_millis(20)))
+        .no_delay()
+        .before_attempt(|_context: &RetryContext| {
+            std::thread::sleep(Duration::from_millis(40));
+        })
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run(|| -> Result<(), TestError> { panic!("operation must not run") })
+        .expect_err("before-attempt listener time should exhaust total elapsed");
+
+    assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
+    assert_eq!(error.attempts(), 1);
+    assert!(error.last_failure().is_none());
+    assert!(error.context().total_elapsed() >= Duration::from_millis(20));
+}
+
+/// Verifies on-retry listener time can exhaust total elapsed before retrying.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_max_total_elapsed_includes_on_retry_listener_time() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .max_total_elapsed(Some(Duration::from_millis(20)))
+        .no_delay()
+        .on_retry(
+            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+                std::thread::sleep(Duration::from_millis(40));
+            },
+        )
+        .build()
+        .expect("retry should build");
+
+    let mut attempts = 0;
+    let error = retry
+        .run(|| -> Result<(), TestError> {
+            attempts += 1;
+            Err(TestError("slow-on-retry"))
+        })
+        .expect_err("on-retry listener time should exhaust total elapsed");
+
+    assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
+    assert_eq!(error.attempts(), 1);
+    assert_eq!(attempts, 1);
+    assert_eq!(error.last_error(), Some(&TestError("slow-on-retry")));
+    assert!(error.context().total_elapsed() >= Duration::from_millis(20));
+}
+
+/// Verifies on-retry listener time can leave too little total elapsed for the selected sleep.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_max_total_elapsed_rechecks_retry_sleep_after_on_retry_listener() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .max_total_elapsed(Some(Duration::from_millis(80)))
+        .fixed_delay(Duration::from_millis(50))
+        .on_retry(
+            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+                std::thread::sleep(Duration::from_millis(40));
+            },
+        )
+        .build()
+        .expect("retry should build");
+
+    let mut attempts = 0;
+    let error = retry
+        .run(|| -> Result<(), TestError> {
+            attempts += 1;
+            Err(TestError("delay-after-slow-on-retry"))
+        })
+        .expect_err("on-retry listener time should make retry delay exceed total elapsed");
+
+    assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
+    assert_eq!(error.attempts(), 1);
+    assert_eq!(attempts, 1);
+    assert_eq!(
+        error.last_error(),
+        Some(&TestError("delay-after-slow-on-retry"))
+    );
+    assert_eq!(
+        error.context().next_delay(),
+        Some(Duration::from_millis(50))
     );
 }

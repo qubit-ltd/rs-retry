@@ -34,15 +34,26 @@ use std::time::Duration;
 /// Config key for the maximum attempts option value (including the initial attempt).
 pub const KEY_MAX_ATTEMPTS: &str = "max_attempts";
 
-/// Config key for the cumulative user operation elapsed budget option value, in
-/// milliseconds. When absent, the merge uses `default.max_elapsed`. A stored
-/// value of `0` means a zero-millisecond elapsed budget.
-pub const KEY_MAX_ELAPSED_MILLIS: &str = "max_elapsed_millis";
+/// Config key for the cumulative user operation elapsed budget option value,
+/// in milliseconds. When absent, the merge uses
+/// `default.max_operation_elapsed`. A stored value of `0` means a
+/// zero-millisecond operation elapsed budget.
+pub const KEY_MAX_OPERATION_ELAPSED_MILLIS: &str = "max_operation_elapsed_millis";
 
 /// Config key for explicitly forcing an unlimited user operation elapsed budget.
-/// When `true`, merge logic ignores [`KEY_MAX_ELAPSED_MILLIS`] and uses
-/// unlimited (`None`).
-pub const KEY_MAX_ELAPSED_UNLIMITED: &str = "max_elapsed_unlimited";
+/// When `true`, merge logic ignores [`KEY_MAX_OPERATION_ELAPSED_MILLIS`] and
+/// uses unlimited (`None`).
+pub const KEY_MAX_OPERATION_ELAPSED_UNLIMITED: &str = "max_operation_elapsed_unlimited";
+
+/// Config key for the total retry-flow elapsed budget option value, in
+/// milliseconds. The measured value is monotonic retry control-flow time, not
+/// wall-clock time.
+pub const KEY_MAX_TOTAL_ELAPSED_MILLIS: &str = "max_total_elapsed_millis";
+
+/// Config key for explicitly forcing an unlimited total retry-flow elapsed
+/// budget. When `true`, merge logic ignores [`KEY_MAX_TOTAL_ELAPSED_MILLIS`]
+/// and uses unlimited (`None`).
+pub const KEY_MAX_TOTAL_ELAPSED_UNLIMITED: &str = "max_total_elapsed_unlimited";
 
 /// Config key for the per-attempt timeout value, in milliseconds.
 pub const KEY_ATTEMPT_TIMEOUT_MILLIS: &str = "attempt_timeout_millis";
@@ -95,7 +106,11 @@ pub const DEFAULT_RETRY_MAX_ATTEMPTS: u32 = 5;
 
 /// Default cumulative user operation elapsed budget for
 /// [`crate::RetryOptions::default`]: unlimited (`None`).
-pub const DEFAULT_RETRY_MAX_ELAPSED: Option<Duration> = None;
+pub const DEFAULT_RETRY_MAX_OPERATION_ELAPSED: Option<Duration> = None;
+
+/// Default total retry-flow elapsed budget for [`crate::RetryOptions::default`]:
+/// unlimited (`None`).
+pub const DEFAULT_RETRY_MAX_TOTAL_ELAPSED: Option<Duration> = None;
 
 /// Default fixed delay option value, in milliseconds.
 pub const DEFAULT_RETRY_FIXED_DELAY_MILLIS: u64 = 1000;

@@ -35,8 +35,9 @@ pub enum AttemptFailure<E> {
 
     /// The attempt exceeded the effective timeout.
     ///
-    /// This can be the configured per-attempt timeout or the remaining
-    /// max-elapsed budget used by async and worker-thread attempts.
+    /// This can be the configured per-attempt timeout, the remaining
+    /// max-operation-elapsed budget, or the remaining max-total-elapsed budget
+    /// used by async and worker-thread attempts.
     Timeout,
 
     /// The attempt panicked inside an isolated execution boundary.

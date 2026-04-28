@@ -18,10 +18,12 @@ use serde::{Deserialize, Serialize};
 /// Context emitted for retry lifecycle events.
 ///
 /// `attempt` is one-based for attempt-related events and zero when a retry flow
-/// stops before any attempt is executed. `total_elapsed` is cumulative user
+/// stops before any attempt is executed. `operation_elapsed` is cumulative user
 /// operation execution time only; listener and retry-sleep time are excluded.
-/// `attempt_elapsed` is set after an attempt completes and is zero before an
-/// attempt starts.
+/// `total_elapsed` is monotonic elapsed time spent in the retry flow and
+/// includes operation execution, retry sleep, retry-after sleep, and
+/// retry-control listener time. `attempt_elapsed` is set after an attempt
+/// completes and is zero before an attempt starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetryContext {
     /// Current attempt number, or zero if no attempt has run.
@@ -29,8 +31,12 @@ pub struct RetryContext {
     /// Configured maximum attempts.
     max_attempts: u32,
     /// Configured maximum cumulative user operation time.
-    max_elapsed: Option<Duration>,
+    max_operation_elapsed: Option<Duration>,
+    /// Configured maximum total retry-flow elapsed time.
+    max_total_elapsed: Option<Duration>,
     /// Cumulative user operation time consumed by this retry flow.
+    operation_elapsed: Duration,
+    /// Total monotonic time consumed by this retry flow.
     total_elapsed: Duration,
     /// Elapsed time spent in the current attempt.
     attempt_elapsed: Duration,
@@ -53,39 +59,74 @@ pub enum AttemptTimeoutSource {
     /// Timeout selected from [`RetryOptions`](crate::RetryOptions) attempt timeout
     /// configuration.
     Configured,
-    /// Timeout selected from remaining max-elapsed budget.
-    MaxElapsed,
+    /// Timeout selected from remaining max-operation-elapsed budget.
+    MaxOperationElapsed,
+    /// Timeout selected from remaining max-total-elapsed budget.
+    MaxTotalElapsed,
+}
+
+/// Internal context constructor payload.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RetryContextParts {
+    /// Current attempt number, or zero if no attempt has run.
+    pub(crate) attempt: u32,
+    /// Configured maximum attempts.
+    pub(crate) max_attempts: u32,
+    /// Configured maximum cumulative user operation time.
+    pub(crate) max_operation_elapsed: Option<Duration>,
+    /// Configured maximum total retry-flow elapsed time.
+    pub(crate) max_total_elapsed: Option<Duration>,
+    /// Cumulative user operation time consumed by this retry flow.
+    pub(crate) operation_elapsed: Duration,
+    /// Total monotonic time consumed by this retry flow.
+    pub(crate) total_elapsed: Duration,
+    /// Elapsed time spent in the current attempt.
+    pub(crate) attempt_elapsed: Duration,
+    /// Effective timeout configured for the current attempt.
+    pub(crate) attempt_timeout: Option<Duration>,
 }
 
 impl RetryContext {
-    /// Creates a retry context snapshot.
+    /// Creates a public retry context snapshot with default timing metadata.
     ///
     /// # Parameters
     /// - `attempt`: Current attempt number, starting at 1, or 0 before any
     ///   attempt has run.
     /// - `max_attempts`: Configured maximum attempts.
-    /// - `max_elapsed`: Optional cumulative user operation time budget.
-    /// - `total_elapsed`: Cumulative user operation time consumed by the flow.
-    /// - `attempt_elapsed`: Elapsed time for the current attempt.
-    /// - `attempt_timeout`: Optional effective timeout for the current attempt.
+    ///
+    /// # Returns
+    /// A retry context with no elapsed budgets, elapsed values, selected next
+    /// delay, retry-after hint, or attempt timeout.
+    pub fn new(attempt: u32, max_attempts: u32) -> Self {
+        Self::from_parts(RetryContextParts {
+            attempt,
+            max_attempts,
+            max_operation_elapsed: None,
+            max_total_elapsed: None,
+            operation_elapsed: Duration::ZERO,
+            total_elapsed: Duration::ZERO,
+            attempt_elapsed: Duration::ZERO,
+            attempt_timeout: None,
+        })
+    }
+
+    /// Creates a retry context snapshot from internal parts.
+    ///
+    /// # Parameters
+    /// - `parts`: Internal context payload.
     ///
     /// # Returns
     /// A retry context with no selected next delay or retry-after hint.
-    pub fn new(
-        attempt: u32,
-        max_attempts: u32,
-        max_elapsed: Option<Duration>,
-        total_elapsed: Duration,
-        attempt_elapsed: Duration,
-        attempt_timeout: Option<Duration>,
-    ) -> Self {
+    pub(crate) fn from_parts(parts: RetryContextParts) -> Self {
         Self {
-            attempt,
-            max_attempts,
-            max_elapsed,
-            total_elapsed,
-            attempt_elapsed,
-            attempt_timeout,
+            attempt: parts.attempt,
+            max_attempts: parts.max_attempts,
+            max_operation_elapsed: parts.max_operation_elapsed,
+            max_total_elapsed: parts.max_total_elapsed,
+            operation_elapsed: parts.operation_elapsed,
+            total_elapsed: parts.total_elapsed,
+            attempt_elapsed: parts.attempt_elapsed,
+            attempt_timeout: parts.attempt_timeout,
             next_delay: None,
             retry_after_hint: None,
             attempt_timeout_source: None,
@@ -125,8 +166,17 @@ impl RetryContext {
     /// # Returns
     /// `Some(Duration)` for bounded retry flows, or `None` for unlimited flows.
     #[inline]
-    pub fn max_elapsed(&self) -> Option<Duration> {
-        self.max_elapsed
+    pub fn max_operation_elapsed(&self) -> Option<Duration> {
+        self.max_operation_elapsed
+    }
+
+    /// Returns the optional total retry-flow elapsed time budget.
+    ///
+    /// # Returns
+    /// `Some(Duration)` for bounded retry flows, or `None` for unlimited flows.
+    #[inline]
+    pub fn max_total_elapsed(&self) -> Option<Duration> {
+        self.max_total_elapsed
     }
 
     /// Returns cumulative user operation time consumed by the retry flow.
@@ -134,6 +184,16 @@ impl RetryContext {
     /// # Returns
     /// Total user operation time observed at this event. Listener execution and
     /// retry sleeps are excluded.
+    #[inline]
+    pub fn operation_elapsed(&self) -> Duration {
+        self.operation_elapsed
+    }
+
+    /// Returns total monotonic time consumed by the retry flow.
+    ///
+    /// # Returns
+    /// Total retry-flow time observed at this event. Operation execution, retry
+    /// sleep, retry-after sleep, and retry-control listener time are included.
     #[inline]
     pub fn total_elapsed(&self) -> Duration {
         self.total_elapsed
@@ -151,8 +211,9 @@ impl RetryContext {
     /// Returns the effective timeout configured for the current attempt.
     ///
     /// # Returns
-    /// `Some(Duration)` when this attempt is bounded by configured timeout or by
-    /// the remaining max-elapsed budget.
+    /// `Some(Duration)` when this attempt is bounded by configured timeout, by
+    /// the remaining max-operation-elapsed budget, or by the remaining
+    /// max-total-elapsed budget.
     #[inline]
     pub fn attempt_timeout(&self) -> Option<Duration> {
         self.attempt_timeout
@@ -165,8 +226,10 @@ impl RetryContext {
     ///
     /// # Returns
     /// `Some(AttemptTimeoutSource::Configured)` when the current attempt timeout
-    /// came from configured attempt timeout options, `Some(AttemptTimeoutSource::MaxElapsed)`
-    /// when it came from remaining max-elapsed budget, otherwise `None`.
+    /// came from configured attempt timeout options, `Some(AttemptTimeoutSource::MaxOperationElapsed)`
+    /// when it came from remaining max-operation-elapsed budget,
+    /// `Some(AttemptTimeoutSource::MaxTotalElapsed)` when it came from remaining
+    /// max-total-elapsed budget, otherwise `None`.
     #[inline]
     pub fn attempt_timeout_source(&self) -> Option<AttemptTimeoutSource> {
         self.attempt_timeout_source
@@ -215,6 +278,19 @@ impl RetryContext {
     #[inline]
     pub(crate) fn with_next_delay(mut self, delay: Duration) -> Self {
         self.next_delay = Some(delay);
+        self
+    }
+
+    /// Returns a copy of this context with refreshed total elapsed time.
+    ///
+    /// # Parameters
+    /// - `total_elapsed`: Total monotonic time consumed by the retry flow.
+    ///
+    /// # Returns
+    /// A context carrying the refreshed total elapsed value.
+    #[inline]
+    pub(crate) fn with_total_elapsed(mut self, total_elapsed: Duration) -> Self {
+        self.total_elapsed = total_elapsed;
         self
     }
 

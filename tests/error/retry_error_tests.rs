@@ -183,7 +183,7 @@ fn test_retry_error_display_formats_terminal_reasons() {
 
     let elapsed_with_failure = Retry::<TestError>::builder()
         .max_attempts(2)
-        .max_elapsed(Some(Duration::from_millis(5)))
+        .max_operation_elapsed(Some(Duration::from_millis(5)))
         .no_delay()
         .build()
         .expect("retry should build")
@@ -194,11 +194,11 @@ fn test_retry_error_display_formats_terminal_reasons() {
         .expect_err("operation execution should exceed elapsed budget");
     assert_eq!(
         elapsed_with_failure.to_string(),
-        "retry max elapsed exceeded after 1 attempt(s); last failure: slow"
+        "retry max operation elapsed exceeded after 1 attempt(s); last failure: slow"
     );
 
     let elapsed_without_failure = Retry::<TestError>::builder()
-        .max_elapsed(Some(Duration::ZERO))
+        .max_operation_elapsed(Some(Duration::ZERO))
         .no_delay()
         .build()
         .expect("retry should build")
@@ -206,7 +206,19 @@ fn test_retry_error_display_formats_terminal_reasons() {
         .expect_err("zero elapsed budget should stop before first attempt");
     assert_eq!(
         elapsed_without_failure.to_string(),
-        "retry max elapsed exceeded after 0 attempt(s)"
+        "retry max operation elapsed exceeded after 0 attempt(s)"
+    );
+
+    let total_elapsed_without_failure = Retry::<TestError>::builder()
+        .max_total_elapsed(Some(Duration::ZERO))
+        .no_delay()
+        .build()
+        .expect("retry should build")
+        .run(|| -> Result<(), TestError> { panic!("operation must not run") })
+        .expect_err("zero total elapsed budget should stop before first attempt");
+    assert_eq!(
+        total_elapsed_without_failure.to_string(),
+        "retry max total elapsed exceeded after 0 attempt(s)"
     );
 
     let unsupported = Retry::<TestError>::builder()
@@ -287,7 +299,7 @@ fn test_retry_error_source_returns_terminal_failure() {
     );
 
     let without_source = Retry::<TestError>::builder()
-        .max_elapsed(Some(Duration::ZERO))
+        .max_operation_elapsed(Some(Duration::ZERO))
         .no_delay()
         .build()
         .expect("retry should build")
@@ -335,7 +347,7 @@ fn test_retry_error_coverage_constructor_exposes_executor_source() {
         Some(AttemptFailure::<TestError>::Executor(
             AttemptExecutorError::new("executor source"),
         )),
-        RetryContext::new(1, 1, None, Duration::ZERO, Duration::ZERO, None),
+        RetryContext::new(1, 1),
     );
 
     assert_eq!(
@@ -378,8 +390,8 @@ fn test_retry_error_display_propagates_formatter_errors() {
         .expect("retry should build")
         .run(|| -> Result<(), TestError> { Err(TestError("failed")) })
         .expect_err("single failed attempt should exceed attempts");
-    let max_elapsed = Retry::<TestError>::builder()
-        .max_elapsed(Some(Duration::ZERO))
+    let max_operation_elapsed = Retry::<TestError>::builder()
+        .max_operation_elapsed(Some(Duration::ZERO))
         .no_delay()
         .build()
         .expect("retry should build")
@@ -393,7 +405,7 @@ fn test_retry_error_display_propagates_formatter_errors() {
     assert!(write!(&mut attempts_writer, "{attempts_exceeded}").is_err());
 
     let mut elapsed_writer = FailingWriter::fail_immediately();
-    assert!(write!(&mut elapsed_writer, "{max_elapsed}").is_err());
+    assert!(write!(&mut elapsed_writer, "{max_operation_elapsed}").is_err());
 
     let mut last_failure_writer = FailingWriter::fail_when_fragment_seen("; last failure:");
     assert!(write!(&mut last_failure_writer, "{attempts_exceeded}").is_err());

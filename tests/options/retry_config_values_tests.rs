@@ -22,8 +22,10 @@ use qubit_retry::{
 fn sample_retry_config_values_none_delay() -> RetryConfigValues {
     RetryConfigValues {
         max_attempts: None,
-        max_elapsed_millis: None,
-        max_elapsed_unlimited: None,
+        max_operation_elapsed_millis: None,
+        max_operation_elapsed_unlimited: None,
+        max_total_elapsed_millis: None,
+        max_total_elapsed_unlimited: None,
         attempt_timeout_millis: None,
         attempt_timeout_policy: None,
         worker_cancel_grace_millis: None,
@@ -42,8 +44,8 @@ fn sample_retry_config_values_none_delay() -> RetryConfigValues {
 /// Verifies worker cancel grace inherits from defaults unless configured.
 #[test]
 fn test_to_options_worker_cancel_grace_uses_config_or_default() {
-    let default =
-        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let default = RetryOptions::new(2, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect("valid default");
     let options = sample_retry_config_values_none_delay()
         .to_options(&default)
         .expect("valid merged options");
@@ -55,7 +57,7 @@ fn test_to_options_worker_cancel_grace_uses_config_or_default() {
     assert_eq!(options.worker_cancel_grace(), Duration::from_millis(25));
 }
 
-/// Verifies missing `max_elapsed_millis` inherits `default.max_elapsed` in [`RetryConfigValues::to_options`].
+/// Verifies missing `max_operation_elapsed_millis` inherits `default.max_operation_elapsed` in [`RetryConfigValues::to_options`].
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -66,10 +68,11 @@ fn test_to_options_worker_cancel_grace_uses_config_or_default() {
 /// # Errors
 /// The test fails through assertions when merge behavior is incorrect.
 #[test]
-fn test_to_options_missing_max_elapsed_millis_uses_default_budget() {
+fn test_to_options_missing_max_operation_elapsed_millis_uses_default_budget() {
     let default = RetryOptions::new(
         2,
         Some(Duration::from_secs(42)),
+        None,
         RetryDelay::none(),
         RetryJitter::none(),
     )
@@ -77,10 +80,13 @@ fn test_to_options_missing_max_elapsed_millis_uses_default_budget() {
     let options = sample_retry_config_values_none_delay()
         .to_options(&default)
         .expect("valid merged options");
-    assert_eq!(options.max_elapsed(), Some(Duration::from_secs(42)));
+    assert_eq!(
+        options.max_operation_elapsed(),
+        Some(Duration::from_secs(42))
+    );
 }
 
-/// Verifies `max_elapsed_millis` of zero means zero elapsed-time budget.
+/// Verifies `max_operation_elapsed_millis` of zero means zero elapsed-time budget.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -91,21 +97,22 @@ fn test_to_options_missing_max_elapsed_millis_uses_default_budget() {
 /// # Errors
 /// The test fails through assertions when zero-budget semantics are incorrect.
 #[test]
-fn test_to_options_zero_max_elapsed_millis_means_zero_budget() {
+fn test_to_options_zero_max_operation_elapsed_millis_means_zero_budget() {
     let default = RetryOptions::new(
         2,
         Some(Duration::from_secs(42)),
+        None,
         RetryDelay::none(),
         RetryJitter::none(),
     )
     .expect("valid default");
     let mut values = sample_retry_config_values_none_delay();
-    values.max_elapsed_millis = Some(0);
+    values.max_operation_elapsed_millis = Some(0);
     let options = values.to_options(&default).expect("valid merged options");
-    assert_eq!(options.max_elapsed(), Some(Duration::ZERO));
+    assert_eq!(options.max_operation_elapsed(), Some(Duration::ZERO));
 }
 
-/// Verifies `max_elapsed_unlimited=true` forces unlimited budget.
+/// Verifies `max_operation_elapsed_unlimited=true` forces unlimited budget.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -116,19 +123,65 @@ fn test_to_options_zero_max_elapsed_millis_means_zero_budget() {
 /// # Errors
 /// The test fails through assertions when unlimited override is ignored.
 #[test]
-fn test_to_options_max_elapsed_unlimited_overrides_budget() {
+fn test_to_options_max_operation_elapsed_unlimited_overrides_budget() {
     let default = RetryOptions::new(
         2,
         Some(Duration::from_secs(42)),
+        None,
         RetryDelay::none(),
         RetryJitter::none(),
     )
     .expect("valid default");
     let mut values = sample_retry_config_values_none_delay();
-    values.max_elapsed_millis = Some(0);
-    values.max_elapsed_unlimited = Some(true);
+    values.max_operation_elapsed_millis = Some(0);
+    values.max_operation_elapsed_unlimited = Some(true);
     let options = values.to_options(&default).expect("valid merged options");
-    assert_eq!(options.max_elapsed(), None);
+    assert_eq!(options.max_operation_elapsed(), None);
+}
+
+/// Verifies total elapsed budget config merges independently from operation elapsed budget.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when total elapsed merge behavior is incorrect.
+#[test]
+fn test_to_options_max_total_elapsed_merges_independently() {
+    let default = RetryOptions::new(
+        2,
+        Some(Duration::from_secs(42)),
+        Some(Duration::from_secs(84)),
+        RetryDelay::none(),
+        RetryJitter::none(),
+    )
+    .expect("valid default");
+    let options = sample_retry_config_values_none_delay()
+        .to_options(&default)
+        .expect("valid merged options");
+    assert_eq!(
+        options.max_operation_elapsed(),
+        Some(Duration::from_secs(42))
+    );
+    assert_eq!(options.max_total_elapsed(), Some(Duration::from_secs(84)));
+
+    let mut values = sample_retry_config_values_none_delay();
+    values.max_total_elapsed_millis = Some(0);
+    let options = values.to_options(&default).expect("valid merged options");
+    assert_eq!(
+        options.max_operation_elapsed(),
+        Some(Duration::from_secs(42))
+    );
+    assert_eq!(options.max_total_elapsed(), Some(Duration::ZERO));
+
+    let mut values = sample_retry_config_values_none_delay();
+    values.max_total_elapsed_millis = Some(0);
+    values.max_total_elapsed_unlimited = Some(true);
+    let options = values.to_options(&default).expect("valid merged options");
+    assert_eq!(options.max_total_elapsed(), None);
 }
 
 /// Verifies timeout values merge with default timeout policy.
@@ -145,6 +198,7 @@ fn test_to_options_max_elapsed_unlimited_overrides_budget() {
 fn test_to_options_attempt_timeout_uses_default_policy() {
     let default = RetryOptions::new_with_attempt_timeout(
         2,
+        None,
         None,
         RetryDelay::none(),
         RetryJitter::none(),
@@ -177,6 +231,7 @@ fn test_to_options_attempt_timeout_policy_overrides_default_timeout() {
     let default = RetryOptions::new_with_attempt_timeout(
         2,
         None,
+        None,
         RetryDelay::none(),
         RetryJitter::none(),
         Some(AttemptTimeoutOption::abort(Duration::from_secs(1))),
@@ -199,8 +254,8 @@ fn test_to_options_attempt_timeout_policy_overrides_default_timeout() {
 /// Verifies timeout policy without timeout millis errors when defaults disable timeout.
 #[test]
 fn test_to_options_attempt_timeout_policy_requires_timeout_without_default() {
-    let default =
-        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let default = RetryOptions::new(2, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect("valid default");
     let mut values = sample_retry_config_values_none_delay();
     values.attempt_timeout_policy = Some("abort".to_string());
 
@@ -214,8 +269,8 @@ fn test_to_options_attempt_timeout_policy_requires_timeout_without_default() {
 /// Verifies explicit fixed delay strategy requires `fixed_delay_millis`.
 #[test]
 fn test_to_options_explicit_fixed_delay_requires_fixed_delay_millis() {
-    let default =
-        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let default = RetryOptions::new(2, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect("valid default");
     let mut values = sample_retry_config_values_none_delay();
     values.delay = Some("fixed".to_string());
 
@@ -230,8 +285,8 @@ fn test_to_options_explicit_fixed_delay_requires_fixed_delay_millis() {
 /// Verifies explicit random delay strategy requires both random bounds.
 #[test]
 fn test_to_options_explicit_random_delay_requires_min_and_max_delay() {
-    let default =
-        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let default = RetryOptions::new(2, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect("valid default");
     let mut values = sample_retry_config_values_none_delay();
     values.delay = Some("random".to_string());
     values.random_min_delay_millis = Some(5);
@@ -256,8 +311,8 @@ fn test_to_options_explicit_random_delay_requires_min_and_max_delay() {
 /// Verifies explicit exponential delay strategy requires all explicit parameters.
 #[test]
 fn test_to_options_explicit_exponential_delay_requires_all_parameters() {
-    let default =
-        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let default = RetryOptions::new(2, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect("valid default");
     let mut values = sample_retry_config_values_none_delay();
     values.delay = Some("exponential".to_string());
     values.exponential_initial_delay_millis = Some(1_000);
@@ -295,8 +350,8 @@ fn test_to_options_explicit_exponential_delay_requires_all_parameters() {
 /// Verifies unsupported explicit delay strategy fails fast with a parse error.
 #[test]
 fn test_to_options_invalid_delay_strategy_is_rejected() {
-    let default =
-        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let default = RetryOptions::new(2, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect("valid default");
     let mut values = sample_retry_config_values_none_delay();
     values.delay = Some("unknown".to_string());
 
@@ -311,8 +366,8 @@ fn test_to_options_invalid_delay_strategy_is_rejected() {
 /// Verifies unsupported attempt-timeout policy fails fast with a parse error.
 #[test]
 fn test_to_options_invalid_attempt_timeout_policy_is_rejected() {
-    let default =
-        RetryOptions::new(2, None, RetryDelay::none(), RetryJitter::none()).expect("valid default");
+    let default = RetryOptions::new(2, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect("valid default");
     let mut values = sample_retry_config_values_none_delay();
     values.attempt_timeout_policy = Some("invalid-policy".to_string());
 
