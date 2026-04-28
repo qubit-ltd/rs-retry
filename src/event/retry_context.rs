@@ -15,6 +15,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use super::{AttemptTimeoutSource, RetryContextParts};
+
 /// Context emitted for retry lifecycle events.
 ///
 /// `attempt` is one-based for attempt-related events and zero when a retry flow
@@ -51,39 +53,6 @@ pub struct RetryContext {
     /// Worker attempts that timed out and were not observed to exit before the
     /// cancellation grace period ended.
     unreaped_worker_count: u32,
-}
-
-/// Source of a per-attempt timeout selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AttemptTimeoutSource {
-    /// Timeout selected from [`RetryOptions`](crate::RetryOptions) attempt timeout
-    /// configuration.
-    Configured,
-    /// Timeout selected from remaining max-operation-elapsed budget.
-    MaxOperationElapsed,
-    /// Timeout selected from remaining max-total-elapsed budget.
-    MaxTotalElapsed,
-}
-
-/// Internal context constructor payload.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct RetryContextParts {
-    /// Current attempt number, or zero if no attempt has run.
-    pub(crate) attempt: u32,
-    /// Configured maximum attempts.
-    pub(crate) max_attempts: u32,
-    /// Configured maximum cumulative user operation time.
-    pub(crate) max_operation_elapsed: Option<Duration>,
-    /// Configured maximum total retry-flow elapsed time.
-    pub(crate) max_total_elapsed: Option<Duration>,
-    /// Cumulative user operation time consumed by this retry flow.
-    pub(crate) operation_elapsed: Duration,
-    /// Total monotonic time consumed by this retry flow.
-    pub(crate) total_elapsed: Duration,
-    /// Elapsed time spent in the current attempt.
-    pub(crate) attempt_elapsed: Duration,
-    /// Effective timeout configured for the current attempt.
-    pub(crate) attempt_timeout: Option<Duration>,
 }
 
 impl RetryContext {
