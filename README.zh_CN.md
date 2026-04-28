@@ -1,15 +1,21 @@
 # Qubit Retry
 
-[CircleCI](https://circleci.com/gh/qubit-ltd/rs-retry)
-[Coverage Status](https://coveralls.io/github/qubit-ltd/rs-retry?branch=main)
-[Crates.io](https://crates.io/crates/qubit-retry)
-[Rust](https://www.rust-lang.org)
-[License](LICENSE)
-[English Document](README.md)
+[![CircleCI](https://circleci.com/gh/qubit-ltd/rs-retry.svg?style=shield)](https://circleci.com/gh/qubit-ltd/rs-retry)
+[![Coverage Status](https://coveralls.io/repos/github/qubit-ltd/rs-retry/badge.svg?branch=main)](https://coveralls.io/github/qubit-ltd/rs-retry?branch=main)
+[![Crates.io](https://img.shields.io/crates/v/qubit-retry.svg?color=blue)](https://crates.io/crates/qubit-retry)
+[![Rust](https://img.shields.io/badge/rust-1.94+-blue.svg?logo=rust)](https://www.rust-lang.org)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![English Documentation](https://img.shields.io/badge/docs-English-blue.svg)](README.md)
 
 Qubit Retry 是面向 Rust 同步和异步操作的重试工具库，能够保留调用方的错误类型。
 
 核心 API 是 `Retry<E>`。重试策略只绑定操作错误类型 `E`；每次 `run` 或 `run_async` 调用再引入自己的成功类型 `T`。
+
+## 概览
+
+Qubit Retry 适用于需要对易失败任务进行明确、可观测重试控制的 Rust 应用。它支持同步操作、基于 Tokio 的异步操作，以及隔离到 worker 线程中的阻塞任务。重试策略可通过 builder 配置，也可以在开启 `config` feature 后从 `qubit-config` 读取；生命周期 hook 能观察每次 attempt、失败、重试决策、终止错误和成功结果。
+
+当你需要类型化的 retry error、受限的 elapsed 时间预算、Retry-After hint、能捕获 panic 的 worker 执行，或可由闭包/可复用函数对象实现的重试回调时，可以使用本 crate。
 
 ## 特性
 
@@ -350,3 +356,57 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
     }
 }
 ```
+
+## 文档
+
+- API 文档：[docs.rs/qubit-retry](https://docs.rs/qubit-retry)
+- Crate 发布页：[crates.io/crates/qubit-retry](https://crates.io/crates/qubit-retry)
+- 源码仓库：[github.com/qubit-ltd/rs-retry](https://github.com/qubit-ltd/rs-retry)
+- 覆盖率指南：[COVERAGE.zh_CN.md](COVERAGE.zh_CN.md)
+
+## 测试
+
+快速在本地跑一遍：
+
+```bash
+cargo test --all-features
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+若要与持续集成（CI）保持一致，请在项目根目录执行：
+
+```bash
+./align-ci.sh
+./ci-check.sh
+./coverage.sh
+```
+
+`./align-ci.sh` 会格式化代码并执行本地 Clippy 修复，使分支与 CI 规则对齐。`./ci-check.sh` 会运行与流水线等价的完整检查，包括格式检查、Clippy warnings deny、debug/release 构建、all-feature 测试、rustdoc warnings deny、JSON 覆盖率阈值检查以及安全审计。`./coverage.sh` 用于生成覆盖率报告；可通过 `./coverage.sh help` 查看 HTML、text、LCOV、JSON、Cobertura 或 all 等输出格式。
+
+## 参与贡献
+
+欢迎通过 Issue 与 Pull Request 参与本仓库。建议：
+
+- 报告缺陷、讨论设计或较大能力扩展时，可先开 Issue 对齐方向再投入实现。
+- 单次 PR 尽量聚焦单一行为变更、缺陷修复或文档更新，便于审查与合并。
+- 代码贡献在提交前必须运行 `./align-ci.sh`，通过 `./ci-check.sh`，并使用 `./coverage.sh` 查看覆盖率。
+- 修改运行期行为时，请补充或更新相应测试。
+- 若影响对外 API 或用户可见行为，请同步更新本文档或相关 rustdoc。
+
+向本仓库贡献内容即表示您同意以 [Apache License, Version 2.0](LICENSE)（与本项目相同）授权您的贡献。
+
+## 许可证与版权
+
+版权所有 © 2026 Haixing Hu，Qubit Co. Ltd.。
+
+本软件依据 [Apache License, Version 2.0](LICENSE) 授权；完整许可文本见仓库根目录的 `LICENSE` 文件。
+
+## 作者与维护
+
+**Haixing Hu** — Qubit Co. Ltd.
+
+| | |
+| --- | --- |
+| **源码仓库** | [github.com/qubit-ltd/rs-retry](https://github.com/qubit-ltd/rs-retry) |
+| **API 文档** | [docs.rs/qubit-retry](https://docs.rs/qubit-retry) |
+| **Crate 发布** | [crates.io/crates/qubit-retry](https://crates.io/crates/qubit-retry) |

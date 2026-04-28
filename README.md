@@ -11,6 +11,12 @@ Qubit Retry is a type-preserving retry toolkit for Rust synchronous and asynchro
 
 The core API is `Retry<E>`. A retry policy is bound only to the operation error type `E`; each `run` or `run_async` call introduces its own success type `T`.
 
+## Overview
+
+Qubit Retry is designed for applications that need explicit, observable retry behavior around fallible work. It supports synchronous operations, Tokio-based async operations, and blocking work isolated on worker threads. Policies are configured through a builder or optional `qubit-config` integration, while lifecycle hooks expose each attempt, failure, retry decision, terminal error, and successful completion.
+
+Use this crate when you need typed retry errors, bounded elapsed-time budgets, retry-after hints, panic-aware worker execution, or retry callbacks that can be implemented as closures or reusable function objects.
+
 ## Features
 
 - Synchronous retry works without optional features.
@@ -350,3 +356,57 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
     }
 }
 ```
+
+## Documentation
+
+- API documentation: [docs.rs/qubit-retry](https://docs.rs/qubit-retry)
+- Crate package: [crates.io/crates/qubit-retry](https://crates.io/crates/qubit-retry)
+- Source repository: [github.com/qubit-ltd/rs-retry](https://github.com/qubit-ltd/rs-retry)
+- Coverage guide: [COVERAGE.md](COVERAGE.md)
+
+## Testing
+
+A minimal local run:
+
+```bash
+cargo test --all-features
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+To mirror what continuous integration enforces, run the repository scripts from the project root:
+
+```bash
+./align-ci.sh
+./ci-check.sh
+./coverage.sh
+```
+
+`./align-ci.sh` formats code and applies local Clippy fixes so the branch follows CI rules. `./ci-check.sh` runs the CI-equivalent pipeline, including formatting checks, Clippy with warnings denied, debug and release builds, all-feature tests, rustdoc with warnings denied, JSON coverage threshold checks, and the security audit. `./coverage.sh` generates coverage reports; use `./coverage.sh help` for output formats such as HTML, text, LCOV, JSON, Cobertura, or all formats.
+
+## Contributing
+
+Issues and pull requests are welcome.
+
+- Open an issue for bug reports, design questions, or larger feature proposals when it helps align on direction.
+- Keep pull requests scoped to one behavior change, fix, or documentation update when practical.
+- Code contributions must run `./align-ci.sh`, pass `./ci-check.sh`, and review coverage with `./coverage.sh` before submission.
+- Add or update tests when you change runtime behavior.
+- Update this README or public rustdoc when user-visible API behavior changes.
+
+By contributing, you agree to license your contributions under the [Apache License, Version 2.0](LICENSE), the same license as this project.
+
+## License
+
+Copyright © 2026 Haixing Hu, Qubit Co. Ltd.
+
+This project is licensed under the [Apache License, Version 2.0](LICENSE). See the `LICENSE` file in the repository for the full text.
+
+## Author
+
+**Haixing Hu** — Qubit Co. Ltd.
+
+| | |
+| --- | --- |
+| **Repository** | [github.com/qubit-ltd/rs-retry](https://github.com/qubit-ltd/rs-retry) |
+| **Documentation** | [docs.rs/qubit-retry](https://docs.rs/qubit-retry) |
+| **Crate** | [crates.io/crates/qubit-retry](https://crates.io/crates/qubit-retry) |
