@@ -625,9 +625,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-config"
-version = "0.9.3"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11d2bb6206d794e41645f818d02ac0e90153c6cb39b4e31180f075cb45ae50fd"
+checksum = "d6db0e8f19f6825bba589e4b953949e2feff457fe7856c20a34d067849f25386"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -656,7 +656,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-retry"
-version = "0.9.3"
+version = "0.9.4"
 dependencies = [
  "parse-display 0.10.0",
  "qubit-common",
@@ -671,9 +671,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-value"
-version = "0.4.5"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1b094b58a17f99c260c3960b426d6c2f674e008d13f6ef731f5370dfc30a770"
+checksum = "503ca223c80d29bc392f8e57203e9afc442d9a5fac073a52f8affd525804c727"
 dependencies = [
  "bigdecimal",
  "chrono",

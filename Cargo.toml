@@ -1,6 +1,6 @@
 [package]
 name = "qubit-retry"
-version = "0.9.3"
+version = "0.9.4"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -37,7 +37,7 @@ tokio = { version = "1.52", features = ["time", "rt"], optional = true }
 rand = "0.10"
 
 qubit-common = "0.6"
-qubit-config = { version = "0.9", optional = true }
+qubit-config = { version = "0.10.0", optional = true }
 qubit-function = "0.11"
 
 [dev-dependencies]
