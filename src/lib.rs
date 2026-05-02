@@ -1,9 +1,10 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! Type-preserving retry policy for synchronous and asynchronous operations.
@@ -12,9 +13,9 @@
 //! introduced on `run` / `run_async`, so normal error retry does not require
 //! `T: Clone + Eq + Hash`.
 //!
-//! The default error type is `BoxError` from the `qubit-common` crate. It is not
+//! The default error type is `BoxError` from the `qubit-error` crate. It is not
 //! re-exported by this crate; callers that need the boxed error alias should
-//! import it from `qubit-common` directly.
+//! import it from `qubit-error` directly.
 
 pub mod constants;
 pub mod error;
