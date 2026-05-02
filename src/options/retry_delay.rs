@@ -1,9 +1,10 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! RetryDelay strategies for retry attempts.
@@ -19,12 +20,12 @@
 //! - `none`
 //! - `fixed(<duration>)` — duration fields are displayed as saturated whole milliseconds
 //!   with an `ms` suffix; `FromStr` accepts any duration string parsed by
-//!   [`qubit_common::serde::duration_with_unit`]
+//!   [`qubit_serde::serde::duration_with_unit`]
 //! - `random(<min>..=<max>)` — same rules for the two duration fields
 //! - `exponential(initial=<...>, max=<...>, multiplier=<f64>)` — same for `initial` and `max`
 //!
 //! For [`std::str::FromStr`], substrings for duration fields follow
-//! [`qubit_common::serde::duration_with_unit`] (bare integer as milliseconds, unit
+//! [`qubit_serde::serde::duration_with_unit`] (bare integer as milliseconds, unit
 //! suffixes, etc.; see that module). [`std::fmt::Display`] normalizes to whole
 //! millisecond + `ms` for those fields.
 
@@ -53,7 +54,7 @@ pub enum RetryDelay {
     #[display("fixed({0})")]
     Fixed(
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_common::serde::duration_millis")]
+        #[serde(with = "qubit_serde::serde::duration_millis")]
         Duration,
     ),
 
@@ -62,11 +63,11 @@ pub enum RetryDelay {
     Random {
         /// Lower bound for the delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_common::serde::duration_millis")]
+        #[serde(with = "qubit_serde::serde::duration_millis")]
         min: Duration,
         /// Upper bound for the delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_common::serde::duration_millis")]
+        #[serde(with = "qubit_serde::serde::duration_millis")]
         max: Duration,
     },
 
@@ -75,11 +76,11 @@ pub enum RetryDelay {
     Exponential {
         /// RetryDelay used for the first retry.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_common::serde::duration_millis")]
+        #[serde(with = "qubit_serde::serde::duration_millis")]
         initial: Duration,
         /// Maximum delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_common::serde::duration_millis")]
+        #[serde(with = "qubit_serde::serde::duration_millis")]
         max: Duration,
         /// Multiplicative factor applied per failed attempt.
         multiplier: f64,
