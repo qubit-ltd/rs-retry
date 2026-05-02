@@ -1,9 +1,10 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! Retry option snapshot and configuration loading helpers.
@@ -11,7 +12,6 @@
 //! This module contains the immutable options consumed by [`crate::Retry`].
 //! Raw config merge logic lives in [`crate::options::retry_config_values`].
 //!
-//! Author: Haixing Hu
 
 use std::num::NonZeroU32;
 use std::time::Duration;
@@ -37,7 +37,6 @@ use crate::{RetryConfigError, RetryDelay, RetryJitter};
 /// jitter strategy. Construction validates the delay and jitter values before
 /// an executor can use them.
 ///
-/// Author: Haixing Hu
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetryOptions {
     /// Maximum attempts, including the initial attempt.

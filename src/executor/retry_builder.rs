@@ -1,9 +1,10 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! Retry builder.
@@ -13,7 +14,7 @@
 
 use std::time::Duration;
 
-use qubit_common::BoxError;
+use qubit_error::BoxError;
 use qubit_function::{BiConsumer, BiFunction, BiPredicate, Consumer};
 
 use crate::constants::KEY_MAX_ATTEMPTS;

@@ -1,9 +1,10 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! Configuration keys and built-in defaults for retry options.
@@ -25,7 +26,6 @@
 //! [`crate::RetryOptions::default`] should prefer delegating to those `Default`
 //! impls together with the scalar defaults declared here.
 //!
-//! Author: Haixing Hu
 
 use std::time::Duration;
 

@@ -1,14 +1,14 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! Per-attempt timeout option.
 //!
-//! Author: Haixing Hu
 
 use std::time::Duration;
 
@@ -23,7 +23,7 @@ use super::attempt_timeout_policy::AttemptTimeoutPolicy;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttemptTimeoutOption {
     /// Timeout applied to each eligible attempt.
-    #[serde(with = "qubit_common::serde::duration_millis")]
+    #[serde(with = "qubit_serde::serde::duration_millis")]
     timeout: Duration,
     /// Policy used when the attempt times out.
     policy: AttemptTimeoutPolicy,

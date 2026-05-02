@@ -1,9 +1,10 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! Retry execution.
@@ -12,7 +13,7 @@
 //! operation success type is introduced by each `run` call, while the error type
 //! is bound by the retry policy.
 
-use qubit_common::BoxError;
+use qubit_error::BoxError;
 use qubit_function::{BiConsumer, BiFunction, Consumer};
 use std::fmt;
 #[cfg(feature = "tokio")]

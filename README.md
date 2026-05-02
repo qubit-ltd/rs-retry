@@ -33,14 +33,14 @@ Use this crate when you need typed retry errors, bounded elapsed-time budgets, r
 
 ```toml
 [dependencies]
-qubit-retry = "0.9.0"
+qubit-retry = "0.10"
 ```
 
 Enable optional integrations as needed:
 
 ```toml
 [dependencies]
-qubit-retry = { version = "0.9.0", features = ["tokio", "config"] }
+qubit-retry = { version = "0.10", features = ["tokio", "config"] }
 ```
 
 Optional features:

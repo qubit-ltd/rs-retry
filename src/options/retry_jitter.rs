@@ -1,9 +1,10 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! Retry jitter applied on top of a base [`crate::RetryDelay`].
@@ -23,7 +24,6 @@
 //! The `factor:` prefix itself is **case-sensitive**. See
 //! [`crate::constants::DEFAULT_RETRY_JITTER`] for the library default string.
 //!
-//! Author: Haixing Hu
 
 use std::str::FromStr;
 use std::time::Duration;

@@ -1,22 +1,23 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! `parse_display` bridge for [`std::time::Duration`] fields on
 //! [`RetryDelay`](crate::RetryDelay).
 //!
 //! See [`RetryDelay`](crate::RetryDelay) for the full text form; this type only
-//! wires each duration field to [`qubit_common::serde::duration_with_unit`].
+//! wires each duration field to [`qubit_serde::serde::duration_with_unit`].
 
 use std::fmt;
 use std::time::Duration;
 
 use parse_display::{DisplayFormat, FromStrFormat, ParseError};
-use qubit_common::serde::duration_with_unit;
+use qubit_serde::serde::duration_with_unit;
 
 /// Bridges `parse_display` for [`Duration`] fields to [`duration_with_unit`].
 /// `regex` returns `None` so the default non-greedy `.*?` capture is used, which

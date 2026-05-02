@@ -1,9 +1,10 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! Attempt failure decisions.
@@ -25,7 +26,7 @@ pub enum AttemptFailureDecision {
     /// Retry after the specified delay if limits still allow it.
     RetryAfter(
         /// Delay selected by the listener.
-        #[serde(with = "qubit_common::serde::duration_millis")]
+        #[serde(with = "qubit_serde::serde::duration_millis")]
         Duration,
     ),
     /// Abort immediately and return the current failure.
