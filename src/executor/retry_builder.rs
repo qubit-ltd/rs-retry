@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use qubit_common::BoxError;
+use qubit_error::BoxError;
 use qubit_function::{BiConsumer, BiFunction, BiPredicate, Consumer};
 
 use crate::constants::KEY_MAX_ATTEMPTS;

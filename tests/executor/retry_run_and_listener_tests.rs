@@ -12,7 +12,7 @@ use std::panic;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use qubit_common::BoxError;
+use qubit_error::BoxError;
 use qubit_retry::{
     AttemptFailure, AttemptFailureDecision, AttemptTimeoutSource, Retry, RetryContext, RetryError,
     RetryErrorReason,

@@ -26,7 +26,7 @@ pub enum AttemptFailureDecision {
     /// Retry after the specified delay if limits still allow it.
     RetryAfter(
         /// Delay selected by the listener.
-        #[serde(with = "qubit_common::serde::duration_millis")]
+        #[serde(with = "qubit_serde::serde::duration_millis")]
         Duration,
     ),
     /// Abort immediately and return the current failure.

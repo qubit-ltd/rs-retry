@@ -7,7 +7,7 @@
  *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
-use qubit_common::DataType;
+use qubit_datatype::DataType;
 
 /// Verifies configuration error display output for empty and non-empty paths.
 ///

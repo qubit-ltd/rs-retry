@@ -23,7 +23,7 @@ use super::attempt_timeout_policy::AttemptTimeoutPolicy;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttemptTimeoutOption {
     /// Timeout applied to each eligible attempt.
-    #[serde(with = "qubit_common::serde::duration_millis")]
+    #[serde(with = "qubit_serde::serde::duration_millis")]
     timeout: Duration,
     /// Policy used when the attempt times out.
     policy: AttemptTimeoutPolicy,

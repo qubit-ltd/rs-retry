@@ -13,7 +13,7 @@
 //! operation success type is introduced by each `run` call, while the error type
 //! is bound by the retry policy.
 
-use qubit_common::BoxError;
+use qubit_error::BoxError;
 use qubit_function::{BiConsumer, BiFunction, Consumer};
 use std::fmt;
 #[cfg(feature = "tokio")]
