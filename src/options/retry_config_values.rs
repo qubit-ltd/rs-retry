@@ -1,15 +1,15 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! Raw retry configuration values from `qubit-config` and merge into
 //! [`RetryOptions`](crate::options::RetryOptions).
 //!
-//! Author: Haixing Hu
 
 use std::str::FromStr;
 use std::time::Duration;
@@ -45,7 +45,6 @@ use crate::constants::{
 /// Fields are public so callers and integration tests can build snapshots
 /// programmatically and merge them with [`RetryConfigValues::to_options`].
 ///
-/// Author: Haixing Hu
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetryConfigValues {
     /// Optional maximum attempts value.
