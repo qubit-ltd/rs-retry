@@ -583,7 +583,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-config"
-version = "0.11.0"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2ff8d523a1e4275ee686d1a5b950e459a72d3590e53fd8523a8034c853d29a1"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -624,9 +626,9 @@ checksum = "6f8f052350ff3e4adffde1814a929c8403af2307552d2b4d0253f47818d26c09"
 
 [[package]]
 name = "qubit-function"
-version = "0.11.0"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75b0c1116f3b58ba20314ba96e24264991a9a58792fe05fa59b9bc912d305fdb"
+checksum = "cdac38d5ed76324aaf340709253af4aa596bc01014d169c2b5e7e736c6504362"
 dependencies = [
  "parking_lot",
  "pastey",
@@ -662,7 +664,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-value"
-version = "0.6.1"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3148bb6d3db8ebc8f532294495011158e8d47a6186ab4c4d46126f977c82399"
 dependencies = [
  "bigdecimal",
  "chrono",
