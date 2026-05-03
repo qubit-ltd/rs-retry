@@ -28,9 +28,18 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use parse_display::{Display, DisplayFormat, FromStr as DeriveFromStr, FromStrFormat, ParseError};
+use parse_display::{
+    Display,
+    DisplayFormat,
+    FromStr as DeriveFromStr,
+    FromStrFormat,
+    ParseError,
+};
 use rand::RngExt;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use crate::RetryDelay;
 use crate::constants::DEFAULT_RETRY_JITTER;

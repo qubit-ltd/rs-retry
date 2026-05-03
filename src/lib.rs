@@ -24,18 +24,37 @@ pub mod executor;
 pub mod options;
 
 pub use error::{
-    AttemptExecutorError, AttemptFailure, AttemptPanic, RetryConfigError, RetryError,
-    RetryErrorReason, RetryResult,
+    AttemptExecutorError,
+    AttemptFailure,
+    AttemptPanic,
+    RetryConfigError,
+    RetryError,
+    RetryErrorReason,
+    RetryResult,
 };
 pub use event::{
-    AttemptFailureDecision, AttemptFailureListener, AttemptSuccessListener, AttemptTimeoutSource,
-    BeforeAttemptListener, RetryAfterHint, RetryContext, RetryErrorListener,
+    AttemptFailureDecision,
+    AttemptFailureListener,
+    AttemptSuccessListener,
+    AttemptTimeoutSource,
+    BeforeAttemptListener,
+    RetryAfterHint,
+    RetryContext,
+    RetryErrorListener,
     RetryScheduledListener,
 };
-pub use executor::{AttemptCancelToken, Retry, RetryBuilder};
+pub use executor::{
+    AttemptCancelToken,
+    Retry,
+    RetryBuilder,
+};
 #[cfg(feature = "config")]
 pub use options::RetryConfigValues;
 pub use options::{
-    AttemptTimeoutOption, AttemptTimeoutPolicy, ParseRetryJitterError, RetryDelay, RetryJitter,
+    AttemptTimeoutOption,
+    AttemptTimeoutPolicy,
+    ParseRetryJitterError,
+    RetryDelay,
+    RetryJitter,
     RetryOptions,
 };

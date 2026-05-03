@@ -11,12 +11,21 @@
 use std::time::Duration;
 
 use qubit_retry::constants::{
-    KEY_ATTEMPT_TIMEOUT_POLICY, KEY_DELAY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
-    KEY_EXPONENTIAL_MAX_DELAY_MILLIS, KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS,
-    KEY_RANDOM_MAX_DELAY_MILLIS, KEY_RANDOM_MIN_DELAY_MILLIS,
+    KEY_ATTEMPT_TIMEOUT_POLICY,
+    KEY_DELAY,
+    KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
+    KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
+    KEY_EXPONENTIAL_MULTIPLIER,
+    KEY_FIXED_DELAY_MILLIS,
+    KEY_RANDOM_MAX_DELAY_MILLIS,
+    KEY_RANDOM_MIN_DELAY_MILLIS,
 };
 use qubit_retry::{
-    AttemptTimeoutOption, AttemptTimeoutPolicy, RetryConfigValues, RetryDelay, RetryJitter,
+    AttemptTimeoutOption,
+    AttemptTimeoutPolicy,
+    RetryConfigValues,
+    RetryDelay,
+    RetryJitter,
     RetryOptions,
 };
 

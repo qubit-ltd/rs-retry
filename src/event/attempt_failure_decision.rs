@@ -11,7 +11,10 @@
 
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Decision returned by a retry failure listener after inspecting a failure.
 ///

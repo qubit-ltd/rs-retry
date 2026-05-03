@@ -9,7 +9,10 @@
  ******************************************************************************/
 //! Terminal retry-flow error reasons.
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Reason why the whole retry flow stopped with an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

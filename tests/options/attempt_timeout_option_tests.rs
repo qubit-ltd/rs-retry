@@ -10,7 +10,10 @@
 
 use std::time::Duration;
 
-use qubit_retry::{AttemptTimeoutOption, AttemptTimeoutPolicy};
+use qubit_retry::{
+    AttemptTimeoutOption,
+    AttemptTimeoutPolicy,
+};
 
 /// Verifies timeout option constructors and accessors.
 ///

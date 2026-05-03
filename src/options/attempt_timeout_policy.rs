@@ -13,7 +13,10 @@
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Action taken when one attempt exceeds its configured per-attempt timeout.
 ///

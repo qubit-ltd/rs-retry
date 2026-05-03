@@ -11,10 +11,18 @@
 use std::time::Duration;
 
 use qubit_retry::constants::{
-    DEFAULT_RETRY_MAX_ATTEMPTS, KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_DELAY, KEY_JITTER_FACTOR,
+    DEFAULT_RETRY_MAX_ATTEMPTS,
+    KEY_ATTEMPT_TIMEOUT_MILLIS,
+    KEY_DELAY,
+    KEY_JITTER_FACTOR,
     KEY_MAX_ATTEMPTS,
 };
-use qubit_retry::{AttemptTimeoutOption, RetryDelay, RetryJitter, RetryOptions};
+use qubit_retry::{
+    AttemptTimeoutOption,
+    RetryDelay,
+    RetryJitter,
+    RetryOptions,
+};
 
 /// Verifies default retry options expose all default fields.
 ///

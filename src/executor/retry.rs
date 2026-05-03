@@ -14,7 +14,11 @@
 //! is bound by the retry policy.
 
 use qubit_error::BoxError;
-use qubit_function::{BiConsumer, BiFunction, Consumer};
+use qubit_function::{
+    BiConsumer,
+    BiFunction,
+    Consumer,
+};
 use std::fmt;
 #[cfg(feature = "tokio")]
 use std::future::Future;
@@ -22,7 +26,10 @@ use std::panic;
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::{
+    Duration,
+    Instant,
+};
 
 #[cfg(feature = "tokio")]
 use super::async_attempt::AsyncAttempt;
@@ -33,11 +40,24 @@ use super::blocking_attempt_message::BlockingAttemptMessage;
 use super::retry_flow_action::RetryFlowAction;
 use super::sync_attempt::SyncAttempt;
 use super::sync_value_operation::SyncValueOperation;
-use crate::event::{RetryContextParts, RetryListeners};
+use crate::event::{
+    RetryContextParts,
+    RetryListeners,
+};
 use crate::{
-    AttemptExecutorError, AttemptFailure, AttemptFailureDecision, AttemptPanic,
-    AttemptTimeoutPolicy, AttemptTimeoutSource, RetryAfterHint, RetryBuilder, RetryConfigError,
-    RetryContext, RetryError, RetryErrorReason, RetryOptions,
+    AttemptExecutorError,
+    AttemptFailure,
+    AttemptFailureDecision,
+    AttemptPanic,
+    AttemptTimeoutPolicy,
+    AttemptTimeoutSource,
+    RetryAfterHint,
+    RetryBuilder,
+    RetryConfigError,
+    RetryContext,
+    RetryError,
+    RetryErrorReason,
+    RetryOptions,
 };
 
 const WORKER_DISCONNECTED_MESSAGE: &str = "retry worker thread stopped without sending a result";

@@ -10,7 +10,10 @@
 //! Internal retry listener collection.
 
 use super::{
-    AttemptFailureListener, AttemptSuccessListener, BeforeAttemptListener, RetryErrorListener,
+    AttemptFailureListener,
+    AttemptSuccessListener,
+    BeforeAttemptListener,
+    RetryErrorListener,
     RetryScheduledListener,
 };
 

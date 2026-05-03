@@ -11,7 +11,10 @@
 
 use qubit_function::ArcBiConsumer;
 
-use crate::{RetryContext, RetryError};
+use crate::{
+    RetryContext,
+    RetryError,
+};
 
 /// Listener invoked when the whole retry flow returns an error.
 ///

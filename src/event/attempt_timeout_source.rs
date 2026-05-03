@@ -9,7 +9,10 @@
  ******************************************************************************/
 //! Attempt timeout source metadata.
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Source of a per-attempt timeout selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

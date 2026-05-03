@@ -13,7 +13,10 @@
 use std::error::Error;
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Failure produced by the retry executor before an attempt can run normally.
 ///

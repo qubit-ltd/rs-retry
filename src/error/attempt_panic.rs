@@ -14,7 +14,10 @@ use std::any::Any;
 use std::error::Error;
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Panic payload captured from an isolated attempt.
 ///

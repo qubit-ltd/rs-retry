@@ -12,7 +12,10 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use qubit_retry::constants::DEFAULT_RETRY_JITTER;
-use qubit_retry::{RetryDelay, RetryJitter};
+use qubit_retry::{
+    RetryDelay,
+    RetryJitter,
+};
 
 /// Verifies factor jitter application and validation bounds.
 ///

@@ -8,7 +8,11 @@
  *
  ******************************************************************************/
 
-use qubit_retry::{AttemptExecutorError, AttemptFailure, AttemptPanic};
+use qubit_retry::{
+    AttemptExecutorError,
+    AttemptFailure,
+    AttemptPanic,
+};
 
 use crate::support::TestError;
 

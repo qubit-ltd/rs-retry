@@ -13,11 +13,18 @@
 //! successful result. The original application error type is preserved in the
 //! generic parameter `E`.
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::error::Error;
 use std::fmt;
 
-use crate::{AttemptFailure, RetryContext, RetryErrorReason};
+use crate::{
+    AttemptFailure,
+    RetryContext,
+    RetryErrorReason,
+};
 
 /// Error returned when a retry flow terminates without a successful result.
 ///

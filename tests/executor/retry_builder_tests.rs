@@ -12,8 +12,15 @@ use std::time::Duration;
 
 use qubit_retry::constants::DEFAULT_RETRY_MAX_ATTEMPTS;
 use qubit_retry::{
-    AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption, AttemptTimeoutPolicy, Retry,
-    RetryDelay, RetryErrorReason, RetryJitter, RetryOptions,
+    AttemptFailure,
+    AttemptFailureDecision,
+    AttemptTimeoutOption,
+    AttemptTimeoutPolicy,
+    Retry,
+    RetryDelay,
+    RetryErrorReason,
+    RetryJitter,
+    RetryOptions,
 };
 
 use crate::support::TestError;

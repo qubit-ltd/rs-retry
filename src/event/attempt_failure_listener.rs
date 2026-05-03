@@ -9,9 +9,16 @@
  ******************************************************************************/
 //! Attempt failure listener alias.
 
-use qubit_function::{ArcBiConsumer, ArcBiFunction};
+use qubit_function::{
+    ArcBiConsumer,
+    ArcBiFunction,
+};
 
-use crate::{AttemptFailure, AttemptFailureDecision, RetryContext};
+use crate::{
+    AttemptFailure,
+    AttemptFailureDecision,
+    RetryContext,
+};
 
 /// Listener invoked when one operation attempt produces a failure.
 ///

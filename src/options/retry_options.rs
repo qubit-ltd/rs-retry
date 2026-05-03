@@ -24,11 +24,20 @@ use super::attempt_timeout_option::AttemptTimeoutOption;
 use super::retry_config_values::RetryConfigValues;
 
 use crate::constants::{
-    DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_MAX_OPERATION_ELAPSED,
-    DEFAULT_RETRY_MAX_TOTAL_ELAPSED, DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS,
-    KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_DELAY, KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
+    DEFAULT_RETRY_MAX_ATTEMPTS,
+    DEFAULT_RETRY_MAX_OPERATION_ELAPSED,
+    DEFAULT_RETRY_MAX_TOTAL_ELAPSED,
+    DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS,
+    KEY_ATTEMPT_TIMEOUT_MILLIS,
+    KEY_DELAY,
+    KEY_JITTER_FACTOR,
+    KEY_MAX_ATTEMPTS,
 };
-use crate::{RetryConfigError, RetryDelay, RetryJitter};
+use crate::{
+    RetryConfigError,
+    RetryDelay,
+    RetryJitter,
+};
 
 /// Immutable retry option snapshot used by [`crate::Retry`].
 ///

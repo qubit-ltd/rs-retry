@@ -32,9 +32,15 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use parse_display::{Display, FromStr};
+use parse_display::{
+    Display,
+    FromStr,
+};
 use rand::RngExt;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use super::retry_delay_duration_format::RetryDelayDurationFormat;
 use crate::constants::DEFAULT_RETRY_DELAY;

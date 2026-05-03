@@ -15,13 +15,27 @@
 use std::time::Duration;
 
 use qubit_error::BoxError;
-use qubit_function::{BiConsumer, BiFunction, BiPredicate, Consumer};
+use qubit_function::{
+    BiConsumer,
+    BiFunction,
+    BiPredicate,
+    Consumer,
+};
 
 use crate::constants::KEY_MAX_ATTEMPTS;
 use crate::event::RetryListeners;
 use crate::{
-    AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption, AttemptTimeoutPolicy, Retry,
-    RetryAfterHint, RetryConfigError, RetryContext, RetryDelay, RetryError, RetryJitter,
+    AttemptFailure,
+    AttemptFailureDecision,
+    AttemptTimeoutOption,
+    AttemptTimeoutPolicy,
+    Retry,
+    RetryAfterHint,
+    RetryConfigError,
+    RetryContext,
+    RetryDelay,
+    RetryError,
+    RetryJitter,
     RetryOptions,
 };
 

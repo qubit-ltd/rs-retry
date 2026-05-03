@@ -11,7 +11,10 @@
 
 use std::time::Duration;
 
-use crate::error::{AttemptFailure, RetryError};
+use crate::error::{
+    AttemptFailure,
+    RetryError,
+};
 
 /// Internal control flow after a failed attempt.
 pub(in crate::executor) enum RetryFlowAction<E> {

@@ -11,7 +11,13 @@
 
 use std::time::Duration;
 
-use qubit_retry::{AttemptFailure, AttemptTimeoutSource, Retry, RetryContext, RetryErrorReason};
+use qubit_retry::{
+    AttemptFailure,
+    AttemptTimeoutSource,
+    Retry,
+    RetryContext,
+    RetryErrorReason,
+};
 
 use crate::support::TestError;
 

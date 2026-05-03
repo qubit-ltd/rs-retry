@@ -9,16 +9,27 @@
  ******************************************************************************/
 
 use std::panic;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc,
+    Mutex,
+};
 use std::time::Duration;
 
 use qubit_error::BoxError;
 use qubit_retry::{
-    AttemptFailure, AttemptFailureDecision, AttemptTimeoutSource, Retry, RetryContext, RetryError,
+    AttemptFailure,
+    AttemptFailureDecision,
+    AttemptTimeoutSource,
+    Retry,
+    RetryContext,
+    RetryError,
     RetryErrorReason,
 };
 
-use crate::support::{NonCloneValue, TestError};
+use crate::support::{
+    NonCloneValue,
+    TestError,
+};
 
 /// Verifies sync retry succeeds and emits attempt lifecycle events.
 ///

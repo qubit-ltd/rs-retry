@@ -8,14 +8,28 @@
  *
  ******************************************************************************/
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{
+    AtomicBool,
+    AtomicUsize,
+    Ordering,
+};
+use std::sync::{
+    Arc,
+    Mutex,
+};
 use std::thread;
 use std::time::Duration;
 
 use qubit_retry::{
-    AttemptCancelToken, AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption,
-    AttemptTimeoutPolicy, AttemptTimeoutSource, Retry, RetryContext, RetryErrorReason,
+    AttemptCancelToken,
+    AttemptFailure,
+    AttemptFailureDecision,
+    AttemptTimeoutOption,
+    AttemptTimeoutPolicy,
+    AttemptTimeoutSource,
+    Retry,
+    RetryContext,
+    RetryErrorReason,
 };
 
 use crate::support::TestError;

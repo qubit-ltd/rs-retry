@@ -16,7 +16,11 @@
 use std::fmt;
 use std::time::Duration;
 
-use parse_display::{DisplayFormat, FromStrFormat, ParseError};
+use parse_display::{
+    DisplayFormat,
+    FromStrFormat,
+    ParseError,
+};
 use qubit_serde::serde::duration_with_unit;
 
 /// Bridges `parse_display` for [`Duration`] fields to [`duration_with_unit`].

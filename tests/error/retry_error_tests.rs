@@ -15,7 +15,11 @@ use std::thread;
 use std::time::Duration;
 
 use qubit_retry::{
-    AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption, Retry, RetryContext,
+    AttemptFailure,
+    AttemptFailureDecision,
+    AttemptTimeoutOption,
+    Retry,
+    RetryContext,
     RetryErrorReason,
 };
 

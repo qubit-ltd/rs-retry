@@ -14,9 +14,15 @@
 
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
-use super::{AttemptTimeoutSource, RetryContextParts};
+use super::{
+    AttemptTimeoutSource,
+    RetryContextParts,
+};
 
 /// Context emitted for retry lifecycle events.
 ///
