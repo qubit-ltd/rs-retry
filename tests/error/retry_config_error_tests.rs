@@ -64,8 +64,17 @@ fn test_from_config_error_preserves_path_variants() {
         qubit_retry::RetryConfigError::from(qubit_config::ConfigError::DeserializeError {
             path: "object.path".to_string(),
             message: "bad object".to_string(),
+            source: None,
         });
     assert_eq!(deserialize.path(), "object.path");
+
+    let key_conflict =
+        qubit_retry::RetryConfigError::from(qubit_config::ConfigError::KeyConflict {
+            path: "conflict.path".to_string(),
+            existing: "scalar".to_string(),
+            incoming: "object".to_string(),
+        });
+    assert_eq!(key_conflict.path(), "conflict.path");
 }
 
 /// Verifies typed config conversion errors preserve the key field.
@@ -94,4 +103,24 @@ fn test_from_config_error_preserves_typed_key_variants() {
             message: "bad value".to_string(),
         });
     assert_eq!(conversion.path(), "converted.key");
+}
+
+/// Verifies config errors without a single key context use an empty path.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when path extraction invents a key for an
+/// error that does not carry one.
+#[test]
+fn test_from_config_error_uses_empty_path_without_key_context() {
+    let cycle = qubit_retry::RetryConfigError::from(qubit_config::ConfigError::SubstitutionCycle {
+        chain: vec!["a".to_string(), "b".to_string(), "a".to_string()],
+    });
+    assert_eq!(cycle.path(), "");
+    assert!(cycle.message().contains("a -> b -> a"));
 }
