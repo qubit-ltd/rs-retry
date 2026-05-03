@@ -12,7 +12,6 @@
 //! This module contains the error returned when a retry executor stops without a
 //! successful result. The original application error type is preserved in the
 //! generic parameter `E`.
-// qubit-style: allow coverage-cfg
 
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -68,26 +67,6 @@ impl<E> RetryError<E> {
             last_failure,
             context,
         }
-    }
-
-    /// Creates a retry error for coverage-only defensive-path tests.
-    ///
-    /// # Parameters
-    /// - `reason`: Terminal reason.
-    /// - `last_failure`: Last observed attempt failure, if any.
-    /// - `context`: Retry context captured at termination.
-    ///
-    /// # Returns
-    /// A retry error preserving the terminal reason and context.
-    #[cfg(all(coverage, not(test)))]
-    #[doc(hidden)]
-    #[inline]
-    pub fn coverage_new(
-        reason: RetryErrorReason,
-        last_failure: Option<AttemptFailure<E>>,
-        context: RetryContext,
-    ) -> Self {
-        Self::new(reason, last_failure, context)
     }
 
     /// Returns the terminal retry error reason.

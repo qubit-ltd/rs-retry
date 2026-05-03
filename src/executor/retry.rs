@@ -12,14 +12,12 @@
 //! A [`Retry`] owns validated retry options and lifecycle listeners. The
 //! operation success type is introduced by each `run` call, while the error type
 //! is bound by the retry policy.
-// qubit-style: allow coverage-cfg
 
 use qubit_error::BoxError;
 use qubit_function::{BiConsumer, BiFunction, Consumer};
 use std::fmt;
 #[cfg(feature = "tokio")]
 use std::future::Future;
-use std::io;
 use std::panic;
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -41,6 +39,16 @@ use crate::{
     AttemptTimeoutPolicy, AttemptTimeoutSource, RetryAfterHint, RetryBuilder, RetryConfigError,
     RetryContext, RetryError, RetryErrorReason, RetryOptions,
 };
+
+const WORKER_DISCONNECTED_MESSAGE: &str = "retry worker thread stopped without sending a result";
+const WORKER_SPAWN_FAILED_MESSAGE: &str = "failed to spawn retry worker thread";
+
+/// Builds an executor attempt failure from a static message.
+macro_rules! exec_fail {
+    ($message:expr) => {
+        AttemptFailure::Executor(AttemptExecutorError::new($message))
+    };
+}
 
 /// Retry policy and executor bound to an operation error type.
 ///
@@ -709,11 +717,10 @@ impl<E> Retry<E> {
             self.remaining_total_elapsed(total_elapsed)
                 .map(|duration| (duration, AttemptTimeoutSource::MaxTotalElapsed)),
         ];
-        let selected = candidates.into_iter().flatten().min_by(|left, right| {
-            left.0.cmp(&right.0).then_with(|| {
-                timeout_source_priority(left.1).cmp(&timeout_source_priority(right.1))
-            })
-        });
+        let selected = candidates
+            .into_iter()
+            .flatten()
+            .min_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
         match selected {
             Some((duration, source)) => EffectiveAttemptTimeout::new(Some(duration), Some(source)),
             None => EffectiveAttemptTimeout::new(None, None),
@@ -786,18 +793,15 @@ impl<E> Retry<E> {
                 };
                 let _ = sender.send(message);
             });
-        #[cfg(not(coverage))]
         let worker = match worker {
             Ok(worker) => worker,
-            Err(error) => {
+            Err(_) => {
                 return BlockingAttemptOutcome::new(
-                    Err(worker_spawn_error_to_attempt_failure(error)),
+                    Err(exec_fail!(WORKER_SPAWN_FAILED_MESSAGE)),
                     0,
                 );
             }
         };
-        #[cfg(coverage)]
-        let worker = worker.expect("retry worker should spawn during coverage");
 
         match attempt_timeout {
             Some(attempt_timeout) => {
@@ -1063,10 +1067,7 @@ impl<E> Retry<E> {
         let Some(max_total_elapsed) = self.options.max_total_elapsed else {
             return false;
         };
-        let Some(remaining) = max_total_elapsed.checked_sub(total_elapsed) else {
-            return true;
-        };
-        delay >= remaining
+        total_elapsed.saturating_add(delay) >= max_total_elapsed
     }
 
     /// Emits before-attempt listeners.
@@ -1158,7 +1159,7 @@ impl<E> Retry<E> {
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 join_finished_worker(worker);
-                BlockingAttemptOutcome::new(Err(worker_disconnected_attempt_failure()), 0)
+                BlockingAttemptOutcome::new(Err(exec_fail!(WORKER_DISCONNECTED_MESSAGE)), 0)
             }
         }
     }
@@ -1214,41 +1215,6 @@ fn worker_message_to_attempt_result<T, E>(
     }
 }
 
-/// Converts a worker-spawn error into an attempt failure.
-///
-/// # Parameters
-/// - `error`: Error returned by `std::thread::Builder::spawn`.
-///
-/// # Returns
-/// An executor attempt failure that preserves the spawn error context.
-#[cfg_attr(coverage, allow(dead_code))]
-fn worker_spawn_error_to_attempt_failure<E>(error: io::Error) -> AttemptFailure<E> {
-    AttemptFailure::Executor(AttemptExecutorError::from_spawn_error(error))
-}
-
-/// Converts a timeout-aware receive result into an attempt result.
-///
-/// # Parameters
-/// - `message`: Result returned by `Receiver::recv_timeout`.
-/// - `token`: Cancellation token to mark when the receive timed out.
-///
-/// # Returns
-/// The operation value on success, or an attempt failure.
-#[cfg(all(coverage, not(test)))]
-fn worker_timeout_message_to_attempt_result<T, E>(
-    message: Result<BlockingAttemptMessage<T, E>, mpsc::RecvTimeoutError>,
-    token: &AttemptCancelToken,
-) -> Result<T, AttemptFailure<E>> {
-    match message {
-        Ok(message) => worker_message_to_attempt_result(message),
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            token.cancel();
-            Err(AttemptFailure::Timeout)
-        }
-        Err(mpsc::RecvTimeoutError::Disconnected) => Err(worker_disconnected_attempt_failure()),
-    }
-}
-
 /// Converts a blocking receive result into an attempt result.
 ///
 /// # Parameters
@@ -1261,16 +1227,8 @@ fn worker_recv_message_to_attempt_result<T, E>(
 ) -> Result<T, AttemptFailure<E>> {
     match message {
         Ok(message) => worker_message_to_attempt_result(message),
-        Err(_) => Err(worker_disconnected_attempt_failure()),
+        Err(_) => Err(exec_fail!(WORKER_DISCONNECTED_MESSAGE)),
     }
-}
-
-/// Builds an executor failure for a disconnected worker result channel.
-///
-/// # Returns
-/// An attempt failure describing the disconnected worker channel.
-fn worker_disconnected_attempt_failure<E>() -> AttemptFailure<E> {
-    AttemptFailure::Executor(AttemptExecutorError::from_worker_disconnected())
 }
 
 /// Waits briefly for a cancelled worker to exit.
@@ -1331,26 +1289,6 @@ fn add_elapsed(operation_elapsed: Duration, attempt_elapsed: Duration) -> Durati
     operation_elapsed.saturating_add(attempt_elapsed)
 }
 
-/// Returns tie-break priority for effective attempt-timeout sources.
-///
-/// Lower values win. Configured timeouts intentionally win exact ties so their
-/// timeout policy remains observable. Operation elapsed wins an exact tie with
-/// total elapsed to preserve the narrower operation-budget diagnostic.
-///
-/// # Parameters
-/// - `source`: Attempt-timeout source to rank.
-///
-/// # Returns
-/// Numeric tie-break priority.
-#[inline]
-fn timeout_source_priority(source: AttemptTimeoutSource) -> u8 {
-    match source {
-        AttemptTimeoutSource::Configured => 0,
-        AttemptTimeoutSource::MaxOperationElapsed => 1,
-        AttemptTimeoutSource::MaxTotalElapsed => 2,
-    }
-}
-
 /// Sleeps asynchronously when the delay is non-zero.
 ///
 /// # Parameters
@@ -1362,198 +1300,5 @@ fn timeout_source_priority(source: AttemptTimeoutSource) -> u8 {
 async fn sleep_async(delay: Duration) {
     if !delay.is_zero() {
         tokio::time::sleep(delay).await;
-    }
-}
-
-/// Coverage-only hooks for exercising defensive retry executor branches.
-#[cfg(all(coverage, not(test)))]
-#[doc(hidden)]
-pub mod coverage_support {
-    use std::error::Error;
-    use std::io;
-    use std::sync::mpsc;
-    use std::thread;
-    use std::time::Duration;
-
-    use crate::event::RetryContextParts;
-    use crate::{
-        AttemptCancelToken, AttemptExecutorError, AttemptFailure, AttemptPanic, Retry,
-        RetryContext, RetryError, RetryErrorReason,
-    };
-
-    use super::{
-        BlockingAttemptMessage, wait_for_cancelled_worker, worker_message_to_attempt_result,
-        worker_recv_message_to_attempt_result, worker_spawn_error_to_attempt_failure,
-        worker_timeout_message_to_attempt_result,
-    };
-
-    /// Exercises internal branches that are not reliably reachable through
-    /// normal worker-thread execution.
-    ///
-    /// # Returns
-    /// Diagnostic messages describing each exercised defensive path.
-    pub fn exercise_defensive_paths() -> Vec<String> {
-        let mut diagnostics = Vec::new();
-
-        let spawn_failure =
-            worker_spawn_error_to_attempt_failure::<&'static str>(io::Error::other("spawn failed"));
-        diagnostics.push(spawn_failure.to_string());
-
-        let timeout_token = AttemptCancelToken::new();
-        let timeout = worker_timeout_message_to_attempt_result::<(), &'static str>(
-            Err(mpsc::RecvTimeoutError::Timeout),
-            &timeout_token,
-        )
-        .expect_err("timeout receive should become an attempt failure");
-        diagnostics.push(format!(
-            "{timeout}; cancelled={}",
-            timeout_token.is_cancelled()
-        ));
-
-        let timeout_disconnected = worker_timeout_message_to_attempt_result::<(), &'static str>(
-            Err(mpsc::RecvTimeoutError::Disconnected),
-            &AttemptCancelToken::new(),
-        )
-        .expect_err("disconnected timeout receive should become an executor failure");
-        diagnostics.push(timeout_disconnected.to_string());
-
-        let retry = Retry::<io::Error>::builder()
-            .max_total_elapsed(Some(Duration::ZERO))
-            .build()
-            .expect("coverage retry should build");
-        diagnostics.push(format!(
-            "sleep budget exhausted={}",
-            retry.retry_sleep_exhausts_total_elapsed(
-                Duration::from_millis(1),
-                Duration::from_millis(1),
-            )
-        ));
-
-        let (sender, receiver) = mpsc::sync_channel(1);
-        drop(sender);
-        let worker = thread::spawn(|| {});
-        let timeout_outcome = retry.worker_timeout_message_to_attempt_outcome::<()>(
-            Err(mpsc::RecvTimeoutError::Disconnected),
-            receiver,
-            worker,
-            &AttemptCancelToken::new(),
-        );
-        diagnostics.push(
-            timeout_outcome
-                .result
-                .expect_err("disconnected worker timeout should fail")
-                .to_string(),
-        );
-
-        let (sender, receiver) = mpsc::sync_channel::<BlockingAttemptMessage<(), io::Error>>(1);
-        let worker = thread::spawn(|| {});
-        let exited = wait_for_cancelled_worker(&receiver, worker, Duration::ZERO);
-        drop(sender);
-        diagnostics.push(format!("zero grace empty worker exited={exited}"));
-
-        let recv_disconnected =
-            worker_recv_message_to_attempt_result::<(), &'static str>(Err(mpsc::RecvError))
-                .expect_err("disconnected receive should become an executor failure");
-        diagnostics.push(recv_disconnected.to_string());
-
-        let panic_message = worker_message_to_attempt_result::<(), &'static str>(
-            BlockingAttemptMessage::Panic(AttemptPanic::new("coverage panic")),
-        )
-        .expect_err("panic message should become an attempt failure");
-        diagnostics.push(panic_message.to_string());
-
-        let static_panic = AttemptPanic::from_payload(Box::new("static panic"));
-        diagnostics.push(static_panic.to_string());
-
-        let string_panic = AttemptPanic::from_payload(Box::new(String::from("owned panic")));
-        diagnostics.push(string_panic.to_string());
-
-        let executor_error = RetryError::new(
-            RetryErrorReason::Aborted,
-            Some(AttemptFailure::<io::Error>::Executor(
-                AttemptExecutorError::new("executor source"),
-            )),
-            RetryContext::new(1, 1),
-        );
-        diagnostics.push(format!(
-            "executor reason={:?}; attempts={}; context_attempt={}",
-            executor_error.reason(),
-            executor_error.attempts(),
-            executor_error.context().attempt(),
-        ));
-        diagnostics.push(
-            executor_error
-                .source()
-                .expect("executor failure should be an error source")
-                .to_string(),
-        );
-
-        let timeout_error = RetryError::new(
-            RetryErrorReason::Aborted,
-            Some(AttemptFailure::<io::Error>::Timeout),
-            RetryContext::new(1, 1),
-        );
-        diagnostics.push(format!(
-            "timeout source absent={}",
-            timeout_error.source().is_none()
-        ));
-
-        let app_error = RetryError::new(
-            RetryErrorReason::AttemptsExceeded,
-            Some(AttemptFailure::<io::Error>::Error(io::Error::other(
-                "application source",
-            ))),
-            RetryContext::new(2, 2),
-        );
-        diagnostics.push(
-            app_error
-                .last_failure()
-                .expect("application failure should exist")
-                .to_string(),
-        );
-        diagnostics.push(
-            app_error
-                .last_error()
-                .expect("last application error should exist")
-                .to_string(),
-        );
-        diagnostics.push(app_error.to_string());
-
-        let owned_error = RetryError::new(
-            RetryErrorReason::AttemptsExceeded,
-            Some(AttemptFailure::<io::Error>::Error(io::Error::other(
-                "owned application error",
-            ))),
-            RetryContext::new(2, 2),
-        );
-        diagnostics.push(
-            owned_error
-                .into_last_error()
-                .expect("owned application error should be returned")
-                .to_string(),
-        );
-
-        let parted_error = RetryError::<io::Error>::new(
-            RetryErrorReason::MaxOperationElapsedExceeded,
-            None,
-            RetryContext::from_parts(RetryContextParts {
-                attempt: 0,
-                max_attempts: 2,
-                max_operation_elapsed: Some(Duration::ZERO),
-                max_total_elapsed: None,
-                operation_elapsed: Duration::ZERO,
-                total_elapsed: Duration::ZERO,
-                attempt_elapsed: Duration::ZERO,
-                attempt_timeout: None,
-            }),
-        );
-        let (reason, last_failure, context) = parted_error.into_parts();
-        diagnostics.push(format!(
-            "parts reason={reason:?}; last_failure={}; max_operation_elapsed={:?}",
-            last_failure.is_some(),
-            context.max_operation_elapsed(),
-        ));
-
-        diagnostics
     }
 }

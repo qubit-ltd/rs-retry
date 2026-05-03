@@ -329,6 +329,34 @@ fn test_run_in_worker_non_string_panic_uses_fallback_message() {
     );
 }
 
+/// Verifies owned string worker panic payloads preserve their message.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_in_worker_owned_string_panic_preserves_message() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .no_delay()
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_in_worker(|_token: AttemptCancelToken| -> Result<(), TestError> {
+            std::panic::panic_any(String::from("owned panic"));
+        })
+        .expect_err("owned string worker panic should abort");
+
+    let panic = error
+        .last_failure()
+        .and_then(AttemptFailure::as_panic)
+        .expect("terminal failure should be a captured panic");
+    assert_eq!(panic.message(), "owned panic");
+}
+
 /// Verifies failure listeners can retry captured worker panics.
 ///
 /// # Parameters
@@ -502,6 +530,47 @@ fn test_run_in_worker_unreaped_timeout_worker_stops_retrying() {
         start.elapsed() < Duration::from_millis(100),
         "retry should not wait for the uncooperative worker to finish"
     );
+}
+
+/// Verifies a timed-out worker that exits during cancellation grace is reaped.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_in_worker_timeout_reaps_cooperative_worker_during_grace() {
+    let saw_cancel = Arc::new(AtomicBool::new(false));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .no_delay()
+        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(Duration::from_millis(5))))
+        .worker_cancel_grace(Duration::from_millis(100))
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_in_worker({
+            let saw_cancel = Arc::clone(&saw_cancel);
+            move |token: AttemptCancelToken| {
+                while !token.is_cancelled() {
+                    thread::sleep(Duration::from_millis(1));
+                }
+                saw_cancel.store(true, Ordering::SeqCst);
+                Err::<(), TestError>(TestError("cancelled"))
+            }
+        })
+        .expect_err("timeout should abort even when worker exits during grace");
+
+    assert_eq!(error.reason(), RetryErrorReason::Aborted);
+    assert_eq!(error.unreaped_worker_count(), 0);
+    assert_eq!(error.context().unreaped_worker_count(), 0);
+    assert!(saw_cancel.load(Ordering::SeqCst));
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
 }
 
 /// Verifies worker mode honors max elapsed before running the first attempt.
