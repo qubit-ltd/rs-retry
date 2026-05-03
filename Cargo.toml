@@ -39,7 +39,7 @@ rand = "0.10"
 qubit-datatype = "0.2"
 qubit-error = "0.2"
 qubit-serde = "0.2"
-qubit-config = { version = "0.11", optional = true }
+qubit-config = { version = "0.12", optional = true }
 qubit-function = "0.11"
 
 [dev-dependencies]
