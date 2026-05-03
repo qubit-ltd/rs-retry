@@ -16,7 +16,6 @@
 //! The default error type is `BoxError` from the `qubit-error` crate. It is not
 //! re-exported by this crate; callers that need the boxed error alias should
 //! import it from `qubit-error` directly.
-// qubit-style: allow coverage-cfg
 
 pub mod constants;
 pub mod error;
@@ -33,9 +32,6 @@ pub use event::{
     BeforeAttemptListener, RetryAfterHint, RetryContext, RetryErrorListener,
     RetryScheduledListener,
 };
-#[cfg(all(coverage, not(test)))]
-#[doc(hidden)]
-pub use executor::coverage_support;
 pub use executor::{AttemptCancelToken, Retry, RetryBuilder};
 #[cfg(feature = "config")]
 pub use options::RetryConfigValues;

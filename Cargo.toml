@@ -1,6 +1,6 @@
 [package]
 name = "qubit-retry"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -50,6 +50,3 @@ tokio-test = "0.4"
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }

@@ -9,11 +9,9 @@
  ******************************************************************************/
 //! Attempt executor failure information.
 //!
-// qubit-style: allow coverage-cfg
 
 use std::error::Error;
 use std::fmt;
-use std::io;
 
 use serde::{Deserialize, Serialize};
 
@@ -40,28 +38,6 @@ impl AttemptExecutorError {
         Self {
             message: message.into(),
         }
-    }
-
-    /// Creates an executor failure from a worker-spawn error.
-    ///
-    /// # Parameters
-    /// - `error`: Error returned by `std::thread::Builder::spawn`.
-    ///
-    /// # Returns
-    /// An executor failure describing the spawn error.
-    #[inline]
-    #[cfg_attr(coverage, allow(dead_code))]
-    pub(crate) fn from_spawn_error(error: io::Error) -> Self {
-        Self::new(&format!("failed to spawn retry worker thread: {error}"))
-    }
-
-    /// Creates an executor failure for a worker that ended without reporting.
-    ///
-    /// # Returns
-    /// An executor failure describing the missing worker result.
-    #[inline]
-    pub(crate) fn from_worker_disconnected() -> Self {
-        Self::new("retry worker thread stopped without sending a result")
     }
 
     /// Returns the executor failure message.
