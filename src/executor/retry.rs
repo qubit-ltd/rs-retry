@@ -12,6 +12,7 @@
 //! A [`Retry`] owns validated retry options and lifecycle listeners. The
 //! operation success type is introduced by each `run` call, while the error type
 //! is bound by the retry policy.
+// qubit-style: allow coverage-cfg
 
 use qubit_error::BoxError;
 use qubit_function::{BiConsumer, BiFunction, Consumer};

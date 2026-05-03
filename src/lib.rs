@@ -16,6 +16,7 @@
 //! The default error type is `BoxError` from the `qubit-error` crate. It is not
 //! re-exported by this crate; callers that need the boxed error alias should
 //! import it from `qubit-error` directly.
+// qubit-style: allow coverage-cfg
 
 pub mod constants;
 pub mod error;
@@ -25,7 +26,7 @@ pub mod options;
 
 pub use error::{
     AttemptExecutorError, AttemptFailure, AttemptPanic, RetryConfigError, RetryError,
-    RetryErrorReason,
+    RetryErrorReason, RetryResult,
 };
 pub use event::{
     AttemptFailureDecision, AttemptFailureListener, AttemptSuccessListener, AttemptTimeoutSource,
@@ -42,10 +43,3 @@ pub use options::{
     AttemptTimeoutOption, AttemptTimeoutPolicy, ParseRetryJitterError, RetryDelay, RetryJitter,
     RetryOptions,
 };
-
-/// Result alias returned by retry executor execution.
-///
-/// The success type `T` is chosen by each operation. The error type `E`
-/// remains the caller's original application error and is wrapped by
-/// [`RetryError`] only when retry execution terminates unsuccessfully.
-pub type RetryResult<T, E> = Result<T, RetryError<E>>;

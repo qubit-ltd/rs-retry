@@ -9,6 +9,7 @@
  ******************************************************************************/
 //! Attempt executor failure information.
 //!
+// qubit-style: allow coverage-cfg
 
 use std::error::Error;
 use std::fmt;

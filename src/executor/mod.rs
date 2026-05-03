@@ -8,6 +8,7 @@
  *
  ******************************************************************************/
 //! Retry executor and builder modules and public re-exports.
+// qubit-style: allow coverage-cfg
 
 #[cfg(feature = "tokio")]
 mod async_attempt;
