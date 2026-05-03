@@ -8,8 +8,8 @@
  *
  ******************************************************************************/
 
-mod non_clone_value;
-mod test_error;
-
-pub(crate) use non_clone_value::NonCloneValue;
-pub(crate) use test_error::TestError;
+/// Non-cloneable value used by retry tests.
+#[derive(Debug)]
+pub(crate) struct NonCloneValue {
+    pub(crate) value: String,
+}

@@ -1,0 +1,6 @@
+# Reviewed style exceptions required by the local Rust style checker.
+coverage-cfg | src/error/attempt_executor_error.rs | Coverage builds exercise private defensive paths while normal builds keep production-only dead-code warnings enabled.
+coverage-cfg | src/error/retry_error.rs | Coverage-only constructor exposes internal error construction for integration tests without widening the normal public API.
+coverage-cfg | src/executor/mod.rs | Coverage support is re-exported only for coverage integration tests.
+coverage-cfg | src/executor/retry.rs | Coverage-only hooks cover defensive executor branches that are not reliably reachable through public retry execution.
+coverage-cfg | src/lib.rs | Coverage support is re-exported only when coverage integration tests are compiled.

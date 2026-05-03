@@ -12,6 +12,7 @@
 //! This module contains the error returned when a retry executor stops without a
 //! successful result. The original application error type is preserved in the
 //! generic parameter `E`.
+// qubit-style: allow coverage-cfg
 
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -38,6 +39,13 @@ pub struct RetryError<E> {
     /// Context snapshot captured when the retry flow stopped.
     context: RetryContext,
 }
+
+/// Result alias returned by retry executor execution.
+///
+/// The success type `T` is chosen by each operation. The error type `E`
+/// remains the caller's original application error and is wrapped by
+/// [`RetryError`] only when retry execution terminates unsuccessfully.
+pub type RetryResult<T, E> = Result<T, RetryError<E>>;
 
 impl<E> RetryError<E> {
     /// Creates a retry error.
