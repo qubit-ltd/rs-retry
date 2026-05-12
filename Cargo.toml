@@ -1,6 +1,6 @@
 [package]
 name = "qubit-retry"
-version = "0.10.5"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -33,7 +33,7 @@ config = ["dep:qubit-config"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-parse-display = "0.10"
+parse-display = "0.11"
 tokio = { version = "1.52", features = ["time", "rt"], optional = true }
 rand = "0.10"
 
@@ -41,7 +41,7 @@ qubit-datatype = "0.2"
 qubit-error = "0.2"
 qubit-serde = "0.2"
 qubit-config = { version = "0.12", optional = true }
-qubit-function = "0.12"
+qubit-function = "0.13"
 
 [dev-dependencies]
 serde_json = "1.0"
