@@ -13,11 +13,12 @@ readme = "README.md"
 keywords = ["retry", "resilience", "backoff", "fault-tolerance", "qubit"]
 categories = ["development-tools", "asynchronous"]
 exclude = [
-    "coverage.sh",
-    "COVERAGE.md",
-    "COVERAGE.zh_CN.md",
-    ".circleci/*",
+    "align-ci.sh",
     "ci-check.sh",
+    "coverage.sh",
+    "style-check.sh",
+    "update-submodule.sh",
+    ".github/*",
     ".llvm-cov.toml",
     ".cargo-audit.toml.example",
 ]
