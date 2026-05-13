@@ -1,7 +1,7 @@
 # Qubit Retry
 
 [![Rust CI](https://github.com/qubit-ltd/rs-retry/actions/workflows/ci.yml/badge.svg)](https://github.com/qubit-ltd/rs-retry/actions/workflows/ci.yml)
-[![Coverage Status](https://coveralls.io/repos/github/qubit-ltd/rs-retry/badge.svg?branch=main)](https://coveralls.io/github/qubit-ltd/rs-retry?branch=main)
+[![Coverage](https://img.shields.io/endpoint?url=https://qubit-ltd.github.io/rs-retry/coverage-badge.json)](https://qubit-ltd.github.io/rs-retry/coverage/)
 [![Crates.io](https://img.shields.io/crates/v/qubit-retry.svg?color=blue)](https://crates.io/crates/qubit-retry)
 [![Rust](https://img.shields.io/badge/rust-1.94+-blue.svg?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -33,14 +33,14 @@ Qubit Retry 适用于需要对易失败任务进行明确、可观测重试控�
 
 ```toml
 [dependencies]
-qubit-retry = "0.10"
+qubit-retry = "0.12.1"
 ```
 
 按需开启可选集成：
 
 ```toml
 [dependencies]
-qubit-retry = { version = "0.10", features = ["tokio", "config"] }
+qubit-retry = { version = "0.12.1", features = ["tokio", "config"] }
 ```
 
 可选 feature：
