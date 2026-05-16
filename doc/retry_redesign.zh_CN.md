@@ -277,11 +277,11 @@ loop:
   if decision == Abort:
     return Aborted
 
-  if attempts >= max_attempts:
-    return AttemptsExceeded
-
   if worker timeout 后未在 grace 内退出:
     return WorkerStillRunning
+
+  if attempts >= max_attempts:
+    return AttemptsExceeded
 
   delay = RetryAfter / hint / configured delay + jitter
   if delay 会耗尽 max_total_elapsed:
