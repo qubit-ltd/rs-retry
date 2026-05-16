@@ -16,8 +16,10 @@ mod async_attempt_future;
 #[cfg(feature = "tokio")]
 mod async_value_operation;
 mod attempt_cancel_token;
-mod blocking_attempt_message;
+mod blocking_attempt;
 mod blocking_attempt_outcome;
+mod blocking_attempt_runner;
+mod blocking_value_operation;
 mod effective_attempt_timeout;
 mod retry;
 mod retry_builder;

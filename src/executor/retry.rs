@@ -23,8 +23,10 @@ use std::fmt;
 #[cfg(feature = "tokio")]
 use std::future::Future;
 use std::panic;
-use std::sync::Arc;
-use std::sync::mpsc;
+use std::sync::{
+    Arc,
+    mpsc,
+};
 use std::thread::JoinHandle;
 use std::time::{
     Duration,
@@ -36,7 +38,7 @@ use super::async_attempt::AsyncAttempt;
 #[cfg(feature = "tokio")]
 use super::async_value_operation::AsyncValueOperation;
 use super::attempt_cancel_token::AttemptCancelToken;
-use super::blocking_attempt_message::BlockingAttemptMessage;
+use super::blocking_attempt::BlockingAttempt;
 use super::blocking_attempt_outcome::BlockingAttemptOutcome;
 use super::effective_attempt_timeout::EffectiveAttemptTimeout;
 use super::retry_flow_action::RetryFlowAction;
@@ -65,13 +67,6 @@ use crate::{
 
 const WORKER_DISCONNECTED_MESSAGE: &str = "retry worker thread stopped without sending a result";
 const WORKER_SPAWN_FAILED_MESSAGE: &str = "failed to spawn retry worker thread";
-
-/// Builds an executor attempt failure from a static message.
-macro_rules! exec_fail {
-    ($message:expr) => {
-        AttemptFailure::Executor(AttemptExecutorError::new($message))
-    };
-}
 
 /// Retry policy and executor bound to an operation error type.
 ///
@@ -176,143 +171,6 @@ impl<E> Retry<E> {
         let mut operation = SyncValueOperation::new(&mut operation);
         self.run_sync_operation(&mut operation)
             .map(|()| operation.into_value())
-    }
-
-    /// Runs a blocking operation with retry inside worker-thread attempts.
-    ///
-    /// Each attempt runs on a worker thread. Worker panics are captured as
-    /// [`AttemptFailure::Panic`]. Worker-spawn failures are reported as
-    /// [`AttemptFailure::Executor`]. If the effective timeout expires, the retry
-    /// executor stops waiting and marks the attempt's [`AttemptCancelToken`] as
-    /// cancelled. It then waits up to [`RetryOptions::worker_cancel_grace`] for
-    /// the worker to exit. Configured attempt-timeout expirations continue
-    /// according to [`AttemptTimeoutPolicy`] only when the worker exits within
-    /// that grace period; otherwise the retry flow stops with
-    /// [`RetryErrorReason::WorkerStillRunning`]. Elapsed-budget expirations stop
-    /// with [`RetryErrorReason::MaxOperationElapsedExceeded`] or
-    /// [`RetryErrorReason::MaxTotalElapsedExceeded`].
-    ///
-    /// # Parameters
-    /// - `operation`: Thread-safe operation called once per attempt. It receives
-    ///   a cooperative cancellation token for that attempt.
-    ///
-    /// # Returns
-    /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
-    ///
-    /// # Panics
-    /// Does not propagate operation panics. Listener panic behavior follows this
-    /// retry policy's listener isolation setting.
-    ///
-    /// # Blocking
-    /// Blocks the current thread while waiting for each worker result or timeout
-    /// and while sleeping between retry attempts.
-    ///
-    /// # Elapsed Budget
-    /// `max_operation_elapsed` counts only user operation execution time.
-    /// `max_total_elapsed` counts monotonic retry-flow time. Worker attempts use
-    /// the shortest of configured attempt timeout, remaining
-    /// max-operation-elapsed budget, and remaining max-total-elapsed budget as
-    /// their effective timeout.
-    pub fn run_in_worker<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
-    where
-        T: Send + 'static,
-        E: Send + 'static,
-        F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
-    {
-        let operation = Arc::new(operation);
-        let mut state = RetryFlowState::new();
-
-        loop {
-            let attempt_timeout =
-                self.effective_attempt_timeout(state.operation_elapsed, state.total_elapsed());
-            self.ensure_elapsed_budget_available(&mut state, attempt_timeout)?;
-
-            let attempt_timeout =
-                self.effective_attempt_timeout(state.operation_elapsed, state.total_elapsed());
-            self.emit_before_attempt_for_next_attempt(&mut state, attempt_timeout);
-            let attempt_timeout =
-                self.effective_attempt_timeout(state.operation_elapsed, state.total_elapsed());
-            self.ensure_elapsed_budget_available(&mut state, attempt_timeout)?;
-
-            let attempt_start = Instant::now();
-            let outcome =
-                self.call_blocking_attempt(Arc::clone(&operation), attempt_timeout.duration);
-            let attempt_elapsed = attempt_start.elapsed();
-            state.add_operation_elapsed(attempt_elapsed);
-            let context = self
-                .context_from_state(&state, attempt_elapsed, attempt_timeout.duration)
-                .with_attempt_timeout_source(attempt_timeout.source)
-                .with_unreaped_worker_count(outcome.unreaped_worker_count);
-            match outcome.result {
-                Ok(value) => {
-                    self.emit_attempt_success(&context);
-                    return Ok(value);
-                }
-                Err(failure) => {
-                    if let Some(reason) = attempt_timeout.elapsed_timeout_reason(&failure) {
-                        return Err(self.emit_error(RetryError::new(
-                            reason,
-                            Some(failure),
-                            context,
-                        )));
-                    }
-                    let retry_block_reason = (context.unreaped_worker_count() > 0)
-                        .then_some(RetryErrorReason::WorkerStillRunning);
-                    match self.handle_failure(
-                        state.attempts,
-                        failure,
-                        context,
-                        retry_block_reason,
-                        state.started_at,
-                    ) {
-                        RetryFlowAction::Retry { delay, failure } => {
-                            sleep_blocking(delay);
-                            state.record_last_failure(failure);
-                        }
-                        RetryFlowAction::Finished(error) => return Err(self.emit_error(error)),
-                    }
-                }
-            }
-        }
-    }
-
-    /// Runs a blocking operation with retry and per-attempt timeout isolation.
-    ///
-    /// This method is a compatibility alias for [`Retry::run_in_worker`]. It
-    /// also runs attempts in worker threads when no timeout is configured, so
-    /// worker panics are reported as [`AttemptFailure::Panic`] instead of
-    /// unwinding through the caller. Worker-spawn failures are reported as
-    /// [`AttemptFailure::Executor`].
-    ///
-    /// # Parameters
-    /// - `operation`: Thread-safe operation called once per attempt. It receives
-    ///   a cooperative cancellation token for that attempt.
-    ///
-    /// # Returns
-    /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
-    ///
-    /// # Panics
-    /// Does not propagate operation panics. Listener panic behavior follows this
-    /// retry policy's listener isolation setting.
-    ///
-    /// # Blocking
-    /// Blocks the current thread while waiting for each worker result or timeout
-    /// and while sleeping between retry attempts.
-    ///
-    /// # Elapsed Budget
-    /// `max_operation_elapsed` counts only user operation execution time.
-    /// `max_total_elapsed` counts monotonic retry-flow time. Worker attempts use
-    /// the shortest of configured attempt timeout, remaining
-    /// max-operation-elapsed budget, and remaining max-total-elapsed budget as
-    /// their effective timeout.
-    #[inline]
-    pub fn run_blocking_with_timeout<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
-    where
-        T: Send + 'static,
-        E: Send + 'static,
-        F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
-    {
-        self.run_in_worker(operation)
     }
 
     /// Runs a synchronous value-erased operation with retry.
@@ -513,7 +371,7 @@ impl<E> Retry<E> {
     /// Returns a [`RetryError`] when the max-operation-elapsed or
     /// max-total-elapsed budget is exhausted. The retained last failure is moved
     /// into the error when present.
-    fn ensure_elapsed_budget_available(
+    pub(in crate::executor) fn ensure_elapsed_budget_available(
         &self,
         state: &mut RetryFlowState<E>,
         attempt_timeout: EffectiveAttemptTimeout,
@@ -537,7 +395,7 @@ impl<E> Retry<E> {
     /// # Parameters
     /// - `state`: Mutable retry-flow state whose attempt counter will be advanced.
     /// - `attempt_timeout`: Effective timeout selected before listener execution.
-    fn emit_before_attempt_for_next_attempt(
+    pub(in crate::executor) fn emit_before_attempt_for_next_attempt(
         &self,
         state: &mut RetryFlowState<E>,
         attempt_timeout: EffectiveAttemptTimeout,
@@ -558,7 +416,7 @@ impl<E> Retry<E> {
     ///
     /// # Returns
     /// A retry context using the latest state values.
-    fn context_from_state(
+    pub(in crate::executor) fn context_from_state(
         &self,
         state: &RetryFlowState<E>,
         attempt_elapsed: Duration,
@@ -626,7 +484,7 @@ impl<E> Retry<E> {
     /// max-operation-elapsed budget, and remaining max-total-elapsed budget,
     /// including the source that selected it. A configured timeout wins ties so
     /// its timeout policy remains observable.
-    fn effective_attempt_timeout(
+    pub(in crate::executor) fn effective_attempt_timeout(
         &self,
         operation_elapsed: Duration,
         total_elapsed: Duration,
@@ -677,70 +535,6 @@ impl<E> Retry<E> {
             .map(|max_total_elapsed| max_total_elapsed.saturating_sub(total_elapsed))
     }
 
-    /// Runs one blocking attempt on a worker thread.
-    ///
-    /// # Parameters
-    /// - `operation`: Shared blocking operation.
-    /// - `attempt_timeout`: Effective timeout for this attempt, if any.
-    ///
-    /// # Returns
-    /// The operation value on success, or an attempt failure.
-    ///
-    /// # Panics
-    /// Converts worker panics into [`AttemptFailure::Panic`] and worker-spawn
-    /// failures into [`AttemptFailure::Executor`].
-    fn call_blocking_attempt<T, F>(
-        &self,
-        operation: Arc<F>,
-        attempt_timeout: Option<Duration>,
-    ) -> BlockingAttemptOutcome<T, E>
-    where
-        T: Send + 'static,
-        E: Send + 'static,
-        F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
-    {
-        let token = AttemptCancelToken::new();
-        let (sender, receiver) = mpsc::sync_channel(1);
-        let worker_token = token.clone();
-        let worker = std::thread::Builder::new()
-            .name("qubit-retry-worker".to_string())
-            .spawn(move || {
-                let result =
-                    panic::catch_unwind(panic::AssertUnwindSafe(|| operation(worker_token)));
-                let message = match result {
-                    Ok(result) => BlockingAttemptMessage::Result(result),
-                    Err(payload) => {
-                        BlockingAttemptMessage::Panic(AttemptPanic::from_payload(payload))
-                    }
-                };
-                let _ = sender.send(message);
-            });
-        let worker = match worker {
-            Ok(worker) => worker,
-            Err(error) => {
-                let detail = error.to_string();
-                return BlockingAttemptOutcome::new(
-                    Err(AttemptFailure::Executor(
-                        AttemptExecutorError::with_context(WORKER_SPAWN_FAILED_MESSAGE, &detail),
-                    )),
-                    0,
-                );
-            }
-        };
-
-        match attempt_timeout {
-            Some(attempt_timeout) => {
-                let message = receiver.recv_timeout(attempt_timeout);
-                self.worker_timeout_message_to_attempt_outcome(message, receiver, worker, &token)
-            }
-            None => {
-                let result = worker_recv_message_to_attempt_result(receiver.recv());
-                join_finished_worker(worker);
-                BlockingAttemptOutcome::new(result, 0)
-            }
-        }
-    }
-
     /// Handles one failed attempt.
     ///
     /// # Parameters
@@ -752,7 +546,7 @@ impl<E> Retry<E> {
     ///
     /// # Returns
     /// A retry action selected from listeners and configured limits.
-    fn handle_failure(
+    pub(in crate::executor) fn handle_failure(
         &self,
         attempts: u32,
         failure: AttemptFailure<E>,
@@ -1013,7 +807,7 @@ impl<E> Retry<E> {
     ///
     /// # Parameters
     /// - `context`: Context passed to listeners.
-    fn emit_attempt_success(&self, context: &RetryContext) {
+    pub(in crate::executor) fn emit_attempt_success(&self, context: &RetryContext) {
         for listener in &self.listeners.attempt_success {
             self.invoke_listener(|| {
                 listener.accept(context);
@@ -1041,54 +835,13 @@ impl<E> Retry<E> {
     ///
     /// # Returns
     /// The same error after listeners have been invoked.
-    fn emit_error(&self, error: RetryError<E>) -> RetryError<E> {
+    pub(in crate::executor) fn emit_error(&self, error: RetryError<E>) -> RetryError<E> {
         for listener in &self.listeners.error {
             self.invoke_listener(|| {
                 listener.accept(&error, error.context());
             });
         }
         error
-    }
-
-    /// Converts a timeout-aware worker receive into an attempt outcome.
-    ///
-    /// # Parameters
-    /// - `message`: Initial receive result with the attempt timeout applied.
-    /// - `receiver`: Receiver used to observe worker exit during cancellation grace.
-    /// - `worker`: Worker thread handle for joining finished workers.
-    /// - `token`: Cancellation token to mark when the receive timed out.
-    ///
-    /// # Returns
-    /// Attempt result plus the number of worker threads not observed to exit.
-    fn worker_timeout_message_to_attempt_outcome<T>(
-        &self,
-        message: Result<BlockingAttemptMessage<T, E>, mpsc::RecvTimeoutError>,
-        receiver: mpsc::Receiver<BlockingAttemptMessage<T, E>>,
-        worker: JoinHandle<()>,
-        token: &AttemptCancelToken,
-    ) -> BlockingAttemptOutcome<T, E>
-    where
-        T: Send + 'static,
-        E: Send + 'static,
-    {
-        match message {
-            Ok(message) => {
-                let result = worker_message_to_attempt_result(message);
-                join_finished_worker(worker);
-                BlockingAttemptOutcome::new(result, 0)
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                token.cancel();
-                let worker_exited =
-                    wait_for_cancelled_worker(&receiver, worker, self.options.worker_cancel_grace);
-                let unreaped_worker_count = if worker_exited { 0 } else { 1 };
-                BlockingAttemptOutcome::new(Err(AttemptFailure::Timeout), unreaped_worker_count)
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                join_finished_worker(worker);
-                BlockingAttemptOutcome::new(Err(exec_fail!(WORKER_DISCONNECTED_MESSAGE)), 0)
-            }
-        }
     }
 
     /// Invokes a listener and optionally isolates panics.
@@ -1126,35 +879,114 @@ impl<E> fmt::Debug for Retry<E> {
     }
 }
 
-/// Converts a worker message into an attempt result.
+/// Runs one blocking attempt on a worker thread.
 ///
 /// # Parameters
-/// - `message`: Message received from the worker thread.
+/// - `operation`: Shared blocking operation.
+/// - `attempt_timeout`: Effective timeout for this attempt, if any.
+/// - `worker_cancel_grace`: Maximum time to wait for a timed-out worker after
+///   cancellation.
 ///
 /// # Returns
-/// The operation value on success, or an attempt failure.
-fn worker_message_to_attempt_result<T, E>(
-    message: BlockingAttemptMessage<T, E>,
-) -> Result<T, AttemptFailure<E>> {
-    match message {
-        BlockingAttemptMessage::Result(result) => result.map_err(AttemptFailure::Error),
-        BlockingAttemptMessage::Panic(panic) => Err(AttemptFailure::Panic(panic)),
+/// The attempt outcome, including the attempt result and unreaped worker count.
+///
+/// # Worker Behavior
+/// Operation panics are converted into [`AttemptFailure::Panic`]. Worker-spawn
+/// failures are converted into [`AttemptFailure::Executor`].
+pub(in crate::executor) fn call_blocking_attempt<E>(
+    operation: Arc<dyn BlockingAttempt<E>>,
+    attempt_timeout: Option<Duration>,
+    worker_cancel_grace: Duration,
+) -> BlockingAttemptOutcome<(), E>
+where
+    E: Send + 'static,
+{
+    let token = AttemptCancelToken::new();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let worker_token = token.clone();
+    let worker = match std::thread::Builder::new()
+        .name("qubit-retry-worker".to_string())
+        .spawn(move || {
+            let result =
+                panic::catch_unwind(panic::AssertUnwindSafe(|| operation.call(worker_token)));
+            let attempt_result = match result {
+                Ok(result) => result,
+                Err(payload) => Err(AttemptFailure::Panic(AttemptPanic::from_payload(payload))),
+            };
+            let _ = sender.send(attempt_result);
+        }) {
+        Ok(worker) => worker,
+        Err(error) => {
+            return BlockingAttemptOutcome::new(
+                Err(AttemptFailure::Executor(
+                    AttemptExecutorError::with_context(
+                        WORKER_SPAWN_FAILED_MESSAGE,
+                        &error.to_string(),
+                    ),
+                )),
+                0,
+            );
+        }
+    };
+
+    match attempt_timeout {
+        Some(attempt_timeout) => worker_timeout_result_to_attempt_outcome(
+            receiver.recv_timeout(attempt_timeout),
+            receiver,
+            worker,
+            &token,
+            worker_cancel_grace,
+        ),
+        None => {
+            let result = receiver.recv().expect(WORKER_DISCONNECTED_MESSAGE);
+            join_finished_worker(worker);
+            BlockingAttemptOutcome::new(result, 0)
+        }
     }
 }
 
-/// Converts a blocking receive result into an attempt result.
+/// Converts a timed worker receive result into a blocking attempt outcome.
 ///
 /// # Parameters
-/// - `message`: Result returned by `Receiver::recv`.
+/// - `result`: Result from waiting for the worker up to the attempt timeout.
+/// - `receiver`: Receiver used for the post-timeout cancellation grace wait.
+/// - `worker`: Worker thread handle for joining finished workers.
+/// - `token`: Cancellation token to mark when the receive timed out.
+/// - `worker_cancel_grace`: Maximum time to wait for a timed-out worker after
+///   cancellation.
 ///
 /// # Returns
-/// The operation value on success, or an attempt failure.
-fn worker_recv_message_to_attempt_result<T, E>(
-    message: Result<BlockingAttemptMessage<T, E>, mpsc::RecvError>,
-) -> Result<T, AttemptFailure<E>> {
-    match message {
-        Ok(message) => worker_message_to_attempt_result(message),
-        Err(_) => Err(exec_fail!(WORKER_DISCONNECTED_MESSAGE)),
+/// The attempt outcome, including unreaped-worker accounting for timeout cases.
+fn worker_timeout_result_to_attempt_outcome<E>(
+    result: Result<Result<(), AttemptFailure<E>>, mpsc::RecvTimeoutError>,
+    receiver: mpsc::Receiver<Result<(), AttemptFailure<E>>>,
+    worker: JoinHandle<()>,
+    token: &AttemptCancelToken,
+    worker_cancel_grace: Duration,
+) -> BlockingAttemptOutcome<(), E>
+where
+    E: Send + 'static,
+{
+    match result {
+        Ok(result) => {
+            join_finished_worker(worker);
+            BlockingAttemptOutcome::new(result, 0)
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            token.cancel();
+            let worker_exited = wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
+            let unreaped_worker_count = if worker_exited { 0 } else { 1 };
+            BlockingAttemptOutcome::new(Err(AttemptFailure::Timeout), unreaped_worker_count)
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            join_finished_worker(worker);
+            BlockingAttemptOutcome::new(
+                Err(AttemptFailure::Executor(AttemptExecutorError::new(
+                    WORKER_DISCONNECTED_MESSAGE,
+                ))),
+                0,
+            )
+        }
     }
 }
 
@@ -1162,7 +994,7 @@ fn worker_recv_message_to_attempt_result<T, E>(
 ///
 /// # Parameters
 /// - `receiver`: Worker result receiver used only to observe whether the worker
-///   sent or disconnected.
+///   exited.
 /// - `worker`: Worker thread handle, joined when exit is observed.
 /// - `grace`: Maximum time to wait after cancellation. Zero performs only a
 ///   non-blocking check.
@@ -1171,8 +1003,8 @@ fn worker_recv_message_to_attempt_result<T, E>(
 /// `true` when the worker was observed to exit before the grace period ended,
 /// otherwise `false`. When this returns `false`, the worker handle is dropped and
 /// the thread may continue running detached.
-fn wait_for_cancelled_worker<T, E>(
-    receiver: &mpsc::Receiver<BlockingAttemptMessage<T, E>>,
+fn wait_for_cancelled_worker<E>(
+    receiver: &mpsc::Receiver<Result<(), AttemptFailure<E>>>,
     worker: JoinHandle<()>,
     grace: Duration,
 ) -> bool {
@@ -1197,9 +1029,6 @@ fn wait_for_cancelled_worker<T, E>(
 ///
 /// # Parameters
 /// - `worker`: Worker thread handle.
-///
-/// # Returns
-/// This function returns nothing.
 fn join_finished_worker(worker: JoinHandle<()>) {
     let _ = worker.join();
 }
@@ -1208,7 +1037,7 @@ fn join_finished_worker(worker: JoinHandle<()>) {
 ///
 /// # Parameters
 /// - `delay`: Delay to sleep.
-fn sleep_blocking(delay: Duration) {
+pub(in crate::executor) fn sleep_blocking(delay: Duration) {
     if !delay.is_zero() {
         std::thread::sleep(delay);
     }
