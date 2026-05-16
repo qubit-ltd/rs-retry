@@ -136,7 +136,8 @@ impl RetryDelay {
     ///
     /// # Errors
     /// This constructor does not validate the range; use [`RetryDelay::validate`] to
-    /// reject a zero minimum or a minimum greater than the maximum.
+    /// reject a zero minimum, a minimum greater than the maximum, or bounds
+    /// that cannot be sampled as `u64` nanoseconds.
     #[inline]
     pub fn random(min: Duration, max: Duration) -> Self {
         Self::Random { min, max }
@@ -287,8 +288,8 @@ impl RetryDelay {
     ///
     /// # Errors
     /// Returns an error when a fixed delay is zero, a random range is invalid,
-    /// or exponential backoff parameters are zero, inverted, non-finite, or too
-    /// small.
+    /// random bounds cannot be sampled as `u64` nanoseconds, or exponential
+    /// backoff parameters are zero, inverted, non-finite, or too small.
     pub fn validate(&self) -> Result<(), String> {
         match self {
             Self::None => Ok(()),
