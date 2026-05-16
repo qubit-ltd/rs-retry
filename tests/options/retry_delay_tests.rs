@@ -112,6 +112,10 @@ fn test_exponential_delay_cap_applied_when_scaled_delay_exceeds_max() {
 /// values are rejected.
 #[test]
 fn test_validate_rejects_invalid_values() {
+    let unsampleable_random_bound = Duration::from_nanos(u64::MAX)
+        .checked_add(Duration::from_nanos(1))
+        .expect("test duration should fit in Duration");
+
     assert!(RetryDelay::fixed(Duration::ZERO).validate().is_err());
     assert!(
         RetryDelay::random(Duration::ZERO, Duration::from_millis(1))
@@ -127,6 +131,11 @@ fn test_validate_rejects_invalid_values() {
         RetryDelay::random(Duration::from_millis(2), Duration::from_millis(2))
             .validate()
             .is_ok()
+    );
+    assert!(
+        RetryDelay::random(unsampleable_random_bound, unsampleable_random_bound)
+            .validate()
+            .is_err()
     );
     assert!(
         RetryDelay::exponential(Duration::ZERO, Duration::from_secs(1), 2.0)

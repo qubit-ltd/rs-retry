@@ -161,6 +161,79 @@ impl<T, E> BlockingAttemptOutcome<T, E> {
     }
 }
 
+/// Mutable retry-flow state shared by sync, async, and worker execution loops.
+struct RetryFlowState<E> {
+    /// Monotonic instant when the retry flow started.
+    started_at: Instant,
+    /// Cumulative user operation time consumed by attempts.
+    operation_elapsed: Duration,
+    /// Attempts executed or currently being prepared.
+    attempts: u32,
+    /// Last failure retained for elapsed-budget errors raised before another attempt.
+    last_failure: Option<AttemptFailure<E>>,
+}
+
+impl<E> RetryFlowState<E> {
+    /// Creates an empty retry-flow state.
+    ///
+    /// # Returns
+    /// A state with zero attempts and no accumulated operation elapsed time.
+    fn new() -> Self {
+        Self {
+            started_at: Instant::now(),
+            operation_elapsed: Duration::ZERO,
+            attempts: 0,
+            last_failure: None,
+        }
+    }
+
+    /// Returns total monotonic retry-flow elapsed time.
+    ///
+    /// # Returns
+    /// Elapsed time since this retry flow started.
+    #[inline]
+    fn total_elapsed(&self) -> Duration {
+        self.started_at.elapsed()
+    }
+
+    /// Marks the next attempt as started.
+    ///
+    /// # Returns
+    /// The one-based attempt number after incrementing.
+    #[inline]
+    fn start_next_attempt(&mut self) -> u32 {
+        self.attempts += 1;
+        self.attempts
+    }
+
+    /// Adds elapsed user operation time.
+    ///
+    /// # Parameters
+    /// - `attempt_elapsed`: Duration consumed by the latest attempt.
+    #[inline]
+    fn add_operation_elapsed(&mut self, attempt_elapsed: Duration) {
+        self.operation_elapsed = add_elapsed(self.operation_elapsed, attempt_elapsed);
+    }
+
+    /// Stores the last failure observed before a retry sleep.
+    ///
+    /// # Parameters
+    /// - `failure`: Failure from the latest attempt.
+    #[inline]
+    fn record_last_failure(&mut self, failure: AttemptFailure<E>) {
+        self.last_failure = Some(failure);
+    }
+
+    /// Takes the retained last failure.
+    ///
+    /// # Returns
+    /// The retained last failure, if one exists.
+    #[inline]
+    fn take_last_failure(&mut self) -> Option<AttemptFailure<E>> {
+        self.last_failure.take()
+    }
+}
+
 /// Source of an effective attempt timeout.
 #[allow(clippy::result_large_err)]
 impl<E> Retry<E> {
@@ -291,64 +364,27 @@ impl<E> Retry<E> {
         F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
     {
         let operation = Arc::new(operation);
-        let flow_started_at = Instant::now();
-        let mut operation_elapsed = Duration::ZERO;
-        let mut attempts = 0;
-        let mut last_failure = None;
+        let mut state = RetryFlowState::new();
 
         loop {
-            let total_elapsed = flow_started_at.elapsed();
-            let attempt_timeout = self.effective_attempt_timeout(operation_elapsed, total_elapsed);
-            if let Some(reason) = self.elapsed_error_reason(operation_elapsed, total_elapsed) {
-                return Err(self.emit_error(self.elapsed_error(
-                    reason,
-                    operation_elapsed,
-                    total_elapsed,
-                    attempts,
-                    last_failure.take(),
-                    attempt_timeout,
-                )));
-            }
-
-            attempts += 1;
             let attempt_timeout =
-                self.effective_attempt_timeout(operation_elapsed, flow_started_at.elapsed());
-            let before_context = self
-                .context(
-                    operation_elapsed,
-                    flow_started_at.elapsed(),
-                    attempts,
-                    Duration::ZERO,
-                    attempt_timeout.duration,
-                )
-                .with_attempt_timeout_source(attempt_timeout.source);
-            self.emit_before_attempt(&before_context);
-            let total_elapsed = flow_started_at.elapsed();
-            let attempt_timeout = self.effective_attempt_timeout(operation_elapsed, total_elapsed);
-            if let Some(reason) = self.elapsed_error_reason(operation_elapsed, total_elapsed) {
-                return Err(self.emit_error(self.elapsed_error(
-                    reason,
-                    operation_elapsed,
-                    total_elapsed,
-                    attempts,
-                    last_failure.take(),
-                    attempt_timeout,
-                )));
-            }
+                self.effective_attempt_timeout(state.operation_elapsed, state.total_elapsed());
+            self.ensure_elapsed_budget_available(&mut state, attempt_timeout)?;
+
+            let attempt_timeout =
+                self.effective_attempt_timeout(state.operation_elapsed, state.total_elapsed());
+            self.emit_before_attempt_for_next_attempt(&mut state, attempt_timeout);
+            let attempt_timeout =
+                self.effective_attempt_timeout(state.operation_elapsed, state.total_elapsed());
+            self.ensure_elapsed_budget_available(&mut state, attempt_timeout)?;
 
             let attempt_start = Instant::now();
             let outcome =
                 self.call_blocking_attempt(Arc::clone(&operation), attempt_timeout.duration);
             let attempt_elapsed = attempt_start.elapsed();
-            operation_elapsed = add_elapsed(operation_elapsed, attempt_elapsed);
+            state.add_operation_elapsed(attempt_elapsed);
             let context = self
-                .context(
-                    operation_elapsed,
-                    flow_started_at.elapsed(),
-                    attempts,
-                    attempt_elapsed,
-                    attempt_timeout.duration,
-                )
+                .context_from_state(&state, attempt_elapsed, attempt_timeout.duration)
                 .with_attempt_timeout_source(attempt_timeout.source)
                 .with_unreaped_worker_count(outcome.unreaped_worker_count);
             match outcome.result {
@@ -367,17 +403,15 @@ impl<E> Retry<E> {
                     let retry_block_reason = (context.unreaped_worker_count() > 0)
                         .then_some(RetryErrorReason::WorkerStillRunning);
                     match self.handle_failure(
-                        attempts,
+                        state.attempts,
                         failure,
                         context,
                         retry_block_reason,
-                        flow_started_at,
+                        state.started_at,
                     ) {
                         RetryFlowAction::Retry { delay, failure } => {
-                            if !delay.is_zero() {
-                                std::thread::sleep(delay);
-                            }
-                            last_failure = Some(failure);
+                            sleep_blocking(delay);
+                            state.record_last_failure(failure);
                         }
                         RetryFlowAction::Finished(error) => return Err(self.emit_error(error)),
                     }
@@ -433,76 +467,46 @@ impl<E> Retry<E> {
     /// # Returns
     /// `Ok(())` after a successful attempt, or [`RetryError`] when retrying stops.
     fn run_sync_operation(&self, operation: &mut dyn SyncAttempt<E>) -> Result<(), RetryError<E>> {
-        let flow_started_at = Instant::now();
-        let mut operation_elapsed = Duration::ZERO;
-        let mut attempts = 0;
-        let mut last_failure = None;
+        let mut state = RetryFlowState::new();
 
         loop {
-            let total_elapsed = flow_started_at.elapsed();
-            if let Some(reason) = self.elapsed_error_reason(operation_elapsed, total_elapsed) {
-                return Err(self.emit_error(self.elapsed_error(
-                    reason,
-                    operation_elapsed,
-                    total_elapsed,
-                    attempts,
-                    last_failure.take(),
-                    EffectiveAttemptTimeout::new(None, None),
-                )));
-            }
+            self.ensure_elapsed_budget_available(
+                &mut state,
+                EffectiveAttemptTimeout::new(None, None),
+            )?;
 
-            attempts += 1;
-            let before_context = self.context(
-                operation_elapsed,
-                flow_started_at.elapsed(),
-                attempts,
-                Duration::ZERO,
-                None,
+            self.emit_before_attempt_for_next_attempt(
+                &mut state,
+                EffectiveAttemptTimeout::new(None, None),
             );
-            self.emit_before_attempt(&before_context);
-            let total_elapsed = flow_started_at.elapsed();
-            if let Some(reason) = self.elapsed_error_reason(operation_elapsed, total_elapsed) {
-                return Err(self.emit_error(self.elapsed_error(
-                    reason,
-                    operation_elapsed,
-                    total_elapsed,
-                    attempts,
-                    last_failure.take(),
-                    EffectiveAttemptTimeout::new(None, None),
-                )));
-            }
+            self.ensure_elapsed_budget_available(
+                &mut state,
+                EffectiveAttemptTimeout::new(None, None),
+            )?;
 
             let attempt_start = Instant::now();
             match operation.call() {
                 Ok(()) => {
                     let attempt_elapsed = attempt_start.elapsed();
-                    operation_elapsed = add_elapsed(operation_elapsed, attempt_elapsed);
-                    let context = self.context(
-                        operation_elapsed,
-                        flow_started_at.elapsed(),
-                        attempts,
-                        attempt_elapsed,
-                        None,
-                    );
+                    state.add_operation_elapsed(attempt_elapsed);
+                    let context = self.context_from_state(&state, attempt_elapsed, None);
                     self.emit_attempt_success(&context);
                     return Ok(());
                 }
                 Err(failure) => {
                     let attempt_elapsed = attempt_start.elapsed();
-                    operation_elapsed = add_elapsed(operation_elapsed, attempt_elapsed);
-                    let context = self.context(
-                        operation_elapsed,
-                        flow_started_at.elapsed(),
-                        attempts,
-                        attempt_elapsed,
+                    state.add_operation_elapsed(attempt_elapsed);
+                    let context = self.context_from_state(&state, attempt_elapsed, None);
+                    match self.handle_failure(
+                        state.attempts,
+                        failure,
+                        context,
                         None,
-                    );
-                    match self.handle_failure(attempts, failure, context, None, flow_started_at) {
+                        state.started_at,
+                    ) {
                         RetryFlowAction::Retry { delay, failure } => {
-                            if !delay.is_zero() {
-                                std::thread::sleep(delay);
-                            }
-                            last_failure = Some(failure);
+                            sleep_blocking(delay);
+                            state.record_last_failure(failure);
                         }
                         RetryFlowAction::Finished(error) => return Err(self.emit_error(error)),
                     }
@@ -556,50 +560,19 @@ impl<E> Retry<E> {
         &self,
         operation: &mut dyn AsyncAttempt<E>,
     ) -> Result<(), RetryError<E>> {
-        let flow_started_at = Instant::now();
-        let mut operation_elapsed = Duration::ZERO;
-        let mut attempts = 0;
-        let mut last_failure = None;
+        let mut state = RetryFlowState::new();
 
         loop {
-            let total_elapsed = flow_started_at.elapsed();
-            let attempt_timeout = self.effective_attempt_timeout(operation_elapsed, total_elapsed);
-            if let Some(reason) = self.elapsed_error_reason(operation_elapsed, total_elapsed) {
-                return Err(self.emit_error(self.elapsed_error(
-                    reason,
-                    operation_elapsed,
-                    total_elapsed,
-                    attempts,
-                    last_failure.take(),
-                    attempt_timeout,
-                )));
-            }
-
-            attempts += 1;
             let attempt_timeout =
-                self.effective_attempt_timeout(operation_elapsed, flow_started_at.elapsed());
-            let before_context = self
-                .context(
-                    operation_elapsed,
-                    flow_started_at.elapsed(),
-                    attempts,
-                    Duration::ZERO,
-                    attempt_timeout.duration,
-                )
-                .with_attempt_timeout_source(attempt_timeout.source);
-            self.emit_before_attempt(&before_context);
-            let total_elapsed = flow_started_at.elapsed();
-            let attempt_timeout = self.effective_attempt_timeout(operation_elapsed, total_elapsed);
-            if let Some(reason) = self.elapsed_error_reason(operation_elapsed, total_elapsed) {
-                return Err(self.emit_error(self.elapsed_error(
-                    reason,
-                    operation_elapsed,
-                    total_elapsed,
-                    attempts,
-                    last_failure.take(),
-                    attempt_timeout,
-                )));
-            }
+                self.effective_attempt_timeout(state.operation_elapsed, state.total_elapsed());
+            self.ensure_elapsed_budget_available(&mut state, attempt_timeout)?;
+
+            let attempt_timeout =
+                self.effective_attempt_timeout(state.operation_elapsed, state.total_elapsed());
+            self.emit_before_attempt_for_next_attempt(&mut state, attempt_timeout);
+            let attempt_timeout =
+                self.effective_attempt_timeout(state.operation_elapsed, state.total_elapsed());
+            self.ensure_elapsed_budget_available(&mut state, attempt_timeout)?;
 
             let attempt_start = Instant::now();
             let result = if let Some(timeout) = attempt_timeout.duration {
@@ -612,15 +585,9 @@ impl<E> Retry<E> {
             };
 
             let attempt_elapsed = attempt_start.elapsed();
-            operation_elapsed = add_elapsed(operation_elapsed, attempt_elapsed);
+            state.add_operation_elapsed(attempt_elapsed);
             let context = self
-                .context(
-                    operation_elapsed,
-                    flow_started_at.elapsed(),
-                    attempts,
-                    attempt_elapsed,
-                    attempt_timeout.duration,
-                )
+                .context_from_state(&state, attempt_elapsed, attempt_timeout.duration)
                 .with_attempt_timeout_source(attempt_timeout.source);
             match result {
                 Ok(()) => {
@@ -635,10 +602,16 @@ impl<E> Retry<E> {
                             context,
                         )));
                     }
-                    match self.handle_failure(attempts, failure, context, None, flow_started_at) {
+                    match self.handle_failure(
+                        state.attempts,
+                        failure,
+                        context,
+                        None,
+                        state.started_at,
+                    ) {
                         RetryFlowAction::Retry { delay, failure } => {
                             sleep_async(delay).await;
-                            last_failure = Some(failure);
+                            state.record_last_failure(failure);
                         }
                         RetryFlowAction::Finished(error) => return Err(self.emit_error(error)),
                     }
@@ -669,6 +642,79 @@ impl<E> Retry<E> {
             isolate_listener_panics,
             listeners,
         }
+    }
+
+    /// Checks elapsed budgets and returns a terminal error when exhausted.
+    ///
+    /// # Parameters
+    /// - `state`: Mutable retry-flow state carrying elapsed counters and last failure.
+    /// - `attempt_timeout`: Effective timeout visible in the terminal context.
+    ///
+    /// # Returns
+    /// `Ok(())` when retry execution may continue.
+    ///
+    /// # Errors
+    /// Returns a [`RetryError`] when the max-operation-elapsed or
+    /// max-total-elapsed budget is exhausted. The retained last failure is moved
+    /// into the error when present.
+    fn ensure_elapsed_budget_available(
+        &self,
+        state: &mut RetryFlowState<E>,
+        attempt_timeout: EffectiveAttemptTimeout,
+    ) -> Result<(), RetryError<E>> {
+        let total_elapsed = state.total_elapsed();
+        let Some(reason) = self.elapsed_error_reason(state.operation_elapsed, total_elapsed) else {
+            return Ok(());
+        };
+        Err(self.emit_error(self.elapsed_error(
+            reason,
+            state.operation_elapsed,
+            total_elapsed,
+            state.attempts,
+            state.take_last_failure(),
+            attempt_timeout,
+        )))
+    }
+
+    /// Emits before-attempt listeners for the next attempt.
+    ///
+    /// # Parameters
+    /// - `state`: Mutable retry-flow state whose attempt counter will be advanced.
+    /// - `attempt_timeout`: Effective timeout selected before listener execution.
+    fn emit_before_attempt_for_next_attempt(
+        &self,
+        state: &mut RetryFlowState<E>,
+        attempt_timeout: EffectiveAttemptTimeout,
+    ) {
+        state.start_next_attempt();
+        let before_context = self
+            .context_from_state(state, Duration::ZERO, attempt_timeout.duration)
+            .with_attempt_timeout_source(attempt_timeout.source);
+        self.emit_before_attempt(&before_context);
+    }
+
+    /// Builds a context snapshot from retry-flow state.
+    ///
+    /// # Parameters
+    /// - `state`: Retry-flow state carrying attempt and elapsed counters.
+    /// - `attempt_elapsed`: Elapsed time in the current attempt.
+    /// - `attempt_timeout`: Effective timeout configured for the current attempt.
+    ///
+    /// # Returns
+    /// A retry context using the latest state values.
+    fn context_from_state(
+        &self,
+        state: &RetryFlowState<E>,
+        attempt_elapsed: Duration,
+        attempt_timeout: Option<Duration>,
+    ) -> RetryContext {
+        self.context(
+            state.operation_elapsed,
+            state.total_elapsed(),
+            state.attempts,
+            attempt_elapsed,
+            attempt_timeout,
+        )
     }
 
     /// Builds a context snapshot.
@@ -815,9 +861,12 @@ impl<E> Retry<E> {
             });
         let worker = match worker {
             Ok(worker) => worker,
-            Err(_) => {
+            Err(error) => {
+                let detail = error.to_string();
                 return BlockingAttemptOutcome::new(
-                    Err(exec_fail!(WORKER_SPAWN_FAILED_MESSAGE)),
+                    Err(AttemptFailure::Executor(
+                        AttemptExecutorError::with_context(WORKER_SPAWN_FAILED_MESSAGE, &detail),
+                    )),
                     0,
                 );
             }
@@ -1307,6 +1356,16 @@ fn join_finished_worker(worker: JoinHandle<()>) {
 /// The summed elapsed time, saturated at [`Duration::MAX`] on overflow.
 fn add_elapsed(operation_elapsed: Duration, attempt_elapsed: Duration) -> Duration {
     operation_elapsed.saturating_add(attempt_elapsed)
+}
+
+/// Sleeps the current thread when the delay is non-zero.
+///
+/// # Parameters
+/// - `delay`: Delay to sleep.
+fn sleep_blocking(delay: Duration) {
+    if !delay.is_zero() {
+        std::thread::sleep(delay);
+    }
 }
 
 /// Sleeps asynchronously when the delay is non-zero.
