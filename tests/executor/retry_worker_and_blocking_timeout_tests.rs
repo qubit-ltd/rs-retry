@@ -546,6 +546,47 @@ fn test_run_in_worker_unreaped_timeout_worker_stops_retrying() {
     );
 }
 
+/// Verifies an unreaped worker timeout reports the worker-specific terminal reason.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_in_worker_unreaped_timeout_worker_reason_wins_over_attempts_exceeded() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .no_delay()
+        .attempt_timeout_option(Some(AttemptTimeoutOption::new(
+            Duration::from_millis(5),
+            AttemptTimeoutPolicy::Retry,
+        )))
+        .worker_cancel_grace(Duration::from_millis(5))
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_in_worker({
+            let attempts = Arc::clone(&attempts);
+            move |_token: AttemptCancelToken| {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(120));
+                Ok::<_, TestError>("late")
+            }
+        })
+        .expect_err("unreaped timeout worker should report worker still running");
+
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(error.reason(), RetryErrorReason::WorkerStillRunning);
+    assert_eq!(error.unreaped_worker_count(), 1);
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
+}
+
 /// Verifies a timed-out worker that exits during cancellation grace is reaped.
 ///
 /// # Parameters

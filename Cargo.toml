@@ -12,15 +12,15 @@ documentation = "https://docs.rs/qubit-retry"
 readme = "README.md"
 keywords = ["retry", "resilience", "backoff", "fault-tolerance", "qubit"]
 categories = ["development-tools", "asynchronous"]
-exclude = [
-    "align-ci.sh",
-    "ci-check.sh",
-    "coverage.sh",
-    "style-check.sh",
-    "update-submodule.sh",
-    ".github/*",
-    ".llvm-cov.toml",
-    ".cargo-audit.toml.example",
+include = [
+    "/Cargo.toml",
+    "/LICENSE",
+    "/README.md",
+    "/README.zh_CN.md",
+    "/doc/**/user_guide*.md",
+    "/examples/**",
+    "/src/**",
+    "/tests/**",
 ]
 
 [lib]

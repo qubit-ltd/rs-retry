@@ -891,6 +891,8 @@ impl<E> Retry<E> {
     /// - `attempts`: Attempts executed so far.
     /// - `failure`: Attempt failure.
     /// - `context`: Context captured after the failed attempt.
+    /// - `retry_block_reason`: Terminal reason that prevents another attempt.
+    /// - `flow_started_at`: Monotonic instant when retry flow execution started.
     ///
     /// # Returns
     /// A retry action selected from listeners and configured limits.
@@ -921,6 +923,10 @@ impl<E> Retry<E> {
             ));
         }
 
+        if let Some(reason) = retry_block_reason {
+            return RetryFlowAction::Finished(RetryError::new(reason, Some(failure), context));
+        }
+
         let max_attempts = self.options.max_attempts.get();
         if attempts >= max_attempts {
             return RetryFlowAction::Finished(RetryError::new(
@@ -933,10 +939,6 @@ impl<E> Retry<E> {
         if let Some(reason) =
             self.elapsed_error_reason(context.operation_elapsed(), context.total_elapsed())
         {
-            return RetryFlowAction::Finished(RetryError::new(reason, Some(failure), context));
-        }
-
-        if let Some(reason) = retry_block_reason {
             return RetryFlowAction::Finished(RetryError::new(reason, Some(failure), context));
         }
 
