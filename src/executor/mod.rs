@@ -17,9 +17,12 @@ mod async_attempt_future;
 mod async_value_operation;
 mod attempt_cancel_token;
 mod blocking_attempt_message;
+mod blocking_attempt_outcome;
+mod effective_attempt_timeout;
 mod retry;
 mod retry_builder;
 mod retry_flow_action;
+mod retry_flow_state;
 mod sync_attempt;
 mod sync_value_operation;
 

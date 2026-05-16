@@ -37,7 +37,10 @@ use super::async_attempt::AsyncAttempt;
 use super::async_value_operation::AsyncValueOperation;
 use super::attempt_cancel_token::AttemptCancelToken;
 use super::blocking_attempt_message::BlockingAttemptMessage;
+use super::blocking_attempt_outcome::BlockingAttemptOutcome;
+use super::effective_attempt_timeout::EffectiveAttemptTimeout;
 use super::retry_flow_action::RetryFlowAction;
+use super::retry_flow_state::RetryFlowState;
 use super::sync_attempt::SyncAttempt;
 use super::sync_value_operation::SyncValueOperation;
 use crate::event::{
@@ -87,154 +90,7 @@ pub struct Retry<E = BoxError> {
     listeners: RetryListeners<E>,
 }
 
-/// Effective timeout selected for a single attempt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct EffectiveAttemptTimeout {
-    /// Timeout duration actually enforced for the attempt.
-    duration: Option<Duration>,
-    /// Source that selected the effective timeout.
-    source: Option<AttemptTimeoutSource>,
-}
-
-impl EffectiveAttemptTimeout {
-    /// Creates an effective attempt timeout.
-    ///
-    /// # Parameters
-    /// - `duration`: Timeout duration enforced for the attempt.
-    /// - `source`: Source that selected the timeout.
-    ///
-    /// # Returns
-    /// A timeout descriptor for one attempt.
-    #[inline]
-    fn new(duration: Option<Duration>, source: Option<AttemptTimeoutSource>) -> Self {
-        Self { duration, source }
-    }
-
-    /// Returns the elapsed-budget reason represented by a timeout failure.
-    ///
-    /// # Parameters
-    /// - `failure`: Failure produced by the attempt.
-    ///
-    /// # Returns
-    /// `Some(RetryErrorReason)` when the attempt timed out because an elapsed
-    /// budget selected the effective timeout.
-    #[inline]
-    fn elapsed_timeout_reason<E>(&self, failure: &AttemptFailure<E>) -> Option<RetryErrorReason> {
-        if !matches!(failure, AttemptFailure::Timeout) {
-            return None;
-        }
-        match self.source {
-            Some(AttemptTimeoutSource::MaxOperationElapsed) => {
-                Some(RetryErrorReason::MaxOperationElapsedExceeded)
-            }
-            Some(AttemptTimeoutSource::MaxTotalElapsed) => {
-                Some(RetryErrorReason::MaxTotalElapsedExceeded)
-            }
-            Some(AttemptTimeoutSource::Configured) | None => None,
-        }
-    }
-}
-
-/// Result and cleanup status returned from one blocking worker attempt.
-struct BlockingAttemptOutcome<T, E> {
-    /// Attempt result after timeout handling.
-    result: Result<T, AttemptFailure<E>>,
-    /// Worker threads not observed to exit before cancellation grace ended.
-    unreaped_worker_count: u32,
-}
-
-impl<T, E> BlockingAttemptOutcome<T, E> {
-    /// Creates a worker-attempt outcome.
-    ///
-    /// # Parameters
-    /// - `result`: Attempt result exposed to the retry flow.
-    /// - `unreaped_worker_count`: Count of worker threads not observed to exit.
-    ///
-    /// # Returns
-    /// A blocking-attempt outcome.
-    #[inline]
-    fn new(result: Result<T, AttemptFailure<E>>, unreaped_worker_count: u32) -> Self {
-        Self {
-            result,
-            unreaped_worker_count,
-        }
-    }
-}
-
-/// Mutable retry-flow state shared by sync, async, and worker execution loops.
-struct RetryFlowState<E> {
-    /// Monotonic instant when the retry flow started.
-    started_at: Instant,
-    /// Cumulative user operation time consumed by attempts.
-    operation_elapsed: Duration,
-    /// Attempts executed or currently being prepared.
-    attempts: u32,
-    /// Last failure retained for elapsed-budget errors raised before another attempt.
-    last_failure: Option<AttemptFailure<E>>,
-}
-
-impl<E> RetryFlowState<E> {
-    /// Creates an empty retry-flow state.
-    ///
-    /// # Returns
-    /// A state with zero attempts and no accumulated operation elapsed time.
-    fn new() -> Self {
-        Self {
-            started_at: Instant::now(),
-            operation_elapsed: Duration::ZERO,
-            attempts: 0,
-            last_failure: None,
-        }
-    }
-
-    /// Returns total monotonic retry-flow elapsed time.
-    ///
-    /// # Returns
-    /// Elapsed time since this retry flow started.
-    #[inline]
-    fn total_elapsed(&self) -> Duration {
-        self.started_at.elapsed()
-    }
-
-    /// Marks the next attempt as started.
-    ///
-    /// # Returns
-    /// The one-based attempt number after incrementing.
-    #[inline]
-    fn start_next_attempt(&mut self) -> u32 {
-        self.attempts += 1;
-        self.attempts
-    }
-
-    /// Adds elapsed user operation time.
-    ///
-    /// # Parameters
-    /// - `attempt_elapsed`: Duration consumed by the latest attempt.
-    #[inline]
-    fn add_operation_elapsed(&mut self, attempt_elapsed: Duration) {
-        self.operation_elapsed = add_elapsed(self.operation_elapsed, attempt_elapsed);
-    }
-
-    /// Stores the last failure observed before a retry sleep.
-    ///
-    /// # Parameters
-    /// - `failure`: Failure from the latest attempt.
-    #[inline]
-    fn record_last_failure(&mut self, failure: AttemptFailure<E>) {
-        self.last_failure = Some(failure);
-    }
-
-    /// Takes the retained last failure.
-    ///
-    /// # Returns
-    /// The retained last failure, if one exists.
-    #[inline]
-    fn take_last_failure(&mut self) -> Option<AttemptFailure<E>> {
-        self.last_failure.take()
-    }
-}
-
-/// Source of an effective attempt timeout.
+/// Retry executor implementation.
 #[allow(clippy::result_large_err)]
 impl<E> Retry<E> {
     /// Creates a retry builder.
@@ -1346,18 +1202,6 @@ fn wait_for_cancelled_worker<T, E>(
 /// This function returns nothing.
 fn join_finished_worker(worker: JoinHandle<()>) {
     let _ = worker.join();
-}
-
-/// Adds one attempt duration to the cumulative user-operation elapsed time.
-///
-/// # Parameters
-/// - `operation_elapsed`: Cumulative elapsed time before the attempt.
-/// - `attempt_elapsed`: Elapsed time consumed by the current attempt.
-///
-/// # Returns
-/// The summed elapsed time, saturated at [`Duration::MAX`] on overflow.
-fn add_elapsed(operation_elapsed: Duration, attempt_elapsed: Duration) -> Duration {
-    operation_elapsed.saturating_add(attempt_elapsed)
 }
 
 /// Sleeps the current thread when the delay is non-zero.
