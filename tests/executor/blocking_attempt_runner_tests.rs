@@ -30,13 +30,13 @@ fn test_blocking_attempt_runner_paths_are_observable_through_blocking_timeout_an
         .attempt_timeout(Some(Duration::from_millis(20)))
         .worker_cancel_grace(Duration::from_millis(20))
         .build()
-        .unwrap();
+        .expect("retry should build");
 
     assert_eq!(
         "ok",
         retry
             .run_in_worker(|_token: AttemptCancelToken| Ok("ok"))
-            .unwrap()
+            .expect("worker attempt should succeed")
     );
 
     let error = retry
@@ -45,11 +45,5 @@ fn test_blocking_attempt_runner_paths_are_observable_through_blocking_timeout_an
             Err::<&'static str, &'static str>("late")
         })
         .unwrap_err();
-    assert!(matches!(
-        error.reason(),
-        RetryErrorReason::MaxOperationElapsedExceeded
-            | RetryErrorReason::MaxTotalElapsedExceeded
-            | RetryErrorReason::AttemptsExceeded
-            | RetryErrorReason::WorkerStillRunning,
-    ));
+    assert_eq!(error.reason(), RetryErrorReason::WorkerStillRunning);
 }

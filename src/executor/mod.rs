@@ -25,6 +25,7 @@ mod retry;
 mod retry_builder;
 mod retry_flow_action;
 mod retry_flow_state;
+mod retry_runner;
 mod sync_attempt;
 mod sync_value_operation;
 
