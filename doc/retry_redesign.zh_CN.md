@@ -1,61 +1,57 @@
 # `qubit-retry` 重新设计文档
 
-本文档前部（§1–§3）说明旧版问题与设计目标；**自 §4 起的公开类型、监听器签名、§7 目录结构、§5.3 示例已与当前 `rust-common/rs-retry` 源码一致**。§5.4 描述的 result-based / `run_outcome` 等 API **尚未在本 crate 实现**，仍标记为可选后续方向。
+本文记录 `qubit-retry` 从旧版类型绑定模型迁移到当前实现的设计依据。文档中的公开 API、模块结构和执行语义以当前 `rust-common/rs-retry` 源码为准；结果值驱动的 `run_outcome` 仍是可选后续方向，当前 crate 未实现。
 
 ## 1. 背景
 
-当前 `qubit-retry` 的实现把“执行控制”、“错误判定”、“结果值判定”、“事件监听”和“配置存储”全部绑定在 `RetryBuilder<T, C>` / `RetryExecutor<T, C>` 上。这样做在简单场景下可用，但对多数真实调用方并不友好：
+旧版设计把“执行控制”、“错误判定”、“结果值判定”、“事件监听”和“配置存储”过早绑定在带成功值类型参数的 executor / builder 上。这样会带来几个问题：
 
-1. 基础错误重试也要求成功值 `T: Clone + PartialEq + Eq + Hash + Send + Sync + 'static`。
-2. 这些约束来自 result-based retry 和事件持有 owned result，但被提前加到了所有 API 上。
-3. 操作错误被擦除为 `Box<dyn Error>` 或 `RetryError`，调用方很难保留自己的错误类型。
-4. `failed_on_error::<E>()` / `abort_on_error::<E>()` 的 TypeId 设计并没有真正对 boxed dynamic error 做可靠类型匹配，容易给调用方错误预期。
-5. `DefaultRetryConfig` 在运行时从 `Config` 中反复读取配置，使“策略快照”和“配置存储”混在一起。
-6. 同步 `operation_timeout` 只能后置检查，不能真正中断操作，但 API 表达上容易让用户误解。
-7. 事件对象持有 owned `T`，直接导致 `Clone` 要求；很多场景只需要 attempt、delay、elapsed、error 等元数据。
+1. 普通错误重试也会被成功值 `T` 的 `Clone` / `Eq` / `Hash` / `Send` / `Sync` 等约束污染。
+2. 事件对象如果持有 owned `T`，调用方为了观测 retry 元数据就必须让业务返回值可克隆。
+3. 操作错误容易被擦除成 boxed error，依赖方不容易保留自己的错误枚举。
+4. 基于 `TypeId` 的错误类型匹配对 boxed dynamic error 不直观，容易给调用方错误预期。
+5. 配置读取和执行策略混在一起，会让一次 retry 执行是否使用同一份策略快照变得不清楚。
+6. 同步函数无法安全中断任意阻塞闭包，但旧 `operation_timeout` 容易让用户误以为 sync API 能强制中断。
 
-由于包还没有对外发布，本设计不考虑旧版 API 兼容性，目标是把 API 调整为更符合 Rust 使用习惯的形态。
+当前实现的目标是：把 retry 框架收敛成“错误类型绑定 + 方法级成功值 + 明确执行模式 + 可观测上下文”的模型。
 
 ## 2. 设计目标
 
-1. 核心 retry API 不再对成功值 `T` 施加 `Clone/Eq/Hash/Send/Sync/'static` 约束。
-2. 默认场景面向错误重试：操作返回 `Result<T, E>`，retry executor 基于 `&E` 判断是否重试。
-3. 终止错误保留原始错误类型 `E`，不强制转成 `RetryError` 或 `Box<dyn Error>`。
-4. result-based retry 作为高级 API 独立存在，只有使用它时才引入与 `T` 相关的复杂性。
-5. retry 配置是不可变 value object，运行期间不从外部配置源反复读取。
-6. 事件监听不持有 owned `T`，避免为了观测而污染执行 API 的类型约束。
-7. async timeout 语义要真实、明确；sync API 不伪装能中断同步操作。
-8. `qubit-http` 可以自然基于 `HttpError::retry_hint()` 接入，不需要胶水代码或额外保存最后错误。
+1. 核心 `Retry<E>` 只绑定操作错误类型 `E`，成功值 `T` 由每次 `run` / `run_async` / `run_in_worker` 调用引入。
+2. 默认场景面向错误重试：操作返回 `Result<T, E>`，终止错误通过 `RetryError<E>` 保留原始 `E`。
+3. 事件监听只观察 `RetryContext`、`AttemptFailure<E>` 和 `RetryError<E>`，不持有成功值 `T`。
+4. retry 配置是不可变 `RetryOptions` 快照，`qubit-config` 读取只发生在构造阶段。
+5. sync、async、worker-thread 三种执行模式明确区分 timeout 能力。
+6. `max_operation_elapsed` 和 `max_total_elapsed` 语义分开，避免把用户操作耗时和 retry 控制流耗时混在一起。
+7. blocking 操作的 timeout 通过 worker thread、合作式取消 token 和 cancellation grace 表达，不假装能强杀 Rust 线程。
 
 ## 3. 非目标
 
-1. 不保留 `RetryBuilder<T, C>` / `RetryExecutor<T, C>` 的旧 API 兼容性。
-2. 不继续支持“通过 TypeId 配置错误类型集合”的旧错误判定模型。
-3. 不让 retry 框架接管业务错误建模。业务是否把某个成功结果视作可重试，应优先由业务转换成显式错误。
-4. 不在 sync `run()` 中实现强制中断。Rust 中安全中断任意同步闭包不可行。
-5. 不在第一阶段引入复杂 circuit breaker、hedging、bulkhead 等 resilience 能力。
+1. 不恢复旧版 `RetryBuilder<T, C>` / `RetryExecutor<T, C>` 兼容层。
+2. 不继续支持 TypeId 集合式错误匹配。
+3. 不让 retry 框架接管业务成功值判定；业务是否把成功结果视为可重试，优先由业务转换成显式错误。
+4. 不在普通 sync `run()` 中实现强制中断。
+5. 不在当前阶段引入 circuit breaker、hedging、bulkhead 等更高层 resilience 能力。
 
 ## 4. 核心设计决策
 
-### 4.1 Executor 不再绑定成功值 `T`
+### 4.1 `Retry<E>` 不绑定成功值 `T`
 
-当前 crate 中的核心类型：
+当前核心类型是 `Retry<E>`：
 
 ```rust
-use qubit_common::BoxError;
-
-#[derive(Clone)]
-pub struct RetryExecutor<E = BoxError> {
+pub struct Retry<E = BoxError> {
     options: RetryOptions,
-    classifier: ErrorClassifier<E>,
-    listeners: RetryListeners<E>, // pub(crate)，见 `events/listeners.rs`
+    retry_after_hint: Option<RetryAfterHint<E>>,
+    isolate_listener_panics: bool,
+    listeners: RetryListeners<E>,
 }
 ```
 
-`RetryExecutor` 只绑定错误类型 `E`，不绑定成功值 `T`。执行方法再引入 `T`：
+执行方法再引入成功值：
 
 ```rust
-impl<E> RetryExecutor<E> {
+impl<E> Retry<E> {
     pub fn run<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>;
@@ -64,586 +60,356 @@ impl<E> RetryExecutor<E> {
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>;
+
+    pub fn run_in_worker<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static;
 }
 ```
 
-这样成功值 `T` 只被闭包返回和最终返回使用，不参与策略存储，也不需要 `Clone/Eq/Hash`。
+这样普通错误重试不会要求 `T: Clone + Eq + Hash`。`run_blocking_with_timeout()` 仍保留为 `run_in_worker()` 的兼容别名。
 
-### 4.2 错误分类改为闭包或 trait，不使用 TypeId
+### 4.2 错误判定由 failure listener 表达
 
-- `RetryDecision` 定义在 `src/events/retry_decision.rs`，由 `qubit_retry::RetryDecision`（crate 根与 `events` 子模块）导出。
-- `AttemptContext` 定义在 `src/events/attempt_context.rs`，分类器与重试监听都会用到。
-- `ErrorClassifier<E>` 定义在 `src/error/error_classifier.rs`，类型为 `qubit_function::ArcBiFunction<E, AttemptContext, RetryDecision>`（内部用 `Arc` 共享，便于 `RetryExecutor` 克隆），crate 根与 `qubit_retry::error::ErrorClassifier` 均可导入。
-- `RetryError<E>`、`AttemptFailure<E>` 仍在 `error` 子模块。
+当前没有独立的 `ErrorClassifier` / `RetryDecision` 类型。错误判定通过 `on_failure` 监听器返回 `AttemptFailureDecision`：
 
 ```rust
-pub enum RetryDecision {
+pub enum AttemptFailureDecision {
+    UseDefault,
     Retry,
+    RetryAfter(Duration),
     Abort,
 }
-
-// `ArcBiFunction` 来自依赖 `qubit-function`
-pub type ErrorClassifier<E> =
-    qubit_function::ArcBiFunction<E, AttemptContext, RetryDecision>;
 ```
 
-默认行为建议为“重试所有错误”，可用 builder 覆盖：
+便捷 API `retry_if_error` 只处理 `AttemptFailure::Error(E)`，返回 `true` 表示 retry，返回 `false` 表示 abort；timeout、panic、executor failure 仍交给默认策略或其他 failure listener。
+
+默认策略是：普通应用错误可重试直到限制耗尽；configured attempt timeout 按 `AttemptTimeoutPolicy`；panic 和 executor failure 默认 abort。
+
+### 4.3 终止错误保留原始错误类型
+
+`RetryError<E>` 是结构体而不是多变体枚举。终止原因、最后一次 attempt failure 和终止时的上下文分开保存：
 
 ```rust
-let executor = RetryExecutor::<HttpError>::builder()
-    .max_attempts(3)
-    .retry_if(|error, _ctx| error.retry_hint() == RetryHint::Retryable)
-    .build()?;
-```
-
-其中 `retry_if` 是便捷接口，接收返回 `bool` 的闭包：`true` 映射为 `RetryDecision::Retry`，`false` 映射为 `RetryDecision::Abort`。如果调用方需要更明确的命名，也可以提供 `retry_decide`：
-
-```rust
-let executor = RetryExecutor::<HttpError>::builder()
-    .retry_decide(|error, _ctx| {
-        if error.retry_hint() == RetryHint::Retryable {
-            RetryDecision::Retry
-        } else {
-            RetryDecision::Abort
-        }
-    })
-    .build()?;
-```
-
-不再提供 `failed_on_error::<E>()` 这种 TypeId API。需要按错误类型判断时，调用方可以在自己的错误枚举或 `downcast_ref` 中显式处理。
-
-### 4.3 终止错误保留原始 `E`
-
-新版错误类型建议：
-
-```rust
-pub enum RetryError<E> {
-    Aborted {
-        attempts: u32,
-        elapsed: Duration,
-        failure: AttemptFailure<E>,
-    },
-    AttemptsExceeded {
-        attempts: u32,
-        max_attempts: u32,
-        elapsed: Duration,
-        last_failure: AttemptFailure<E>,
-    },
-    MaxOperationElapsedExceeded {
-        attempts: u32,
-        elapsed: Duration,
-        max_operation_elapsed: Duration,
-        last_failure: Option<AttemptFailure<E>>,
-    },
+pub struct RetryError<E> {
+    reason: RetryErrorReason,
+    last_failure: Option<AttemptFailure<E>>,
+    context: RetryContext,
 }
+```
 
+`AttemptFailure<E>` 表示一次 attempt 的失败：
+
+```rust
 pub enum AttemptFailure<E> {
     Error(E),
-    AttemptTimeout {
-        elapsed: Duration,
-        timeout: Duration,
-    },
+    Timeout,
+    Panic(AttemptPanic),
+    Executor(AttemptExecutorError),
 }
 ```
 
-好处：
+调用方可以通过 `reason()`、`last_failure()`、`last_error()`、`into_last_error()`、`context()`、`attempt_timeout_source()` 和 `unreaped_worker_count()` 读取终止信息。若最后一次失败是业务错误，原始 `E` 不会被擦除。
 
-1. 如果最后一次失败是业务错误，调用方能拿回原始 `E`。
-2. 如果最后一次失败是 async attempt timeout，也能表达为 retry 框架生成的失败。
-3. `RetryError<E>` 可以在 `E: Error + 'static` 时实现 `std::error::Error`，但不强制所有 `E` 都是 `Error`。
+### 4.4 监听器只传上下文和失败引用
 
-当前实现提供的便捷方法：
+当前 listener 是生命周期 hook，不是单独的策略系统：
 
-```rust
-impl<E> RetryError<E> {
-    pub fn attempts(&self) -> u32;
-    pub fn elapsed(&self) -> Duration;
-    pub fn last_failure(&self) -> Option<&AttemptFailure<E>>;
-    pub fn last_error(&self) -> Option<&E>;
-    pub fn into_last_error(self) -> Option<E>;
-}
-```
+1. `before_attempt(&RetryContext)`：每次 attempt 开始前触发。
+2. `on_success(&RetryContext)`：attempt 成功后触发。
+3. `on_failure(&AttemptFailure<E>, &RetryContext) -> AttemptFailureDecision`：attempt 失败后触发，可影响 retry / abort / retry-after。
+4. `on_retry(&AttemptFailure<E>, &RetryContext)`：已确定会 retry 且 delay 已选定后触发，只观察，不改策略。
+5. `on_error(&RetryError<E>, &RetryContext)`：整个 retry flow 终止失败时触发。
 
-`qubit-http` 可以把 `AttemptsExceeded { last_failure: Error(error), .. }` 映射回 `HttpError`，同时追加 retry 上下文。
+listener 不持有成功值 `T`。如果业务需要记录成功值，应在 operation 内自行记录，而不是让 retry 框架克隆返回值。
 
-### 4.4 监听器：Context 元数据 + 单独传入的失败
+### 4.5 配置是 `RetryOptions` 快照
 
-监听器不持有成功值 `T`：重试/失败/终止路径使用 **Copy 的 context 结构体** 描述元数据，**`AttemptFailure<E>` 以引用**传给回调（由执行器在调用栈上借出）。成功路径只有 **`SuccessContext`**（`attempts` + `elapsed`）。
+`RetryOptions` 持有与错误类型无关的执行策略：attempt 次数、elapsed budget、delay、jitter、attempt timeout、worker cancellation grace。配置从 `qubit-config` 读取时先进入 `RetryConfigValues`，再合并为 `RetryOptions`。
 
-```rust
-pub struct RetryContext {
-    pub attempt: u32,
-    pub max_attempts: u32,
-    pub elapsed: Duration,
-    pub next_delay: Duration,
-}
+重要约束：
 
-pub struct SuccessContext {
-    pub attempts: u32,
-    pub elapsed: Duration,
-}
+1. `max_attempts` 内部使用 `NonZeroU32`，构造时拒绝 0。
+2. `RetryDelay::None` 允许零 delay；其他固定、随机、指数 delay 中不接受无意义的零值。
+3. `RetryJitter::Factor` 必须是有限的 `[0.0, 1.0]`。
+4. `AttemptTimeoutOption` 的 timeout 必须大于 0。
+5. `RetryDelay::Random` 的采样边界必须能无损表示为 `u64` 纳秒，避免极大 `Duration` 被饱和后破坏 min/max 语义。
 
-pub struct FailureContext {
-    pub attempts: u32,
-    pub elapsed: Duration,
-}
+### 4.6 Delay 和 Jitter 拆分
 
-pub struct AbortContext {
-    pub attempts: u32,
-    pub elapsed: Duration,
-}
-```
-
-监听器类型别名（`ArcBiConsumer` / `ArcConsumer` 来自 `qubit-function`；定义见 `src/events/listeners.rs`）：
+`RetryDelay` 负责基础 delay：
 
 ```rust
-pub type RetryListener<E> =
-    qubit_function::ArcBiConsumer<RetryContext, AttemptFailure<E>>;
-pub type SuccessListener = qubit_function::ArcConsumer<SuccessContext>;
-pub type FailureListener<E> =
-    qubit_function::ArcBiConsumer<FailureContext, Option<AttemptFailure<E>>>;
-pub type AbortListener<E> =
-    qubit_function::ArcBiConsumer<AbortContext, AttemptFailure<E>>;
-```
-
-这样 listener 不需要持有 `T`，核心 API 也不需要 `T: Clone`。若要观测成功业务值，应在业务 `operation` 内自行记录，而不是由 retry 框架克隆结果。
-
-### 4.5 配置改成 `RetryOptions` 快照
-
-建议删除 `RetryConfig` trait、`DefaultRetryConfig`、`SimpleRetryConfig` 这组三层结构，改为单一 value object：
-
-```rust
-#[derive(Debug, Clone, PartialEq)]
-pub struct RetryOptions {
-    pub max_attempts: NonZeroU32,
-    pub max_operation_elapsed: Option<Duration>,
-    pub max_total_elapsed: Option<Duration>,
-    pub delay: Delay,
-    pub jitter: Jitter,
-    pub attempt_timeout: Option<AttemptTimeoutOption>,
-}
-
-pub struct AttemptTimeoutOption {
-    pub timeout: Duration,
-    pub policy: AttemptTimeoutPolicy,
-}
-
-pub enum AttemptTimeoutPolicy {
-    Retry,
-    Abort,
-}
-```
-
-配置读取放在转换层：
-
-```rust
-impl RetryOptions {
-    pub fn from_config<R: ConfigReader + ?Sized>(config: &R) -> Result<Self, RetryConfigError>;
-}
-```
-
-原则：
-
-1. `RetryExecutor` 持有 `RetryOptions` 快照。
-2. 从 `qubit-config` 读取只发生在构造阶段。
-3. `build()` 做完整校验，返回 `Result<RetryExecutor<E>, RetryConfigError>`。
-4. `max_attempts` 用 `NonZeroU32`，避免 `0` 的语义歧义。
-5. `Duration::ZERO` 只允许用于 `Delay::None`；其他 delay/timeout 为零时直接配置错误。
-
-### 4.6 Delay 和 Jitter 拆清楚
-
-当前 `RetryDelayStrategy::calculate_delay(attempt, jitter_factor)` 同时处理基础 backoff 和 jitter，且 jitter 只向上增加 delay。新版建议拆成：
-
-```rust
-pub enum Delay {
+pub enum RetryDelay {
     None,
     Fixed(Duration),
     Random { min: Duration, max: Duration },
-    Exponential {
-        initial: Duration,
-        max: Duration,
-        multiplier: f64,
-    },
+    Exponential { initial: Duration, max: Duration, multiplier: f64 },
 }
+```
 
-pub enum Jitter {
+`RetryJitter` 在基础 delay 之后应用：
+
+```rust
+pub enum RetryJitter {
     None,
     Factor(f64),
 }
 ```
 
-计算流程：
+`Factor(0.2)` 表示围绕 base delay 做对称抖动：`base +/- 20%`，下限 clamp 到 0。当前实现使用 `rand::rng()` 采样；测试覆盖范围和边界，不依赖固定随机种子。
 
-```rust
-let base = options.delay.base_delay(attempt);
-let delay = options.jitter.apply(base, rng);
-```
-
-`Jitter::Factor(0.2)` 建议语义为对称抖动：`base ± base * factor`，下限 clamp 到 `Duration::ZERO`。这比“只加不减”更符合常见 jitter 直觉。
-
-如果希望可测试性更强，可以把随机源封装在内部 `RandomSource`，测试里用 seeded RNG；第一阶段可以只保证 delay 范围测试。
-
-### 4.7 timeout 与 elapsed 预算语义
+### 4.7 timeout 与 elapsed budget
 
 当前实现明确区分三类时间约束：
 
-1. `max_operation_elapsed`：累计用户 operation attempt 的执行时间预算。retry sleep、Retry-After sleep、retry hint 提取和 listener 时间不计入。
-2. `max_total_elapsed`：整个 retry flow 的单调时间预算。operation attempt、retry sleep、Retry-After sleep、retry hint 提取、`on_before_attempt`、`on_failure` 和 `on_retry` 时间都计入。它使用 `std::time::Instant` 这类单调时钟，不使用 wall-clock 时间，因此不受系统时间调整影响。
-3. `attempt_timeout`：单次 attempt 超时，作为 `RetryOptions` 的可选配置；它在 async API 中通过 `tokio::time::timeout` 真正生效，在 blocking API 中通过 worker 线程隔离和等待超时生效。
+1. `max_operation_elapsed`：累计用户 operation attempt 的执行时间。retry sleep、Retry-After sleep、hint 提取和 listener 时间不计入。
+2. `max_total_elapsed`：整个 retry flow 的单调时间。operation、retry sleep、Retry-After sleep、hint 提取、`before_attempt`、`on_failure` 和 `on_retry` 时间都计入。
+3. `attempt_timeout`：单次 attempt timeout。async 通过 `tokio::time::timeout` 生效；worker-thread 通过 `recv_timeout`、`AttemptCancelToken` 和 `worker_cancel_grace` 生效。
 
-async / worker attempt 的有效 timeout 是三者的最小值：配置的 `attempt_timeout`、剩余 `max_operation_elapsed`、剩余 `max_total_elapsed`。若配置 timeout 与 elapsed budget 恰好相等，配置 timeout 优先，以保留 `AttemptTimeoutPolicy` 的可观测语义；若 operation budget 与 total budget 恰好相等，operation budget 优先，保留更窄的诊断。
+async / worker attempt 的有效 timeout 是 configured attempt timeout、剩余 operation budget、剩余 total budget 三者中最短的一个。平局时 configured timeout 优先，以保留 `AttemptTimeoutPolicy` 的可观察语义；operation budget 与 total budget 平局时 operation budget 优先。
 
-终态 listener 保持通知语义：`on_success` / `on_error` 的耗时会增加调用方实际等待时间，但不会把已经成功的 operation 反向改写成 retry failure，也不会改变已经选定的 terminal error。
-
-基础 sync API 不支持主动中断单次 attempt，即使 `RetryOptions` 配置了 `attempt_timeout`，普通 `run()` 也保持当前线程上的同步串行语义：
-
-```rust
-pub fn run<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
-where
-    F: FnMut() -> Result<T, E>;
-```
-
-async 单次 timeout 由 `run_async()` 读取 `RetryOptions.attempt_timeout`：
-
-```rust
-pub async fn run_async<T, F, Fut>(&self, operation: F) -> Result<T, RetryError<E>>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T, E>>;
-```
-
-blocking 单次 timeout 使用独立 API 表达：
-
-```rust
-pub fn run_blocking_with_timeout<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
-where
-    T: Send + 'static,
-    E: Send + 'static,
-    F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static;
-```
-
-这样 sync `run()` 不会假装能中断同步闭包；blocking timeout 的语义也足够明确：超时后 executor 停止等待并标记 token cancelled，但 Rust 线程不能被安全强杀，旧 attempt 可能继续运行。
+普通 sync `run()` 不支持 configured attempt timeout。如果配置了 attempt timeout，`run()` 返回 `RetryErrorReason::UnsupportedOperation`，提示使用 `run_async()` 或 `run_in_worker()`。
 
 ## 5. 推荐公开 API
 
 ### 5.1 基础错误重试
 
 ```rust
-use qubit_retry::{Delay, RetryExecutor};
+use qubit_retry::Retry;
 use std::time::Duration;
 
-let executor = RetryExecutor::<std::io::Error>::builder()
+let retry = Retry::<std::io::Error>::builder()
     .max_attempts(3)
-    .delay(Delay::fixed(Duration::from_millis(100)))
+    .fixed_delay(Duration::from_millis(100))
     .build()?;
 
-let text = executor.run(|| std::fs::read_to_string("config.toml"))?;
+let text = retry.run(|| std::fs::read_to_string("config.toml"))?;
 ```
-
-默认重试所有 `Err(E)`。
 
 ### 5.2 自定义错误判定
 
 ```rust
-let executor = RetryExecutor::<HttpError>::builder()
+let retry = Retry::<HttpError>::builder()
     .max_attempts(3)
-    .delay(Delay::exponential(
-        Duration::from_millis(200),
-        Duration::from_secs(5),
-        2.0,
-    ))
-    .retry_if(|error, _ctx| error.retry_hint() == RetryHint::Retryable)
+    .exponential_backoff(Duration::from_millis(200), Duration::from_secs(5))
+    .retry_if_error(|error: &HttpError, _context: &RetryContext| {
+        error.retry_hint() == RetryHint::Retryable
+    })
     .build()?;
 
-let response = executor
+let response = retry
     .run_async(|| async { client.execute_once(request.clone()).await })
     .await?;
 ```
 
+更复杂的判定可以使用 `on_failure`，例如针对 rate limit 返回 `AttemptFailureDecision::RetryAfter(delay)`。
+
 ### 5.3 注册监听器
 
 ```rust
-let executor = RetryExecutor::<HttpError>::builder()
+let retry = Retry::<HttpError>::builder()
     .max_attempts(3)
-    .on_retry(|context, failure| {
+    .on_failure(|failure: &AttemptFailure<HttpError>, context: &RetryContext| {
         tracing::warn!(
-            attempt = context.attempt,
-            delay_ms = context.next_delay.as_millis(),
+            attempt = context.attempt(),
+            retry_after_hint = ?context.retry_after_hint(),
             failure = ?failure,
-            "retrying failed operation",
+            "attempt failed",
+        );
+        AttemptFailureDecision::UseDefault
+    })
+    .on_retry(|failure: &AttemptFailure<HttpError>, context: &RetryContext| {
+        tracing::info!(
+            attempt = context.attempt(),
+            next_delay = ?context.next_delay(),
+            failure = ?failure,
+            "retry scheduled",
         );
     })
-    .on_failure(|context, last_failure| {
+    .on_error(|error: &RetryError<HttpError>, context: &RetryContext| {
         tracing::error!(
-            attempts = context.attempts,
-            has_last_failure = last_failure.is_some(),
-            "operation failed after retry",
+            reason = ?error.reason(),
+            attempts = context.attempt(),
+            total_elapsed_ms = context.total_elapsed().as_millis(),
+            "retry flow failed",
         );
-    })
-    .on_abort(|context, failure| {
-        tracing::warn!(
-            attempts = context.attempts,
-            failure = ?failure,
-            "classifier aborted retry",
-        );
-    })
-    .on_success(|context| {
-        tracing::info!(attempts = context.attempts, "operation succeeded");
     })
     .build()?;
 ```
 
-监听器只依赖错误类型 `E`，不依赖成功值 `T`。
-
-### 5.4 高级：结果值 retry（**当前 crate 未实现**）
-
-以下类型与 `run_outcome` 仍属设计草案：若未来引入，建议把 result-based retry 从核心 `RetryExecutor<E>` 中拆成显式 API：
-
-```rust
-pub enum OutcomeDecision {
-    Succeed,
-    Retry,
-    Abort,
-}
-
-pub enum OutcomeRef<'a, T, E> {
-    Success(&'a T),
-    Error(&'a E),
-    AttemptTimeout { elapsed: Duration, timeout: Duration },
-}
-
-pub enum Outcome<T, E> {
-    Success(T),
-    Error(E),
-    AttemptTimeout { elapsed: Duration, timeout: Duration },
-}
-
-pub enum OutcomeRetryError<T, E> {
-    Aborted {
-        attempts: u32,
-        elapsed: Duration,
-        outcome: Outcome<T, E>,
-    },
-    AttemptsExceeded {
-        attempts: u32,
-        max_attempts: u32,
-        elapsed: Duration,
-        last_outcome: Outcome<T, E>,
-    },
-    MaxOperationElapsedExceeded {
-        attempts: u32,
-        elapsed: Duration,
-        max_operation_elapsed: Duration,
-        last_outcome: Option<Outcome<T, E>>,
-    },
-}
-```
-
-API：
-
-```rust
-let value = executor
-    .run_outcome(
-        || fetch_page(),
-        |outcome, _ctx| match outcome {
-            OutcomeRef::Success(page) if page.is_empty() => OutcomeDecision::Retry,
-            OutcomeRef::Success(_) => OutcomeDecision::Succeed,
-            OutcomeRef::Error(error) if error.is_transient() => OutcomeDecision::Retry,
-            OutcomeRef::Error(_) => OutcomeDecision::Abort,
-            OutcomeRef::AttemptTimeout { .. } => OutcomeDecision::Retry,
-        },
-    )?;
-```
-
-若将来实现 `run_outcome`，终止错误才可能携带成功值 `T`；当前 crate 提供的 `run` / `run_async` / `run_blocking_with_timeout` 不受影响。
-
 ## 6. 执行流程
 
-错误重试流程：
+错误重试流程可以概括为：
 
 ```text
-attempt = 1
-last_failure = None
+state = { attempts: 0, operation_elapsed: 0, last_failure: None }
 
 loop:
-  if max_operation_elapsed or max_total_elapsed exceeded:
-    调用 failure 监听（FailureContext, last_failure）
-    return RetryError::{MaxOperationElapsedExceeded | MaxTotalElapsedExceeded}
+  if operation/total elapsed budget 已耗尽:
+    return RetryError(reason, last_failure, context)
+
+  attempts += 1
+  emit before_attempt(context)
+
+  if listener 时间导致 elapsed budget 耗尽:
+    return RetryError(reason, last_failure, context)
 
   result = run attempt
-    - async: tokio::time::timeout(effective_attempt_timeout)
-    - blocking: worker thread + recv_timeout(effective_attempt_timeout)
-    - sync run(): direct call
+    - sync: 直接调用 operation
+    - async: 必要时用 tokio::time::timeout 包住 future
+    - worker: spawn worker thread + recv / recv_timeout
 
   if Ok(value):
-    调用 success 监听（SuccessContext）
+    emit on_success(context)
     return Ok(value)
 
-  failure = Error(error) or AttemptTimeout
+  failure = Error(E) | Timeout | Panic | Executor
 
-  if classifier says Abort:
-    调用 abort 监听（AbortContext, failure）
-    return RetryError::Aborted { failure, .. }
+  if timeout 来自 elapsed budget:
+    return MaxOperationElapsedExceeded 或 MaxTotalElapsedExceeded
 
-  if attempt >= max_attempts:
-    调用 failure 监听（FailureContext, Some(failure)）
-    return RetryError::AttemptsExceeded { last_failure: failure, .. }
+  hint = retry_after_hint(failure, context)
+  decision = merge on_failure decisions with default policy
 
-  delay = calculate_delay(attempt)
-  if max_total_elapsed would be exhausted by sleeping delay:
-    调用 failure 监听（FailureContext, Some(failure)）
-    return RetryError::MaxTotalElapsedExceeded { last_failure: Some(failure), .. }
+  if decision == Abort:
+    return Aborted
 
-  调用 retry 监听（RetryContext, failure）
-  if on_retry listener time exhausts max_total_elapsed:
-    return RetryError::MaxTotalElapsedExceeded { last_failure: Some(failure), .. }
+  if attempts >= max_attempts:
+    return AttemptsExceeded
+
+  if worker timeout 后未在 grace 内退出:
+    return WorkerStillRunning
+
+  delay = RetryAfter / hint / configured delay + jitter
+  if delay 会耗尽 max_total_elapsed:
+    return MaxTotalElapsedExceeded
+
+  emit on_retry(context with next_delay)
+  if on_retry listener 时间耗尽 max_total_elapsed:
+    return MaxTotalElapsedExceeded
+
   sleep delay
   last_failure = failure
-  attempt += 1
 ```
 
-注意：retry sleep 不截断。预算不足以完成下一次 delay 时，流程在 sleep 前直接失败，行为更可预测。
+retry sleep 不截断：如果剩余 total budget 不足以睡完整 delay 并进入下一次 attempt，流程在 sleep 前失败。
 
-## 7. 当前模块结构（与仓库一致）
+## 7. 当前模块结构
 
 ```text
 src/
-  lib.rs                      # 对外 re-export：RetryExecutor、RetryOptions、Delay、Jitter、
-                              # error 类型、events 中的 Context / RetryDecision / Listener 别名
-  retry_executor.rs           # RetryExecutor<E>：run / run_async / run_blocking_with_timeout
-  retry_executor_builder.rs   # RetryExecutorBuilder<E>
-  retry_options.rs            # RetryOptions、校验、RetryOptions::from_config
-  failure_action.rs           # 内部：同步路径失败后的下一步（重试 sleep 或终止）
-  delay.rs                    # Delay
-  jitter.rs                   # Jitter
-  events.rs                   # events 子模块入口
-  events/
-    abort_context.rs
-    attempt_context.rs
-    failure_context.rs
-    listeners.rs              # RetryListeners<E>（crate 内）、*Listener 类型别名
-    retry_context.rs
-    retry_decision.rs         # RetryDecision
-    success_context.rs
-  error.rs                    # 聚合 error 子模块
+  lib.rs
+  constants.rs
   error/
+    attempt_executor_error.rs
     attempt_failure.rs
-    error_classifier.rs       # ErrorClassifier<E>
+    attempt_panic.rs
     retry_config_error.rs
     retry_error.rs
+    retry_error_reason.rs
+    mod.rs
+  event/
+    attempt_failure_decision.rs
+    attempt_failure_listener.rs
+    attempt_success_listener.rs
+    attempt_timeout_source.rs
+    before_attempt_listener.rs
+    retry_after_hint.rs
+    retry_context.rs
+    retry_context_parts.rs
+    retry_error_listener.rs
+    retry_listeners.rs
+    mod.rs
+  executor/
+    attempt_cancel_token.rs
+    blocking_attempt_message.rs
+    retry.rs
+    retry_builder.rs
+    retry_flow_action.rs
+    sync_attempt.rs
+    sync_value_operation.rs
+    async_attempt.rs
+    async_attempt_future.rs
+    async_value_operation.rs
+    mod.rs
+  options/
+    attempt_timeout_option.rs
+    attempt_timeout_policy.rs
+    parse_retry_jitter_error.rs
+    retry_config_values.rs
+    retry_delay.rs
+    retry_delay_duration_format.rs
+    retry_jitter.rs
+    retry_options.rs
+    mod.rs
 ```
 
-其中 `RetryError<E>`、`AttemptFailure<E>`、`RetryConfigError`、`ErrorClassifier<E>` 由 `error.rs` re-export；`RetryContext`、`SuccessContext`、`FailureContext`、`AbortContext`、`RetryDecision` 与各 `*Listener` 由 `events.rs` 汇总，并在 `lib.rs` 根再导出，便于 `use qubit_retry::{RetryExecutor, RetryContext, …}`。
-
-旧版中的 `RetryConfig` trait、`DefaultRetryConfig` / `SimpleRetryConfig`、`event/retry_reason` 等已不再存在；**`outcome.rs` / `run_outcome` 尚未添加**（见 §5.4）。
+`lib.rs` 对外 re-export `Retry`、`RetryBuilder`、`RetryOptions`、`RetryDelay`、`RetryJitter`、timeout 类型、context/listener 相关类型和错误类型。`RetryListeners`、`RetryContextParts`、attempt adapter、worker message、flow action 等保持 crate 内部可见。
 
 ## 8. 对 `qubit-http` 的影响
 
-`qubit-http` 的 retry 接入会更简单：
+`qubit-http` 可用 `Retry<HttpError>` 保留 HTTP 层错误类型：
 
 ```rust
-fn build_retry_executor(&self) -> RetryExecutor<HttpError> {
-    RetryExecutor::<HttpError>::builder()
+fn build_retry(&self) -> Retry<HttpError> {
+    Retry::<HttpError>::builder()
         .max_attempts(self.options.retry.max_attempts)
         .max_total_elapsed(self.options.retry.max_duration)
         .delay(self.options.retry.delay.clone())
         .jitter(self.options.retry.jitter)
-        .retry_if(|error, _ctx| error.retry_hint() == RetryHint::Retryable)
+        .retry_if_error(|error, _context| error.retry_hint() == RetryHint::Retryable)
         .build()
         .expect("validated retry options")
 }
 ```
 
-执行：
+执行失败后，`RetryError<HttpError>` 仍可通过 `last_error()` 或 `into_last_error()` 取回原始 `HttpError`，也可以读取 retry context 后再映射成 HTTP 层错误。
 
-```rust
-let result = executor
-    .run_async(|| async {
-        let request = request.clone();
-        self.execute_once(request).await
-    })
-    .await;
-```
+## 9. 当前状态与兼容性
 
-错误映射：
+当前 crate 已完成的主体工作：
 
-```rust
-match result {
-    Ok(response) => Ok(response),
-    Err(error) => map_retry_error_to_http_error(error),
-}
-```
+1. `Retry<E>` 只绑定错误类型，成功值由执行方法引入。
+2. `RetryBuilder<E>` 提供 max attempts、delay、jitter、elapsed budget、attempt timeout、listener、retry-after hint 等配置入口。
+3. `RetryOptions` 是不可变策略快照，支持可选 `config` feature。
+4. `RetryError<E>` / `AttemptFailure<E>` 保留 typed error、timeout、panic、executor failure 和 context。
+5. `run_async()` 和 `run_in_worker()` 支持真实 per-attempt timeout；`run()` 明确拒绝 configured attempt timeout。
+6. worker timeout 采用合作式取消；未在 grace 内退出时 fail-closed 为 `WorkerStillRunning`，避免叠加不可回收 worker。
+7. README、英文/中文文档和集成测试按当前 API 维护。
 
-`HttpResponse` / `HttpStreamResponse` 不需要 `Clone/Eq/Hash`，因为 `T` 只存在于执行方法的返回值中。
+仍未实现的可选方向：
 
-## 9. 兼容性策略（历史决策与现状）
+1. result-based retry / `run_outcome`。
+2. circuit breaker、hedging、bulkhead 等高层 resilience 能力。
+3. 可注入随机源的 deterministic jitter 测试接口。
 
-重构目标按破坏性变更推进；**当前 `qubit-retry` 已落地**的主要项包括：
+## 10. 测试覆盖
 
-1. 以 `RetryExecutor<E>` + `RetryExecutorBuilder<E>` 替代旧 `RetryBuilder<T, C>` / `RetryExecutor<T, C>` 形态。
-2. 以不可变 `RetryOptions` + `RetryOptions::from_config` 替代 `RetryConfig` trait 与多层默认配置类型。
-3. 以 `retry_decide` / `retry_if` + `ErrorClassifier` 闭包替代 TypeId 集合式错误匹配。
-4. 以 `Delay` + `Jitter` 替代一体的 `RetryDelayStrategy` 语义。
-5. 文档与集成测试已按当前 API 维护。
+当前测试重点覆盖：
 
-**仍未纳入本 crate 的项**：§5.4 所述 result-based / `run_outcome` 等（若需要再单独立项实现）。
+1. 默认错误重试、显式 abort、attempts exhausted、typed error 取回。
+2. sync `run()` 对 configured attempt timeout 的 unsupported 行为。
+3. async timeout、elapsed budget 截断、listener 时间计入 total budget。
+4. worker thread 执行、panic 捕获、timeout、合作式取消、未回收 worker fail-closed。
+5. retry-after hint、`RetryAfter` decision、`on_retry` delay 观测。
+6. `RetryDelay` / `RetryJitter` 的解析、序列化、边界校验和 delay 计算。
+7. `RetryOptions::from_config` 的显式/隐式 delay、timeout policy、unlimited budget 合并。
+8. 错误类型 display/source/accessor 行为。
 
-## 10. 测试计划
+CI 还会运行格式检查、Clippy、style-check、debug/release build、all-feature tests、rustdoc、coverage 和 security audit。
 
-### 10.1 executor 与执行流程
+## 11. 推荐结论
 
-1. 默认策略重试所有错误直到成功。
-2. `retry_if` 返回 `Abort` 时立即返回 `RetryError::Aborted`，并保留原始错误。
-3. 超过 `max_attempts` 时返回 `AttemptsExceeded`，并保留最后一次错误。
-4. `max_operation_elapsed` 在首次 attempt 前超限时返回 `MaxOperationElapsedExceeded { last_failure: None }`。
-5. `max_operation_elapsed` 在一次失败后超限时返回 `MaxOperationElapsedExceeded { last_failure: Some(...) }`。
-6. `max_total_elapsed` 在首次 attempt 前超限时返回 `MaxTotalElapsedExceeded { last_failure: None }`。
-7. `max_total_elapsed` 能截断 async / worker 中正在执行的 attempt。
-8. delay 或 Retry-After delay 不足以进入下一次 attempt 时，直接以 `MaxTotalElapsedExceeded` 失败且不 sleep。
-9. `Delay::None` 不 sleep。
-10. `Delay::Fixed`、`Delay::Random`、`Delay::Exponential` 计算结果正确。
-11. `Jitter::Factor` 输出在合法区间内。
+当前推荐继续沿用“`Retry<E>` + 方法级 `T` + typed `RetryError<E>` + explicit execution mode”的设计。
 
-### 10.2 async timeout
-
-1. async operation 在 timeout 内成功。
-2. async operation 超过 `attempt_timeout` 后生成 `AttemptFailure::AttemptTimeout`。
-3. timeout 可按策略重试并最终成功。
-4. timeout 重试耗尽后返回 `AttemptsExceeded`，last failure 是 timeout。
-5. 基础 sync `run()` 不主动中断 attempt，避免表达不可实现的中断能力。
-6. blocking timeout 超时后取消 token 被标记，executor 可按策略继续。
-
-### 10.3 监听器（Context + 失败引用）
-
-1. `on_retry`：`RetryContext`（含 attempt、max_attempts、operation_elapsed、total_elapsed、next_delay）与 `AttemptFailure<E>` 引用。
-2. `on_success`：`SuccessContext`（attempts、elapsed）。
-3. `on_failure`：`FailureContext` 与 `Option<AttemptFailure<E>>`（在 attempts 用尽、max_operation_elapsed / max_total_elapsed 触发、或首次 attempt 前预算耗尽等终止场景）。
-4. `on_abort`：`AbortContext` 与 `AttemptFailure<E>`（分类器判定 Abort）。
-5. 监听器不要求成功值 `T: Clone`。
-
-### 10.4 类型约束
-
-用编译测试或普通测试覆盖：
-
-1. `T` 不实现 `Clone` 也可以使用基础 `run_async`。
-2. `T` 不实现 `Eq` / `Hash` 也可以使用基础 `run_async`。
-3. `E` 可以是业务错误枚举，终止错误中能取回原始 `E`。
-4. 若引入 result-based `run_outcome`（§5.4），才需要把 `T` 放入终止错误类型；当前 crate 无此 API。
-
-## 11. 实施步骤（回顾）
-
-仓库内已完成等价于原「第 1–2 步 + 文档/测试」的主体工作：`RetryOptions` / `Delay` / `Jitter` / `RetryError<E>` / `AttemptFailure<E>`、`RetryExecutor<E>` 与 `run` / `run_async` / `run_blocking_with_timeout`、监听器与 Context 模型、集成测试与 README。
-
-依赖方（如 `qubit-http`）的迁移与 §5.4 高级 API 属后续可选任务，不在本文强制范围。
-
-## 12. 推荐结论
-
-推荐采用“`RetryExecutor<E>` + 方法级 `T` + typed `RetryError<E>`”的设计。
-
-这能解决当前最核心的问题：
+这个模型解决了 redesign 的核心问题：
 
 1. 成功值 `T` 不再被 result retry 和事件系统绑架。
-2. HTTP 等库可以保留自己的错误类型。
-3. 错误判定由显式闭包完成，不再依赖不可靠的 TypeId 集合。
-4. 配置是不可变快照，行为更容易测试和推理。
-5. result-based retry 仍可作为高级 API 存在，但不会污染 90% 的错误重试场景。
+2. HTTP 等依赖方可以保留自己的错误类型。
+3. 错误判定由显式 listener / predicate 完成，不依赖 TypeId 集合。
+4. 配置是一次构造出的快照，执行行为容易测试和推理。
+5. timeout 能力与执行模式匹配，不向 sync API 承诺无法安全实现的中断能力。
+6. result-based retry 仍可作为高级 API 单独设计，不污染主要错误重试路径。

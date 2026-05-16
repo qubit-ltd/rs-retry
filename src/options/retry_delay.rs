@@ -202,6 +202,21 @@ impl RetryDelay {
         }
     }
 
+    /// Returns whether a duration can be represented as whole nanoseconds in `u64`.
+    ///
+    /// # Parameters
+    /// - `duration`: Duration to inspect.
+    ///
+    /// # Returns
+    /// `true` when the duration can be sampled by the random delay generator
+    /// without lossy saturation.
+    ///
+    /// # Errors
+    /// This function does not return errors.
+    fn duration_fits_nanos_u64(duration: Duration) -> bool {
+        duration.as_nanos() <= u64::MAX as u128
+    }
+
     /// Converts a [`Duration`] to whole nanoseconds as `u64`.
     ///
     /// Values larger than [`u64::MAX`] nanoseconds are saturated to
@@ -289,6 +304,10 @@ impl RetryDelay {
                     Err("random delay minimum cannot be zero".to_string())
                 } else if min > max {
                     Err("random delay minimum cannot be greater than maximum".to_string())
+                } else if !Self::duration_fits_nanos_u64(*min)
+                    || !Self::duration_fits_nanos_u64(*max)
+                {
+                    Err("random delay bounds must fit into u64 nanoseconds".to_string())
                 } else {
                     Ok(())
                 }

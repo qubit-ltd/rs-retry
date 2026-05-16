@@ -43,6 +43,22 @@ impl AttemptExecutorError {
         }
     }
 
+    /// Creates an executor failure from a message and diagnostic detail.
+    ///
+    /// # Parameters
+    /// - `message`: High-level failure message to store.
+    /// - `detail`: Lower-level diagnostic detail appended to the message.
+    ///
+    /// # Returns
+    /// An executor failure value containing both the high-level message and
+    /// lower-level diagnostic detail.
+    #[inline]
+    pub fn with_context(message: &str, detail: &str) -> Self {
+        Self {
+            message: format!("{message}: {detail}").into_boxed_str(),
+        }
+    }
+
     /// Returns the executor failure message.
     ///
     /// # Returns
