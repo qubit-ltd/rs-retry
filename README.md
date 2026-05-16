@@ -147,7 +147,7 @@ Plain `run()` keeps normal same-thread synchronous execution. It is the lowest-o
 Retry elapsed budgets are measured with monotonic `Instant` time, not wall-clock time:
 
 - `max_operation_elapsed`: cumulative time spent executing user operation attempts. Retry sleeps, retry-after sleeps, and listener time are excluded.
-- `max_total_elapsed`: total retry-flow time. Operation attempts, retry sleeps, retry-after sleeps, retry hint extraction, `on_before_attempt`, `on_failure`, and `on_retry` time are included.
+- `max_total_elapsed`: total retry-flow time. Operation attempts, retry sleeps, retry-after sleeps, retry hint extraction, `before_attempt`, `on_failure`, and `on_retry` time are included.
 
 Terminal listeners keep notification semantics. `on_success` and `on_error` can add caller-visible latency, but they do not turn an already successful operation into a retry failure.
 
@@ -362,7 +362,6 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
 - API documentation: [docs.rs/qubit-retry](https://docs.rs/qubit-retry)
 - Crate package: [crates.io/crates/qubit-retry](https://crates.io/crates/qubit-retry)
 - Source repository: [github.com/qubit-ltd/rs-retry](https://github.com/qubit-ltd/rs-retry)
-- Coverage guide: [COVERAGE.md](COVERAGE.md)
 
 ## Testing
 

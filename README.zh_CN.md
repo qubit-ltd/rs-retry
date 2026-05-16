@@ -147,7 +147,7 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
 Retry 的 elapsed 预算使用单调 `Instant` 计时，不使用 wall-clock 时间：
 
 - `max_operation_elapsed`：累计用户 operation attempt 的执行时间。retry sleep、Retry-After sleep 和 listener 时间都不计入。
-- `max_total_elapsed`：整个 retry flow 的总时间。operation attempt、retry sleep、Retry-After sleep、retry hint 提取、`on_before_attempt`、`on_failure` 和 `on_retry` 时间都计入。
+- `max_total_elapsed`：整个 retry flow 的总时间。operation attempt、retry sleep、Retry-After sleep、retry hint 提取、`before_attempt`、`on_failure` 和 `on_retry` 时间都计入。
 
 终态 listener 保持通知语义。`on_success` 和 `on_error` 的耗时会增加调用方实际等待时间，但不会把已经成功的 operation 反向变成 retry failure。
 
@@ -362,7 +362,6 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
 - API 文档：[docs.rs/qubit-retry](https://docs.rs/qubit-retry)
 - Crate 发布页：[crates.io/crates/qubit-retry](https://crates.io/crates/qubit-retry)
 - 源码仓库：[github.com/qubit-ltd/rs-retry](https://github.com/qubit-ltd/rs-retry)
-- 覆盖率指南：[COVERAGE.zh_CN.md](COVERAGE.zh_CN.md)
 
 ## 测试
 
