@@ -59,8 +59,8 @@ use crate::{
 ///
 /// - [`Retry::run`] uses `RetryRunner` and executes the caller's closure on the
 ///   current thread.
-/// - [`Retry::async_run`] uses `AsyncRetryRunner` and executes each future on
-///   the current Tokio task.
+/// - `Retry::async_run` (requires the `tokio` feature) uses `AsyncRetryRunner`
+///   and executes each future on the current Tokio task.
 /// - [`Retry::run_in_worker`] uses `WorkerRetryRunner` and executes each
 ///   attempt inside a worker thread.
 ///
