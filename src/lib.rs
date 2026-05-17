@@ -10,7 +10,7 @@
 //! Type-preserving retry policy for synchronous and asynchronous operations.
 //!
 //! `Retry<E>` binds only the operation error type. The success type `T` is
-//! introduced on `run` / `async_run`, so normal error retry does not require
+//! introduced on `run` / `run_async`, so normal error retry does not require
 //! `T: Clone + Eq + Hash`.
 //!
 //! The default error type is `BoxError` from the `qubit-error` crate. It is not
@@ -23,7 +23,7 @@
 //!    [`Retry::from_options`].
 //! 2. Choose the execution mode:
 //!    - [`Retry::run`] for low-overhead same-thread synchronous work.
-//!    - `Retry::async_run` for Tokio futures and async timeouts when the
+//!    - `Retry::run_async` for Tokio futures and async timeouts when the
 //!      `tokio` feature is enabled.
 //!    - [`Retry::run_in_worker`] for blocking work that needs panic capture,
 //!      timeout waiting, or cooperative cancellation.

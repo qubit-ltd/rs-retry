@@ -17,7 +17,7 @@
 
 ## 2. 设计目标
 
-1. 核心 `Retry<E>` 只绑定操作错误类型 `E`，成功值 `T` 由每次 `run` / `async_run` / `run_in_worker` 调用引入。
+1. 核心 `Retry<E>` 只绑定操作错误类型 `E`，成功值 `T` 由每次 `run` / `run_async` / `run_in_worker` 调用引入。
 2. 默认场景面向错误重试：操作返回 `Result<T, E>`，终止错误通过 `RetryError<E>` 保留原始 `E`。
 3. 事件监听只观察 `RetryContext`、`AttemptFailure<E>` 和 `RetryError<E>`，不持有成功值 `T`。
 4. retry 配置是不可变 `RetryOptions` 快照，`qubit-config` 读取只发生在构造阶段。
@@ -56,7 +56,7 @@ impl<E> Retry<E> {
     where
         F: FnMut() -> Result<T, E>;
 
-    pub async fn async_run<T, F, Fut>(&self, operation: F) -> Result<T, RetryError<E>>
+    pub async fn run_async<T, F, Fut>(&self, operation: F) -> Result<T, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>;
@@ -171,7 +171,7 @@ pub enum RetryJitter {
 
 async / worker attempt 的有效 timeout 是 configured attempt timeout、剩余 operation budget、剩余 total budget 三者中最短的一个。平局时 configured timeout 优先，以保留 `AttemptTimeoutPolicy` 的可观察语义；operation budget 与 total budget 平局时 operation budget 优先。
 
-普通 sync `run()` 不支持 configured attempt timeout。如果配置了 attempt timeout，`run()` 返回 `RetryErrorReason::UnsupportedOperation`，提示使用 `async_run()` 或 `run_in_worker()`。
+普通 sync `run()` 不支持 configured attempt timeout。如果配置了 attempt timeout，`run()` 返回 `RetryErrorReason::UnsupportedOperation`，提示使用 `run_async()` 或 `run_in_worker()`。
 
 ## 5. 推荐公开 API
 
@@ -201,7 +201,7 @@ let retry = Retry::<HttpError>::builder()
     .build()?;
 
 let response = retry
-    .async_run(|| async { client.execute_once(request.clone()).await })
+    .run_async(|| async { client.execute_once(request.clone()).await })
     .await?;
 ```
 
@@ -387,7 +387,7 @@ fn build_retry(&self) -> Retry<HttpError> {
 2. `RetryBuilder<E>` 提供 max attempts、delay、jitter、elapsed budget、attempt timeout、listener、retry-after hint 等配置入口。
 3. `RetryOptions` 是不可变策略快照，支持可选 `config` feature。
 4. `RetryError<E>` / `AttemptFailure<E>` 保留 typed error、timeout、panic、executor failure 和 context。
-5. `async_run()` 和 `run_in_worker()` 支持真实 per-attempt timeout；`run()` 明确拒绝 configured attempt timeout。
+5. `run_async()` 和 `run_in_worker()` 支持真实 per-attempt timeout；`run()` 明确拒绝 configured attempt timeout。
 6. worker timeout 采用合作式取消；未在 grace 内退出时 fail-closed 为 `WorkerStillRunning`，避免叠加不可回收 worker。
 7. README、英文/中文文档和集成测试按当前 API 维护。
 

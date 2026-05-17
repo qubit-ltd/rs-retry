@@ -216,7 +216,7 @@ where
                 format!("retry max total elapsed exceeded after {attempts} attempt(s)")
             }
             RetryErrorReason::UnsupportedOperation => {
-                "run() does not support attempt timeout; use async_run() or run_in_worker()"
+                "run() does not support attempt timeout; use run_async() or run_in_worker()"
                     .to_string()
             }
             RetryErrorReason::WorkerStillRunning => {
