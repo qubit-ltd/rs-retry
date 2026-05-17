@@ -420,7 +420,7 @@ fn test_run_in_worker_panic_can_be_retried_by_listener() {
 /// # Returns
 /// This test returns nothing.
 #[test]
-fn test_run_blocking_with_timeout_can_abort_and_cancel_token() {
+fn test_run_in_worker_can_abort_and_cancel_token() {
     let saw_cancel = Arc::new(AtomicBool::new(false));
     let retry = Retry::<TestError>::builder()
         .max_attempts(3)
@@ -430,7 +430,7 @@ fn test_run_blocking_with_timeout_can_abort_and_cancel_token() {
         .expect("retry should build");
 
     let error = retry
-        .run_blocking_with_timeout({
+        .run_in_worker({
             let saw_cancel = Arc::clone(&saw_cancel);
             move |token: AttemptCancelToken| {
                 while !token.is_cancelled() {
@@ -472,7 +472,7 @@ fn test_run_blocking_with_timeout_can_abort_and_cancel_token() {
 /// # Returns
 /// This test returns nothing.
 #[test]
-fn test_run_blocking_with_timeout_retries_timeout_until_success() {
+fn test_run_in_worker_retries_timeout_until_success() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
@@ -485,7 +485,7 @@ fn test_run_blocking_with_timeout_retries_timeout_until_success() {
         .expect("retry should build");
 
     let value = retry
-        .run_blocking_with_timeout({
+        .run_in_worker({
             let attempts = Arc::clone(&attempts);
             move |token: AttemptCancelToken| {
                 let current = attempts.fetch_add(1, Ordering::SeqCst) + 1;
