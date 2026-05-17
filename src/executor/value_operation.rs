@@ -11,17 +11,17 @@
 
 use crate::error::AttemptFailure;
 
-use super::sync_attempt::SyncAttempt;
+use super::attempt::Attempt;
 
 /// Adapter that stores the successful value outside the type-erased retry loop.
-pub(in crate::executor) struct SyncValueOperation<T, F> {
+pub(in crate::executor) struct ValueOperation<T, F> {
     /// Wrapped caller operation.
     operation: F,
     /// Successful value produced by the operation.
     value: Option<T>,
 }
 
-impl<T, F> SyncValueOperation<T, F> {
+impl<T, F> ValueOperation<T, F> {
     /// Creates a synchronous value-capturing operation adapter.
     ///
     /// # Parameters
@@ -50,7 +50,7 @@ impl<T, F> SyncValueOperation<T, F> {
     }
 }
 
-impl<T, E, F> SyncAttempt<E> for SyncValueOperation<T, F>
+impl<T, E, F> Attempt<E> for ValueOperation<T, F>
 where
     F: FnMut() -> Result<T, E>,
 {

@@ -18,7 +18,7 @@ use qubit_retry::Retry;
 /// # Returns
 /// This test returns nothing.
 #[test]
-fn test_sync_value_operation_is_observable_through_non_clone_success_value() {
+fn test_value_operation_is_observable_through_non_clone_success_value() {
     #[derive(Debug, PartialEq, Eq)]
     struct Token(String);
 

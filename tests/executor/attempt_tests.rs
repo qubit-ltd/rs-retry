@@ -23,7 +23,7 @@ use qubit_retry::{
 /// # Returns
 /// This test returns nothing.
 #[test]
-fn test_sync_attempt_failure_is_observable_through_failure_listener() {
+fn test_attempt_failure_is_observable_through_failure_listener() {
     let retry = Retry::<&'static str>::builder()
         .max_attempts(1)
         .no_delay()

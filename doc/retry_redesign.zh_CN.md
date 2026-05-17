@@ -339,9 +339,9 @@ src/
     retry_failure_policy.rs
     retry_flow_action.rs
     retry_flow_state.rs
-    sync_attempt.rs
+    attempt.rs
     retry_runner.rs
-    sync_value_operation.rs
+    value_operation.rs
     worker_attempt_executor.rs
     worker_retry_runner.rs
     mod.rs
