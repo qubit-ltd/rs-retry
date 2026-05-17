@@ -14,16 +14,23 @@ use std::time::{
     Instant,
 };
 
-use crate::AttemptFailure;
+use crate::event::RetryContextParts;
+use crate::options::EffectiveAttemptTimeout;
+use crate::{
+    AttemptFailure,
+    RetryContext,
+    RetryError,
+    RetryOptions,
+};
 
 /// Mutable retry-flow state shared by sync, async, and worker execution loops.
 pub(in crate::executor) struct RetryFlowState<E> {
     /// Monotonic instant when the retry flow started.
-    pub(in crate::executor) started_at: Instant,
+    started_at: Instant,
     /// Cumulative user operation time consumed by attempts.
-    pub(in crate::executor) operation_elapsed: Duration,
+    operation_elapsed: Duration,
     /// Attempts executed or currently being prepared.
-    pub(in crate::executor) attempts: u32,
+    attempts: u32,
     /// Last failure retained for elapsed-budget errors raised before another attempt.
     last_failure: Option<AttemptFailure<E>>,
 }
@@ -51,6 +58,24 @@ impl<E> RetryFlowState<E> {
         self.started_at.elapsed()
     }
 
+    /// Returns cumulative user operation time consumed by attempts.
+    ///
+    /// # Returns
+    /// Accumulated user operation duration.
+    #[inline]
+    pub(in crate::executor) fn operation_elapsed(&self) -> Duration {
+        self.operation_elapsed
+    }
+
+    /// Returns attempts executed or currently being prepared.
+    ///
+    /// # Returns
+    /// One-based attempt count for attempt contexts, or zero before attempts.
+    #[inline]
+    pub(in crate::executor) fn attempts(&self) -> u32 {
+        self.attempts
+    }
+
     /// Marks the next attempt as started.
     ///
     /// # Returns
@@ -68,6 +93,68 @@ impl<E> RetryFlowState<E> {
     #[inline]
     pub(in crate::executor) fn add_operation_elapsed(&mut self, attempt_elapsed: Duration) {
         self.operation_elapsed = self.operation_elapsed.saturating_add(attempt_elapsed);
+    }
+
+    /// Builds a context snapshot from this retry-flow state.
+    ///
+    /// # Parameters
+    /// - `options`: Retry options that define configured limits.
+    /// - `attempt_elapsed`: Elapsed time in the current attempt.
+    /// - `attempt_timeout`: Effective timeout configured for the current attempt.
+    ///
+    /// # Returns
+    /// A retry context using this state's latest values.
+    pub(in crate::executor) fn context(
+        &self,
+        options: &RetryOptions,
+        attempt_elapsed: Duration,
+        attempt_timeout: EffectiveAttemptTimeout,
+    ) -> RetryContext {
+        RetryContext::from_parts(RetryContextParts {
+            attempt: self.attempts,
+            max_attempts: options.max_attempts(),
+            max_operation_elapsed: options.max_operation_elapsed(),
+            max_total_elapsed: options.max_total_elapsed(),
+            operation_elapsed: self.operation_elapsed,
+            total_elapsed: self.total_elapsed(),
+            attempt_elapsed,
+            attempt_timeout: attempt_timeout.duration(),
+        })
+        .with_attempt_timeout_source(attempt_timeout.source())
+    }
+
+    /// Takes an elapsed-budget terminal error when a budget is exhausted.
+    ///
+    /// # Parameters
+    /// - `options`: Retry options that define elapsed budgets.
+    /// - `attempt_timeout`: Effective timeout visible in the terminal context.
+    ///
+    /// # Returns
+    /// `Some(RetryError)` when the max-operation-elapsed or max-total-elapsed
+    /// budget is exhausted; otherwise `None`. The retained last failure is moved
+    /// into the error when present.
+    pub(in crate::executor) fn take_elapsed_error(
+        &mut self,
+        options: &RetryOptions,
+        attempt_timeout: EffectiveAttemptTimeout,
+    ) -> Option<RetryError<E>> {
+        let total_elapsed = self.total_elapsed();
+        let reason = options.elapsed_error_reason(self.operation_elapsed, total_elapsed)?;
+        Some(RetryError::new(
+            reason,
+            self.take_last_failure(),
+            RetryContext::from_parts(RetryContextParts {
+                attempt: self.attempts,
+                max_attempts: options.max_attempts(),
+                max_operation_elapsed: options.max_operation_elapsed(),
+                max_total_elapsed: options.max_total_elapsed(),
+                operation_elapsed: self.operation_elapsed,
+                total_elapsed,
+                attempt_elapsed: Duration::ZERO,
+                attempt_timeout: attempt_timeout.duration(),
+            })
+            .with_attempt_timeout_source(attempt_timeout.source()),
+        ))
     }
 
     /// Stores the last failure observed before a retry sleep.

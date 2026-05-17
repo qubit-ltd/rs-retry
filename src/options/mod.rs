@@ -11,6 +11,7 @@
 
 mod attempt_timeout_option;
 mod attempt_timeout_policy;
+mod effective_attempt_timeout;
 mod parse_retry_jitter_error;
 #[cfg(feature = "config")]
 mod retry_config_values;
@@ -27,3 +28,5 @@ pub use retry_config_values::RetryConfigValues;
 pub use retry_delay::RetryDelay;
 pub use retry_jitter::RetryJitter;
 pub use retry_options::RetryOptions;
+
+pub(crate) use effective_attempt_timeout::EffectiveAttemptTimeout;
