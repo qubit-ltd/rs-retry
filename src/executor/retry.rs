@@ -59,7 +59,7 @@ use crate::{
 ///
 /// - [`Retry::run`] uses `RetryRunner` and executes the caller's closure on the
 ///   current thread.
-/// - `Retry::async_run` (requires the `tokio` feature) uses `AsyncRetryRunner`
+/// - `Retry::run_async` (requires the `tokio` feature) uses `AsyncRetryRunner`
 ///   and executes each future on the current Tokio task.
 /// - [`Retry::run_in_worker`] uses `WorkerRetryRunner` and executes each
 ///   attempt inside a worker thread.
@@ -192,7 +192,7 @@ impl<E> Retry<E> {
     ///
     /// # Panics
     /// Propagates operation panics from the current async task. They are not
-    /// converted to [`crate::AttemptFailure::Panic`] because `async_run` does
+    /// converted to [`crate::AttemptFailure::Panic`] because `run_async` does
     /// not create an isolation boundary. Listener panics are propagated unless
     /// listener panic isolation is enabled. Tokio may panic if timer APIs are
     /// used outside a runtime with a time driver.
@@ -204,7 +204,7 @@ impl<E> Retry<E> {
     /// max-operation-elapsed budget, and remaining max-total-elapsed budget as
     /// their effective timeout.
     #[cfg(feature = "tokio")]
-    pub async fn async_run<T, F, Fut>(&self, operation: F) -> Result<T, RetryError<E>>
+    pub async fn run_async<T, F, Fut>(&self, operation: F) -> Result<T, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,

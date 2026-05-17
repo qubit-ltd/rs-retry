@@ -11,7 +11,7 @@
 #[cfg(feature = "tokio")]
 use qubit_retry::Retry;
 
-/// Verifies async value capture is observable through `Retry::async_run`.
+/// Verifies async value capture is observable through `Retry::run_async`.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -31,7 +31,7 @@ async fn test_async_value_operation_is_observable_through_async_success_value() 
         .unwrap();
 
     let value = retry
-        .async_run(|| async { Ok(Token("captured".to_owned())) })
+        .run_async(|| async { Ok(Token("captured".to_owned())) })
         .await
         .unwrap();
     assert_eq!(Token("captured".to_owned()), value);

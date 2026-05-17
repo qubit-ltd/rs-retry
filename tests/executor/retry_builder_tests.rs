@@ -317,7 +317,7 @@ async fn test_retry_if_error_uses_default_for_timeout() {
         .expect("retry should build");
 
     let error = retry
-        .async_run(|| async {
+        .run_async(|| async {
             tokio::time::sleep(Duration::from_millis(10)).await;
             Ok::<(), TestError>(())
         })
@@ -353,7 +353,7 @@ async fn test_retry_on_timeout_retries_timeout_failures() {
         .expect("retry should build");
 
     let error = retry
-        .async_run(|| async {
+        .run_async(|| async {
             tokio::time::sleep(Duration::from_millis(10)).await;
             Ok::<(), TestError>(())
         })
