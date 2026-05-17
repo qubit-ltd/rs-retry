@@ -9,7 +9,7 @@
 
 Qubit Retry 是面向 Rust 同步和异步操作的重试工具库，能够保留调用方的错误类型。
 
-核心 API 是 `Retry<E>`。重试策略只绑定操作错误类型 `E`；每次 `run` 或 `run_async` 调用再引入自己的成功类型 `T`。
+核心 API 是 `Retry<E>`。重试策略只绑定操作错误类型 `E`；每次 `run` 或 `async_run` 调用再引入自己的成功类型 `T`。
 
 ## 概览
 
@@ -45,7 +45,7 @@ qubit-retry = { version = "0.13", features = ["tokio", "config"] }
 
 可选 feature：
 
-- `tokio`：启用 `Retry::run_async`，并通过 `tokio::time::timeout` 支持异步单次 attempt 超时。
+- `tokio`：启用 `Retry::async_run`，并通过 `tokio::time::timeout` 支持异步单次 attempt 超时。
 - `config`：启用 `RetryOptions::from_config` 和 `RetryConfigValues`，用于从 `qubit-config` 读取配置。
 
 默认 feature 为空，因此同步重试不会引入 `tokio` 或 `qubit-config`。
@@ -112,7 +112,7 @@ let retry = Retry::<ServiceError>::builder()
 
 ## 异步重试和超时
 
-异步执行需要开启 `tokio` feature。单次 attempt 超时通过 builder 写入 `RetryOptions`。当 attempt 超时时，执行器会报告 `AttemptFailure::Timeout`，监听器可以通过 `RetryContext::attempt_timeout()` 读取配置的超时时间。operation panic 仍会在当前 async task 中继续 unwind；`run_async()` 不会把它转换成 `AttemptFailure::Panic`。
+异步执行需要开启 `tokio` feature。单次 attempt 超时通过 builder 写入 `RetryOptions`。当 attempt 超时时，执行器会报告 `AttemptFailure::Timeout`，监听器可以通过 `RetryContext::attempt_timeout()` 读取配置的超时时间。operation panic 仍会在当前 async task 中继续 unwind；`async_run()` 不会把它转换成 `AttemptFailure::Panic`。
 
 ```rust
 use qubit_retry::Retry;
@@ -131,7 +131,7 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
         .build()?;
 
     let response = retry
-        .run_async(|| async {
+        .async_run(|| async {
             fetch_once().await
         })
         .await?;
@@ -140,7 +140,7 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
 }
 ```
 
-普通 `run()` 保持当前线程上的同步执行语义。它是开销最低的路径，适合 CAS 循环这类高频短操作。`run()` 不支持配置 `attempt_timeout`，当设置了该选项时会返回 `RetryErrorReason::UnsupportedOperation`。需要取消异步 future 时使用 `run_async()`；需要把阻塞工作放到 worker 线程中执行时，使用 `run_in_worker()`。
+普通 `run()` 保持当前线程上的同步执行语义。它是开销最低的路径，适合 CAS 循环这类高频短操作。`run()` 不支持配置 `attempt_timeout`，当设置了该选项时会返回 `RetryErrorReason::UnsupportedOperation`。需要取消异步 future 时使用 `async_run()`；需要把阻塞工作放到 worker 线程中执行时，使用 `run_in_worker()`。
 
 ## Elapsed 预算
 

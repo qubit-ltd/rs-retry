@@ -28,7 +28,7 @@ use super::retry::Retry;
 use super::retry_failure_handler::RetryFailureHandler;
 use super::retry_flow_action::RetryFlowAction;
 use super::retry_flow_state::RetryFlowState;
-use super::sync_retry_runner::sleep_blocking;
+use super::retry_runner::sleep_blocking;
 use super::worker_attempt_executor::WorkerAttemptExecutor;
 use crate::{
     RetryError,

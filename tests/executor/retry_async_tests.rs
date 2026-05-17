@@ -30,7 +30,7 @@ use crate::support::TestError;
 /// This test returns nothing.
 #[tokio::test]
 #[should_panic(expected = "async operation panic")]
-async fn test_run_async_panic_propagates() {
+async fn test_async_run_panic_propagates() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .no_delay()
@@ -38,7 +38,7 @@ async fn test_run_async_panic_propagates() {
         .expect("retry should build");
 
     let _ = retry
-        .run_async::<(), _, _>(|| async { panic!("async operation panic") })
+        .async_run::<(), _, _>(|| async { panic!("async operation panic") })
         .await;
 }
 
@@ -50,7 +50,7 @@ async fn test_run_async_panic_propagates() {
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_attempt_timeout_can_abort() {
+async fn test_async_run_attempt_timeout_can_abort() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(3)
         .attempt_timeout(Some(Duration::from_millis(1)))
@@ -60,7 +60,7 @@ async fn test_run_async_attempt_timeout_can_abort() {
         .expect("retry should build");
 
     let error = retry
-        .run_async(|| async {
+        .async_run(|| async {
             tokio::time::sleep(Duration::from_millis(20)).await;
             Ok::<(), TestError>(())
         })
@@ -90,7 +90,7 @@ async fn test_run_async_attempt_timeout_can_abort() {
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_configured_timeout() {
+async fn test_async_run_max_operation_elapsed_caps_in_flight_attempt_before_configured_timeout() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .max_operation_elapsed(Some(Duration::from_millis(20)))
@@ -101,7 +101,7 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
 
     let started = std::time::Instant::now();
     let error = retry
-        .run_async(|| async {
+        .async_run(|| async {
             tokio::time::sleep(Duration::from_millis(120)).await;
             Ok::<_, TestError>("late")
         })
@@ -140,7 +140,7 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configured_timeout() {
+async fn test_async_run_max_total_elapsed_caps_in_flight_attempt_before_configured_timeout() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .max_total_elapsed(Some(Duration::from_millis(20)))
@@ -151,7 +151,7 @@ async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configur
 
     let started = std::time::Instant::now();
     let error = retry
-        .run_async(|| async {
+        .async_run(|| async {
             tokio::time::sleep(Duration::from_millis(120)).await;
             Ok::<_, TestError>("late")
         })
@@ -188,7 +188,7 @@ async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configur
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_elapsed() {
+async fn test_async_run_configured_timeout_wins_when_shorter_than_max_operation_elapsed() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .max_operation_elapsed(Some(Duration::from_millis(200)))
@@ -199,7 +199,7 @@ async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_
         .expect("retry should build");
 
     let error = retry
-        .run_async(|| async {
+        .async_run(|| async {
             tokio::time::sleep(Duration::from_millis(120)).await;
             Ok::<_, TestError>("late")
         })
@@ -229,7 +229,7 @@ async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_elapsed() {
+async fn test_async_run_configured_timeout_policy_wins_when_equal_to_remaining_elapsed() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_operation_elapsed(Some(Duration::from_millis(20)))
@@ -240,7 +240,7 @@ async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_e
         .expect("retry should build");
 
     let error = retry
-        .run_async(|| async {
+        .async_run(|| async {
             tokio::time::sleep(Duration::from_millis(120)).await;
             Ok::<_, TestError>("late")
         })
@@ -270,7 +270,7 @@ async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_e
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_error_before_remaining_elapsed_timeout_can_retry() {
+async fn test_async_run_error_before_remaining_elapsed_timeout_can_retry() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_operation_elapsed(Some(Duration::from_millis(200)))
@@ -280,7 +280,7 @@ async fn test_run_async_error_before_remaining_elapsed_timeout_can_retry() {
 
     let mut attempts = 0;
     let value = retry
-        .run_async(|| {
+        .async_run(|| {
             attempts += 1;
             async move {
                 if attempts == 1 {
@@ -308,7 +308,7 @@ async fn test_run_async_error_before_remaining_elapsed_timeout_can_retry() {
 /// # Errors
 /// The test fails through assertions when async retry does not reach success.
 #[tokio::test(start_paused = true)]
-async fn test_run_async_without_timeout_retries_until_success() {
+async fn test_async_run_without_timeout_retries_until_success() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .fixed_delay(Duration::from_millis(1))
@@ -317,7 +317,7 @@ async fn test_run_async_without_timeout_retries_until_success() {
     let mut attempts = 0;
 
     let value = retry
-        .run_async(|| {
+        .async_run(|| {
             attempts += 1;
             let current_attempt = attempts;
             async move {
@@ -346,7 +346,7 @@ async fn test_run_async_without_timeout_retries_until_success() {
 /// # Errors
 /// The test fails through assertions when timeout wrapping changes success output.
 #[tokio::test(start_paused = true)]
-async fn test_run_async_with_attempt_timeout_allows_fast_success() {
+async fn test_async_run_with_attempt_timeout_allows_fast_success() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .attempt_timeout(Some(Duration::from_millis(10)))
@@ -355,7 +355,7 @@ async fn test_run_async_with_attempt_timeout_allows_fast_success() {
         .expect("retry should build");
 
     let value = retry
-        .run_async(|| async { Ok::<_, TestError>("fast") })
+        .async_run(|| async { Ok::<_, TestError>("fast") })
         .await
         .expect("fast async attempt should succeed");
 
@@ -373,7 +373,7 @@ async fn test_run_async_with_attempt_timeout_allows_fast_success() {
 /// # Errors
 /// The test fails through assertions when async elapsed-budget handling differs.
 #[tokio::test]
-async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
+async fn test_async_run_max_operation_elapsed_can_stop_before_first_attempt() {
     let retry = Retry::<TestError>::builder()
         .max_operation_elapsed(Some(Duration::ZERO))
         .attempt_timeout(Some(Duration::from_millis(1)))
@@ -382,7 +382,7 @@ async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
         .expect("retry should build");
 
     let error = retry
-        .run_async::<(), _, _>(|| async { panic!("operation must not run") })
+        .async_run::<(), _, _>(|| async { panic!("operation must not run") })
         .await
         .expect_err("zero elapsed budget should stop before first attempt");
 
@@ -406,7 +406,7 @@ async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time() {
+async fn test_async_run_max_total_elapsed_includes_before_attempt_listener_time() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_total_elapsed(Some(Duration::from_millis(20)))
@@ -418,7 +418,7 @@ async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time(
         .expect("retry should build");
 
     let error = retry
-        .run_async::<(), _, _>(|| async { panic!("operation must not run") })
+        .async_run::<(), _, _>(|| async { panic!("operation must not run") })
         .await
         .expect_err("before-attempt listener time should exhaust total elapsed");
 
@@ -439,7 +439,7 @@ async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time(
 /// # Errors
 /// The test fails through assertions when zero-delay async retry does not proceed.
 #[tokio::test]
-async fn test_run_async_zero_delay_retry_skips_sleep() {
+async fn test_async_run_zero_delay_retry_skips_sleep() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .no_delay()
@@ -448,7 +448,7 @@ async fn test_run_async_zero_delay_retry_skips_sleep() {
     let mut attempts = 0;
 
     let value = retry
-        .run_async(|| {
+        .async_run(|| {
             attempts += 1;
             let current_attempt = attempts;
             async move {

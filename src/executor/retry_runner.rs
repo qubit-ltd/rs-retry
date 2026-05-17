@@ -33,13 +33,13 @@ use crate::{
 };
 
 /// Runs retry flows on the current thread.
-pub(in crate::executor) struct SyncRetryRunner<'a, E> {
+pub(in crate::executor) struct RetryRunner<'a, E> {
     /// Retry policy facade that owns options and events.
     retry: &'a Retry<E>,
 }
 
 #[allow(clippy::result_large_err)]
-impl<'a, E> SyncRetryRunner<'a, E> {
+impl<'a, E> RetryRunner<'a, E> {
     /// Creates a synchronous retry runner.
     ///
     /// # Parameters
