@@ -19,12 +19,12 @@ use std::time::{
     Instant,
 };
 
+use super::attempt::Attempt;
 use super::retry::Retry;
 use super::retry_failure_handler::RetryFailureHandler;
 use super::retry_flow_action::RetryFlowAction;
 use super::retry_flow_state::RetryFlowState;
-use super::sync_attempt::SyncAttempt;
-use super::sync_value_operation::SyncValueOperation;
+use super::value_operation::ValueOperation;
 use crate::options::EffectiveAttemptTimeout;
 use crate::{
     AttemptTimeoutSource,
@@ -67,7 +67,7 @@ impl<'a, E> RetryRunner<'a, E> {
         if self.retry.options().attempt_timeout().is_some() {
             return Err(self.unsupported_attempt_timeout_error());
         }
-        let mut operation = SyncValueOperation::new(&mut operation);
+        let mut operation = ValueOperation::new(&mut operation);
         self.run_operation(&mut operation)
             .map(|()| operation.into_value())
     }
@@ -79,7 +79,7 @@ impl<'a, E> RetryRunner<'a, E> {
     ///
     /// # Returns
     /// `Ok(())` after a successful attempt, or [`RetryError`] when retrying stops.
-    fn run_operation(&self, operation: &mut dyn SyncAttempt<E>) -> Result<(), RetryError<E>> {
+    fn run_operation(&self, operation: &mut dyn Attempt<E>) -> Result<(), RetryError<E>> {
         let options = self.retry.options();
         let events = self.retry.events();
         let handler = RetryFailureHandler::new(options, events);

@@ -11,6 +11,7 @@
 mod async_attempt_tests;
 mod async_value_operation_tests;
 mod attempt_cancel_token_tests;
+mod attempt_tests;
 mod blocking_attempt_outcome_tests;
 mod blocking_value_operation_tests;
 mod effective_attempt_timeout_tests;
@@ -21,7 +22,6 @@ mod retry_flow_state_tests;
 mod retry_run_and_listener_tests;
 mod retry_tests;
 mod retry_worker_and_blocking_timeout_tests;
-mod sync_attempt_tests;
-mod sync_value_operation_tests;
+mod value_operation_tests;
 mod worker_attempt_executor_tests;
 mod worker_retry_runner_tests;

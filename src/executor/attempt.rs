@@ -12,7 +12,7 @@
 use crate::error::AttemptFailure;
 
 /// Type-erased synchronous attempt used by the retry loop.
-pub(in crate::executor) trait SyncAttempt<E> {
+pub(in crate::executor) trait Attempt<E> {
     /// Calls the wrapped operation once.
     ///
     /// # Returns
