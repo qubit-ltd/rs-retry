@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "checks": [
+    {
+      "name": "no-default-features",
+      "defaultFeatures": false,
+      "commands": [
+        "check",
+        "test",
+        "doc"
+      ]
+    },
+    {
+      "name": "tokio",
+      "defaultFeatures": false,
+      "features": [
+        "tokio"
+      ],
+      "commands": [
+        "check",
+        "test",
+        "doc"
+      ]
+    },
+    {
+      "name": "config",
+      "defaultFeatures": false,
+      "features": [
+        "config"
+      ],
+      "commands": [
+        "check",
+        "test",
+        "doc"
+      ]
+    },
+    {
+      "name": "all-features-clippy",
+      "allFeatures": true,
+      "commands": [
+        "clippy"
+      ]
+    }
+  ]
+}

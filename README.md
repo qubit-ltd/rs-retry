@@ -227,6 +227,8 @@ Listeners are lifecycle hooks, not a separate policy system:
 - `on_retry`: invoked only after a failed attempt will be retried **and** the **delay before the next** `before_attempt` has been **selected** (after `on_failure` / merged decisions); **before** the executor sleeps and **before** the next `before_attempt`. It is **observational** (cannot change backoff/retry); `RetryContext::next_delay()` is the sleep duration. If the flow will not retry (attempts or time budget exhausted, listener abort, etc.), `on_retry` is **not** called.
 - `on_error`: invoked once when the retry flow returns a terminal `RetryError`.
 
+When multiple failure listeners are registered, all listeners run in registration order. The last non-`UseDefault` `AttemptFailureDecision` becomes the effective decision; if every listener returns `UseDefault`, the configured retry policy handles the failure.
+
 `before_attempt` vs `on_retry` in one line: `before_attempt` fires at the **start of an attempt**; `on_retry` fires **right after a failure** once a **retry is scheduled and the next delay is known**, but **before** the sleep and the next attempt.
 
 ```rust
