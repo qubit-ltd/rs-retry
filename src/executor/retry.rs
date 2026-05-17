@@ -43,9 +43,36 @@ use crate::{
 /// retry policy shares all registered functors through reference-counted
 /// `rs-function` wrappers.
 ///
-/// `Retry` deliberately contains no retry loop logic. It stores immutable
-/// policy inputs and delegates execution to mode-specific runners, which keeps
-/// the facade stable even as timeout or worker-thread behavior evolves.
+/// # Architecture
+///
+/// `Retry` is the public facade of the retry engine. It owns two stable pieces
+/// of state:
+///
+/// - [`RetryOptions`], which describes the policy: attempt limits, elapsed
+///   budgets, backoff, retry-after handling, per-attempt timeout, and
+///   worker-cancellation grace.
+/// - `RetryEvents`, the internal dispatcher for listener callbacks and
+///   retry-after hints.
+///
+/// The facade deliberately contains no retry loop logic. Each public execution
+/// method creates a mode-specific runner and delegates the real control flow:
+///
+/// - [`Retry::run`] uses `RetryRunner` and executes the caller's closure on the
+///   current thread.
+/// - [`Retry::async_run`] uses `AsyncRetryRunner` and executes each future on
+///   the current Tokio task.
+/// - [`Retry::run_in_worker`] uses `WorkerRetryRunner` and executes each
+///   attempt inside a worker thread.
+///
+/// Those runners all follow the same conceptual pipeline. They adapt the
+/// caller's operation into an internal attempt object, keep a
+/// `RetryFlowState`, fire lifecycle events, call the operation once per
+/// attempt, and pass failures to `RetryFailureHandler` to decide whether to
+/// sleep and retry or return a terminal [`RetryError`]. The mode-specific runner
+/// owns only the execution mechanics that differ by mode: blocking sleep,
+/// Tokio timeout, worker-thread panic capture, and cooperative cancellation.
+/// This split keeps the public API small while keeping timeout and concurrency
+/// details out of the `Retry` facade.
 #[derive(Clone)]
 pub struct Retry<E = BoxError> {
     /// Validated retry limits and backoff settings.
@@ -90,6 +117,22 @@ impl<E> Retry<E> {
 
     /// Runs a synchronous operation with retry.
     ///
+    /// This method is the same-thread execution path. The call flow is:
+    ///
+    /// 1. Create a `RetryRunner` that borrows this retry policy.
+    /// 2. Wrap `operation` in a value-capturing internal adapter so the retry
+    ///    loop can work with a type-erased `Result<(), AttemptFailure<E>>`
+    ///    while preserving the successful `T` value.
+    /// 3. Reject configured `attempt_timeout`, because a same-thread closure
+    ///    cannot be interrupted safely once it starts running.
+    /// 4. For each attempt, update `RetryFlowState`, fire `before_attempt`,
+    ///    call the closure directly on the current thread, record elapsed
+    ///    operation time, and fire success or failure events.
+    /// 5. On failure, let `RetryFailureHandler` apply retry limits, error
+    ///    predicates, retry-after hints, elapsed budgets, and backoff. If it
+    ///    chooses retry, sleep with `std::thread::sleep` and start the next
+    ///    attempt; otherwise return the produced [`RetryError`].
+    ///
     /// # Parameters
     /// - `operation`: Operation called once per attempt until it succeeds or the
     ///   retry flow stops.
@@ -123,6 +166,24 @@ impl<E> Retry<E> {
 
     /// Runs an asynchronous operation with retry.
     ///
+    /// This method is the Tokio execution path. The call flow is:
+    ///
+    /// 1. Create an `AsyncRetryRunner` that borrows this retry policy.
+    /// 2. Wrap `operation` in an async value-capturing adapter. The operation is
+    ///    a factory: it must create a fresh future for every attempt because a
+    ///    Rust future cannot be polled again after it completes.
+    /// 3. Before each attempt, compute the effective timeout from the configured
+    ///    `attempt_timeout`, remaining `max_operation_elapsed`, and remaining
+    ///    `max_total_elapsed`; the shortest available budget wins.
+    /// 4. Fire `before_attempt`, recompute budgets in case listeners consumed
+    ///    total elapsed time, then await the attempt future. If an effective
+    ///    timeout exists, the future is wrapped in `tokio::time::timeout` and
+    ///    dropped when the timer fires.
+    /// 5. Record elapsed operation time, fire success events, or route the
+    ///    failure through elapsed-budget classification and
+    ///    `RetryFailureHandler`. Retry delays use `tokio::time::sleep`; terminal
+    ///    decisions return [`RetryError`].
+    ///
     /// # Parameters
     /// - `operation`: Factory returning a fresh future for each attempt.
     ///
@@ -152,6 +213,26 @@ impl<E> Retry<E> {
     }
 
     /// Runs a blocking operation with retry inside worker-thread attempts.
+    ///
+    /// This method is the blocking-isolation execution path. The call flow is:
+    ///
+    /// 1. Create a `WorkerRetryRunner` that borrows this retry policy.
+    /// 2. Wrap the operation in a shared blocking adapter. The adapter stores
+    ///    the successful `T` value outside the type-erased retry loop.
+    /// 3. For each attempt, compute the effective timeout from configured
+    ///    `attempt_timeout` and remaining elapsed budgets, fire
+    ///    `before_attempt`, then spawn one worker-thread attempt through
+    ///    `WorkerAttemptExecutor`.
+    /// 4. The worker receives an [`AttemptCancelToken`]. If the effective
+    ///    timeout expires, the runner marks that token as cancelled and waits up
+    ///    to [`crate::RetryOptions::worker_cancel_grace`] for cooperative exit.
+    /// 5. Worker panics become [`crate::AttemptFailure::Panic`], worker-spawn
+    ///    failures become [`crate::AttemptFailure::Executor`], and timeout or
+    ///    application failures are passed through the normal retry policy.
+    /// 6. The runner refuses to start another worker while a timed-out worker is
+    ///    still running, because that would create concurrent attempts for one
+    ///    retry flow. That condition returns
+    ///    [`crate::RetryErrorReason::WorkerStillRunning`].
     ///
     /// Each attempt runs on a worker thread. Worker panics are captured as
     /// [`crate::AttemptFailure::Panic`]. Worker-spawn failures are reported as
