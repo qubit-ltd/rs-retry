@@ -19,9 +19,12 @@ use std::time::Duration;
 #[cfg(feature = "config")]
 use qubit_config::ConfigReader;
 
-use super::attempt_timeout_option::AttemptTimeoutOption;
 #[cfg(feature = "config")]
 use super::retry_config_values::RetryConfigValues;
+use super::{
+    AttemptTimeoutOption,
+    EffectiveAttemptTimeout,
+};
 
 use crate::constants::{
     DEFAULT_RETRY_MAX_ATTEMPTS,
@@ -34,8 +37,11 @@ use crate::constants::{
     KEY_MAX_ATTEMPTS,
 };
 use crate::{
+    AttemptFailureDecision,
+    AttemptTimeoutSource,
     RetryConfigError,
     RetryDelay,
+    RetryErrorReason,
     RetryJitter,
 };
 
@@ -382,6 +388,155 @@ impl RetryOptions {
     /// Next delay after jitter.
     pub fn next_delay_from_current(&self, current: Duration) -> Duration {
         self.jittered_delay(self.next_base_delay_from_current(current))
+    }
+
+    /// Returns the configured attempt-timeout duration.
+    ///
+    /// # Returns
+    /// `Some(Duration)` when per-attempt timeout is configured.
+    #[inline]
+    pub(crate) fn attempt_timeout_duration(&self) -> Option<Duration> {
+        self.attempt_timeout
+            .map(|attempt_timeout| attempt_timeout.timeout())
+    }
+
+    /// Returns the effective timeout used by the next attempt.
+    ///
+    /// # Parameters
+    /// - `operation_elapsed`: Cumulative user operation time consumed so far.
+    /// - `total_elapsed`: Total monotonic retry-flow time consumed so far.
+    ///
+    /// # Returns
+    /// The shortest of the configured attempt timeout, remaining
+    /// max-operation-elapsed budget, and remaining max-total-elapsed budget,
+    /// including the source that selected it. A configured timeout wins ties so
+    /// its timeout policy remains observable.
+    pub(crate) fn effective_attempt_timeout(
+        &self,
+        operation_elapsed: Duration,
+        total_elapsed: Duration,
+    ) -> EffectiveAttemptTimeout {
+        let candidates = [
+            self.attempt_timeout_duration()
+                .map(|duration| (duration, AttemptTimeoutSource::Configured)),
+            self.remaining_operation_elapsed(operation_elapsed)
+                .map(|duration| (duration, AttemptTimeoutSource::MaxOperationElapsed)),
+            self.remaining_total_elapsed(total_elapsed)
+                .map(|duration| (duration, AttemptTimeoutSource::MaxTotalElapsed)),
+        ];
+        let selected = candidates
+            .into_iter()
+            .flatten()
+            .min_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        match selected {
+            Some((duration, source)) => EffectiveAttemptTimeout::new(Some(duration), Some(source)),
+            None => EffectiveAttemptTimeout::none(),
+        }
+    }
+
+    /// Returns the first elapsed-budget reason that is exhausted.
+    ///
+    /// # Parameters
+    /// - `operation_elapsed`: Cumulative user operation time consumed by this flow.
+    /// - `total_elapsed`: Total monotonic retry-flow time consumed by this flow.
+    ///
+    /// # Returns
+    /// `Some(RetryErrorReason)` when an elapsed budget has been exhausted.
+    #[inline]
+    pub(crate) fn elapsed_error_reason(
+        &self,
+        operation_elapsed: Duration,
+        total_elapsed: Duration,
+    ) -> Option<RetryErrorReason> {
+        if self
+            .max_operation_elapsed
+            .is_some_and(|max_operation_elapsed| operation_elapsed >= max_operation_elapsed)
+        {
+            Some(RetryErrorReason::MaxOperationElapsedExceeded)
+        } else if self
+            .max_total_elapsed
+            .is_some_and(|max_total_elapsed| total_elapsed >= max_total_elapsed)
+        {
+            Some(RetryErrorReason::MaxTotalElapsedExceeded)
+        } else {
+            None
+        }
+    }
+
+    /// Returns whether a selected retry sleep would consume the remaining total budget.
+    ///
+    /// # Parameters
+    /// - `total_elapsed`: Total monotonic retry-flow time consumed before sleep.
+    /// - `delay`: Selected retry delay.
+    ///
+    /// # Returns
+    /// `true` when the delay should not be slept because no budget would remain
+    /// for the next attempt.
+    #[inline]
+    pub(crate) fn retry_sleep_exhausts_total_elapsed(
+        &self,
+        total_elapsed: Duration,
+        delay: Duration,
+    ) -> bool {
+        if delay.is_zero() {
+            return false;
+        }
+        let Some(max_total_elapsed) = self.max_total_elapsed else {
+            return false;
+        };
+        total_elapsed.saturating_add(delay) >= max_total_elapsed
+    }
+
+    /// Selects the delay used before the next retry.
+    ///
+    /// # Parameters
+    /// - `decision`: Failure decision.
+    /// - `attempts`: Attempts executed so far.
+    /// - `hint`: Optional retry-after hint.
+    ///
+    /// # Returns
+    /// Delay before the next retry.
+    pub(crate) fn retry_delay(
+        &self,
+        decision: AttemptFailureDecision,
+        attempts: u32,
+        hint: Option<Duration>,
+    ) -> Duration {
+        match decision {
+            AttemptFailureDecision::RetryAfter(delay) => delay,
+            AttemptFailureDecision::UseDefault => {
+                hint.unwrap_or_else(|| self.jitter.delay_for_attempt(&self.delay, attempts))
+            }
+            AttemptFailureDecision::Retry | AttemptFailureDecision::Abort => {
+                self.jitter.delay_for_attempt(&self.delay, attempts)
+            }
+        }
+    }
+
+    /// Returns remaining user operation time before the max-operation-elapsed budget is exhausted.
+    ///
+    /// # Parameters
+    /// - `operation_elapsed`: Cumulative user operation time consumed so far.
+    ///
+    /// # Returns
+    /// `Some(Duration)` when max elapsed is configured, or `None` when unlimited.
+    #[inline]
+    fn remaining_operation_elapsed(&self, operation_elapsed: Duration) -> Option<Duration> {
+        self.max_operation_elapsed
+            .map(|max_operation_elapsed| max_operation_elapsed.saturating_sub(operation_elapsed))
+    }
+
+    /// Returns remaining total retry-flow time before the max-total-elapsed budget is exhausted.
+    ///
+    /// # Parameters
+    /// - `total_elapsed`: Total monotonic retry-flow time consumed so far.
+    ///
+    /// # Returns
+    /// `Some(Duration)` when max total elapsed is configured, or `None` when unlimited.
+    #[inline]
+    fn remaining_total_elapsed(&self, total_elapsed: Duration) -> Option<Duration> {
+        self.max_total_elapsed
+            .map(|max_total_elapsed| max_total_elapsed.saturating_sub(total_elapsed))
     }
 }
 

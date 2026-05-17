@@ -262,8 +262,8 @@ impl<E> RetryBuilder<E> {
     /// Sets a per-attempt timeout.
     ///
     /// # Parameters
-    /// - `attempt_timeout`: Timeout applied by `run_async`, `run_in_worker`,
-    ///   and `run_blocking_with_timeout`. `None` disables per-attempt timeout.
+    /// - `attempt_timeout`: Timeout applied by `run_async` and
+    ///   `run_in_worker`. `None` disables per-attempt timeout.
     ///
     /// # Returns
     /// The updated builder.
