@@ -184,8 +184,6 @@ let retry = Retry::<std::io::Error>::builder()
 let response = retry.run_in_worker(blocking_fetch)?;
 ```
 
-`run_blocking_with_timeout()` 仍然保留，作为 `run_in_worker()` 的兼容别名。
-
 ## Retry-After Hint
 
 如果 attempt failure 中携带 retry-after 信息，可以通过 `retry_after_hint` 注册 hint extractor。extractor 的返回值是 `Option<Duration>`：`Some(delay)` 表示“下一次重试前等待这段时间”，`None` 表示“没有可用 hint”。当所有 failure listener 都返回 `UseDefault` 时，默认策略会优先使用 `Some(delay)`；否则会回退到已配置的 delay 策略。

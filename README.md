@@ -184,8 +184,6 @@ let retry = Retry::<std::io::Error>::builder()
 let response = retry.run_in_worker(blocking_fetch)?;
 ```
 
-`run_blocking_with_timeout()` remains available as a compatibility alias for `run_in_worker()`.
-
 ## Retry-After Hints
 
 If an attempt failure carries retry-after information, register a hint extractor with `retry_after_hint`. The extractor returns `Option<Duration>`: `Some(delay)` means "wait this long before the next retry", while `None` means "no hint is available". When all failure listeners return `UseDefault`, the default policy uses `Some(delay)`; otherwise it falls back to the configured delay strategy.

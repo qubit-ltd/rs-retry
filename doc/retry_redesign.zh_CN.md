@@ -69,7 +69,7 @@ impl<E> Retry<E> {
 }
 ```
 
-这样普通错误重试不会要求 `T: Clone + Eq + Hash`。`run_blocking_with_timeout()` 仍保留为 `run_in_worker()` 的兼容别名。
+这样普通错误重试不会要求 `T: Clone + Eq + Hash`。
 
 ### 4.2 错误判定由 failure listener 表达
 
@@ -321,29 +321,34 @@ src/
     retry_context.rs
     retry_context_parts.rs
     retry_error_listener.rs
+    retry_events.rs
     retry_listeners.rs
     mod.rs
   executor/
+    async_attempt.rs
+    async_attempt_future.rs
+    async_retry_runner.rs
+    async_value_operation.rs
     attempt_cancel_token.rs
     blocking_attempt.rs
     blocking_attempt_outcome.rs
-    blocking_attempt_runner.rs
     blocking_value_operation.rs
     retry.rs
     retry_builder.rs
+    retry_failure_handler.rs
+    retry_failure_policy.rs
     retry_flow_action.rs
     retry_flow_state.rs
-    retry_runner.rs
     sync_attempt.rs
+    sync_retry_runner.rs
     sync_value_operation.rs
-    async_attempt.rs
-    async_attempt_future.rs
-    async_value_operation.rs
-    effective_attempt_timeout.rs
+    worker_attempt_executor.rs
+    worker_retry_runner.rs
     mod.rs
   options/
     attempt_timeout_option.rs
     attempt_timeout_policy.rs
+    effective_attempt_timeout.rs
     parse_retry_jitter_error.rs
     retry_config_values.rs
     retry_delay.rs
