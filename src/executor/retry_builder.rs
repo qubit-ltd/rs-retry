@@ -11,6 +11,8 @@
 //!
 //! The builder collects retry options, attempt listeners, failure listeners, and
 //! terminal error listeners before producing a validated [`Retry`].
+//! It is the main public configuration surface; once [`RetryBuilder::build`]
+//! succeeds, the resulting policy is immutable and can be cloned cheaply.
 
 use std::time::Duration;
 

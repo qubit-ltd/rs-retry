@@ -8,6 +8,11 @@
  *
  ******************************************************************************/
 //! Effective timeout selected from retry options for a single attempt.
+//!
+//! Executors need both the duration to enforce and the reason that duration was
+//! selected. A fired configured attempt timeout can be retried or aborted by
+//! policy, while a fired elapsed-budget timeout is already the terminal reason
+//! for the whole retry flow.
 
 use std::time::Duration;
 
@@ -84,6 +89,9 @@ impl EffectiveAttemptTimeout {
         if !matches!(failure, AttemptFailure::Timeout) {
             return None;
         }
+        // Only elapsed-budget timeout sources are terminal here. Configured
+        // timeouts intentionally return None so the caller routes them through
+        // RetryFailureHandler and AttemptTimeoutPolicy.
         match self.source {
             Some(AttemptTimeoutSource::MaxOperationElapsed) => {
                 Some(RetryErrorReason::MaxOperationElapsedExceeded)

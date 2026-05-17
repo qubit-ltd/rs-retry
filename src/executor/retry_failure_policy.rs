@@ -8,6 +8,10 @@
  *
  ******************************************************************************/
 //! Default retry failure policy.
+//!
+//! Listener decisions and built-in defaults are intentionally separated. The
+//! event dispatcher decides what listeners requested; this policy only fills in
+//! the answer when listeners return [`AttemptFailureDecision::UseDefault`].
 
 use crate::{
     AttemptFailure,
@@ -52,6 +56,9 @@ impl<'a> RetryFailurePolicy<'a> {
         if decision != AttemptFailureDecision::UseDefault {
             return decision;
         }
+        // A configured attempt timeout is the only timeout that can follow the
+        // configured timeout policy. Timeouts selected by elapsed budgets are
+        // handled earlier as terminal elapsed-budget errors.
         if matches!(failure, AttemptFailure::Timeout)
             && let Some(attempt_timeout) = self.options.attempt_timeout()
         {
@@ -63,6 +70,9 @@ impl<'a> RetryFailurePolicy<'a> {
             failure,
             AttemptFailure::Panic(_) | AttemptFailure::Executor(_)
         ) {
+            // Panics and executor failures are infrastructure failures by
+            // default. Callers can still override them explicitly with an
+            // on_failure listener.
             AttemptFailureDecision::Abort
         } else {
             AttemptFailureDecision::UseDefault

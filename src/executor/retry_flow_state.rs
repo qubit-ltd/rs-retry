@@ -8,6 +8,12 @@
  *
  ******************************************************************************/
 //! Mutable state shared by retry execution loops.
+//!
+//! The retry flow tracks two clocks. `operation_elapsed` is accumulated only
+//! from user operation attempts and backs `max_operation_elapsed`; `total_elapsed`
+//! is derived from one monotonic start instant and backs `max_total_elapsed`.
+//! The last failure is retained only across retry sleeps so a pre-attempt
+//! elapsed-budget stop can still report the failure that led to the sleep.
 
 use std::time::{
     Duration,

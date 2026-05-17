@@ -11,7 +11,10 @@
 //!
 //! This module contains the immutable options consumed by [`crate::Retry`].
 //! Raw config merge logic lives in [`crate::options::retry_config_values`].
-//!
+//! Runtime runners should not interpret individual knobs directly when there is
+//! combined behavior. Methods such as [`RetryOptions::effective_attempt_timeout`]
+//! and [`RetryOptions::retry_delay`] encode the library's precedence rules in
+//! one place.
 
 use std::num::NonZeroU32;
 use std::time::Duration;
@@ -416,6 +419,10 @@ impl RetryOptions {
         operation_elapsed: Duration,
         total_elapsed: Duration,
     ) -> EffectiveAttemptTimeout {
+        // Build all timeout candidates with their source, then pick the
+        // shortest remaining duration. Keeping the source is important: a
+        // timeout caused by an elapsed budget is terminal, while a configured
+        // attempt timeout still follows AttemptTimeoutPolicy.
         let candidates = [
             self.attempt_timeout_duration()
                 .map(|duration| (duration, AttemptTimeoutSource::Configured)),
@@ -428,6 +435,10 @@ impl RetryOptions {
             .into_iter()
             .flatten()
             .min_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        // AttemptTimeoutSource derives Ord in the precedence we need for ties:
+        // Configured wins over elapsed-budget candidates so a configured
+        // timeout exactly equal to the remaining budget remains observable as a
+        // configured attempt timeout.
         match selected {
             Some((duration, source)) => EffectiveAttemptTimeout::new(Some(duration), Some(source)),
             None => EffectiveAttemptTimeout::none(),
@@ -502,6 +513,10 @@ impl RetryOptions {
         attempts: u32,
         hint: Option<Duration>,
     ) -> Duration {
+        // Delay precedence is part of the public retry contract:
+        // RetryAfter is an explicit listener override, retry-after hints apply
+        // only when listeners left the default policy in charge, and Retry uses
+        // the configured strategy directly.
         match decision {
             AttemptFailureDecision::RetryAfter(delay) => delay,
             AttemptFailureDecision::UseDefault => {

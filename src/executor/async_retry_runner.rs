@@ -8,6 +8,11 @@
  *
  ******************************************************************************/
 //! Asynchronous retry runner.
+//!
+//! This runner executes each attempt future on the current Tokio task. It can
+//! enforce per-attempt timeouts by wrapping the future in `tokio::time::timeout`,
+//! but it does not create a panic boundary; operation panics still unwind the
+//! async task.
 
 use std::future::Future;
 use std::time::{
@@ -84,6 +89,11 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
         let mut state = RetryFlowState::new();
 
         loop {
+            // The effective timeout may be selected by the configured
+            // per-attempt timeout or by whichever elapsed budget has the least
+            // remaining time. It is recomputed at every control point because
+            // listeners run on the retry path and can consume total elapsed
+            // budget before the user future is created.
             let attempt_timeout =
                 options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
             if let Some(error) = state.take_elapsed_error(options, attempt_timeout) {
@@ -101,6 +111,10 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
                 return Err(events.error(error));
             }
 
+            // Async timeout is enforced by dropping the future after the Tokio
+            // timer fires. The timeout source is kept in the context so a later
+            // timeout failure can be classified as configured timeout vs an
+            // elapsed-budget terminal stop.
             let attempt_start = Instant::now();
             let result = if let Some(timeout) = attempt_timeout.duration() {
                 match tokio::time::timeout(timeout, operation.call()).await {
@@ -121,6 +135,9 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
                 }
                 Err(failure) => {
                     if let Some(reason) = attempt_timeout.elapsed_timeout_reason(&failure) {
+                        // A timeout caused by an elapsed budget is already
+                        // terminal. Only configured attempt timeouts are routed
+                        // through the normal failure policy.
                         return Err(events.error(RetryError::new(reason, Some(failure), context)));
                     }
                     match handler.handle(&state, failure, context, None) {
