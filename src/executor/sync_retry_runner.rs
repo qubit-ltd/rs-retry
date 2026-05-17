@@ -8,6 +8,11 @@
  *
  ******************************************************************************/
 //! Same-thread synchronous retry runner.
+//!
+//! This runner is the simplest execution mode: the caller's closure is invoked
+//! directly on the current thread and retry sleeps use `std::thread::sleep`.
+//! Because there is no cancellation boundary, configured per-attempt timeout is
+//! rejected before the first attempt instead of being simulated unsafely.
 
 use std::time::{
     Duration,
@@ -82,6 +87,10 @@ impl<'a, E> SyncRetryRunner<'a, E> {
         let mut state = RetryFlowState::new();
 
         loop {
+            // Same-thread execution cannot interrupt a running closure. Budget
+            // checks therefore happen only at points where control has returned
+            // to the retry loop: before preparing an attempt and after listener
+            // callbacks that may have consumed total elapsed time.
             if let Some(error) = state.take_elapsed_error(options, no_timeout) {
                 return Err(events.error(error));
             }
@@ -93,6 +102,9 @@ impl<'a, E> SyncRetryRunner<'a, E> {
                 return Err(events.error(error));
             }
 
+            // Only user closure time contributes to max_operation_elapsed.
+            // Listener time and retry sleeps are included by total_elapsed
+            // through RetryFlowState's monotonic start instant.
             let attempt_start = Instant::now();
             match operation.call() {
                 Ok(()) => {
@@ -108,6 +120,11 @@ impl<'a, E> SyncRetryRunner<'a, E> {
                     let context = state.context(options, attempt_elapsed, no_timeout);
                     match handler.handle(&state, failure, context, None) {
                         RetryFlowAction::Retry { delay, failure } => {
+                            // Keep the failure only after the policy has
+                            // committed to another attempt. If the sleep or the
+                            // next pre-attempt check exhausts a budget, this is
+                            // the last meaningful failure to attach to the
+                            // terminal RetryError.
                             sleep_blocking(delay);
                             state.record_last_failure(failure);
                         }

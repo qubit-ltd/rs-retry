@@ -8,6 +8,11 @@
  *
  ******************************************************************************/
 //! Internal retry event dispatcher.
+//!
+//! `RetryEvents` is the only object that knows how lifecycle functors are
+//! stored and invoked. Runners and policies call semantic methods such as
+//! `before_attempt` or `failure_decision`, while this dispatcher handles
+//! listener ordering, optional panic isolation, and retry-after hint extraction.
 
 use std::time::Duration;
 
@@ -98,6 +103,9 @@ impl<E> RetryEvents<E> {
         for listener in &self.listeners.failure {
             let current = self.invoke_listener(|| listener.apply(failure, context));
             if current != AttemptFailureDecision::UseDefault {
+                // All listeners are invoked for observability. The last
+                // concrete decision wins so later registrations can refine or
+                // override earlier broad rules.
                 decision = current;
             }
         }
@@ -149,6 +157,9 @@ impl<E> RetryEvents<E> {
     /// # Returns
     /// The same error after listeners have been invoked.
     pub(crate) fn error(&self, error: RetryError<E>) -> RetryError<E> {
+        // Returning the same error keeps runner code fluent:
+        // `return Err(events.error(error))` both notifies listeners and
+        // preserves the exact terminal error value.
         for listener in &self.listeners.error {
             self.invoke_listener(|| {
                 listener.accept(&error, error.context());

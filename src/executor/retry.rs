@@ -7,10 +7,12 @@
  *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
-//! Retry policy facade.
+//! Retry policy facade and public execution entry point.
 //!
 //! A [`Retry`] owns validated retry options and lifecycle events. Execution
-//! mode details live in dedicated runner objects.
+//! mode details live in dedicated runner objects. This keeps the public API
+//! centered on "configure a policy, then run an operation" while sync, async,
+//! and worker-thread mechanics remain private executor responsibilities.
 
 use std::fmt;
 #[cfg(feature = "tokio")]
@@ -40,6 +42,10 @@ use crate::{
 /// The generic parameter `E` is the caller's operation error type. Cloning a
 /// retry policy shares all registered functors through reference-counted
 /// `rs-function` wrappers.
+///
+/// `Retry` deliberately contains no retry loop logic. It stores immutable
+/// policy inputs and delegates execution to mode-specific runners, which keeps
+/// the facade stable even as timeout or worker-thread behavior evolves.
 #[derive(Clone)]
 pub struct Retry<E = BoxError> {
     /// Validated retry limits and backoff settings.

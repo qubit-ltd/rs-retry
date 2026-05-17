@@ -16,6 +16,23 @@
 //! The default error type is `BoxError` from the `qubit-error` crate. It is not
 //! re-exported by this crate; callers that need the boxed error alias should
 //! import it from `qubit-error` directly.
+//!
+//! The public workflow is intentionally small:
+//!
+//! 1. Build a [`Retry`] policy with [`Retry::builder`] or
+//!    [`Retry::from_options`].
+//! 2. Choose the execution mode:
+//!    - [`Retry::run`] for low-overhead same-thread synchronous work.
+//!    - `Retry::run_async` for Tokio futures and async timeouts when the
+//!      `tokio` feature is enabled.
+//!    - [`Retry::run_in_worker`] for blocking work that needs panic capture,
+//!      timeout waiting, or cooperative cancellation.
+//! 3. Inspect [`RetryError`] when the flow stops. It keeps the terminal reason,
+//!    the last observed [`AttemptFailure`], and the final [`RetryContext`].
+//!
+//! Internally, `Retry` stays a facade. Options, event dispatch, flow state,
+//! failure policy, and execution loops live in separate objects so each piece
+//! owns one retry concern.
 
 pub mod constants;
 pub mod error;

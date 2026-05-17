@@ -8,6 +8,12 @@
  *
  ******************************************************************************/
 //! Worker-thread retry runner.
+//!
+//! This runner gives each attempt its own thread boundary. That boundary lets
+//! the retry flow capture panics, wait with a timeout, and request cooperative
+//! cancellation through [`AttemptCancelToken`]. It still cannot kill Rust
+//! threads; an attempt that ignores cancellation may remain detached, which is
+//! reported as `WorkerStillRunning` before another worker can be spawned.
 
 use std::sync::Arc;
 use std::time::{
@@ -86,6 +92,10 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
         let mut state = RetryFlowState::new();
 
         loop {
+            // Worker execution has the same budget model as async execution:
+            // choose the shortest remaining timeout before any user code runs,
+            // then recompute after before_attempt listeners in case they spent
+            // part of the total elapsed budget.
             let attempt_timeout =
                 options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
             if let Some(error) = state.take_elapsed_error(options, attempt_timeout) {
@@ -103,6 +113,9 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
                 return Err(events.error(error));
             }
 
+            // WorkerAttemptExecutor owns the thread-level details for a single
+            // attempt. The runner only turns the resulting attempt outcome into
+            // retry-flow state and policy decisions.
             let attempt_start = Instant::now();
             let outcome = WorkerAttemptExecutor::run(
                 Arc::clone(&operation),
@@ -123,6 +136,9 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
                     if let Some(reason) = attempt_timeout.elapsed_timeout_reason(&failure) {
                         return Err(events.error(RetryError::new(reason, Some(failure), context)));
                     }
+                    // Starting another worker while the timed-out one is still
+                    // running would allow concurrent attempts for a single retry
+                    // flow. Treat that as a terminal safety boundary.
                     let retry_block_reason = (context.unreaped_worker_count() > 0)
                         .then_some(RetryErrorReason::WorkerStillRunning);
                     match handler.handle(&state, failure, context, retry_block_reason) {
