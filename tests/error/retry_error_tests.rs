@@ -316,7 +316,7 @@ fn test_retry_error_source_returns_terminal_failure() {
         .attempt_timeout_option(Some(AttemptTimeoutOption::abort(Duration::from_millis(5))))
         .build()
         .expect("retry should build")
-        .run_blocking_with_timeout(|token| {
+        .run_in_worker(|token| {
             while !token.is_cancelled() {
                 thread::sleep(Duration::from_millis(1));
             }

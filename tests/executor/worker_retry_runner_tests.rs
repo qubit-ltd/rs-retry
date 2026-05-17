@@ -24,7 +24,7 @@ use qubit_retry::{
 /// # Returns
 /// This test returns nothing.
 #[test]
-fn test_blocking_attempt_runner_paths_are_observable_through_blocking_timeout_and_success() {
+fn test_worker_retry_runner_paths_are_observable_through_timeout_and_success() {
     let retry = Retry::<&'static str>::builder()
         .max_attempts(1)
         .attempt_timeout(Some(Duration::from_millis(20)))
