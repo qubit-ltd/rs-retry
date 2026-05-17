@@ -9,7 +9,7 @@
 
 Qubit Retry is a type-preserving retry toolkit for Rust synchronous and asynchronous operations.
 
-The core API is `Retry<E>`. A retry policy is bound only to the operation error type `E`; each `run` or `run_async` call introduces its own success type `T`.
+The core API is `Retry<E>`. A retry policy is bound only to the operation error type `E`; each `run` or `async_run` call introduces its own success type `T`.
 
 ## Overview
 
@@ -45,7 +45,7 @@ qubit-retry = { version = "0.13", features = ["tokio", "config"] }
 
 Optional features:
 
-- `tokio`: enables `Retry::run_async` and per-attempt async timeouts through `tokio::time::timeout`.
+- `tokio`: enables `Retry::async_run` and per-attempt async timeouts through `tokio::time::timeout`.
 - `config`: enables `RetryOptions::from_config` and `RetryConfigValues` for reading settings from `qubit-config`.
 
 The default feature set is empty, so synchronous retry does not pull in `tokio` or `qubit-config`.
@@ -112,7 +112,7 @@ let retry = Retry::<ServiceError>::builder()
 
 ## Async Retry and Timeout
 
-Async execution requires the `tokio` feature. Per-attempt timeouts are stored in `RetryOptions` through the builder. When an attempt times out, the executor reports `AttemptFailure::Timeout`, and listeners can inspect the configured timeout through `RetryContext::attempt_timeout()`. Operation panics still unwind through the current async task; `run_async()` does not convert them to `AttemptFailure::Panic`.
+Async execution requires the `tokio` feature. Per-attempt timeouts are stored in `RetryOptions` through the builder. When an attempt times out, the executor reports `AttemptFailure::Timeout`, and listeners can inspect the configured timeout through `RetryContext::attempt_timeout()`. Operation panics still unwind through the current async task; `async_run()` does not convert them to `AttemptFailure::Panic`.
 
 ```rust
 use qubit_retry::Retry;
@@ -131,7 +131,7 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
         .build()?;
 
     let response = retry
-        .run_async(|| async {
+        .async_run(|| async {
             fetch_once().await
         })
         .await?;
@@ -140,7 +140,7 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
 }
 ```
 
-Plain `run()` keeps normal same-thread synchronous execution. It is the lowest-overhead path and works well for short, high-frequency operations such as CAS loops. `run()` does not support configured per-attempt timeouts: it returns `RetryErrorReason::UnsupportedOperation` when `attempt_timeout` is set. Use `run_async()` for cancellable async futures, or `run_in_worker()` when blocking work must run on a worker thread.
+Plain `run()` keeps normal same-thread synchronous execution. It is the lowest-overhead path and works well for short, high-frequency operations such as CAS loops. `run()` does not support configured per-attempt timeouts: it returns `RetryErrorReason::UnsupportedOperation` when `attempt_timeout` is set. Use `async_run()` for cancellable async futures, or `run_in_worker()` when blocking work must run on a worker thread.
 
 ## Elapsed Budgets
 

@@ -234,7 +234,7 @@ fn test_retry_error_display_formats_terminal_reasons() {
         .expect_err("run() should reject attempt_timeout");
     assert_eq!(
         unsupported.to_string(),
-        "run() does not support attempt timeout; use run_async() or run_in_worker()"
+        "run() does not support attempt timeout; use async_run() or run_in_worker()"
     );
     assert_eq!(
         unsupported.attempt_timeout_source(),

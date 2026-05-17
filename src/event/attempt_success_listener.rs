@@ -15,7 +15,7 @@ use crate::RetryContext;
 
 /// Listener invoked when an operation attempt succeeds.
 ///
-/// The operation result value is returned by `run` or `run_async`; it is not
+/// The operation result value is returned by `run` or `async_run`; it is not
 /// passed to policy-level listeners because each run call chooses its own
 /// success type.
 pub type AttemptSuccessListener = ArcConsumer<RetryContext>;

@@ -41,7 +41,7 @@ async fn test_async_attempt_failure_is_observable_through_failure_listener() {
 
     assert!(
         retry
-            .run_async(|| async { Err::<(), _>("boom") })
+            .async_run(|| async { Err::<(), _>("boom") })
             .await
             .is_err()
     );

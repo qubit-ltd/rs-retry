@@ -24,7 +24,7 @@ use qubit_error::BoxError;
 use super::async_retry_runner::AsyncRetryRunner;
 use super::attempt_cancel_token::AttemptCancelToken;
 use super::retry_builder::RetryBuilder;
-use super::sync_retry_runner::SyncRetryRunner;
+use super::retry_runner::RetryRunner;
 use super::worker_retry_runner::WorkerRetryRunner;
 use crate::event::{
     RetryEvents,
@@ -118,7 +118,7 @@ impl<E> Retry<E> {
     where
         F: FnMut() -> Result<T, E>,
     {
-        SyncRetryRunner::new(self).run(operation)
+        RetryRunner::new(self).run(operation)
     }
 
     /// Runs an asynchronous operation with retry.
@@ -131,7 +131,7 @@ impl<E> Retry<E> {
     ///
     /// # Panics
     /// Propagates operation panics from the current async task. They are not
-    /// converted to [`crate::AttemptFailure::Panic`] because `run_async` does
+    /// converted to [`crate::AttemptFailure::Panic`] because `async_run` does
     /// not create an isolation boundary. Listener panics are propagated unless
     /// listener panic isolation is enabled. Tokio may panic if timer APIs are
     /// used outside a runtime with a time driver.
@@ -143,7 +143,7 @@ impl<E> Retry<E> {
     /// max-operation-elapsed budget, and remaining max-total-elapsed budget as
     /// their effective timeout.
     #[cfg(feature = "tokio")]
-    pub async fn run_async<T, F, Fut>(&self, operation: F) -> Result<T, RetryError<E>>
+    pub async fn async_run<T, F, Fut>(&self, operation: F) -> Result<T, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
