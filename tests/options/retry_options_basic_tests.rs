@@ -150,6 +150,10 @@ fn test_retry_options_delay_helpers() {
     );
     assert_eq!(exponential.delay_for_attempt(2), Duration::from_millis(20));
     assert_eq!(
+        exponential.next_base_delay_from_current(Duration::ZERO),
+        Duration::from_millis(10)
+    );
+    assert_eq!(
         exponential.next_base_delay_from_current(Duration::from_millis(40)),
         Duration::from_millis(80)
     );

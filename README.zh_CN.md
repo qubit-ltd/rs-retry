@@ -227,6 +227,8 @@ listener 是生命周期 hook，而不是另一套策略系统：
 - `on_retry`：在**已确认**会再试、且**到下一次** `before_attempt` **之前**的等待时间已从策略中**算出之后**调用（即晚于与本次失败相关的 `on_failure` 与决策合并）；在 executor **进入 sleep 等待**、以及下一次 `before_attempt` **之前**触发。**只读观察**（不能改变重试/退避）；`RetryContext::next_delay()` 为即将用于 sleep 的等待时长。若不会重试（资源用尽、被中止、已达末次等），**不会**调用 `on_retry`。
 - `on_error`：retry 流程返回终止 `RetryError` 时调用一次。
 
+注册多个 failure listener 时，所有 listener 会按注册顺序执行。最后一个非 `UseDefault` 的 `AttemptFailureDecision` 会成为最终生效决策；如果所有 listener 都返回 `UseDefault`，则交回已配置的 retry 策略处理。
+
 `before_attempt` 与 `on_retry` 的直观差别：`before_attempt` 对准「**下一次** attempt **开始前**」；`on_retry` 对准「**某次** attempt **已经失败**、且**已经**为**后续**重试**选好间隔**、但**尚未**开始等待或下一轮 attempt 的那一刻」。
 
 ```rust

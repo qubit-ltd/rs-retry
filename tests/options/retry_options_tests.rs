@@ -603,6 +603,10 @@ fn test_retry_options_delay_calculation_helpers() {
     assert_eq!(options.base_delay_for_attempt(4), Duration::from_millis(80));
     assert_eq!(options.delay_for_attempt(2), Duration::from_millis(20));
     assert_eq!(
+        options.next_base_delay_from_current(Duration::ZERO),
+        Duration::from_millis(10)
+    );
+    assert_eq!(
         options.next_base_delay_from_current(Duration::from_millis(40)),
         Duration::from_millis(80)
     );

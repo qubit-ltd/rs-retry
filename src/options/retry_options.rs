@@ -333,8 +333,9 @@ impl RetryOptions {
     /// Calculates the next base delay from the current base delay.
     ///
     /// For exponential delay, this advances by one multiplier step from
-    /// `current` and caps at `max`. For other strategies, this delegates to the
-    /// strategy's per-attempt base behavior.
+    /// `current` and caps at `max`; `Duration::ZERO` represents no previous
+    /// base delay and returns the exponential initial delay. For other
+    /// strategies, this delegates to the strategy's per-attempt base behavior.
     ///
     /// # Parameters
     /// - `current`: Current base delay before jitter.
@@ -347,8 +348,13 @@ impl RetryOptions {
             RetryDelay::Fixed(delay) => *delay,
             RetryDelay::Random { .. } => self.delay.base_delay(1),
             RetryDelay::Exponential {
-                max, multiplier, ..
+                initial,
+                max,
+                multiplier,
             } => {
+                if current.is_zero() {
+                    return *initial;
+                }
                 let bounded_current = current.min(*max);
                 let next = bounded_current.mul_f64(*multiplier);
                 if next > *max { *max } else { next }
