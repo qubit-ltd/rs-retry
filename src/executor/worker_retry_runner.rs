@@ -71,8 +71,7 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
     {
         let operation = Arc::new(BlockingValueOperation::new(operation));
         let worker_operation: Arc<dyn BlockingAttempt<E>> = operation.clone();
-        self.run_operation(worker_operation)
-            .map(|()| operation.take_value())
+        self.run_operation(worker_operation).map(|()| operation.take_value())
     }
 
     /// Runs a type-erased blocking operation with retry inside worker-thread attempts.
@@ -96,19 +95,16 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
             // choose the shortest remaining timeout before any user code runs,
             // then recompute after before_attempt listeners in case they spent
             // part of the total elapsed budget.
-            let attempt_timeout =
-                options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
+            let attempt_timeout = options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
             if let Some(error) = state.take_elapsed_error(options, attempt_timeout) {
                 return Err(events.error(error));
             }
 
-            let attempt_timeout =
-                options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
+            let attempt_timeout = options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
             state.start_next_attempt();
             let context = state.context(options, Duration::ZERO, attempt_timeout);
             events.before_attempt(&context);
-            let attempt_timeout =
-                options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
+            let attempt_timeout = options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
             if let Some(error) = state.take_elapsed_error(options, attempt_timeout) {
                 return Err(events.error(error));
             }
@@ -139,8 +135,8 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
                     // Starting another worker while the timed-out one is still
                     // running would allow concurrent attempts for a single retry
                     // flow. Treat that as a terminal safety boundary.
-                    let retry_block_reason = (context.unreaped_worker_count() > 0)
-                        .then_some(RetryErrorReason::WorkerStillRunning);
+                    let retry_block_reason =
+                        (context.unreaped_worker_count() > 0).then_some(RetryErrorReason::WorkerStillRunning);
                     match handler.handle(&state, failure, context, retry_block_reason) {
                         RetryFlowAction::Retry { delay, failure } => {
                             sleep_blocking(delay);

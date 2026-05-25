@@ -246,10 +246,7 @@ impl RetryOptions {
         attempt_timeout: Option<AttemptTimeoutOption>,
     ) -> Result<Self, RetryConfigError> {
         let max_attempts = NonZeroU32::new(max_attempts).ok_or_else(|| {
-            RetryConfigError::invalid_value(
-                KEY_MAX_ATTEMPTS,
-                "max_attempts must be greater than zero",
-            )
+            RetryConfigError::invalid_value(KEY_MAX_ATTEMPTS, "max_attempts must be greater than zero")
         })?;
         let options = Self {
             max_attempts,
@@ -310,9 +307,9 @@ impl RetryOptions {
             .validate()
             .map_err(|message| RetryConfigError::invalid_value(KEY_JITTER_FACTOR, message))?;
         if let Some(attempt_timeout) = self.attempt_timeout {
-            attempt_timeout.validate().map_err(|message| {
-                RetryConfigError::invalid_value(KEY_ATTEMPT_TIMEOUT_MILLIS, message)
-            })?;
+            attempt_timeout
+                .validate()
+                .map_err(|message| RetryConfigError::invalid_value(KEY_ATTEMPT_TIMEOUT_MILLIS, message))?;
         }
         Ok(())
     }
@@ -399,8 +396,7 @@ impl RetryOptions {
     /// `Some(Duration)` when per-attempt timeout is configured.
     #[inline]
     pub(crate) fn attempt_timeout_duration(&self) -> Option<Duration> {
-        self.attempt_timeout
-            .map(|attempt_timeout| attempt_timeout.timeout())
+        self.attempt_timeout.map(|attempt_timeout| attempt_timeout.timeout())
     }
 
     /// Returns the effective timeout used by the next attempt.
@@ -484,11 +480,7 @@ impl RetryOptions {
     /// `true` when the delay should not be slept because no budget would remain
     /// for the next attempt.
     #[inline]
-    pub(crate) fn retry_sleep_exhausts_total_elapsed(
-        &self,
-        total_elapsed: Duration,
-        delay: Duration,
-    ) -> bool {
+    pub(crate) fn retry_sleep_exhausts_total_elapsed(&self, total_elapsed: Duration, delay: Duration) -> bool {
         if delay.is_zero() {
             return false;
         }
@@ -574,8 +566,7 @@ impl Default for RetryOptions {
     #[inline]
     fn default() -> Self {
         Self {
-            max_attempts: NonZeroU32::new(DEFAULT_RETRY_MAX_ATTEMPTS)
-                .expect("default retry attempts must be non-zero"),
+            max_attempts: NonZeroU32::new(DEFAULT_RETRY_MAX_ATTEMPTS).expect("default retry attempts must be non-zero"),
             max_operation_elapsed: DEFAULT_RETRY_MAX_OPERATION_ELAPSED,
             max_total_elapsed: DEFAULT_RETRY_MAX_TOTAL_ELAPSED,
             delay: RetryDelay::default(),

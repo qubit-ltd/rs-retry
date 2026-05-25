@@ -256,12 +256,7 @@ impl RetryDelay {
     /// # Errors
     /// This function does not return errors. Callers must ensure parameters
     /// satisfy [`RetryDelay::validate`] when constructing a public executor.
-    fn exponential_delay(
-        initial: Duration,
-        max: Duration,
-        multiplier: f64,
-        attempt: u32,
-    ) -> Duration {
+    fn exponential_delay(initial: Duration, max: Duration, multiplier: f64, attempt: u32) -> Duration {
         let power = attempt.saturating_sub(1);
         let factor = multiplier.powi(power.min(i32::MAX as u32) as i32);
         if !factor.is_finite() {
@@ -305,9 +300,7 @@ impl RetryDelay {
                     Err("random delay minimum cannot be zero".to_string())
                 } else if min > max {
                     Err("random delay minimum cannot be greater than maximum".to_string())
-                } else if !Self::duration_fits_nanos_u64(*min)
-                    || !Self::duration_fits_nanos_u64(*max)
-                {
+                } else if !Self::duration_fits_nanos_u64(*min) || !Self::duration_fits_nanos_u64(*max) {
                     Err("random delay bounds must fit into u64 nanoseconds".to_string())
                 } else {
                     Ok(())
@@ -323,10 +316,7 @@ impl RetryDelay {
                 } else if max < initial {
                     Err("exponential delay maximum cannot be smaller than initial".to_string())
                 } else if !multiplier.is_finite() || *multiplier <= 1.0 {
-                    Err(
-                        "exponential delay multiplier must be finite and greater than 1.0"
-                            .to_string(),
-                    )
+                    Err("exponential delay multiplier must be finite and greater than 1.0".to_string())
                 } else {
                     Ok(())
                 }
@@ -353,7 +343,6 @@ impl Default for RetryDelay {
     /// [`RetryDelay`] string. That indicates a crate bug, not a caller mistake.
     #[inline]
     fn default() -> Self {
-        Self::from_str(DEFAULT_RETRY_DELAY)
-            .expect("DEFAULT_RETRY_DELAY must be a valid RetryDelay string")
+        Self::from_str(DEFAULT_RETRY_DELAY).expect("DEFAULT_RETRY_DELAY must be a valid RetryDelay string")
     }
 }

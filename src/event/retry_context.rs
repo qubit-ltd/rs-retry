@@ -291,10 +291,7 @@ impl RetryContext {
     /// # Returns
     /// A context carrying the timeout source when available.
     #[inline]
-    pub(crate) fn with_attempt_timeout_source(
-        mut self,
-        source: Option<AttemptTimeoutSource>,
-    ) -> Self {
+    pub(crate) fn with_attempt_timeout_source(mut self, source: Option<AttemptTimeoutSource>) -> Self {
         if let Some(source) = source {
             self.attempt_timeout_source = Some(source);
         }

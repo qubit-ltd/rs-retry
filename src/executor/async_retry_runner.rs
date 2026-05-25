@@ -58,10 +58,7 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
     ///
     /// # Returns
     /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
-    pub(in crate::executor) async fn run<T, F, Fut>(
-        &self,
-        mut operation: F,
-    ) -> Result<T, RetryError<E>>
+    pub(in crate::executor) async fn run<T, F, Fut>(&self, mut operation: F) -> Result<T, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -79,10 +76,7 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
     ///
     /// # Returns
     /// `Ok(())` after a successful attempt, or [`RetryError`] when retrying stops.
-    async fn run_operation(
-        &self,
-        operation: &mut dyn AsyncAttempt<E>,
-    ) -> Result<(), RetryError<E>> {
+    async fn run_operation(&self, operation: &mut dyn AsyncAttempt<E>) -> Result<(), RetryError<E>> {
         let options = self.retry.options();
         let events = self.retry.events();
         let handler = RetryFailureHandler::new(options, events);
@@ -94,19 +88,16 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
             // remaining time. It is recomputed at every control point because
             // listeners run on the retry path and can consume total elapsed
             // budget before the user future is created.
-            let attempt_timeout =
-                options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
+            let attempt_timeout = options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
             if let Some(error) = state.take_elapsed_error(options, attempt_timeout) {
                 return Err(events.error(error));
             }
 
-            let attempt_timeout =
-                options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
+            let attempt_timeout = options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
             state.start_next_attempt();
             let context = state.context(options, Duration::ZERO, attempt_timeout);
             events.before_attempt(&context);
-            let attempt_timeout =
-                options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
+            let attempt_timeout = options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed());
             if let Some(error) = state.take_elapsed_error(options, attempt_timeout) {
                 return Err(events.error(error));
             }

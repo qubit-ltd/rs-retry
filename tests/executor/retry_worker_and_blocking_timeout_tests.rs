@@ -135,19 +135,10 @@ fn test_run_in_worker_max_operation_elapsed_caps_in_flight_attempt_without_confi
         .expect_err("max elapsed should stop the in-flight worker attempt");
     let elapsed = started.elapsed();
 
-    assert_eq!(
-        error.reason(),
-        RetryErrorReason::MaxOperationElapsedExceeded
-    );
+    assert_eq!(error.reason(), RetryErrorReason::MaxOperationElapsedExceeded);
     assert_eq!(error.attempts(), 1);
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
-    assert_eq!(
-        error.context().attempt_timeout(),
-        Some(Duration::from_millis(20))
-    );
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
+    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(20)));
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::MaxOperationElapsed)
@@ -186,10 +177,7 @@ fn test_run_in_worker_max_total_elapsed_caps_in_flight_attempt_without_configure
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 1);
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
     assert!(
         error.context().attempt_timeout() <= Some(Duration::from_millis(20)),
         "max total elapsed timeout should not exceed configured budget: {:?}",
@@ -231,18 +219,12 @@ fn test_run_in_worker_configured_timeout_policy_wins_when_equal_to_remaining_ela
         .expect_err("configured timeout policy should abort on equal timeout");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
-    assert_eq!(
-        error.context().attempt_timeout(),
-        Some(Duration::from_millis(20))
-    );
+    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(20)));
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::Configured)
     );
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
 }
 
 /// Verifies ordinary worker failures can retry while max elapsed bounds attempts.
@@ -337,10 +319,7 @@ fn test_run_in_worker_non_string_panic_uses_fallback_message() {
         .last_failure()
         .and_then(AttemptFailure::as_panic)
         .expect("terminal failure should be a captured panic");
-    assert_eq!(
-        panic.message(),
-        "attempt panicked with a non-string payload"
-    );
+    assert_eq!(panic.message(), "attempt panicked with a non-string payload");
 }
 
 /// Verifies owned string worker panic payloads preserve their message.
@@ -386,9 +365,7 @@ fn test_run_in_worker_panic_can_be_retried_by_listener() {
         .no_delay()
         .on_failure(
             |failure: &AttemptFailure<TestError>, _context: &RetryContext| match failure {
-                AttemptFailure::Panic(panic) if panic.message() == "transient panic" => {
-                    AttemptFailureDecision::Retry
-                }
+                AttemptFailure::Panic(panic) if panic.message() == "transient panic" => AttemptFailureDecision::Retry,
                 _ => AttemptFailureDecision::UseDefault,
             },
         )
@@ -443,14 +420,8 @@ fn test_run_in_worker_can_abort_and_cancel_token() {
         .expect_err("timeout should abort");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
-    assert_eq!(
-        error.context().attempt_timeout(),
-        Some(Duration::from_millis(5))
-    );
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
+    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(5)));
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::Configured)
@@ -536,10 +507,7 @@ fn test_run_in_worker_unreaped_timeout_worker_stops_retrying() {
     assert_eq!(error.reason(), RetryErrorReason::WorkerStillRunning);
     assert_eq!(error.unreaped_worker_count(), 1);
     assert_eq!(error.context().unreaped_worker_count(), 1);
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
     assert!(
         start.elapsed() < Duration::from_millis(100),
         "retry should not wait for the uncooperative worker to finish"
@@ -581,10 +549,7 @@ fn test_run_in_worker_unreaped_timeout_worker_reason_wins_over_attempts_exceeded
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert_eq!(error.reason(), RetryErrorReason::WorkerStillRunning);
     assert_eq!(error.unreaped_worker_count(), 1);
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
 }
 
 /// Verifies a timed-out worker that exits during cancellation grace is reaped.
@@ -622,10 +587,7 @@ fn test_run_in_worker_timeout_reaps_cooperative_worker_during_grace() {
     assert_eq!(error.unreaped_worker_count(), 0);
     assert_eq!(error.context().unreaped_worker_count(), 0);
     assert!(saw_cancel.load(Ordering::SeqCst));
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
 }
 
 /// Verifies worker mode honors max elapsed before running the first attempt.
@@ -646,10 +608,7 @@ fn test_run_in_worker_max_operation_elapsed_can_stop_before_first_attempt() {
         .run_in_worker(record_worker_thread_id)
         .expect_err("zero elapsed budget should stop before first attempt");
 
-    assert_eq!(
-        error.reason(),
-        RetryErrorReason::MaxOperationElapsedExceeded
-    );
+    assert_eq!(error.reason(), RetryErrorReason::MaxOperationElapsedExceeded);
     assert_eq!(error.context().attempt_timeout(), Some(Duration::ZERO));
     assert_eq!(
         error.context().attempt_timeout_source(),

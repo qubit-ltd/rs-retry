@@ -122,8 +122,7 @@ impl RetryConfigValues {
         Ok(Self {
             max_attempts: config.get_optional(KEY_MAX_ATTEMPTS)?,
             max_operation_elapsed_millis: config.get_optional(KEY_MAX_OPERATION_ELAPSED_MILLIS)?,
-            max_operation_elapsed_unlimited: config
-                .get_optional(KEY_MAX_OPERATION_ELAPSED_UNLIMITED)?,
+            max_operation_elapsed_unlimited: config.get_optional(KEY_MAX_OPERATION_ELAPSED_UNLIMITED)?,
             max_total_elapsed_millis: config.get_optional(KEY_MAX_TOTAL_ELAPSED_MILLIS)?,
             max_total_elapsed_unlimited: config.get_optional(KEY_MAX_TOTAL_ELAPSED_UNLIMITED)?,
             attempt_timeout_millis: config.get_optional(KEY_ATTEMPT_TIMEOUT_MILLIS)?,
@@ -134,8 +133,7 @@ impl RetryConfigValues {
             fixed_delay_millis: config.get_optional(KEY_FIXED_DELAY_MILLIS)?,
             random_min_delay_millis: config.get_optional(KEY_RANDOM_MIN_DELAY_MILLIS)?,
             random_max_delay_millis: config.get_optional(KEY_RANDOM_MAX_DELAY_MILLIS)?,
-            exponential_initial_delay_millis: config
-                .get_optional(KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS)?,
+            exponential_initial_delay_millis: config.get_optional(KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS)?,
             exponential_max_delay_millis: config.get_optional(KEY_EXPONENTIAL_MAX_DELAY_MILLIS)?,
             exponential_multiplier: config.get_optional(KEY_EXPONENTIAL_MULTIPLIER)?,
             jitter_factor: config.get_optional(KEY_JITTER_FACTOR)?,
@@ -230,10 +228,7 @@ impl RetryConfigValues {
     /// # Errors
     /// Returns [`RetryConfigError`] when policy text is unsupported or when a
     /// policy is configured without a timeout and no default timeout exists.
-    fn get_attempt_timeout(
-        &self,
-        default: &RetryOptions,
-    ) -> Result<Option<AttemptTimeoutOption>, RetryConfigError> {
+    fn get_attempt_timeout(&self, default: &RetryOptions) -> Result<Option<AttemptTimeoutOption>, RetryConfigError> {
         let default_attempt_timeout = default.attempt_timeout();
         let policy = self
             .attempt_timeout_policy
@@ -244,9 +239,7 @@ impl RetryConfigValues {
         match self.attempt_timeout_millis {
             Some(timeout_millis) => {
                 let policy = policy
-                    .or_else(|| {
-                        default_attempt_timeout.map(|attempt_timeout| attempt_timeout.policy())
-                    })
+                    .or_else(|| default_attempt_timeout.map(|attempt_timeout| attempt_timeout.policy()))
                     .unwrap_or_default();
                 Ok(Some(AttemptTimeoutOption::new(
                     Duration::from_millis(timeout_millis),
@@ -303,16 +296,10 @@ impl RetryConfigValues {
             .delay
             .as_deref()
             .map(|value| (KEY_DELAY, value))
-            .or_else(|| {
-                self.delay_strategy
-                    .as_deref()
-                    .map(|value| (KEY_DELAY_STRATEGY, value))
-            })
+            .or_else(|| self.delay_strategy.as_deref().map(|value| (KEY_DELAY_STRATEGY, value)))
             .map(|(key, value)| (key, value.trim().to_ascii_lowercase()));
         match strategy {
-            None => Ok(self
-                .get_implicit_delay()
-                .unwrap_or_else(|| default.delay().clone())),
+            None => Ok(self.get_implicit_delay().unwrap_or_else(|| default.delay().clone())),
             Some((_, strategy)) if strategy == "none" => Ok(RetryDelay::None),
             Some((_, strategy)) if strategy == "fixed" => {
                 let Some(fixed_delay_millis) = self.fixed_delay_millis else {
@@ -337,9 +324,7 @@ impl RetryConfigValues {
                     )
                 })?),
             )),
-            Some((_, strategy))
-                if strategy == "exponential" || strategy == "exponential_backoff" =>
-            {
+            Some((_, strategy)) if strategy == "exponential" || strategy == "exponential_backoff" => {
                 let initial_delay = self.exponential_initial_delay_millis.ok_or_else(|| {
                     RetryConfigError::invalid_value(
                         KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,

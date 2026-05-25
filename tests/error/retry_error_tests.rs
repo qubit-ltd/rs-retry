@@ -135,10 +135,7 @@ fn test_retry_error_into_parts_returns_reason_failure_and_context() {
     let (reason, last_failure, context) = error.into_parts();
 
     assert_eq!(reason, RetryErrorReason::AttemptsExceeded);
-    assert!(matches!(
-        last_failure,
-        Some(AttemptFailure::Error(TestError("parts")))
-    ));
+    assert!(matches!(last_failure, Some(AttemptFailure::Error(TestError("parts")))));
     assert_eq!(context.attempt(), 1);
     assert_eq!(context.max_attempts(), 1);
 }
@@ -158,11 +155,7 @@ fn test_retry_error_display_formats_terminal_reasons() {
     let aborted = Retry::<TestError>::builder()
         .max_attempts(3)
         .no_delay()
-        .on_failure(
-            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
-                AttemptFailureDecision::Abort
-            },
-        )
+        .on_failure(|_failure: &AttemptFailure<TestError>, _context: &RetryContext| AttemptFailureDecision::Abort)
         .build()
         .expect("retry should build")
         .run(|| -> Result<(), TestError> { Err(TestError("fatal")) })
@@ -323,10 +316,7 @@ fn test_retry_error_source_returns_terminal_failure() {
             Err::<(), TestError>(TestError("cancelled too late"))
         })
         .expect_err("attempt timeout should abort");
-    assert!(matches!(
-        timeout_error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
+    assert!(matches!(timeout_error.last_failure(), Some(AttemptFailure::Timeout)));
     assert!(timeout_error.source().is_none());
     assert!(timeout_error.last_error().is_none());
     assert!(timeout_error.into_last_error().is_none());
@@ -347,11 +337,7 @@ fn test_retry_error_display_propagates_formatter_errors() {
     let aborted = Retry::<TestError>::builder()
         .max_attempts(3)
         .no_delay()
-        .on_failure(
-            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
-                AttemptFailureDecision::Abort
-            },
-        )
+        .on_failure(|_failure: &AttemptFailure<TestError>, _context: &RetryContext| AttemptFailureDecision::Abort)
         .build()
         .expect("retry should build")
         .run(|| -> Result<(), TestError> { Err(TestError("fatal")) })

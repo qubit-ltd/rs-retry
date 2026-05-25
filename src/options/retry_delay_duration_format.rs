@@ -42,9 +42,7 @@ impl FromStrFormat<Duration> for RetryDelayDurationFormat {
     /// fixed [`parse_display::ParseError`] because its message is `&'static str` only.
     fn parse(&self, s: &str) -> Result<Duration, Self::Err> {
         duration_with_unit::parse(s).map_err(|_| {
-            ParseError::with_message(
-                "invalid retry delay duration: expected a value accepted by `duration_with_unit`",
-            )
+            ParseError::with_message("invalid retry delay duration: expected a value accepted by `duration_with_unit`")
         })
     }
 

@@ -82,10 +82,7 @@ impl EffectiveAttemptTimeout {
     /// `Some(RetryErrorReason)` when the attempt timed out because an elapsed
     /// budget selected the effective timeout.
     #[inline]
-    pub(crate) fn elapsed_timeout_reason<E>(
-        self,
-        failure: &AttemptFailure<E>,
-    ) -> Option<RetryErrorReason> {
+    pub(crate) fn elapsed_timeout_reason<E>(self, failure: &AttemptFailure<E>) -> Option<RetryErrorReason> {
         if !matches!(failure, AttemptFailure::Timeout) {
             return None;
         }
@@ -93,12 +90,8 @@ impl EffectiveAttemptTimeout {
         // timeouts intentionally return None so the caller routes them through
         // RetryFailureHandler and AttemptTimeoutPolicy.
         match self.source {
-            Some(AttemptTimeoutSource::MaxOperationElapsed) => {
-                Some(RetryErrorReason::MaxOperationElapsedExceeded)
-            }
-            Some(AttemptTimeoutSource::MaxTotalElapsed) => {
-                Some(RetryErrorReason::MaxTotalElapsedExceeded)
-            }
+            Some(AttemptTimeoutSource::MaxOperationElapsed) => Some(RetryErrorReason::MaxOperationElapsedExceeded),
+            Some(AttemptTimeoutSource::MaxTotalElapsed) => Some(RetryErrorReason::MaxTotalElapsedExceeded),
             Some(AttemptTimeoutSource::Configured) | None => None,
         }
     }

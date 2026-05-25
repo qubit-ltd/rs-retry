@@ -66,10 +66,7 @@ impl<'a> RetryFailurePolicy<'a> {
                 AttemptTimeoutPolicy::Retry => AttemptFailureDecision::Retry,
                 AttemptTimeoutPolicy::Abort => AttemptFailureDecision::Abort,
             }
-        } else if matches!(
-            failure,
-            AttemptFailure::Panic(_) | AttemptFailure::Executor(_)
-        ) {
+        } else if matches!(failure, AttemptFailure::Panic(_) | AttemptFailure::Executor(_)) {
             // Panics and executor failures are infrastructure failures by
             // default. Callers can still override them explicitly with an
             // on_failure listener.

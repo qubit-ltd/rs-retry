@@ -51,8 +51,7 @@ fn test_attempt_failure_error_accessors_distinguish_timeout() {
     );
     assert_eq!(panic.into_error(), None);
 
-    let executor =
-        AttemptFailure::<TestError>::Executor(AttemptExecutorError::new("worker spawn failed"));
+    let executor = AttemptFailure::<TestError>::Executor(AttemptExecutorError::new("worker spawn failed"));
     assert_eq!(executor.as_error(), None);
     assert_eq!(
         executor
@@ -81,17 +80,13 @@ fn test_attempt_failure_display_formats_variants() {
         AttemptFailure::Error(TestError("operation failed")).to_string(),
         "operation failed"
     );
-    assert_eq!(
-        AttemptFailure::<TestError>::Timeout.to_string(),
-        "attempt timed out"
-    );
+    assert_eq!(AttemptFailure::<TestError>::Timeout.to_string(), "attempt timed out");
     assert_eq!(
         AttemptFailure::<TestError>::Panic(AttemptPanic::new("worker failed")).to_string(),
         "attempt panicked: worker failed"
     );
     assert_eq!(
-        AttemptFailure::<TestError>::Executor(AttemptExecutorError::new("worker spawn failed"))
-            .to_string(),
+        AttemptFailure::<TestError>::Executor(AttemptExecutorError::new("worker spawn failed")).to_string(),
         "attempt executor failed: worker spawn failed"
     );
 }

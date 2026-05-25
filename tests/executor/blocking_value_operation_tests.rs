@@ -38,9 +38,7 @@ fn test_blocking_value_operation_is_observable_through_non_clone_success_value()
         .expect("retry should build");
 
     let value = retry
-        .run_in_worker(|_token: AttemptCancelToken| {
-            Ok::<_, TestError>(NonCloneValue { text: "ok" })
-        })
+        .run_in_worker(|_token: AttemptCancelToken| Ok::<_, TestError>(NonCloneValue { text: "ok" }))
         .expect("worker operation should succeed");
 
     assert_eq!(value, NonCloneValue { text: "ok" });

@@ -72,40 +72,21 @@ fn test_retry_options_constructors_validate_invalid_values() {
     )
     .expect("valid retry options should be accepted");
     assert_eq!(options.max_attempts(), 3);
-    assert_eq!(
-        options.max_operation_elapsed(),
-        Some(Duration::from_millis(500))
-    );
+    assert_eq!(options.max_operation_elapsed(), Some(Duration::from_millis(500)));
     assert_eq!(options.max_total_elapsed(), Some(Duration::from_secs(2)));
-    assert_eq!(
-        options.delay(),
-        &RetryDelay::fixed(Duration::from_millis(10))
-    );
+    assert_eq!(options.delay(), &RetryDelay::fixed(Duration::from_millis(10)));
     assert_eq!(options.jitter(), RetryJitter::factor(0.25));
 
-    let invalid_attempts =
-        RetryOptions::new(0, None, None, RetryDelay::none(), RetryJitter::none())
-            .expect_err("zero max attempts should be rejected");
+    let invalid_attempts = RetryOptions::new(0, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect_err("zero max attempts should be rejected");
     assert_eq!(invalid_attempts.path(), KEY_MAX_ATTEMPTS);
 
-    let invalid_delay = RetryOptions::new(
-        2,
-        None,
-        None,
-        RetryDelay::fixed(Duration::ZERO),
-        RetryJitter::none(),
-    )
-    .expect_err("invalid delay should be rejected");
+    let invalid_delay = RetryOptions::new(2, None, None, RetryDelay::fixed(Duration::ZERO), RetryJitter::none())
+        .expect_err("invalid delay should be rejected");
     assert_eq!(invalid_delay.path(), KEY_DELAY);
 
-    let invalid_jitter = RetryOptions::new(
-        2,
-        None,
-        None,
-        RetryDelay::none(),
-        RetryJitter::factor(f64::NAN),
-    )
-    .expect_err("invalid jitter should be rejected");
+    let invalid_jitter = RetryOptions::new(2, None, None, RetryDelay::none(), RetryJitter::factor(f64::NAN))
+        .expect_err("invalid jitter should be rejected");
     assert_eq!(invalid_jitter.path(), KEY_JITTER_FACTOR);
 
     let invalid_timeout = RetryOptions::new_with_attempt_timeout(
@@ -140,14 +121,8 @@ fn test_retry_options_delay_helpers() {
         RetryJitter::none(),
     )
     .expect("valid exponential retry options should be accepted");
-    assert_eq!(
-        exponential.base_delay_for_attempt(1),
-        Duration::from_millis(10)
-    );
-    assert_eq!(
-        exponential.base_delay_for_attempt(4),
-        Duration::from_millis(80)
-    );
+    assert_eq!(exponential.base_delay_for_attempt(1), Duration::from_millis(10));
+    assert_eq!(exponential.base_delay_for_attempt(4), Duration::from_millis(80));
     assert_eq!(exponential.delay_for_attempt(2), Duration::from_millis(20));
     assert_eq!(
         exponential.next_base_delay_from_current(Duration::ZERO),

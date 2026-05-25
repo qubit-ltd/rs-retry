@@ -68,14 +68,8 @@ async fn test_run_async_attempt_timeout_can_abort() {
         .expect_err("timeout should abort");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
-    assert_eq!(
-        error.context().attempt_timeout(),
-        Some(Duration::from_millis(1))
-    );
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
+    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(1)));
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::Configured)
@@ -109,19 +103,10 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
         .expect_err("max elapsed should stop the in-flight async attempt");
     let elapsed = started.elapsed();
 
-    assert_eq!(
-        error.reason(),
-        RetryErrorReason::MaxOperationElapsedExceeded
-    );
+    assert_eq!(error.reason(), RetryErrorReason::MaxOperationElapsedExceeded);
     assert_eq!(error.attempts(), 1);
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
-    assert_eq!(
-        error.context().attempt_timeout(),
-        Some(Duration::from_millis(20))
-    );
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
+    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(20)));
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::MaxOperationElapsed)
@@ -161,10 +146,7 @@ async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configur
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 1);
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
     assert!(
         error.context().attempt_timeout() <= Some(Duration::from_millis(20)),
         "max total elapsed timeout should not exceed configured budget: {:?}",
@@ -207,18 +189,12 @@ async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_
         .expect_err("configured attempt timeout should abort first");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
-    assert_eq!(
-        error.context().attempt_timeout(),
-        Some(Duration::from_millis(20))
-    );
+    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(20)));
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::Configured)
     );
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
 }
 
 /// Verifies a configured timeout policy wins when it equals remaining max elapsed.
@@ -248,18 +224,12 @@ async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_e
         .expect_err("configured timeout policy should abort on equal timeout");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
-    assert_eq!(
-        error.context().attempt_timeout(),
-        Some(Duration::from_millis(20))
-    );
+    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(20)));
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::Configured)
     );
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
 }
 
 /// Verifies ordinary async failures can retry while max elapsed bounds attempts.
@@ -386,10 +356,7 @@ async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
         .await
         .expect_err("zero elapsed budget should stop before first attempt");
 
-    assert_eq!(
-        error.reason(),
-        RetryErrorReason::MaxOperationElapsedExceeded
-    );
+    assert_eq!(error.reason(), RetryErrorReason::MaxOperationElapsedExceeded);
     assert_eq!(error.attempts(), 0);
     assert_eq!(error.context().attempt_timeout(), Some(Duration::ZERO));
     assert_eq!(

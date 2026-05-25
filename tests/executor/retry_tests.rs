@@ -32,17 +32,11 @@ fn test_retry_run_returns_value_and_exhaustion_error() {
     let value = retry
         .run(|| {
             attempts += 1;
-            if attempts == 2 {
-                Ok("done")
-            } else {
-                Err("again")
-            }
+            if attempts == 2 { Ok("done") } else { Err("again") }
         })
         .unwrap();
     assert_eq!("done", value);
 
-    let error = retry
-        .run(|| -> Result<(), &'static str> { Err("always") })
-        .unwrap_err();
+    let error = retry.run(|| -> Result<(), &'static str> { Err("always") }).unwrap_err();
     assert_eq!(RetryErrorReason::AttemptsExceeded, error.reason());
 }

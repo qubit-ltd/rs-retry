@@ -26,17 +26,13 @@ use qubit_retry::RetryDelay;
 #[test]
 fn test_retry_delay_display_variants() {
     assert_eq!(RetryDelay::none().to_string(), "none");
-    assert_eq!(
-        RetryDelay::fixed(Duration::from_millis(12)).to_string(),
-        "fixed(12ms)"
-    );
+    assert_eq!(RetryDelay::fixed(Duration::from_millis(12)).to_string(), "fixed(12ms)");
     assert_eq!(
         RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8)).to_string(),
         "random(5ms..=8ms)"
     );
     assert_eq!(
-        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0)
-            .to_string(),
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0).to_string(),
         "exponential(initial=100ms, max=500ms, multiplier=2)"
     );
 }
@@ -112,10 +108,7 @@ fn test_retry_delay_from_str_rejects_invalid_inputs() {
         "exponential(initial=100ms, max=500ms, multiplier=)",
         "exponential(initial=18446744073709551616ms, max=500ms, multiplier=2)",
     ] {
-        assert!(
-            RetryDelay::from_str(s).is_err(),
-            "expected from_str error for {s:?}"
-        );
+        assert!(RetryDelay::from_str(s).is_err(), "expected from_str error for {s:?}");
     }
 }
 

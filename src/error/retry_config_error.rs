@@ -116,11 +116,7 @@ impl fmt::Display for RetryConfigError {
         if self.path.is_empty() {
             write!(f, "invalid retry configuration: {}", self.message)
         } else {
-            write!(
-                f,
-                "invalid retry configuration at '{}': {}",
-                self.path, self.message
-            )
+            write!(f, "invalid retry configuration at '{}': {}", self.path, self.message)
         }
     }
 }
@@ -147,9 +143,7 @@ impl From<ConfigError> for RetryConfigError {
             ConfigError::PropertyNotFound(path)
             | ConfigError::PropertyHasNoValue(path)
             | ConfigError::PropertyIsFinal(path) => path.clone(),
-            ConfigError::TypeMismatch { key, .. } | ConfigError::ConversionError { key, .. } => {
-                key.clone()
-            }
+            ConfigError::TypeMismatch { key, .. } | ConfigError::ConversionError { key, .. } => key.clone(),
             ConfigError::DeserializeError { path, .. } => path.clone(),
             ConfigError::KeyConflict { path, .. } => path.clone(),
             ConfigError::IndexOutOfBounds { .. }

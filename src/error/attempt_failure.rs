@@ -29,10 +29,7 @@ use super::attempt_panic::AttemptPanic;
 /// panic, and executor failures do not contain `E` because they are generated
 /// by the retry runtime, not returned by the operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(
-    serialize = "E: serde::Serialize",
-    deserialize = "E: serde::de::DeserializeOwned"
-))]
+#[serde(bound(serialize = "E: serde::Serialize", deserialize = "E: serde::de::DeserializeOwned"))]
 pub enum AttemptFailure<E> {
     /// The operation returned an application error.
     Error(E),

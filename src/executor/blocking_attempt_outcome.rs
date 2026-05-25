@@ -29,10 +29,7 @@ impl<T, E> BlockingAttemptOutcome<T, E> {
     /// # Returns
     /// A blocking-attempt outcome.
     #[inline]
-    pub(in crate::executor) fn new(
-        result: Result<T, AttemptFailure<E>>,
-        unreaped_worker_count: u32,
-    ) -> Self {
+    pub(in crate::executor) fn new(result: Result<T, AttemptFailure<E>>, unreaped_worker_count: u32) -> Self {
         Self {
             result,
             unreaped_worker_count,

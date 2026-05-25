@@ -23,8 +23,7 @@ use crate::{
 /// Listener invoked when one operation attempt produces a failure.
 ///
 /// The returned decision can override the default retry policy.
-pub type AttemptFailureListener<E> =
-    ArcBiFunction<AttemptFailure<E>, RetryContext, AttemptFailureDecision>;
+pub type AttemptFailureListener<E> = ArcBiFunction<AttemptFailure<E>, RetryContext, AttemptFailureDecision>;
 
 /// Listener invoked after a failed attempt has been scheduled for retry.
 ///

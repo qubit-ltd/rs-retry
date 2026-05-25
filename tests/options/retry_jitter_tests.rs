@@ -33,10 +33,7 @@ fn test_apply_symmetric_factor_and_validate_bounds() {
     let base = Duration::from_millis(100);
     assert_eq!(RetryJitter::none().apply(base), base);
     assert_eq!(RetryJitter::factor(0.0).apply(base), base);
-    assert_eq!(
-        RetryJitter::factor(0.5).apply(Duration::ZERO),
-        Duration::ZERO
-    );
+    assert_eq!(RetryJitter::factor(0.5).apply(Duration::ZERO), Duration::ZERO);
     assert_eq!(RetryJitter::default(), RetryJitter::None);
 
     for _ in 0..30 {
@@ -107,8 +104,7 @@ fn test_delay_for_attempt_combines_delay_strategy_and_jitter() {
         Duration::from_millis(50)
     );
 
-    let exponential =
-        RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 2.0);
+    let exponential = RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 2.0);
     assert_eq!(
         RetryJitter::none().delay_for_attempt(&exponential, 1),
         Duration::from_millis(10)
@@ -141,15 +137,9 @@ fn test_delay_for_attempt_combines_delay_strategy_and_jitter() {
 #[test]
 fn test_retry_jitter_from_str() {
     assert_eq!(RetryJitter::from_str("none").unwrap(), RetryJitter::None);
-    assert_eq!(
-        RetryJitter::from_str("  none  ").unwrap(),
-        RetryJitter::None
-    );
+    assert_eq!(RetryJitter::from_str("  none  ").unwrap(), RetryJitter::None);
     assert_eq!(RetryJitter::from_str("NONE").unwrap(), RetryJitter::None);
-    assert_eq!(
-        RetryJitter::from_str("factor:0.2").unwrap(),
-        RetryJitter::factor(0.2)
-    );
+    assert_eq!(RetryJitter::from_str("factor:0.2").unwrap(), RetryJitter::factor(0.2));
     assert_eq!(
         RetryJitter::from_str("factor: 0.25 ").unwrap(),
         RetryJitter::factor(0.25)
@@ -162,9 +152,7 @@ fn test_retry_jitter_from_str() {
         "parse failed."
     );
     assert_eq!(
-        RetryJitter::from_str("factor:-0.1")
-            .unwrap_err()
-            .to_string(),
+        RetryJitter::from_str("factor:-0.1").unwrap_err().to_string(),
         "parse failed."
     );
     assert!(RetryJitter::from_str("factor:").is_err());
@@ -184,38 +172,17 @@ fn test_retry_jitter_from_str() {
 /// The test fails through assertions when parsing behavior changes unexpectedly.
 #[test]
 fn test_retry_jitter_from_str_boundaries_and_numeric_forms() {
-    assert_eq!(
-        RetryJitter::from_str("factor:0").unwrap(),
-        RetryJitter::factor(0.0)
-    );
-    assert_eq!(
-        RetryJitter::from_str("factor:1").unwrap(),
-        RetryJitter::factor(1.0)
-    );
-    assert_eq!(
-        RetryJitter::from_str("factor:1.0").unwrap(),
-        RetryJitter::factor(1.0)
-    );
-    assert_eq!(
-        RetryJitter::from_str("factor:0.0").unwrap(),
-        RetryJitter::factor(0.0)
-    );
-    assert_eq!(
-        RetryJitter::from_str("factor:.5").unwrap(),
-        RetryJitter::factor(0.5)
-    );
+    assert_eq!(RetryJitter::from_str("factor:0").unwrap(), RetryJitter::factor(0.0));
+    assert_eq!(RetryJitter::from_str("factor:1").unwrap(), RetryJitter::factor(1.0));
+    assert_eq!(RetryJitter::from_str("factor:1.0").unwrap(), RetryJitter::factor(1.0));
+    assert_eq!(RetryJitter::from_str("factor:0.0").unwrap(), RetryJitter::factor(0.0));
+    assert_eq!(RetryJitter::from_str("factor:.5").unwrap(), RetryJitter::factor(0.5));
     assert_eq!(
         RetryJitter::from_str("factor:+0.25").unwrap(),
         RetryJitter::factor(0.25)
     );
-    assert_eq!(
-        RetryJitter::from_str("factor:1e0").unwrap(),
-        RetryJitter::factor(1.0)
-    );
-    assert_eq!(
-        RetryJitter::from_str("factor:5e-1").unwrap(),
-        RetryJitter::factor(0.5)
-    );
+    assert_eq!(RetryJitter::from_str("factor:1e0").unwrap(), RetryJitter::factor(1.0));
+    assert_eq!(RetryJitter::from_str("factor:5e-1").unwrap(), RetryJitter::factor(0.5));
 
     assert_eq!(
         RetryJitter::from_str("  \t factor:0.3 \n ").unwrap(),
@@ -250,10 +217,7 @@ fn test_retry_jitter_from_str_boundaries_and_numeric_forms() {
 #[test]
 fn test_retry_jitter_from_str_invalid_format_out_of_range_and_bad_number() {
     for s in ["", "   ", "other", "nonee", "fact", "factor"] {
-        assert!(
-            RetryJitter::from_str(s).is_err(),
-            "expected parse error for {s:?}"
-        );
+        assert!(RetryJitter::from_str(s).is_err(), "expected parse error for {s:?}");
     }
 
     assert_eq!(
@@ -368,10 +332,7 @@ fn test_retry_jitter_display_and_round_trip() {
 /// The test fails through assertions when serde JSON encoding changes unexpectedly.
 #[test]
 fn test_retry_jitter_json_serde_json_shapes() {
-    assert_eq!(
-        serde_json::to_string(&RetryJitter::None).unwrap(),
-        r#""None""#
-    );
+    assert_eq!(serde_json::to_string(&RetryJitter::None).unwrap(), r#""None""#);
     assert_eq!(
         serde_json::to_string(&RetryJitter::factor(0.25)).unwrap(),
         r#"{"Factor":0.25}"#

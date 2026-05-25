@@ -261,7 +261,6 @@ impl Default for RetryJitter {
     /// [`RetryJitter`] string. That indicates a crate bug, not a caller mistake.
     #[inline]
     fn default() -> Self {
-        Self::from_str(DEFAULT_RETRY_JITTER)
-            .expect("DEFAULT_RETRY_JITTER must be a valid RetryJitter string")
+        Self::from_str(DEFAULT_RETRY_JITTER).expect("DEFAULT_RETRY_JITTER must be a valid RetryJitter string")
     }
 }

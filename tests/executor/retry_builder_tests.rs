@@ -44,20 +44,11 @@ fn test_builder_default_and_delay_helpers_work() {
         .expect("retry should build");
 
     assert_eq!(retry.options().max_attempts(), 3);
-    assert_eq!(
-        retry.options().max_total_elapsed(),
-        Some(Duration::from_secs(5))
-    );
-    assert_eq!(
-        retry.options().delay(),
-        &RetryDelay::fixed(Duration::from_millis(1))
-    );
+    assert_eq!(retry.options().max_total_elapsed(), Some(Duration::from_secs(5)));
+    assert_eq!(retry.options().delay(), &RetryDelay::fixed(Duration::from_millis(1)));
     assert_eq!(retry.options().jitter(), RetryJitter::factor(0.0));
     assert_eq!(retry.options().attempt_timeout(), None);
-    assert_eq!(
-        retry.options().worker_cancel_grace(),
-        Duration::from_millis(25)
-    );
+    assert_eq!(retry.options().worker_cancel_grace(), Duration::from_millis(25));
     assert!(format!("{retry:?}").contains("Retry"));
 }
 
@@ -103,11 +94,7 @@ fn test_builder_options_random_exponential_and_default_work() {
     );
 
     let custom_exponential = Retry::<TestError>::builder()
-        .exponential_backoff_with_multiplier(
-            Duration::from_millis(10),
-            Duration::from_millis(80),
-            3.0,
-        )
+        .exponential_backoff_with_multiplier(Duration::from_millis(10), Duration::from_millis(80), 3.0)
         .build()
         .expect("retry should build");
     assert_eq!(
@@ -151,13 +138,7 @@ fn test_build_validates_max_attempts_and_options() {
         .expect_err("zero max attempts should be rejected");
     assert!(error.to_string().contains("max_attempts"));
 
-    let invalid = RetryOptions::new(
-        3,
-        None,
-        None,
-        RetryDelay::fixed(Duration::ZERO),
-        RetryJitter::none(),
-    );
+    let invalid = RetryOptions::new(3, None, None, RetryDelay::fixed(Duration::ZERO), RetryJitter::none());
     assert!(invalid.is_err());
 }
 
@@ -193,19 +174,13 @@ fn test_timeout_convenience_methods_work() {
     let abort_decision = retry_abort
         .run(|| -> Result<(), TestError> { Err(TestError("error")) })
         .expect_err("run with attempt timeout must be unsupported");
-    assert_eq!(
-        abort_decision.reason(),
-        RetryErrorReason::UnsupportedOperation
-    );
+    assert_eq!(abort_decision.reason(), RetryErrorReason::UnsupportedOperation);
     assert_eq!(abort_decision.attempts(), 0);
 
     let continue_decision = retry_continue
         .run(|| -> Result<(), TestError> { Err(TestError("error")) })
         .expect_err("run with attempt timeout must be unsupported");
-    assert_eq!(
-        continue_decision.reason(),
-        RetryErrorReason::UnsupportedOperation
-    );
+    assert_eq!(continue_decision.reason(), RetryErrorReason::UnsupportedOperation);
     assert_eq!(continue_decision.attempts(), 0);
 }
 
@@ -220,12 +195,8 @@ fn test_timeout_convenience_methods_work() {
 fn test_on_failure_accepts_function_trait() {
     struct AbortFatal;
 
-    impl
-        qubit_function::BiFunction<
-            AttemptFailure<TestError>,
-            qubit_retry::RetryContext,
-            AttemptFailureDecision,
-        > for AbortFatal
+    impl qubit_function::BiFunction<AttemptFailure<TestError>, qubit_retry::RetryContext, AttemptFailureDecision>
+        for AbortFatal
     {
         /// Applies the test decider.
         ///
@@ -325,10 +296,7 @@ async fn test_retry_if_error_uses_default_for_timeout() {
         .expect_err("timeout should use default attempt limit");
 
     assert_eq!(error.attempts(), 1);
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
 }
 
 /// Verifies timeout retry convenience handles actual timeout failures.
@@ -361,10 +329,7 @@ async fn test_retry_on_timeout_retries_timeout_failures() {
         .expect_err("timed-out attempts should exhaust retry limit");
 
     assert_eq!(error.attempts(), 2);
-    assert!(matches!(
-        error.last_failure(),
-        Some(AttemptFailure::Timeout)
-    ));
+    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
 }
 
 /// Verifies listener panic isolation substitutes default listener outcomes.
@@ -385,19 +350,11 @@ fn test_isolate_listener_panics_suppresses_listener_panics() {
         .isolate_listener_panics()
         .before_attempt(|_context: &qubit_retry::RetryContext| panic!("before panic"))
         .on_failure(
-            |_failure: &AttemptFailure<TestError>, _context: &qubit_retry::RetryContext| {
-                panic!("failure panic")
-            },
+            |_failure: &AttemptFailure<TestError>, _context: &qubit_retry::RetryContext| panic!("failure panic"),
         )
-        .on_retry(
-            |_failure: &AttemptFailure<TestError>, _context: &qubit_retry::RetryContext| {
-                panic!("retry panic")
-            },
-        )
+        .on_retry(|_failure: &AttemptFailure<TestError>, _context: &qubit_retry::RetryContext| panic!("retry panic"))
         .on_error(
-            |_error: &qubit_retry::RetryError<TestError>, _context: &qubit_retry::RetryContext| {
-                panic!("error panic")
-            },
+            |_error: &qubit_retry::RetryError<TestError>, _context: &qubit_retry::RetryContext| panic!("error panic"),
         )
         .build()
         .expect("retry should build");
