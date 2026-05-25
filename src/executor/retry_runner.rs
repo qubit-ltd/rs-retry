@@ -68,8 +68,7 @@ impl<'a, E> RetryRunner<'a, E> {
             return Err(self.unsupported_attempt_timeout_error());
         }
         let mut operation = ValueOperation::new(&mut operation);
-        self.run_operation(&mut operation)
-            .map(|()| operation.into_value())
+        self.run_operation(&mut operation).map(|()| operation.into_value())
     }
 
     /// Runs a synchronous value-erased operation with retry.

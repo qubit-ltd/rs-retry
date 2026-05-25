@@ -76,11 +76,7 @@ impl<E> RetryEvents<E> {
     /// # Returns
     /// The extracted delay hint, if any.
     #[inline]
-    pub(crate) fn retry_after_hint(
-        &self,
-        failure: &AttemptFailure<E>,
-        context: &RetryContext,
-    ) -> Option<Duration> {
+    pub(crate) fn retry_after_hint(&self, failure: &AttemptFailure<E>, context: &RetryContext) -> Option<Duration> {
         self.retry_after_hint
             .as_ref()
             .and_then(|hint| self.invoke_listener(|| hint.apply(failure, context)))

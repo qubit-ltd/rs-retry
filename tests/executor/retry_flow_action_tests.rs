@@ -28,15 +28,13 @@ fn test_retry_flow_action_paths_cover_retry_and_finished_results() {
     let retry = Retry::<&'static str>::builder()
         .max_attempts(3)
         .no_delay()
-        .on_failure(
-            |_failure: &AttemptFailure<&'static str>, context: &RetryContext| {
-                if context.attempt() == 1 {
-                    AttemptFailureDecision::UseDefault
-                } else {
-                    AttemptFailureDecision::Abort
-                }
-            },
-        )
+        .on_failure(|_failure: &AttemptFailure<&'static str>, context: &RetryContext| {
+            if context.attempt() == 1 {
+                AttemptFailureDecision::UseDefault
+            } else {
+                AttemptFailureDecision::Abort
+            }
+        })
         .build()
         .unwrap();
     let mut attempts = 0;

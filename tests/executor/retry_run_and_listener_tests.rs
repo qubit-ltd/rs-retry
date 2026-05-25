@@ -78,15 +78,10 @@ fn test_run_retries_until_success_and_emits_attempt_events() {
 
     assert_eq!(value.value, "done");
     assert_eq!(
-        *before_attempts
-            .lock()
-            .expect("before events should be lockable"),
+        *before_attempts.lock().expect("before events should be lockable"),
         vec![1, 2, 3]
     );
-    assert_eq!(
-        *successes.lock().expect("success events should be lockable"),
-        vec![3]
-    );
+    assert_eq!(*successes.lock().expect("success events should be lockable"), vec![3]);
 }
 
 /// Verifies the default boxed error type works through the retry executor.
@@ -114,10 +109,7 @@ fn test_run_default_boxed_error_type_exhausts_attempts() {
     assert_eq!(error.reason(), RetryErrorReason::AttemptsExceeded);
     assert_eq!(error.attempts(), 1);
     assert_eq!(
-        error
-            .last_error()
-            .expect("boxed error should be preserved")
-            .to_string(),
+        error.last_error().expect("boxed error should be preserved").to_string(),
         "boxed"
     );
 }
@@ -167,49 +159,38 @@ fn test_run_default_boxed_error_type_observes_listeners_and_hints() {
                 .expect("success events should be lockable")
                 .push(context.attempt());
         })
-        .on_failure(
-            move |failure: &AttemptFailure<BoxError>, context: &RetryContext| {
-                let message = failure
+        .on_failure(move |failure: &AttemptFailure<BoxError>, context: &RetryContext| {
+            let message = failure
+                .as_error()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "timeout".to_string());
+            failure_events.lock().expect("failure events should be lockable").push((
+                context.attempt(),
+                context.retry_after_hint(),
+                message,
+            ));
+            AttemptFailureDecision::UseDefault
+        })
+        .on_retry(move |failure: &AttemptFailure<BoxError>, context: &RetryContext| {
+            retry_events.lock().expect("retry events should be lockable").push((
+                context.attempt(),
+                context.next_delay(),
+                failure
                     .as_error()
                     .map(ToString::to_string)
-                    .unwrap_or_else(|| "timeout".to_string());
-                failure_events
-                    .lock()
-                    .expect("failure events should be lockable")
-                    .push((context.attempt(), context.retry_after_hint(), message));
-                AttemptFailureDecision::UseDefault
-            },
-        )
-        .on_retry(
-            move |failure: &AttemptFailure<BoxError>, context: &RetryContext| {
-                retry_events
-                    .lock()
-                    .expect("retry events should be lockable")
-                    .push((
-                        context.attempt(),
-                        context.next_delay(),
-                        failure
-                            .as_error()
-                            .map(ToString::to_string)
-                            .expect("retry failure should wrap boxed error"),
-                    ));
-            },
-        )
-        .on_error(
-            move |error: &RetryError<BoxError>, context: &RetryContext| {
-                error_events
-                    .lock()
-                    .expect("terminal errors should be lockable")
-                    .push((
-                        error.reason(),
-                        context.attempt(),
-                        error
-                            .last_error()
-                            .map(ToString::to_string)
-                            .expect("terminal boxed error should exist"),
-                    ));
-            },
-        )
+                    .expect("retry failure should wrap boxed error"),
+            ));
+        })
+        .on_error(move |error: &RetryError<BoxError>, context: &RetryContext| {
+            error_events.lock().expect("terminal errors should be lockable").push((
+                error.reason(),
+                context.attempt(),
+                error
+                    .last_error()
+                    .map(ToString::to_string)
+                    .expect("terminal boxed error should exist"),
+            ));
+        })
         .build()
         .expect("retry should build");
 
@@ -240,15 +221,10 @@ fn test_run_default_boxed_error_type_observes_listeners_and_hints() {
     assert_eq!(value, "done");
     assert_eq!(error.reason(), RetryErrorReason::AttemptsExceeded);
     assert_eq!(
-        *before_attempts
-            .lock()
-            .expect("before events should be lockable"),
+        *before_attempts.lock().expect("before events should be lockable"),
         vec![1, 2, 1, 2]
     );
-    assert_eq!(
-        *successes.lock().expect("success events should be lockable"),
-        vec![2]
-    );
+    assert_eq!(*successes.lock().expect("success events should be lockable"), vec![2]);
     assert_eq!(
         *failures.lock().expect("failure events should be lockable"),
         vec![
@@ -265,14 +241,8 @@ fn test_run_default_boxed_error_type_observes_listeners_and_hints() {
         ]
     );
     assert_eq!(
-        *terminal_errors
-            .lock()
-            .expect("terminal errors should be lockable"),
-        vec![(
-            RetryErrorReason::AttemptsExceeded,
-            2,
-            "terminal".to_string()
-        )]
+        *terminal_errors.lock().expect("terminal errors should be lockable"),
+        vec![(RetryErrorReason::AttemptsExceeded, 2, "terminal".to_string())]
     );
 }
 
@@ -322,27 +292,21 @@ fn test_retry_after_decision_selects_next_delay() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .fixed_delay(Duration::from_secs(10))
-        .on_failure(
-            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
-                AttemptFailureDecision::RetryAfter(Duration::from_millis(1))
-            },
-        )
-        .on_retry(
-            move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
-                scheduled_events
-                    .lock()
-                    .expect("retry scheduled events should be lockable")
-                    .push((failure.as_error().cloned(), context.next_delay()));
-            },
-        )
-        .on_error(
-            move |error: &RetryError<TestError>, context: &RetryContext| {
-                failure_events
-                    .lock()
-                    .expect("failure events should be lockable")
-                    .push((error.reason(), context.next_delay()));
-            },
-        )
+        .on_failure(|_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+            AttemptFailureDecision::RetryAfter(Duration::from_millis(1))
+        })
+        .on_retry(move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            scheduled_events
+                .lock()
+                .expect("retry scheduled events should be lockable")
+                .push((failure.as_error().cloned(), context.next_delay()));
+        })
+        .on_error(move |error: &RetryError<TestError>, context: &RetryContext| {
+            failure_events
+                .lock()
+                .expect("failure events should be lockable")
+                .push((error.reason(), context.next_delay()));
+        })
         .build()
         .expect("retry should build");
 
@@ -356,13 +320,8 @@ fn test_retry_after_decision_selects_next_delay() {
         vec![(RetryErrorReason::AttemptsExceeded, None)]
     );
     assert_eq!(
-        *scheduled
-            .lock()
-            .expect("retry scheduled events should be lockable"),
-        vec![(
-            Some(TestError("still-failing")),
-            Some(Duration::from_millis(1))
-        )]
+        *scheduled.lock().expect("retry scheduled events should be lockable"),
+        vec![(Some(TestError("still-failing")), Some(Duration::from_millis(1)))]
     );
 }
 
@@ -387,15 +346,13 @@ fn test_retry_after_hint_is_available_to_failure_listener() {
                 None
             }
         })
-        .on_failure(
-            move |_failure: &AttemptFailure<TestError>, context: &RetryContext| {
-                hint_events
-                    .lock()
-                    .expect("hint events should be lockable")
-                    .push(context.retry_after_hint());
-                AttemptFailureDecision::UseDefault
-            },
-        )
+        .on_failure(move |_failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            hint_events
+                .lock()
+                .expect("hint events should be lockable")
+                .push(context.retry_after_hint());
+            AttemptFailureDecision::UseDefault
+        })
         .build()
         .expect("retry should build");
 
@@ -403,10 +360,7 @@ fn test_retry_after_hint_is_available_to_failure_listener() {
 
     assert_eq!(
         *hints.lock().expect("hint events should be lockable"),
-        vec![
-            Some(Duration::from_millis(1)),
-            Some(Duration::from_millis(1))
-        ]
+        vec![Some(Duration::from_millis(1)), Some(Duration::from_millis(1))]
     );
 }
 
@@ -422,9 +376,7 @@ fn test_retry_after_hint_panic_propagates_by_default() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .no_delay()
-        .retry_after_hint(
-            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| panic!("hint panic"),
-        )
+        .retry_after_hint(|_failure: &AttemptFailure<TestError>, _context: &RetryContext| panic!("hint panic"))
         .build()
         .expect("retry should build");
 
@@ -447,9 +399,7 @@ fn test_retry_after_hint_panic_is_isolated_when_enabled() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .no_delay()
-        .retry_after_hint(
-            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| panic!("hint panic"),
-        )
+        .retry_after_hint(|_failure: &AttemptFailure<TestError>, _context: &RetryContext| panic!("hint panic"))
         .isolate_listener_panics()
         .build()
         .expect("retry should build");
@@ -485,18 +435,16 @@ fn test_sync_run_with_attempt_timeout_is_unsupported() {
                 .expect("before attempt events should be lockable")
                 .push(context.attempt_timeout_source());
         })
-        .on_error(
-            move |error: &RetryError<TestError>, context: &RetryContext| {
-                on_error_events
-                    .lock()
-                    .expect("error listener events should be lockable")
-                    .push((
-                        error.reason(),
-                        context.attempt_timeout(),
-                        context.attempt_timeout_source(),
-                    ));
-            },
-        )
+        .on_error(move |error: &RetryError<TestError>, context: &RetryContext| {
+            on_error_events
+                .lock()
+                .expect("error listener events should be lockable")
+                .push((
+                    error.reason(),
+                    context.attempt_timeout(),
+                    context.attempt_timeout_source(),
+                ));
+        })
         .build()
         .expect("retry should build");
 
@@ -506,10 +454,7 @@ fn test_sync_run_with_attempt_timeout_is_unsupported() {
 
     assert_eq!(error.reason(), RetryErrorReason::UnsupportedOperation);
     assert_eq!(error.context().attempt(), 0);
-    assert_eq!(
-        error.context().attempt_timeout(),
-        Some(Duration::from_millis(1))
-    );
+    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(1)));
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::Configured)
@@ -523,9 +468,7 @@ fn test_sync_run_with_attempt_timeout_is_unsupported() {
         vec![]
     );
     assert_eq!(
-        *on_error_contexts
-            .lock()
-            .expect("on_error events should be lockable"),
+        *on_error_contexts.lock().expect("on_error events should be lockable"),
         vec![(
             RetryErrorReason::UnsupportedOperation,
             Some(Duration::from_millis(1)),
@@ -553,10 +496,7 @@ fn test_max_operation_elapsed_can_stop_before_first_attempt() {
         .run(|| -> Result<(), TestError> { panic!("operation must not run") })
         .expect_err("zero elapsed budget should stop before first attempt");
 
-    assert_eq!(
-        error.reason(),
-        RetryErrorReason::MaxOperationElapsedExceeded
-    );
+    assert_eq!(error.reason(), RetryErrorReason::MaxOperationElapsedExceeded);
     assert_eq!(error.attempts(), 0);
     assert!(error.last_failure().is_none());
 }
@@ -579,11 +519,9 @@ fn test_hook_and_retry_sleep_time_do_not_count_against_elapsed_budget() {
         .before_attempt(|_context: &RetryContext| {
             std::thread::sleep(Duration::from_millis(25));
         })
-        .on_retry(
-            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
-                std::thread::sleep(Duration::from_millis(25));
-            },
-        )
+        .on_retry(|_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+            std::thread::sleep(Duration::from_millis(25));
+        })
         .on_success(move |context: &RetryContext| {
             *success_elapsed_events
                 .lock()
@@ -630,15 +568,13 @@ fn test_on_retry_listener_time_does_not_count_against_elapsed_budget() {
         .max_attempts(2)
         .max_operation_elapsed(Some(Duration::from_millis(10)))
         .fixed_delay(Duration::from_millis(25))
-        .on_retry(
-            move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
-                scheduled_events
-                    .lock()
-                    .expect("retry events should be lockable")
-                    .push((failure.as_error().cloned(), context.next_delay()));
-                std::thread::sleep(Duration::from_millis(25));
-            },
-        )
+        .on_retry(move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            scheduled_events
+                .lock()
+                .expect("retry events should be lockable")
+                .push((failure.as_error().cloned(), context.next_delay()));
+            std::thread::sleep(Duration::from_millis(25));
+        })
         .build()
         .expect("retry should build");
 
@@ -658,13 +594,8 @@ fn test_on_retry_listener_time_does_not_count_against_elapsed_budget() {
     assert_eq!(error.last_error(), Some(&TestError("slow-listener")));
     assert_eq!(error.context().next_delay(), None);
     assert_eq!(
-        *retry_events
-            .lock()
-            .expect("retry events should be lockable"),
-        vec![(
-            Some(TestError("slow-listener")),
-            Some(Duration::from_millis(25))
-        )]
+        *retry_events.lock().expect("retry events should be lockable"),
+        vec![(Some(TestError("slow-listener")), Some(Duration::from_millis(25)))]
     );
     assert!(
         elapsed >= Duration::from_millis(50),
@@ -687,14 +618,12 @@ fn test_max_total_elapsed_rejects_retry_sleep_before_sleeping() {
         .max_attempts(2)
         .max_total_elapsed(Some(Duration::from_millis(50)))
         .fixed_delay(Duration::from_millis(200))
-        .on_retry(
-            move |_failure: &AttemptFailure<TestError>, context: &RetryContext| {
-                scheduled_events
-                    .lock()
-                    .expect("retry events should be lockable")
-                    .push(context.next_delay());
-            },
-        )
+        .on_retry(move |_failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            scheduled_events
+                .lock()
+                .expect("retry events should be lockable")
+                .push(context.next_delay());
+        })
         .build()
         .expect("retry should build");
 
@@ -711,20 +640,9 @@ fn test_max_total_elapsed_rejects_retry_sleep_before_sleeping() {
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 1);
     assert_eq!(attempts, 1);
-    assert_eq!(
-        error.last_error(),
-        Some(&TestError("retry-delay-too-large"))
-    );
-    assert_eq!(
-        error.context().next_delay(),
-        Some(Duration::from_millis(200))
-    );
-    assert!(
-        retry_events
-            .lock()
-            .expect("retry events should be lockable")
-            .is_empty()
-    );
+    assert_eq!(error.last_error(), Some(&TestError("retry-delay-too-large")));
+    assert_eq!(error.context().next_delay(), Some(Duration::from_millis(200)));
+    assert!(retry_events.lock().expect("retry events should be lockable").is_empty());
     assert!(
         elapsed < Duration::from_millis(150),
         "retry delay should not be slept, elapsed: {elapsed:?}"
@@ -759,18 +677,9 @@ fn test_max_total_elapsed_rejects_retry_after_sleep_before_sleeping() {
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 1);
     assert_eq!(attempts, 1);
-    assert_eq!(
-        error.last_error(),
-        Some(&TestError("retry-after-too-large"))
-    );
-    assert_eq!(
-        error.context().retry_after_hint(),
-        Some(Duration::from_millis(200))
-    );
-    assert_eq!(
-        error.context().next_delay(),
-        Some(Duration::from_millis(200))
-    );
+    assert_eq!(error.last_error(), Some(&TestError("retry-after-too-large")));
+    assert_eq!(error.context().retry_after_hint(), Some(Duration::from_millis(200)));
+    assert_eq!(error.context().next_delay(), Some(Duration::from_millis(200)));
 }
 
 /// Verifies retry control-path listener time is included in total elapsed.
@@ -786,12 +695,10 @@ fn test_max_total_elapsed_includes_failure_listener_time() {
         .max_attempts(2)
         .max_total_elapsed(Some(Duration::from_millis(20)))
         .no_delay()
-        .on_failure(
-            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
-                std::thread::sleep(Duration::from_millis(40));
-                AttemptFailureDecision::UseDefault
-            },
-        )
+        .on_failure(|_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+            std::thread::sleep(Duration::from_millis(40));
+            AttemptFailureDecision::UseDefault
+        })
         .build()
         .expect("retry should build");
 
@@ -852,11 +759,9 @@ fn test_max_total_elapsed_includes_on_retry_listener_time() {
         .max_attempts(2)
         .max_total_elapsed(Some(Duration::from_millis(20)))
         .no_delay()
-        .on_retry(
-            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
-                std::thread::sleep(Duration::from_millis(40));
-            },
-        )
+        .on_retry(|_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+            std::thread::sleep(Duration::from_millis(40));
+        })
         .build()
         .expect("retry should build");
 
@@ -888,11 +793,9 @@ fn test_max_total_elapsed_rechecks_retry_sleep_after_on_retry_listener() {
         .max_attempts(2)
         .max_total_elapsed(Some(Duration::from_millis(80)))
         .fixed_delay(Duration::from_millis(50))
-        .on_retry(
-            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
-                std::thread::sleep(Duration::from_millis(40));
-            },
-        )
+        .on_retry(|_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+            std::thread::sleep(Duration::from_millis(40));
+        })
         .build()
         .expect("retry should build");
 
@@ -907,12 +810,6 @@ fn test_max_total_elapsed_rechecks_retry_sleep_after_on_retry_listener() {
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 1);
     assert_eq!(attempts, 1);
-    assert_eq!(
-        error.last_error(),
-        Some(&TestError("delay-after-slow-on-retry"))
-    );
-    assert_eq!(
-        error.context().next_delay(),
-        Some(Duration::from_millis(50))
-    );
+    assert_eq!(error.last_error(), Some(&TestError("delay-after-slow-on-retry")));
+    assert_eq!(error.context().next_delay(), Some(Duration::from_millis(50)));
 }

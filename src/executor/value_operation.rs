@@ -30,10 +30,7 @@ impl<T, F> ValueOperation<T, F> {
     /// # Returns
     /// A new adapter with no captured value.
     pub(in crate::executor) fn new(operation: F) -> Self {
-        Self {
-            operation,
-            value: None,
-        }
+        Self { operation, value: None }
     }
 
     /// Returns the value captured from a successful operation.
@@ -45,8 +42,7 @@ impl<T, F> ValueOperation<T, F> {
     /// Panics only if the retry loop reports success without a successful
     /// operation result, which would indicate an internal logic error.
     pub(in crate::executor) fn into_value(self) -> T {
-        self.value
-            .expect("retry loop succeeded without an operation value")
+        self.value.expect("retry loop succeeded without an operation value")
     }
 }
 

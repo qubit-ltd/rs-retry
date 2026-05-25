@@ -69,7 +69,6 @@ fn test_attempt_timeout_option_serde_uses_milliseconds() {
     assert!(json.contains("\"timeout\":25"));
     assert!(json.contains("\"policy\":\"Abort\""));
 
-    let decoded: AttemptTimeoutOption =
-        serde_json::from_str(&json).expect("timeout option should deserialize");
+    let decoded: AttemptTimeoutOption = serde_json::from_str(&json).expect("timeout option should deserialize");
     assert_eq!(decoded, option);
 }

@@ -39,12 +39,10 @@ const WORKER_SPAWN_FAILED_MESSAGE: &str = "failed to spawn retry worker thread";
 macro_rules! worker_spawn_failure {
     ($error:expr) => {
         BlockingAttemptOutcome::new(
-            Err(AttemptFailure::Executor(
-                AttemptExecutorError::with_context(
-                    WORKER_SPAWN_FAILED_MESSAGE,
-                    &$error.to_string(),
-                ),
-            )),
+            Err(AttemptFailure::Executor(AttemptExecutorError::with_context(
+                WORKER_SPAWN_FAILED_MESSAGE,
+                &$error.to_string(),
+            ))),
             0,
         )
     };
@@ -88,8 +86,7 @@ impl WorkerAttemptExecutor {
                 // Worker mode is the only synchronous mode with a panic
                 // isolation boundary. Convert panic payloads into retry
                 // failures so policy and listeners can handle them normally.
-                let result =
-                    panic::catch_unwind(panic::AssertUnwindSafe(|| operation.call(worker_token)));
+                let result = panic::catch_unwind(panic::AssertUnwindSafe(|| operation.call(worker_token)));
                 let attempt_result = match result {
                     Ok(result) => result,
                     Err(payload) => Err(AttemptFailure::Panic(AttemptPanic::from_payload(payload))),

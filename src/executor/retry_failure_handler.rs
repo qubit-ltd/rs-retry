@@ -90,11 +90,7 @@ impl<'a, E> RetryFailureHandler<'a, E> {
             .resolve(self.events.failure_decision(&failure, &context), &failure);
         let context = context.with_total_elapsed(state.total_elapsed());
         if decision == AttemptFailureDecision::Abort {
-            return RetryFlowAction::Finished(RetryError::new(
-                RetryErrorReason::Aborted,
-                Some(failure),
-                context,
-            ));
+            return RetryFlowAction::Finished(RetryError::new(RetryErrorReason::Aborted, Some(failure), context));
         }
 
         // Some runners have extra safety stops that are not policy choices.
@@ -125,9 +121,7 @@ impl<'a, E> RetryFailureHandler<'a, E> {
         // RetryAfter wins, then retry-after hints when the default policy is
         // used, then the configured delay and jitter strategy.
         let delay = self.options.retry_delay(decision, state.attempts(), hint);
-        let context = context
-            .with_total_elapsed(state.total_elapsed())
-            .with_next_delay(delay);
+        let context = context.with_total_elapsed(state.total_elapsed()).with_next_delay(delay);
         if self
             .options
             .retry_sleep_exhausts_total_elapsed(context.total_elapsed(), delay)

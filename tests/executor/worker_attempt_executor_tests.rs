@@ -45,11 +45,7 @@ fn test_worker_attempt_executor_paths_are_observable_through_run_in_worker() {
             let attempts = Arc::clone(&attempts);
             move |_token: AttemptCancelToken| {
                 let current = attempts.fetch_add(1, Ordering::SeqCst) + 1;
-                if current == 1 {
-                    Err("retry")
-                } else {
-                    Ok("done")
-                }
+                if current == 1 { Err("retry") } else { Ok("done") }
             }
         })
         .expect("ordinary worker error should retry");

@@ -33,10 +33,7 @@ use crate::{
 /// the user operation. Runtime failures such as timeout, panic, and executor
 /// failures are preserved through [`RetryError::last_failure`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(
-    serialize = "E: serde::Serialize",
-    deserialize = "E: serde::de::DeserializeOwned"
-))]
+#[serde(bound(serialize = "E: serde::Serialize", deserialize = "E: serde::de::DeserializeOwned"))]
 pub struct RetryError<E> {
     /// Terminal reason selected by the retry flow.
     reason: RetryErrorReason,
@@ -216,8 +213,7 @@ where
                 format!("retry max total elapsed exceeded after {attempts} attempt(s)")
             }
             RetryErrorReason::UnsupportedOperation => {
-                "run() does not support attempt timeout; use run_async() or run_in_worker()"
-                    .to_string()
+                "run() does not support attempt timeout; use run_async() or run_in_worker()".to_string()
             }
             RetryErrorReason::WorkerStillRunning => {
                 format!(

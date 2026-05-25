@@ -227,12 +227,7 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn exponential_backoff_with_multiplier(
-        self,
-        initial: Duration,
-        max: Duration,
-        multiplier: f64,
-    ) -> Self {
+    pub fn exponential_backoff_with_multiplier(self, initial: Duration, max: Duration, multiplier: f64) -> Self {
         self.delay(RetryDelay::exponential(initial, max, multiplier))
     }
 
@@ -272,10 +267,8 @@ impl<E> RetryBuilder<E> {
     #[inline]
     pub fn attempt_timeout(mut self, attempt_timeout: Option<Duration>) -> Self {
         if let Some(timeout) = attempt_timeout {
-            self.options.attempt_timeout = Some(AttemptTimeoutOption::new(
-                timeout,
-                self.pending_attempt_timeout_policy,
-            ));
+            self.options.attempt_timeout =
+                Some(AttemptTimeoutOption::new(timeout, self.pending_attempt_timeout_policy));
         } else {
             self.pending_attempt_timeout_policy = AttemptTimeoutPolicy::default();
             self.options.attempt_timeout = None;
@@ -364,11 +357,9 @@ impl<E> RetryBuilder<E> {
     where
         H: Fn(&E) -> Option<Duration> + Send + Sync + 'static,
     {
-        self.retry_after_hint(
-            move |failure: &AttemptFailure<E>, _context: &RetryContext| {
-                failure.as_error().and_then(&hint)
-            },
-        )
+        self.retry_after_hint(move |failure: &AttemptFailure<E>, _context: &RetryContext| {
+            failure.as_error().and_then(&hint)
+        })
     }
 
     /// Registers a listener invoked before every attempt.
@@ -410,10 +401,7 @@ impl<E> RetryBuilder<E> {
     /// The updated builder.
     pub fn on_failure<F>(mut self, listener: F) -> Self
     where
-        F: BiFunction<AttemptFailure<E>, RetryContext, AttemptFailureDecision>
-            + Send
-            + Sync
-            + 'static,
+        F: BiFunction<AttemptFailure<E>, RetryContext, AttemptFailureDecision> + Send + Sync + 'static,
     {
         self.listeners.failure.push(listener.into_arc());
         self
@@ -459,9 +447,9 @@ impl<E> RetryBuilder<E> {
                         AttemptFailureDecision::Abort
                     }
                 }
-                AttemptFailure::Timeout
-                | AttemptFailure::Panic(_)
-                | AttemptFailure::Executor(_) => AttemptFailureDecision::UseDefault,
+                AttemptFailure::Timeout | AttemptFailure::Panic(_) | AttemptFailure::Executor(_) => {
+                    AttemptFailureDecision::UseDefault
+                }
             },
         )
     }

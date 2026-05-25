@@ -67,26 +67,14 @@ fn test_validate_default_and_new() {
         .expect_err("zero attempts should be rejected");
     assert_eq!(zero.path(), KEY_MAX_ATTEMPTS);
 
-    let invalid_jitter = RetryOptions::new(
-        2,
-        None,
-        None,
-        RetryDelay::none(),
-        RetryJitter::factor(f64::NAN),
-    )
-    .expect_err("invalid jitter should be rejected");
+    let invalid_jitter = RetryOptions::new(2, None, None, RetryDelay::none(), RetryJitter::factor(f64::NAN))
+        .expect_err("invalid jitter should be rejected");
     assert_eq!(invalid_jitter.path(), KEY_JITTER_FACTOR);
 
     let timeout = AttemptTimeoutOption::abort(Duration::from_millis(10));
-    let options = RetryOptions::new_with_attempt_timeout(
-        2,
-        None,
-        None,
-        RetryDelay::none(),
-        RetryJitter::none(),
-        Some(timeout),
-    )
-    .expect("valid timeout options should be created");
+    let options =
+        RetryOptions::new_with_attempt_timeout(2, None, None, RetryDelay::none(), RetryJitter::none(), Some(timeout))
+            .expect("valid timeout options should be created");
     assert_eq!(options.attempt_timeout(), Some(timeout));
 
     let invalid_timeout = RetryOptions::new_with_attempt_timeout(
@@ -143,22 +131,13 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
         .set("retry.worker_cancel_grace_millis", 25u64)
         .expect("test config value should be set");
 
-    let options = RetryOptions::from_config(&config.prefix_view("retry"))
-        .expect("prefixed retry config should be parsed");
+    let options =
+        RetryOptions::from_config(&config.prefix_view("retry")).expect("prefixed retry config should be parsed");
 
     assert_eq!(options.max_attempts(), 4);
-    assert_eq!(
-        options.max_operation_elapsed(),
-        Some(Duration::from_millis(250))
-    );
-    assert_eq!(
-        options.max_total_elapsed(),
-        Some(Duration::from_millis(500))
-    );
-    assert_eq!(
-        options.delay(),
-        &RetryDelay::fixed(Duration::from_millis(15))
-    );
+    assert_eq!(options.max_operation_elapsed(), Some(Duration::from_millis(250)));
+    assert_eq!(options.max_total_elapsed(), Some(Duration::from_millis(500)));
+    assert_eq!(options.delay(), &RetryDelay::fixed(Duration::from_millis(15)));
     assert_eq!(options.jitter(), RetryJitter::factor(0.25));
     assert_eq!(
         options.attempt_timeout(),
@@ -293,8 +272,7 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
     invalid_strategy
         .set("delay", "linear")
         .expect("test config value should be set");
-    let error = RetryOptions::from_config(&invalid_strategy)
-        .expect_err("unsupported delay strategy should fail");
+    let error = RetryOptions::from_config(&invalid_strategy).expect_err("unsupported delay strategy should fail");
     assert_eq!(error.path(), KEY_DELAY);
     assert!(error.message().contains("unsupported"));
 
@@ -302,8 +280,7 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
     invalid_delay_strategy
         .set("delay_strategy", "linear")
         .expect("test config value should be set");
-    let error = RetryOptions::from_config(&invalid_delay_strategy)
-        .expect_err("unsupported delay_strategy should fail");
+    let error = RetryOptions::from_config(&invalid_delay_strategy).expect_err("unsupported delay_strategy should fail");
     assert_eq!(error.path(), KEY_DELAY_STRATEGY);
     assert!(error.message().contains("unsupported"));
 
@@ -320,8 +297,7 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
     bad_type
         .set("max_attempts", "not-a-number")
         .expect("test config value should be set");
-    let error =
-        RetryOptions::from_config(&bad_type).expect_err("wrong max_attempts type should fail");
+    let error = RetryOptions::from_config(&bad_type).expect_err("wrong max_attempts type should fail");
     assert_eq!(error.path(), KEY_MAX_ATTEMPTS);
 
     let mut unlimited_bad_type = Config::new();
@@ -373,11 +349,7 @@ fn test_from_config_reads_implicit_delay_defaults() {
         RetryOptions::from_config(&implicit_exponential)
             .expect("implicit exponential delay should be parsed")
             .delay(),
-        &RetryDelay::exponential(
-            Duration::from_millis(1000),
-            Duration::from_millis(60000),
-            4.0
-        )
+        &RetryDelay::exponential(Duration::from_millis(1000), Duration::from_millis(60000), 4.0)
     );
 }
 
@@ -417,9 +389,7 @@ fn test_from_config_reports_delay_parameter_type_errors() {
     );
 
     let mut delay_bad = Config::new();
-    delay_bad
-        .set("delay", 123u64)
-        .expect("test config value should be set");
+    delay_bad.set("delay", 123u64).expect("test config value should be set");
     assert_eq!(
         RetryOptions::from_config(&delay_bad)
             .expect_err("invalid delay type should fail")
