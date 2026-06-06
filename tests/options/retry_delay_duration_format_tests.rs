@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
 use std::str::FromStr;
 use std::time::Duration;
@@ -26,13 +24,22 @@ use qubit_retry::RetryDelay;
 #[test]
 fn test_retry_delay_display_variants() {
     assert_eq!(RetryDelay::none().to_string(), "none");
-    assert_eq!(RetryDelay::fixed(Duration::from_millis(12)).to_string(), "fixed(12ms)");
     assert_eq!(
-        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8)).to_string(),
+        RetryDelay::fixed(Duration::from_millis(12)).to_string(),
+        "fixed(12ms)"
+    );
+    assert_eq!(
+        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8))
+            .to_string(),
         "random(5ms..=8ms)"
     );
     assert_eq!(
-        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0).to_string(),
+        RetryDelay::exponential(
+            Duration::from_millis(100),
+            Duration::from_millis(500),
+            2.0
+        )
+        .to_string(),
         "exponential(initial=100ms, max=500ms, multiplier=2)"
     );
 }
@@ -46,7 +53,8 @@ fn test_retry_delay_display_variants() {
 /// This test returns nothing.
 ///
 /// # Errors
-/// The test fails through assertions when parsing does not match the expected rules.
+/// The test fails through assertions when parsing does not match the expected
+/// rules.
 #[test]
 fn test_retry_delay_from_str_variants() {
     assert_eq!(RetryDelay::from_str("none").unwrap(), RetryDelay::none());
@@ -71,12 +79,26 @@ fn test_retry_delay_from_str_variants() {
         RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8))
     );
     assert_eq!(
-        RetryDelay::from_str("exponential(initial=100ms, max=500ms, multiplier=2)").unwrap(),
-        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0)
+        RetryDelay::from_str(
+            "exponential(initial=100ms, max=500ms, multiplier=2)"
+        )
+        .unwrap(),
+        RetryDelay::exponential(
+            Duration::from_millis(100),
+            Duration::from_millis(500),
+            2.0
+        )
     );
     assert_eq!(
-        RetryDelay::from_str("exponential(initial=100ms, max=500ms, multiplier=2.0)").unwrap(),
-        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0)
+        RetryDelay::from_str(
+            "exponential(initial=100ms, max=500ms, multiplier=2.0)"
+        )
+        .unwrap(),
+        RetryDelay::exponential(
+            Duration::from_millis(100),
+            Duration::from_millis(500),
+            2.0
+        )
     );
 }
 
@@ -108,11 +130,15 @@ fn test_retry_delay_from_str_rejects_invalid_inputs() {
         "exponential(initial=100ms, max=500ms, multiplier=)",
         "exponential(initial=18446744073709551616ms, max=500ms, multiplier=2)",
     ] {
-        assert!(RetryDelay::from_str(s).is_err(), "expected from_str error for {s:?}");
+        assert!(
+            RetryDelay::from_str(s).is_err(),
+            "expected from_str error for {s:?}"
+        );
     }
 }
 
-/// Verifies display → parse round-trip for representative [`RetryDelay`] values.
+/// Verifies display → parse round-trip for representative [`RetryDelay`]
+/// values.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -128,7 +154,11 @@ fn test_retry_delay_display_parse_round_trip_variants() {
         RetryDelay::none(),
         RetryDelay::fixed(Duration::from_millis(12)),
         RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8)),
-        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0),
+        RetryDelay::exponential(
+            Duration::from_millis(100),
+            Duration::from_millis(500),
+            2.0,
+        ),
     ];
     for delay in cases {
         let s = delay.to_string();

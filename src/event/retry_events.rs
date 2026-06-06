@@ -1,18 +1,17 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Internal retry event dispatcher.
 //!
 //! `RetryEvents` is the only object that knows how lifecycle functors are
 //! stored and invoked. Runners and policies call semantic methods such as
 //! `before_attempt` or `failure_decision`, while this dispatcher handles
-//! listener ordering, optional panic isolation, and retry-after hint extraction.
+//! listener ordering, optional panic isolation, and retry-after hint
+//! extraction.
 
 use std::time::Duration;
 
@@ -76,10 +75,14 @@ impl<E> RetryEvents<E> {
     /// # Returns
     /// The extracted delay hint, if any.
     #[inline]
-    pub(crate) fn retry_after_hint(&self, failure: &AttemptFailure<E>, context: &RetryContext) -> Option<Duration> {
-        self.retry_after_hint
-            .as_ref()
-            .and_then(|hint| self.invoke_listener(|| hint.apply(failure, context)))
+    pub(crate) fn retry_after_hint(
+        &self,
+        failure: &AttemptFailure<E>,
+        context: &RetryContext,
+    ) -> Option<Duration> {
+        self.retry_after_hint.as_ref().and_then(|hint| {
+            self.invoke_listener(|| hint.apply(failure, context))
+        })
     }
 
     /// Resolves all failure listeners into one decision.
@@ -89,7 +92,8 @@ impl<E> RetryEvents<E> {
     /// - `context`: Failure context.
     ///
     /// # Returns
-    /// Last non-default listener decision, or [`AttemptFailureDecision::UseDefault`].
+    /// Last non-default listener decision, or
+    /// [`AttemptFailureDecision::UseDefault`].
     pub(crate) fn failure_decision(
         &self,
         failure: &AttemptFailure<E>,
@@ -97,7 +101,8 @@ impl<E> RetryEvents<E> {
     ) -> AttemptFailureDecision {
         let mut decision = AttemptFailureDecision::UseDefault;
         for listener in &self.listeners.failure {
-            let current = self.invoke_listener(|| listener.apply(failure, context));
+            let current =
+                self.invoke_listener(|| listener.apply(failure, context));
             if current != AttemptFailureDecision::UseDefault {
                 // All listeners are invoked for observability. The last
                 // concrete decision wins so later registrations can refine or
@@ -137,7 +142,11 @@ impl<E> RetryEvents<E> {
     /// # Parameters
     /// - `failure`: Failure that caused the retry to be scheduled.
     /// - `context`: Context carrying the selected next delay.
-    pub(crate) fn retry_scheduled(&self, failure: &AttemptFailure<E>, context: &RetryContext) {
+    pub(crate) fn retry_scheduled(
+        &self,
+        failure: &AttemptFailure<E>,
+        context: &RetryContext,
+    ) {
         for listener in &self.listeners.retry_scheduled {
             self.invoke_listener(|| {
                 listener.accept(failure, context);
@@ -170,14 +179,15 @@ impl<E> RetryEvents<E> {
     /// - `call`: Listener invocation closure.
     ///
     /// # Returns
-    /// The listener return value, or `Default::default()` when an isolated panic
-    /// occurs.
+    /// The listener return value, or `Default::default()` when an isolated
+    /// panic occurs.
     fn invoke_listener<R>(&self, call: impl FnOnce() -> R) -> R
     where
         R: Default,
     {
         if self.isolate_listener_panics {
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)).unwrap_or_default()
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(call))
+                .unwrap_or_default()
         } else {
             call()
         }

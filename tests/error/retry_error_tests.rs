@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
 use std::error::Error;
 use std::fmt;
@@ -135,7 +133,10 @@ fn test_retry_error_into_parts_returns_reason_failure_and_context() {
     let (reason, last_failure, context) = error.into_parts();
 
     assert_eq!(reason, RetryErrorReason::AttemptsExceeded);
-    assert!(matches!(last_failure, Some(AttemptFailure::Error(TestError("parts")))));
+    assert!(matches!(
+        last_failure,
+        Some(AttemptFailure::Error(TestError("parts")))
+    ));
     assert_eq!(context.attempt(), 1);
     assert_eq!(context.max_attempts(), 1);
 }
@@ -155,7 +156,11 @@ fn test_retry_error_display_formats_terminal_reasons() {
     let aborted = Retry::<TestError>::builder()
         .max_attempts(3)
         .no_delay()
-        .on_failure(|_failure: &AttemptFailure<TestError>, _context: &RetryContext| AttemptFailureDecision::Abort)
+        .on_failure(
+            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+                AttemptFailureDecision::Abort
+            },
+        )
         .build()
         .expect("retry should build")
         .run(|| -> Result<(), TestError> { Err(TestError("fatal")) })
@@ -211,7 +216,9 @@ fn test_retry_error_display_formats_terminal_reasons() {
         .build()
         .expect("retry should build")
         .run(|| -> Result<(), TestError> { panic!("operation must not run") })
-        .expect_err("zero total elapsed budget should stop before first attempt");
+        .expect_err(
+            "zero total elapsed budget should stop before first attempt",
+        );
     assert_eq!(
         total_elapsed_without_failure.to_string(),
         "retry max total elapsed exceeded after 0 attempt(s)"
@@ -237,7 +244,9 @@ fn test_retry_error_display_formats_terminal_reasons() {
     let worker_still_running = Retry::<TestError>::builder()
         .max_attempts(2)
         .no_delay()
-        .attempt_timeout_option(Some(AttemptTimeoutOption::retry(Duration::from_millis(5))))
+        .attempt_timeout_option(Some(AttemptTimeoutOption::retry(
+            Duration::from_millis(5),
+        )))
         .worker_cancel_grace(Duration::from_millis(5))
         .build()
         .expect("retry should build")
@@ -252,7 +261,8 @@ fn test_retry_error_display_formats_terminal_reasons() {
     );
 }
 
-/// Verifies retry errors expose terminal failures as their source when possible.
+/// Verifies retry errors expose terminal failures as their source when
+/// possible.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -284,7 +294,9 @@ fn test_retry_error_source_returns_terminal_failure() {
         .no_delay()
         .build()
         .expect("retry should build")
-        .run_in_worker(|_token| -> Result<(), TestError> { panic!("panic source") })
+        .run_in_worker(|_token| -> Result<(), TestError> {
+            panic!("panic source")
+        })
         .expect_err("worker panic should abort");
     assert_eq!(
         panic_source
@@ -306,7 +318,9 @@ fn test_retry_error_source_returns_terminal_failure() {
     let timeout_error = Retry::<TestError>::builder()
         .max_attempts(1)
         .no_delay()
-        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(Duration::from_millis(5))))
+        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(
+            Duration::from_millis(5),
+        )))
         .build()
         .expect("retry should build")
         .run_in_worker(|token| {
@@ -316,7 +330,10 @@ fn test_retry_error_source_returns_terminal_failure() {
             Err::<(), TestError>(TestError("cancelled too late"))
         })
         .expect_err("attempt timeout should abort");
-    assert!(matches!(timeout_error.last_failure(), Some(AttemptFailure::Timeout)));
+    assert!(matches!(
+        timeout_error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
     assert!(timeout_error.source().is_none());
     assert!(timeout_error.last_error().is_none());
     assert!(timeout_error.into_last_error().is_none());
@@ -331,13 +348,18 @@ fn test_retry_error_source_returns_terminal_failure() {
 /// This test returns nothing.
 ///
 /// # Errors
-/// The test fails through assertions when display formatting swallows write errors.
+/// The test fails through assertions when display formatting swallows write
+/// errors.
 #[test]
 fn test_retry_error_display_propagates_formatter_errors() {
     let aborted = Retry::<TestError>::builder()
         .max_attempts(3)
         .no_delay()
-        .on_failure(|_failure: &AttemptFailure<TestError>, _context: &RetryContext| AttemptFailureDecision::Abort)
+        .on_failure(
+            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+                AttemptFailureDecision::Abort
+            },
+        )
         .build()
         .expect("retry should build")
         .run(|| -> Result<(), TestError> { Err(TestError("fatal")) })
@@ -366,6 +388,7 @@ fn test_retry_error_display_propagates_formatter_errors() {
     let mut elapsed_writer = FailingWriter::fail_immediately();
     assert!(write!(&mut elapsed_writer, "{max_operation_elapsed}").is_err());
 
-    let mut last_failure_writer = FailingWriter::fail_when_fragment_seen("; last failure:");
+    let mut last_failure_writer =
+        FailingWriter::fail_when_fragment_seen("; last failure:");
     assert!(write!(&mut last_failure_writer, "{attempts_exceeded}").is_err());
 }

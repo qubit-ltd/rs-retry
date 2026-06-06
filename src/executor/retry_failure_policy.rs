@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Default retry failure policy.
 //!
 //! Listener decisions and built-in defaults are intentionally separated. The
@@ -66,7 +64,10 @@ impl<'a> RetryFailurePolicy<'a> {
                 AttemptTimeoutPolicy::Retry => AttemptFailureDecision::Retry,
                 AttemptTimeoutPolicy::Abort => AttemptFailureDecision::Abort,
             }
-        } else if matches!(failure, AttemptFailure::Panic(_) | AttemptFailure::Executor(_)) {
+        } else if matches!(
+            failure,
+            AttemptFailure::Panic(_) | AttemptFailure::Executor(_)
+        ) {
             // Panics and executor failures are infrastructure failures by
             // default. Callers can still override them explicitly with an
             // on_failure listener.

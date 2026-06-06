@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Configuration validation errors.
 //!
 //! This module keeps retry configuration failures independent from executor
@@ -42,7 +40,10 @@ impl RetryConfigError {
     /// # Errors
     /// This function does not return errors.
     #[inline]
-    pub fn invalid_value(path: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn invalid_value(
+        path: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             path: path.into(),
             message: message.into(),
@@ -116,7 +117,11 @@ impl fmt::Display for RetryConfigError {
         if self.path.is_empty() {
             write!(f, "invalid retry configuration: {}", self.message)
         } else {
-            write!(f, "invalid retry configuration at '{}': {}", self.path, self.message)
+            write!(
+                f,
+                "invalid retry configuration at '{}': {}",
+                self.path, self.message
+            )
         }
     }
 }
@@ -143,7 +148,8 @@ impl From<ConfigError> for RetryConfigError {
             ConfigError::PropertyNotFound(path)
             | ConfigError::PropertyHasNoValue(path)
             | ConfigError::PropertyIsFinal(path) => path.clone(),
-            ConfigError::TypeMismatch { key, .. } | ConfigError::ConversionError { key, .. } => key.clone(),
+            ConfigError::TypeMismatch { key, .. }
+            | ConfigError::ConversionError { key, .. } => key.clone(),
             ConfigError::DeserializeError { path, .. } => path.clone(),
             ConfigError::KeyConflict { path, .. } => path.clone(),
             ConfigError::IndexOutOfBounds { .. }

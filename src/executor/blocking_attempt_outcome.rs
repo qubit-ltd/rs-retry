@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Result and cleanup status returned from one blocking worker attempt.
 
 use crate::AttemptFailure;
@@ -29,7 +27,10 @@ impl<T, E> BlockingAttemptOutcome<T, E> {
     /// # Returns
     /// A blocking-attempt outcome.
     #[inline]
-    pub(in crate::executor) fn new(result: Result<T, AttemptFailure<E>>, unreaped_worker_count: u32) -> Self {
+    pub(in crate::executor) fn new(
+        result: Result<T, AttemptFailure<E>>,
+        unreaped_worker_count: u32,
+    ) -> Self {
         Self {
             result,
             unreaped_worker_count,

@@ -1,14 +1,11 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Attempt timeout policy.
-//!
 
 use std::fmt;
 use std::str::FromStr;
@@ -82,7 +79,10 @@ impl FromStr for AttemptTimeoutPolicy {
         match s.trim().to_ascii_lowercase().as_str() {
             "retry" => Ok(Self::Retry),
             "abort" => Ok(Self::Abort),
-            _ => Err("attempt timeout policy must be `retry` or `abort`".to_string()),
+            _ => {
+                Err("attempt timeout policy must be `retry` or `abort`"
+                    .to_string())
+            }
         }
     }
 }

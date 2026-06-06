@@ -1,19 +1,17 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Single worker-thread attempt execution.
 //!
 //! This module owns the boundary between retry-flow code and operating-system
 //! threads. A runner asks for exactly one attempt outcome; this executor spawns
 //! the worker, captures panics, waits for the result or timeout, requests
-//! cooperative cancellation, and reports whether a timed-out worker could not be
-//! reaped during the grace period.
+//! cooperative cancellation, and reports whether a timed-out worker could not
+//! be reaped during the grace period.
 
 use std::panic;
 use std::sync::{
@@ -32,17 +30,20 @@ use crate::{
     AttemptPanic,
 };
 
-const WORKER_DISCONNECTED_MESSAGE: &str = "retry worker thread stopped without sending a result";
+const WORKER_DISCONNECTED_MESSAGE: &str =
+    "retry worker thread stopped without sending a result";
 const WORKER_SPAWN_FAILED_MESSAGE: &str = "failed to spawn retry worker thread";
 
 /// Builds a spawn-failure attempt outcome at the cold spawn error site.
 macro_rules! worker_spawn_failure {
     ($error:expr) => {
         BlockingAttemptOutcome::new(
-            Err(AttemptFailure::Executor(AttemptExecutorError::with_context(
-                WORKER_SPAWN_FAILED_MESSAGE,
-                &$error.to_string(),
-            ))),
+            Err(AttemptFailure::Executor(
+                AttemptExecutorError::with_context(
+                    WORKER_SPAWN_FAILED_MESSAGE,
+                    &$error.to_string(),
+                ),
+            )),
             0,
         )
     };
@@ -57,15 +58,17 @@ impl WorkerAttemptExecutor {
     /// # Parameters
     /// - `operation`: Shared blocking operation.
     /// - `attempt_timeout`: Effective timeout for this attempt, if any.
-    /// - `worker_cancel_grace`: Maximum time to wait for a timed-out worker after
-    ///   cancellation.
+    /// - `worker_cancel_grace`: Maximum time to wait for a timed-out worker
+    ///   after cancellation.
     ///
     /// # Returns
-    /// The attempt outcome, including the attempt result and unreaped worker count.
+    /// The attempt outcome, including the attempt result and unreaped worker
+    /// count.
     ///
     /// # Worker Behavior
-    /// Operation panics are converted into [`AttemptFailure::Panic`]. Worker-spawn
-    /// failures are converted into [`AttemptFailure::Executor`].
+    /// Operation panics are converted into [`AttemptFailure::Panic`].
+    /// Worker-spawn failures are converted into
+    /// [`AttemptFailure::Executor`].
     pub(in crate::executor) fn run<E>(
         operation: Arc<dyn BlockingAttempt<E>>,
         attempt_timeout: Option<Duration>,
@@ -86,10 +89,15 @@ impl WorkerAttemptExecutor {
                 // Worker mode is the only synchronous mode with a panic
                 // isolation boundary. Convert panic payloads into retry
                 // failures so policy and listeners can handle them normally.
-                let result = panic::catch_unwind(panic::AssertUnwindSafe(|| operation.call(worker_token)));
+                let result =
+                    panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        operation.call(worker_token)
+                    }));
                 let attempt_result = match result {
                     Ok(result) => result,
-                    Err(payload) => Err(AttemptFailure::Panic(AttemptPanic::from_payload(payload))),
+                    Err(payload) => Err(AttemptFailure::Panic(
+                        AttemptPanic::from_payload(payload),
+                    )),
                 };
                 let _ = sender.send(attempt_result);
             }) {
@@ -105,7 +113,9 @@ impl WorkerAttemptExecutor {
                 &token,
                 worker_cancel_grace,
             ),
-            None => worker_recv_result_to_attempt_outcome(receiver.recv(), worker),
+            None => {
+                worker_recv_result_to_attempt_outcome(receiver.recv(), worker)
+            }
         }
     }
 }
@@ -155,9 +165,13 @@ where
         // token first, then waits briefly so well-behaved operations can return
         // and be joined before retry policy decides what to do next.
         token.cancel();
-        let worker_exited = wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
+        let worker_exited =
+            wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
         let unreaped_worker_count = if worker_exited { 0 } else { 1 };
-        BlockingAttemptOutcome::new(Err(AttemptFailure::Timeout), unreaped_worker_count)
+        BlockingAttemptOutcome::new(
+            Err(AttemptFailure::Timeout),
+            unreaped_worker_count,
+        )
     } else {
         join_finished_worker(worker);
         let result = result.expect(WORKER_DISCONNECTED_MESSAGE);
@@ -176,8 +190,8 @@ where
 ///
 /// # Returns
 /// `true` when the worker was observed to exit before the grace period ended,
-/// otherwise `false`. When this returns `false`, the worker handle is dropped and
-/// the thread may continue running detached.
+/// otherwise `false`. When this returns `false`, the worker handle is dropped
+/// and the thread may continue running detached.
 fn wait_for_cancelled_worker<E>(
     receiver: &mpsc::Receiver<Result<(), AttemptFailure<E>>>,
     worker: JoinHandle<()>,

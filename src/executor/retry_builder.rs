@@ -1,16 +1,14 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Retry builder.
 //!
-//! The builder collects retry options, attempt listeners, failure listeners, and
-//! terminal error listeners before producing a validated [`Retry`].
+//! The builder collects retry options, attempt listeners, failure listeners,
+//! and terminal error listeners before producing a validated [`Retry`].
 //! It is the main public configuration surface; once [`RetryBuilder::build`]
 //! succeeds, the resulting policy is immutable and can be cloned cheaply.
 
@@ -132,12 +130,16 @@ impl<E> RetryBuilder<E> {
     /// Sets the maximum cumulative user operation time.
     ///
     /// # Parameters
-    /// - `max_operation_elapsed`: Optional cumulative user operation time budget.
+    /// - `max_operation_elapsed`: Optional cumulative user operation time
+    ///   budget.
     ///
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn max_operation_elapsed(mut self, max_operation_elapsed: Option<Duration>) -> Self {
+    pub fn max_operation_elapsed(
+        mut self,
+        max_operation_elapsed: Option<Duration>,
+    ) -> Self {
         self.options.max_operation_elapsed = max_operation_elapsed;
         self
     }
@@ -152,7 +154,10 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn max_total_elapsed(mut self, max_total_elapsed: Option<Duration>) -> Self {
+    pub fn max_total_elapsed(
+        mut self,
+        max_total_elapsed: Option<Duration>,
+    ) -> Self {
         self.options.max_total_elapsed = max_total_elapsed;
         self
     }
@@ -227,7 +232,12 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn exponential_backoff_with_multiplier(self, initial: Duration, max: Duration, multiplier: f64) -> Self {
+    pub fn exponential_backoff_with_multiplier(
+        self,
+        initial: Duration,
+        max: Duration,
+        multiplier: f64,
+    ) -> Self {
         self.delay(RetryDelay::exponential(initial, max, multiplier))
     }
 
@@ -259,18 +269,24 @@ impl<E> RetryBuilder<E> {
     /// Sets a per-attempt timeout.
     ///
     /// # Parameters
-    /// - `attempt_timeout`: Timeout applied by `run_async` and
-    ///   `run_in_worker`. `None` disables per-attempt timeout.
+    /// - `attempt_timeout`: Timeout applied by `run_async` and `run_in_worker`.
+    ///   `None` disables per-attempt timeout.
     ///
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn attempt_timeout(mut self, attempt_timeout: Option<Duration>) -> Self {
+    pub fn attempt_timeout(
+        mut self,
+        attempt_timeout: Option<Duration>,
+    ) -> Self {
         if let Some(timeout) = attempt_timeout {
-            self.options.attempt_timeout =
-                Some(AttemptTimeoutOption::new(timeout, self.pending_attempt_timeout_policy));
+            self.options.attempt_timeout = Some(AttemptTimeoutOption::new(
+                timeout,
+                self.pending_attempt_timeout_policy,
+            ));
         } else {
-            self.pending_attempt_timeout_policy = AttemptTimeoutPolicy::default();
+            self.pending_attempt_timeout_policy =
+                AttemptTimeoutPolicy::default();
             self.options.attempt_timeout = None;
         }
         self
@@ -279,16 +295,21 @@ impl<E> RetryBuilder<E> {
     /// Sets the complete per-attempt timeout option.
     ///
     /// # Parameters
-    /// - `attempt_timeout`: Timeout option. `None` disables per-attempt timeout.
+    /// - `attempt_timeout`: Timeout option. `None` disables per-attempt
+    ///   timeout.
     ///
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn attempt_timeout_option(mut self, attempt_timeout: Option<AttemptTimeoutOption>) -> Self {
+    pub fn attempt_timeout_option(
+        mut self,
+        attempt_timeout: Option<AttemptTimeoutOption>,
+    ) -> Self {
         if let Some(attempt_timeout) = attempt_timeout {
             self.pending_attempt_timeout_policy = attempt_timeout.policy();
         } else {
-            self.pending_attempt_timeout_policy = AttemptTimeoutPolicy::default();
+            self.pending_attempt_timeout_policy =
+                AttemptTimeoutPolicy::default();
         }
         self.options.attempt_timeout = attempt_timeout;
         self
@@ -306,7 +327,10 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn attempt_timeout_policy(mut self, policy: AttemptTimeoutPolicy) -> Self {
+    pub fn attempt_timeout_policy(
+        mut self,
+        policy: AttemptTimeoutPolicy,
+    ) -> Self {
         self.pending_attempt_timeout_policy = policy;
         self.options.attempt_timeout = self
             .options
@@ -315,12 +339,13 @@ impl<E> RetryBuilder<E> {
         self
     }
 
-    /// Sets how long worker-thread execution waits after cancelling a timed-out worker.
+    /// Sets how long worker-thread execution waits after cancelling a timed-out
+    /// worker.
     ///
     /// # Parameters
     /// - `grace`: Duration to wait after the attempt timeout fires and the
-    ///   cooperative cancellation token is marked as cancelled. Use zero to skip
-    ///   the grace wait.
+    ///   cooperative cancellation token is marked as cancelled. Use zero to
+    ///   skip the grace wait.
     ///
     /// # Returns
     /// The updated builder.
@@ -340,7 +365,10 @@ impl<E> RetryBuilder<E> {
     /// The updated builder.
     pub fn retry_after_hint<H>(mut self, hint: H) -> Self
     where
-        H: BiFunction<AttemptFailure<E>, RetryContext, Option<Duration>> + Send + Sync + 'static,
+        H: BiFunction<AttemptFailure<E>, RetryContext, Option<Duration>>
+            + Send
+            + Sync
+            + 'static,
     {
         self.retry_after_hint = Some(hint.into_arc());
         self
@@ -357,9 +385,11 @@ impl<E> RetryBuilder<E> {
     where
         H: Fn(&E) -> Option<Duration> + Send + Sync + 'static,
     {
-        self.retry_after_hint(move |failure: &AttemptFailure<E>, _context: &RetryContext| {
-            failure.as_error().and_then(&hint)
-        })
+        self.retry_after_hint(
+            move |failure: &AttemptFailure<E>, _context: &RetryContext| {
+                failure.as_error().and_then(&hint)
+            },
+        )
     }
 
     /// Registers a listener invoked before every attempt.
@@ -401,7 +431,10 @@ impl<E> RetryBuilder<E> {
     /// The updated builder.
     pub fn on_failure<F>(mut self, listener: F) -> Self
     where
-        F: BiFunction<AttemptFailure<E>, RetryContext, AttemptFailureDecision> + Send + Sync + 'static,
+        F: BiFunction<AttemptFailure<E>, RetryContext, AttemptFailureDecision>
+            + Send
+            + Sync
+            + 'static,
     {
         self.listeners.failure.push(listener.into_arc());
         self
@@ -410,12 +443,13 @@ impl<E> RetryBuilder<E> {
     /// Registers a listener invoked after a retry delay has been selected.
     ///
     /// The listener receives the failed attempt and a context whose
-    /// [`RetryContext::next_delay`] contains the delay that will be slept before
-    /// the next attempt. The listener is observational and cannot change the
-    /// retry decision.
+    /// [`RetryContext::next_delay`] contains the delay that will be slept
+    /// before the next attempt. The listener is observational and cannot
+    /// change the retry decision.
     ///
     /// # Parameters
-    /// - `listener`: Listener receiving the failure and scheduled-retry context.
+    /// - `listener`: Listener receiving the failure and scheduled-retry
+    ///   context.
     ///
     /// # Returns
     /// The updated builder.
@@ -439,16 +473,20 @@ impl<E> RetryBuilder<E> {
         P: BiPredicate<E, RetryContext> + Send + Sync + 'static,
     {
         self.on_failure(
-            move |failure: &AttemptFailure<E>, context: &RetryContext| match failure {
-                AttemptFailure::Error(error) => {
-                    if predicate.test(error, context) {
-                        AttemptFailureDecision::Retry
-                    } else {
-                        AttemptFailureDecision::Abort
+            move |failure: &AttemptFailure<E>, context: &RetryContext| {
+                match failure {
+                    AttemptFailure::Error(error) => {
+                        if predicate.test(error, context) {
+                            AttemptFailureDecision::Retry
+                        } else {
+                            AttemptFailureDecision::Abort
+                        }
                     }
-                }
-                AttemptFailure::Timeout | AttemptFailure::Panic(_) | AttemptFailure::Executor(_) => {
-                    AttemptFailureDecision::UseDefault
+                    AttemptFailure::Timeout
+                    | AttemptFailure::Panic(_)
+                    | AttemptFailure::Executor(_) => {
+                        AttemptFailureDecision::UseDefault
+                    }
                 }
             },
         )
@@ -471,8 +509,8 @@ impl<E> RetryBuilder<E> {
 
     /// Aborts the retry flow when a configured per-attempt timeout expires.
     ///
-    /// Max-elapsed effective timeouts are not controlled by this policy and stop
-    /// with [`crate::RetryErrorReason::MaxOperationElapsedExceeded`].
+    /// Max-elapsed effective timeouts are not controlled by this policy and
+    /// stop with [`crate::RetryErrorReason::MaxOperationElapsedExceeded`].
     ///
     /// # Returns
     /// The updated builder.
@@ -482,8 +520,8 @@ impl<E> RetryBuilder<E> {
 
     /// Retries configured per-attempt timeouts while limits allow it.
     ///
-    /// Max-elapsed effective timeouts are not controlled by this policy and stop
-    /// with [`crate::RetryErrorReason::MaxOperationElapsedExceeded`].
+    /// Max-elapsed effective timeouts are not controlled by this policy and
+    /// stop with [`crate::RetryErrorReason::MaxOperationElapsedExceeded`].
     ///
     /// # Returns
     /// The updated builder.

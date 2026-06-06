@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Retry policy facade and public execution entry point.
 //!
 //! A [`Retry`] owns validated retry options and lifecycle events. Execution
@@ -68,11 +66,11 @@ use crate::{
 /// caller's operation into an internal attempt object, keep a
 /// `RetryFlowState`, fire lifecycle events, call the operation once per
 /// attempt, and pass failures to `RetryFailureHandler` to decide whether to
-/// sleep and retry or return a terminal [`RetryError`]. The mode-specific runner
-/// owns only the execution mechanics that differ by mode: blocking sleep,
-/// Tokio timeout, worker-thread panic capture, and cooperative cancellation.
-/// This split keeps the public API small while keeping timeout and concurrency
-/// details out of the `Retry` facade.
+/// sleep and retry or return a terminal [`RetryError`]. The mode-specific
+/// runner owns only the execution mechanics that differ by mode: blocking
+/// sleep, Tokio timeout, worker-thread panic capture, and cooperative
+/// cancellation. This split keeps the public API small while keeping timeout
+/// and concurrency details out of the `Retry` facade.
 #[derive(Clone)]
 pub struct Retry<E = BoxError> {
     /// Validated retry limits and backoff settings.
@@ -102,7 +100,9 @@ impl<E> Retry<E> {
     ///
     /// # Errors
     /// Returns [`RetryConfigError`] if the options are invalid.
-    pub fn from_options(options: RetryOptions) -> Result<Self, RetryConfigError> {
+    pub fn from_options(
+        options: RetryOptions,
+    ) -> Result<Self, RetryConfigError> {
         Self::builder().options(options).build()
     }
 
@@ -134,8 +134,8 @@ impl<E> Retry<E> {
     ///    attempt; otherwise return the produced [`RetryError`].
     ///
     /// # Parameters
-    /// - `operation`: Operation called once per attempt until it succeeds or the
-    ///   retry flow stops.
+    /// - `operation`: Operation called once per attempt until it succeeds or
+    ///   the retry flow stops.
     ///
     /// # Returns
     /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
@@ -145,8 +145,8 @@ impl<E> Retry<E> {
     /// isolation is enabled.
     ///
     /// # Blocking
-    /// Blocks the current thread with `std::thread::sleep` between attempts when
-    /// a non-zero retry delay is selected.
+    /// Blocks the current thread with `std::thread::sleep` between attempts
+    /// when a non-zero retry delay is selected.
     ///
     /// # Elapsed Budget
     /// `max_operation_elapsed` counts only user operation execution time.
@@ -169,20 +169,20 @@ impl<E> Retry<E> {
     /// This method is the Tokio execution path. The call flow is:
     ///
     /// 1. Create an `AsyncRetryRunner` that borrows this retry policy.
-    /// 2. Wrap `operation` in an async value-capturing adapter. The operation is
-    ///    a factory: it must create a fresh future for every attempt because a
-    ///    Rust future cannot be polled again after it completes.
-    /// 3. Before each attempt, compute the effective timeout from the configured
-    ///    `attempt_timeout`, remaining `max_operation_elapsed`, and remaining
-    ///    `max_total_elapsed`; the shortest available budget wins.
+    /// 2. Wrap `operation` in an async value-capturing adapter. The operation
+    ///    is a factory: it must create a fresh future for every attempt because
+    ///    a Rust future cannot be polled again after it completes.
+    /// 3. Before each attempt, compute the effective timeout from the
+    ///    configured `attempt_timeout`, remaining `max_operation_elapsed`, and
+    ///    remaining `max_total_elapsed`; the shortest available budget wins.
     /// 4. Fire `before_attempt`, recompute budgets in case listeners consumed
     ///    total elapsed time, then await the attempt future. If an effective
     ///    timeout exists, the future is wrapped in `tokio::time::timeout` and
     ///    dropped when the timer fires.
     /// 5. Record elapsed operation time, fire success events, or route the
     ///    failure through elapsed-budget classification and
-    ///    `RetryFailureHandler`. Retry delays use `tokio::time::sleep`; terminal
-    ///    decisions return [`RetryError`].
+    ///    `RetryFailureHandler`. Retry delays use `tokio::time::sleep`;
+    ///    terminal decisions return [`RetryError`].
     ///
     /// # Parameters
     /// - `operation`: Factory returning a fresh future for each attempt.
@@ -204,7 +204,10 @@ impl<E> Retry<E> {
     /// max-operation-elapsed budget, and remaining max-total-elapsed budget as
     /// their effective timeout.
     #[cfg(feature = "tokio")]
-    pub async fn run_async<T, F, Fut>(&self, operation: F) -> Result<T, RetryError<E>>
+    pub async fn run_async<T, F, Fut>(
+        &self,
+        operation: F,
+    ) -> Result<T, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -224,14 +227,15 @@ impl<E> Retry<E> {
     ///    `before_attempt`, then spawn one worker-thread attempt through
     ///    `WorkerAttemptExecutor`.
     /// 4. The worker receives an [`AttemptCancelToken`]. If the effective
-    ///    timeout expires, the runner marks that token as cancelled and waits up
-    ///    to [`crate::RetryOptions::worker_cancel_grace`] for cooperative exit.
+    ///    timeout expires, the runner marks that token as cancelled and waits
+    ///    up to [`crate::RetryOptions::worker_cancel_grace`] for cooperative
+    ///    exit.
     /// 5. Worker panics become [`crate::AttemptFailure::Panic`], worker-spawn
     ///    failures become [`crate::AttemptFailure::Executor`], and timeout or
     ///    application failures are passed through the normal retry policy.
-    /// 6. The runner refuses to start another worker while a timed-out worker is
-    ///    still running, because that would create concurrent attempts for one
-    ///    retry flow. That condition returns
+    /// 6. The runner refuses to start another worker while a timed-out worker
+    ///    is still running, because that would create concurrent attempts for
+    ///    one retry flow. That condition returns
     ///    [`crate::RetryErrorReason::WorkerStillRunning`].
     ///
     /// Each attempt runs on a worker thread. Worker panics are captured as
@@ -249,24 +253,24 @@ impl<E> Retry<E> {
     /// [`crate::RetryErrorReason::MaxTotalElapsedExceeded`].
     ///
     /// # Parameters
-    /// - `operation`: Thread-safe operation called once per attempt. It receives
-    ///   a cooperative cancellation token for that attempt.
+    /// - `operation`: Thread-safe operation called once per attempt. It
+    ///   receives a cooperative cancellation token for that attempt.
     ///
     /// # Returns
     /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
     ///
     /// # Panics
-    /// Does not propagate operation panics. Listener panic behavior follows this
-    /// retry policy's listener isolation setting.
+    /// Does not propagate operation panics. Listener panic behavior follows
+    /// this retry policy's listener isolation setting.
     ///
     /// # Blocking
-    /// Blocks the current thread while waiting for each worker result or timeout
-    /// and while sleeping between retry attempts.
+    /// Blocks the current thread while waiting for each worker result or
+    /// timeout and while sleeping between retry attempts.
     ///
     /// # Elapsed Budget
     /// `max_operation_elapsed` counts only user operation execution time.
-    /// `max_total_elapsed` counts monotonic retry-flow time. Worker attempts use
-    /// the shortest of configured attempt timeout, remaining
+    /// `max_total_elapsed` counts monotonic retry-flow time. Worker attempts
+    /// use the shortest of configured attempt timeout, remaining
     /// max-operation-elapsed budget, and remaining max-total-elapsed budget as
     /// their effective timeout.
     pub fn run_in_worker<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
@@ -296,7 +300,11 @@ impl<E> Retry<E> {
     ) -> Self {
         Self {
             options,
-            events: RetryEvents::new(retry_after_hint, isolate_listener_panics, listeners),
+            events: RetryEvents::new(
+                retry_after_hint,
+                isolate_listener_panics,
+                listeners,
+            ),
         }
     }
 

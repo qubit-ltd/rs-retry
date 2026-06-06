@@ -1,33 +1,33 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! RetryDelay strategies for retry attempts.
 //!
-//! A [`RetryDelay`] produces the base sleep duration after a failed attempt. The
-//! base duration is calculated before [`crate::RetryJitter`] is applied by a retry
-//! executor.
+//! A [`RetryDelay`] produces the base sleep duration after a failed attempt.
+//! The base duration is calculated before [`crate::RetryJitter`] is applied by
+//! a retry executor.
 //!
 //! # Text interchange
 //!
-//! [`std::fmt::Display`] and [`std::str::FromStr`] share a canonical string form:
+//! [`std::fmt::Display`] and [`std::str::FromStr`] share a canonical string
+//! form:
 //!
 //! - `none`
-//! - `fixed(<duration>)` — duration fields are displayed as saturated whole milliseconds
-//!   with an `ms` suffix; `FromStr` accepts any duration string parsed by
-//!   [`qubit_serde::serde::duration_with_unit`]
+//! - `fixed(<duration>)` — duration fields are displayed as saturated whole
+//!   milliseconds with an `ms` suffix; `FromStr` accepts any duration string
+//!   parsed by [`qubit_serde::serde::duration_with_unit`]
 //! - `random(<min>..=<max>)` — same rules for the two duration fields
-//! - `exponential(initial=<...>, max=<...>, multiplier=<f64>)` — same for `initial` and `max`
+//! - `exponential(initial=<...>, max=<...>, multiplier=<f64>)` — same for
+//!   `initial` and `max`
 //!
 //! For [`std::str::FromStr`], substrings for duration fields follow
-//! [`qubit_serde::serde::duration_with_unit`] (bare integer as milliseconds, unit
-//! suffixes, etc.; see that module). [`std::fmt::Display`] normalizes to whole
-//! millisecond + `ms` for those fields.
+//! [`qubit_serde::serde::duration_with_unit`] (bare integer as milliseconds,
+//! unit suffixes, etc.; see that module). [`std::fmt::Display`] normalizes to
+//! whole millisecond + `ms` for those fields.
 
 use std::str::FromStr;
 use std::time::Duration;
@@ -47,9 +47,10 @@ use crate::constants::DEFAULT_RETRY_DELAY;
 
 /// Base delay strategy before jitter is applied.
 ///
-/// RetryDelay strategies are value types that can be reused across executors. Random
-/// and exponential strategies are validated separately by [`RetryDelay::validate`],
-/// which is called when building [`crate::RetryOptions`].
+/// RetryDelay strategies are value types that can be reused across executors.
+/// Random and exponential strategies are validated separately by
+/// [`RetryDelay::validate`], which is called when building
+/// [`crate::RetryOptions`].
 #[derive(Debug, Clone, PartialEq, Display, FromStr, Serialize, Deserialize)]
 pub enum RetryDelay {
     /// Retry immediately.
@@ -78,7 +79,9 @@ pub enum RetryDelay {
     },
 
     /// Exponential backoff capped by `max`.
-    #[display("exponential(initial={initial}, max={max}, multiplier={multiplier})")]
+    #[display(
+        "exponential(initial={initial}, max={max}, multiplier={multiplier})"
+    )]
     Exponential {
         /// RetryDelay used for the first retry.
         #[display(with = RetryDelayDurationFormat)]
@@ -118,8 +121,8 @@ impl RetryDelay {
     /// A [`RetryDelay::Fixed`] strategy.
     ///
     /// # Errors
-    /// This constructor does not validate `delay`; use [`RetryDelay::validate`] to
-    /// reject a zero duration.
+    /// This constructor does not validate `delay`; use [`RetryDelay::validate`]
+    /// to reject a zero duration.
     #[inline]
     pub fn fixed(delay: Duration) -> Self {
         Self::Fixed(delay)
@@ -135,9 +138,10 @@ impl RetryDelay {
     /// A [`RetryDelay::Random`] strategy.
     ///
     /// # Errors
-    /// This constructor does not validate the range; use [`RetryDelay::validate`] to
-    /// reject a zero minimum, a minimum greater than the maximum, or bounds
-    /// that cannot be sampled as `u64` nanoseconds.
+    /// This constructor does not validate the range; use
+    /// [`RetryDelay::validate`] to reject a zero minimum, a minimum greater
+    /// than the maximum, or bounds that cannot be sampled as `u64`
+    /// nanoseconds.
     #[inline]
     pub fn random(min: Duration, max: Duration) -> Self {
         Self::Random { min, max }
@@ -155,10 +159,15 @@ impl RetryDelay {
     ///
     /// # Errors
     /// This constructor does not validate the parameters; use
-    /// [`RetryDelay::validate`] to reject a zero initial delay, `max < initial`, or
-    /// a multiplier that is non-finite or less than or equal to `1.0`.
+    /// [`RetryDelay::validate`] to reject a zero initial delay, `max <
+    /// initial`, or a multiplier that is non-finite or less than or equal
+    /// to `1.0`.
     #[inline]
-    pub fn exponential(initial: Duration, max: Duration, multiplier: f64) -> Self {
+    pub fn exponential(
+        initial: Duration,
+        max: Duration,
+        multiplier: f64,
+    ) -> Self {
         Self::Exponential {
             initial,
             max,
@@ -181,7 +190,8 @@ impl RetryDelay {
     ///
     /// # Errors
     /// This function does not return errors. Invalid strategies should be
-    /// rejected with [`RetryDelay::validate`] before they are used in an executor.
+    /// rejected with [`RetryDelay::validate`] before they are used in an
+    /// executor.
     pub fn base_delay(&self, attempt: u32) -> Duration {
         match self {
             Self::None => Duration::ZERO,
@@ -203,7 +213,8 @@ impl RetryDelay {
         }
     }
 
-    /// Returns whether a duration can be represented as whole nanoseconds in `u64`.
+    /// Returns whether a duration can be represented as whole nanoseconds in
+    /// `u64`.
     ///
     /// # Parameters
     /// - `duration`: Duration to inspect.
@@ -221,8 +232,8 @@ impl RetryDelay {
     /// Converts a [`Duration`] to whole nanoseconds as `u64`.
     ///
     /// Values larger than [`u64::MAX`] nanoseconds are saturated to
-    /// [`u64::MAX`] so the result fits in `u64` for uniform random delay sampling
-    /// in [`RetryDelay::base_delay`].
+    /// [`u64::MAX`] so the result fits in `u64` for uniform random delay
+    /// sampling in [`RetryDelay::base_delay`].
     ///
     /// # Parameters
     /// - `duration`: Duration to convert.
@@ -239,9 +250,10 @@ impl RetryDelay {
     /// Computes the exponential backoff delay for a given failed-attempt index.
     ///
     /// The effective exponent is `attempt.saturating_sub(1)`, so attempts `0`
-    /// and `1` both yield the initial delay (matching [`RetryDelay::base_delay`]).
-    /// Each further attempt multiplies the base nanosecond count by
-    /// `multiplier` that many times, then the result is capped at `max`.
+    /// and `1` both yield the initial delay (matching
+    /// [`RetryDelay::base_delay`]). Each further attempt multiplies the
+    /// base nanosecond count by `multiplier` that many times, then the
+    /// result is capped at `max`.
     ///
     /// # Parameters
     /// - `initial`: RetryDelay for the first retry step (attempts `0` and `1`).
@@ -256,7 +268,12 @@ impl RetryDelay {
     /// # Errors
     /// This function does not return errors. Callers must ensure parameters
     /// satisfy [`RetryDelay::validate`] when constructing a public executor.
-    fn exponential_delay(initial: Duration, max: Duration, multiplier: f64, attempt: u32) -> Duration {
+    fn exponential_delay(
+        initial: Duration,
+        max: Duration,
+        multiplier: f64,
+        attempt: u32,
+    ) -> Duration {
         let power = attempt.saturating_sub(1);
         let factor = multiplier.powi(power.min(i32::MAX as u32) as i32);
         if !factor.is_finite() {
@@ -299,9 +316,13 @@ impl RetryDelay {
                 if min.is_zero() {
                     Err("random delay minimum cannot be zero".to_string())
                 } else if min > max {
-                    Err("random delay minimum cannot be greater than maximum".to_string())
-                } else if !Self::duration_fits_nanos_u64(*min) || !Self::duration_fits_nanos_u64(*max) {
-                    Err("random delay bounds must fit into u64 nanoseconds".to_string())
+                    Err("random delay minimum cannot be greater than maximum"
+                        .to_string())
+                } else if !Self::duration_fits_nanos_u64(*min)
+                    || !Self::duration_fits_nanos_u64(*max)
+                {
+                    Err("random delay bounds must fit into u64 nanoseconds"
+                        .to_string())
                 } else {
                     Ok(())
                 }
@@ -312,7 +333,8 @@ impl RetryDelay {
                 multiplier,
             } => {
                 if initial.is_zero() {
-                    Err("exponential delay initial value cannot be zero".to_string())
+                    Err("exponential delay initial value cannot be zero"
+                        .to_string())
                 } else if max < initial {
                     Err("exponential delay maximum cannot be smaller than initial".to_string())
                 } else if !multiplier.is_finite() || *multiplier <= 1.0 {
@@ -343,6 +365,7 @@ impl Default for RetryDelay {
     /// [`RetryDelay`] string. That indicates a crate bug, not a caller mistake.
     #[inline]
     fn default() -> Self {
-        Self::from_str(DEFAULT_RETRY_DELAY).expect("DEFAULT_RETRY_DELAY must be a valid RetryDelay string")
+        Self::from_str(DEFAULT_RETRY_DELAY)
+            .expect("DEFAULT_RETRY_DELAY must be a valid RetryDelay string")
     }
 }

@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Terminal retry-flow error reasons.
 
 use serde::{
@@ -30,6 +28,7 @@ pub enum RetryErrorReason {
     /// Currently used when [`Retry::run`](crate::Retry::run) receives
     /// configured per-attempt timeout options.
     UnsupportedOperation,
-    /// A timed-out blocking worker did not exit within the cancellation grace period.
+    /// A timed-out blocking worker did not exit within the cancellation grace
+    /// period.
     WorkerStillRunning,
 }

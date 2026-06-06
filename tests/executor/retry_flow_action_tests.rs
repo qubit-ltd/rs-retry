@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
 use qubit_retry::{
     AttemptFailure,
@@ -28,13 +26,16 @@ fn test_retry_flow_action_paths_cover_retry_and_finished_results() {
     let retry = Retry::<&'static str>::builder()
         .max_attempts(3)
         .no_delay()
-        .on_failure(|_failure: &AttemptFailure<&'static str>, context: &RetryContext| {
-            if context.attempt() == 1 {
-                AttemptFailureDecision::UseDefault
-            } else {
-                AttemptFailureDecision::Abort
-            }
-        })
+        .on_failure(
+            |_failure: &AttemptFailure<&'static str>,
+             context: &RetryContext| {
+                if context.attempt() == 1 {
+                    AttemptFailureDecision::UseDefault
+                } else {
+                    AttemptFailureDecision::Abort
+                }
+            },
+        )
         .build()
         .unwrap();
     let mut attempts = 0;

@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Effective timeout selected from retry options for a single attempt.
 //!
 //! Executors need both the duration to enforce and the reason that duration was
@@ -41,7 +39,10 @@ impl EffectiveAttemptTimeout {
     /// # Returns
     /// A timeout descriptor for one attempt.
     #[inline]
-    pub(crate) fn new(duration: Option<Duration>, source: Option<AttemptTimeoutSource>) -> Self {
+    pub(crate) fn new(
+        duration: Option<Duration>,
+        source: Option<AttemptTimeoutSource>,
+    ) -> Self {
         Self { duration, source }
     }
 
@@ -82,7 +83,10 @@ impl EffectiveAttemptTimeout {
     /// `Some(RetryErrorReason)` when the attempt timed out because an elapsed
     /// budget selected the effective timeout.
     #[inline]
-    pub(crate) fn elapsed_timeout_reason<E>(self, failure: &AttemptFailure<E>) -> Option<RetryErrorReason> {
+    pub(crate) fn elapsed_timeout_reason<E>(
+        self,
+        failure: &AttemptFailure<E>,
+    ) -> Option<RetryErrorReason> {
         if !matches!(failure, AttemptFailure::Timeout) {
             return None;
         }
@@ -90,8 +94,12 @@ impl EffectiveAttemptTimeout {
         // timeouts intentionally return None so the caller routes them through
         // RetryFailureHandler and AttemptTimeoutPolicy.
         match self.source {
-            Some(AttemptTimeoutSource::MaxOperationElapsed) => Some(RetryErrorReason::MaxOperationElapsedExceeded),
-            Some(AttemptTimeoutSource::MaxTotalElapsed) => Some(RetryErrorReason::MaxTotalElapsedExceeded),
+            Some(AttemptTimeoutSource::MaxOperationElapsed) => {
+                Some(RetryErrorReason::MaxOperationElapsedExceeded)
+            }
+            Some(AttemptTimeoutSource::MaxTotalElapsed) => {
+                Some(RetryErrorReason::MaxTotalElapsedExceeded)
+            }
             Some(AttemptTimeoutSource::Configured) | None => None,
         }
     }

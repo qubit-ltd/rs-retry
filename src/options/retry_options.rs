@@ -1,18 +1,17 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Retry option snapshot and configuration loading helpers.
 //!
 //! This module contains the immutable options consumed by [`crate::Retry`].
 //! Raw config merge logic lives in [`crate::options::retry_config_values`].
 //! Runtime runners should not interpret individual knobs directly when there is
-//! combined behavior. Methods such as [`RetryOptions::effective_attempt_timeout`]
+//! combined behavior. Methods such as
+//! [`RetryOptions::effective_attempt_timeout`]
 //! and [`RetryOptions::retry_delay`] encode the library's precedence rules in
 //! one place.
 
@@ -54,7 +53,6 @@ use crate::{
 /// application error type: attempt limits, elapsed budgets, delay strategy, and
 /// jitter strategy. Construction validates the delay and jitter values before
 /// an executor can use them.
-///
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetryOptions {
     /// Maximum attempts, including the initial attempt.
@@ -186,8 +184,9 @@ impl RetryOptions {
     /// # Parameters
     /// - `max_attempts`: Maximum number of attempts, including the first call.
     ///   Must be greater than zero.
-    /// - `max_operation_elapsed`: Optional cumulative user operation time budget for all
-    ///   attempts. Listener execution and retry sleeps are excluded.
+    /// - `max_operation_elapsed`: Optional cumulative user operation time
+    ///   budget for all attempts. Listener execution and retry sleeps are
+    ///   excluded.
     /// - `max_total_elapsed`: Optional monotonic elapsed-time budget for the
     ///   whole retry flow. Operation execution, retry sleeps, retry-after
     ///   sleeps, and retry control-path listener time are included.
@@ -222,8 +221,9 @@ impl RetryOptions {
     /// # Parameters
     /// - `max_attempts`: Maximum number of attempts, including the first call.
     ///   Must be greater than zero.
-    /// - `max_operation_elapsed`: Optional cumulative user operation time budget for all
-    ///   attempts. Listener execution and retry sleeps are excluded.
+    /// - `max_operation_elapsed`: Optional cumulative user operation time
+    ///   budget for all attempts. Listener execution and retry sleeps are
+    ///   excluded.
     /// - `max_total_elapsed`: Optional monotonic elapsed-time budget for the
     ///   whole retry flow. Operation execution, retry sleeps, retry-after
     ///   sleeps, and retry control-path listener time are included.
@@ -246,7 +246,10 @@ impl RetryOptions {
         attempt_timeout: Option<AttemptTimeoutOption>,
     ) -> Result<Self, RetryConfigError> {
         let max_attempts = NonZeroU32::new(max_attempts).ok_or_else(|| {
-            RetryConfigError::invalid_value(KEY_MAX_ATTEMPTS, "max_attempts must be greater than zero")
+            RetryConfigError::invalid_value(
+                KEY_MAX_ATTEMPTS,
+                "max_attempts must be greater than zero",
+            )
         })?;
         let options = Self {
             max_attempts,
@@ -255,7 +258,9 @@ impl RetryOptions {
             delay,
             jitter,
             attempt_timeout,
-            worker_cancel_grace: Duration::from_millis(DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS),
+            worker_cancel_grace: Duration::from_millis(
+                DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS,
+            ),
         };
         options.validate()?;
         Ok(options)
@@ -284,7 +289,8 @@ impl RetryOptions {
         R: ConfigReader + ?Sized,
     {
         let default = Self::default();
-        let values = RetryConfigValues::new(config).map_err(RetryConfigError::from)?;
+        let values =
+            RetryConfigValues::new(config).map_err(RetryConfigError::from)?;
         values.to_options(&default)
     }
 
@@ -300,16 +306,19 @@ impl RetryOptions {
     /// Returns [`RetryConfigError`] with the relevant config key when the delay
     /// or jitter strategy is invalid.
     pub fn validate(&self) -> Result<(), RetryConfigError> {
-        self.delay
-            .validate()
-            .map_err(|message| RetryConfigError::invalid_value(KEY_DELAY, message))?;
-        self.jitter
-            .validate()
-            .map_err(|message| RetryConfigError::invalid_value(KEY_JITTER_FACTOR, message))?;
+        self.delay.validate().map_err(|message| {
+            RetryConfigError::invalid_value(KEY_DELAY, message)
+        })?;
+        self.jitter.validate().map_err(|message| {
+            RetryConfigError::invalid_value(KEY_JITTER_FACTOR, message)
+        })?;
         if let Some(attempt_timeout) = self.attempt_timeout {
-            attempt_timeout
-                .validate()
-                .map_err(|message| RetryConfigError::invalid_value(KEY_ATTEMPT_TIMEOUT_MILLIS, message))?;
+            attempt_timeout.validate().map_err(|message| {
+                RetryConfigError::invalid_value(
+                    KEY_ATTEMPT_TIMEOUT_MILLIS,
+                    message,
+                )
+            })?;
         }
         Ok(())
     }
@@ -379,7 +388,8 @@ impl RetryOptions {
         self.jitter.apply(base_delay)
     }
 
-    /// Calculates the next delay from the current base delay and applies jitter.
+    /// Calculates the next delay from the current base delay and applies
+    /// jitter.
     ///
     /// # Parameters
     /// - `current`: Current base delay before jitter.
@@ -396,7 +406,8 @@ impl RetryOptions {
     /// `Some(Duration)` when per-attempt timeout is configured.
     #[inline]
     pub(crate) fn attempt_timeout_duration(&self) -> Option<Duration> {
-        self.attempt_timeout.map(|attempt_timeout| attempt_timeout.timeout())
+        self.attempt_timeout
+            .map(|attempt_timeout| attempt_timeout.timeout())
     }
 
     /// Returns the effective timeout used by the next attempt.
@@ -422,21 +433,27 @@ impl RetryOptions {
         let candidates = [
             self.attempt_timeout_duration()
                 .map(|duration| (duration, AttemptTimeoutSource::Configured)),
-            self.remaining_operation_elapsed(operation_elapsed)
-                .map(|duration| (duration, AttemptTimeoutSource::MaxOperationElapsed)),
-            self.remaining_total_elapsed(total_elapsed)
-                .map(|duration| (duration, AttemptTimeoutSource::MaxTotalElapsed)),
+            self.remaining_operation_elapsed(operation_elapsed).map(
+                |duration| {
+                    (duration, AttemptTimeoutSource::MaxOperationElapsed)
+                },
+            ),
+            self.remaining_total_elapsed(total_elapsed).map(|duration| {
+                (duration, AttemptTimeoutSource::MaxTotalElapsed)
+            }),
         ];
-        let selected = candidates
-            .into_iter()
-            .flatten()
-            .min_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        let selected =
+            candidates.into_iter().flatten().min_by(|left, right| {
+                left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1))
+            });
         // AttemptTimeoutSource derives Ord in the precedence we need for ties:
         // Configured wins over elapsed-budget candidates so a configured
         // timeout exactly equal to the remaining budget remains observable as a
         // configured attempt timeout.
         match selected {
-            Some((duration, source)) => EffectiveAttemptTimeout::new(Some(duration), Some(source)),
+            Some((duration, source)) => {
+                EffectiveAttemptTimeout::new(Some(duration), Some(source))
+            }
             None => EffectiveAttemptTimeout::none(),
         }
     }
@@ -444,8 +461,10 @@ impl RetryOptions {
     /// Returns the first elapsed-budget reason that is exhausted.
     ///
     /// # Parameters
-    /// - `operation_elapsed`: Cumulative user operation time consumed by this flow.
-    /// - `total_elapsed`: Total monotonic retry-flow time consumed by this flow.
+    /// - `operation_elapsed`: Cumulative user operation time consumed by this
+    ///   flow.
+    /// - `total_elapsed`: Total monotonic retry-flow time consumed by this
+    ///   flow.
     ///
     /// # Returns
     /// `Some(RetryErrorReason)` when an elapsed budget has been exhausted.
@@ -457,7 +476,9 @@ impl RetryOptions {
     ) -> Option<RetryErrorReason> {
         if self
             .max_operation_elapsed
-            .is_some_and(|max_operation_elapsed| operation_elapsed >= max_operation_elapsed)
+            .is_some_and(|max_operation_elapsed| {
+                operation_elapsed >= max_operation_elapsed
+            })
         {
             Some(RetryErrorReason::MaxOperationElapsedExceeded)
         } else if self
@@ -470,17 +491,23 @@ impl RetryOptions {
         }
     }
 
-    /// Returns whether a selected retry sleep would consume the remaining total budget.
+    /// Returns whether a selected retry sleep would consume the remaining total
+    /// budget.
     ///
     /// # Parameters
-    /// - `total_elapsed`: Total monotonic retry-flow time consumed before sleep.
+    /// - `total_elapsed`: Total monotonic retry-flow time consumed before
+    ///   sleep.
     /// - `delay`: Selected retry delay.
     ///
     /// # Returns
     /// `true` when the delay should not be slept because no budget would remain
     /// for the next attempt.
     #[inline]
-    pub(crate) fn retry_sleep_exhausts_total_elapsed(&self, total_elapsed: Duration, delay: Duration) -> bool {
+    pub(crate) fn retry_sleep_exhausts_total_elapsed(
+        &self,
+        total_elapsed: Duration,
+        delay: Duration,
+    ) -> bool {
         if delay.is_zero() {
             return false;
         }
@@ -511,39 +538,51 @@ impl RetryOptions {
         // the configured strategy directly.
         match decision {
             AttemptFailureDecision::RetryAfter(delay) => delay,
-            AttemptFailureDecision::UseDefault => {
-                hint.unwrap_or_else(|| self.jitter.delay_for_attempt(&self.delay, attempts))
-            }
+            AttemptFailureDecision::UseDefault => hint.unwrap_or_else(|| {
+                self.jitter.delay_for_attempt(&self.delay, attempts)
+            }),
             AttemptFailureDecision::Retry | AttemptFailureDecision::Abort => {
                 self.jitter.delay_for_attempt(&self.delay, attempts)
             }
         }
     }
 
-    /// Returns remaining user operation time before the max-operation-elapsed budget is exhausted.
+    /// Returns remaining user operation time before the max-operation-elapsed
+    /// budget is exhausted.
     ///
     /// # Parameters
     /// - `operation_elapsed`: Cumulative user operation time consumed so far.
     ///
     /// # Returns
-    /// `Some(Duration)` when max elapsed is configured, or `None` when unlimited.
+    /// `Some(Duration)` when max elapsed is configured, or `None` when
+    /// unlimited.
     #[inline]
-    fn remaining_operation_elapsed(&self, operation_elapsed: Duration) -> Option<Duration> {
-        self.max_operation_elapsed
-            .map(|max_operation_elapsed| max_operation_elapsed.saturating_sub(operation_elapsed))
+    fn remaining_operation_elapsed(
+        &self,
+        operation_elapsed: Duration,
+    ) -> Option<Duration> {
+        self.max_operation_elapsed.map(|max_operation_elapsed| {
+            max_operation_elapsed.saturating_sub(operation_elapsed)
+        })
     }
 
-    /// Returns remaining total retry-flow time before the max-total-elapsed budget is exhausted.
+    /// Returns remaining total retry-flow time before the max-total-elapsed
+    /// budget is exhausted.
     ///
     /// # Parameters
     /// - `total_elapsed`: Total monotonic retry-flow time consumed so far.
     ///
     /// # Returns
-    /// `Some(Duration)` when max total elapsed is configured, or `None` when unlimited.
+    /// `Some(Duration)` when max total elapsed is configured, or `None` when
+    /// unlimited.
     #[inline]
-    fn remaining_total_elapsed(&self, total_elapsed: Duration) -> Option<Duration> {
-        self.max_total_elapsed
-            .map(|max_total_elapsed| max_total_elapsed.saturating_sub(total_elapsed))
+    fn remaining_total_elapsed(
+        &self,
+        total_elapsed: Duration,
+    ) -> Option<Duration> {
+        self.max_total_elapsed.map(|max_total_elapsed| {
+            max_total_elapsed.saturating_sub(total_elapsed)
+        })
     }
 }
 
@@ -566,13 +605,16 @@ impl Default for RetryOptions {
     #[inline]
     fn default() -> Self {
         Self {
-            max_attempts: NonZeroU32::new(DEFAULT_RETRY_MAX_ATTEMPTS).expect("default retry attempts must be non-zero"),
+            max_attempts: NonZeroU32::new(DEFAULT_RETRY_MAX_ATTEMPTS)
+                .expect("default retry attempts must be non-zero"),
             max_operation_elapsed: DEFAULT_RETRY_MAX_OPERATION_ELAPSED,
             max_total_elapsed: DEFAULT_RETRY_MAX_TOTAL_ELAPSED,
             delay: RetryDelay::default(),
             jitter: RetryJitter::default(),
             attempt_timeout: None,
-            worker_cancel_grace: Duration::from_millis(DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS),
+            worker_cancel_grace: Duration::from_millis(
+                DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS,
+            ),
         }
     }
 }

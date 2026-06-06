@@ -1,17 +1,15 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Attempt-level failure values.
 //!
 //! A retry failure describes why one operation attempt did not produce a
-//! successful result. It is distinct from [`crate::RetryError`], which describes
-//! why the whole retry flow stopped.
+//! successful result. It is distinct from [`crate::RetryError`], which
+//! describes why the whole retry flow stopped.
 
 use std::fmt;
 
@@ -29,7 +27,10 @@ use super::attempt_panic::AttemptPanic;
 /// panic, and executor failures do not contain `E` because they are generated
 /// by the retry runtime, not returned by the operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(serialize = "E: serde::Serialize", deserialize = "E: serde::de::DeserializeOwned"))]
+#[serde(bound(
+    serialize = "E: serde::Serialize",
+    deserialize = "E: serde::de::DeserializeOwned"
+))]
 pub enum AttemptFailure<E> {
     /// The operation returned an application error.
     Error(E),
@@ -132,7 +133,9 @@ impl<E: fmt::Display> fmt::Display for AttemptFailure<E> {
             Self::Error(error) => write!(f, "{error}"),
             Self::Timeout => write!(f, "attempt timed out"),
             Self::Panic(panic) => write!(f, "attempt panicked: {panic}"),
-            Self::Executor(error) => write!(f, "attempt executor failed: {error}"),
+            Self::Executor(error) => {
+                write!(f, "attempt executor failed: {error}")
+            }
         }
     }
 }
