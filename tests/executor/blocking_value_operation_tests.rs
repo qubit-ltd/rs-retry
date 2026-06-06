@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
 use qubit_retry::{
     AttemptCancelToken,
@@ -30,7 +28,8 @@ struct NonCloneValue {
 /// # Returns
 /// This test returns nothing.
 #[test]
-fn test_blocking_value_operation_is_observable_through_non_clone_success_value() {
+fn test_blocking_value_operation_is_observable_through_non_clone_success_value()
+{
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .no_delay()
@@ -38,7 +37,9 @@ fn test_blocking_value_operation_is_observable_through_non_clone_success_value()
         .expect("retry should build");
 
     let value = retry
-        .run_in_worker(|_token: AttemptCancelToken| Ok::<_, TestError>(NonCloneValue { text: "ok" }))
+        .run_in_worker(|_token: AttemptCancelToken| {
+            Ok::<_, TestError>(NonCloneValue { text: "ok" })
+        })
         .expect("worker operation should succeed");
 
     assert_eq!(value, NonCloneValue { text: "ok" });

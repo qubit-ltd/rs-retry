@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
 use qubit_retry::{
     AttemptExecutorError,
@@ -16,7 +14,8 @@ use qubit_retry::{
 
 use crate::support::TestError;
 
-/// Verifies attempt failure accessors return application errors only for error variants.
+/// Verifies attempt failure accessors return application errors only for error
+/// variants.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -39,7 +38,8 @@ fn test_attempt_failure_error_accessors_distinguish_timeout() {
     assert_eq!(timeout.as_panic(), None);
     assert_eq!(timeout.into_error(), None);
 
-    let panic = AttemptFailure::<TestError>::Panic(AttemptPanic::new("worker failed"));
+    let panic =
+        AttemptFailure::<TestError>::Panic(AttemptPanic::new("worker failed"));
     assert_eq!(panic.as_error(), None);
     assert_eq!(panic.as_executor_error(), None);
     assert_eq!(
@@ -51,7 +51,9 @@ fn test_attempt_failure_error_accessors_distinguish_timeout() {
     );
     assert_eq!(panic.into_error(), None);
 
-    let executor = AttemptFailure::<TestError>::Executor(AttemptExecutorError::new("worker spawn failed"));
+    let executor = AttemptFailure::<TestError>::Executor(
+        AttemptExecutorError::new("worker spawn failed"),
+    );
     assert_eq!(executor.as_error(), None);
     assert_eq!(
         executor
@@ -80,13 +82,20 @@ fn test_attempt_failure_display_formats_variants() {
         AttemptFailure::Error(TestError("operation failed")).to_string(),
         "operation failed"
     );
-    assert_eq!(AttemptFailure::<TestError>::Timeout.to_string(), "attempt timed out");
     assert_eq!(
-        AttemptFailure::<TestError>::Panic(AttemptPanic::new("worker failed")).to_string(),
+        AttemptFailure::<TestError>::Timeout.to_string(),
+        "attempt timed out"
+    );
+    assert_eq!(
+        AttemptFailure::<TestError>::Panic(AttemptPanic::new("worker failed"))
+            .to_string(),
         "attempt panicked: worker failed"
     );
     assert_eq!(
-        AttemptFailure::<TestError>::Executor(AttemptExecutorError::new("worker spawn failed")).to_string(),
+        AttemptFailure::<TestError>::Executor(AttemptExecutorError::new(
+            "worker spawn failed"
+        ))
+        .to_string(),
         "attempt executor failed: worker spawn failed"
     );
 }

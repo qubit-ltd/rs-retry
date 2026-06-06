@@ -1,15 +1,12 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Raw retry configuration values from `qubit-config` and merge into
 //! [`RetryOptions`](crate::options::RetryOptions).
-//!
 
 use std::str::FromStr;
 use std::time::Duration;
@@ -61,18 +58,19 @@ use crate::constants::{
 ///
 /// Fields are public so callers and integration tests can build snapshots
 /// programmatically and merge them with [`RetryConfigValues::to_options`].
-///
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetryConfigValues {
     /// Optional maximum attempts value.
     pub max_attempts: Option<u32>,
     /// Optional cumulative user operation elapsed-time budget in milliseconds.
     pub max_operation_elapsed_millis: Option<u64>,
-    /// Optional explicit switch for unlimited user operation elapsed-time budget.
+    /// Optional explicit switch for unlimited user operation elapsed-time
+    /// budget.
     pub max_operation_elapsed_unlimited: Option<bool>,
     /// Optional total retry-flow elapsed-time budget in milliseconds.
     pub max_total_elapsed_millis: Option<u64>,
-    /// Optional explicit switch for unlimited total retry-flow elapsed-time budget.
+    /// Optional explicit switch for unlimited total retry-flow elapsed-time
+    /// budget.
     pub max_total_elapsed_unlimited: Option<bool>,
     /// Optional attempt timeout in milliseconds.
     pub attempt_timeout_millis: Option<u64>,
@@ -121,21 +119,33 @@ impl RetryConfigValues {
     {
         Ok(Self {
             max_attempts: config.get_optional(KEY_MAX_ATTEMPTS)?,
-            max_operation_elapsed_millis: config.get_optional(KEY_MAX_OPERATION_ELAPSED_MILLIS)?,
-            max_operation_elapsed_unlimited: config.get_optional(KEY_MAX_OPERATION_ELAPSED_UNLIMITED)?,
-            max_total_elapsed_millis: config.get_optional(KEY_MAX_TOTAL_ELAPSED_MILLIS)?,
-            max_total_elapsed_unlimited: config.get_optional(KEY_MAX_TOTAL_ELAPSED_UNLIMITED)?,
-            attempt_timeout_millis: config.get_optional(KEY_ATTEMPT_TIMEOUT_MILLIS)?,
-            attempt_timeout_policy: config.get_optional_string(KEY_ATTEMPT_TIMEOUT_POLICY)?,
-            worker_cancel_grace_millis: config.get_optional(KEY_WORKER_CANCEL_GRACE_MILLIS)?,
+            max_operation_elapsed_millis: config
+                .get_optional(KEY_MAX_OPERATION_ELAPSED_MILLIS)?,
+            max_operation_elapsed_unlimited: config
+                .get_optional(KEY_MAX_OPERATION_ELAPSED_UNLIMITED)?,
+            max_total_elapsed_millis: config
+                .get_optional(KEY_MAX_TOTAL_ELAPSED_MILLIS)?,
+            max_total_elapsed_unlimited: config
+                .get_optional(KEY_MAX_TOTAL_ELAPSED_UNLIMITED)?,
+            attempt_timeout_millis: config
+                .get_optional(KEY_ATTEMPT_TIMEOUT_MILLIS)?,
+            attempt_timeout_policy: config
+                .get_optional_string(KEY_ATTEMPT_TIMEOUT_POLICY)?,
+            worker_cancel_grace_millis: config
+                .get_optional(KEY_WORKER_CANCEL_GRACE_MILLIS)?,
             delay: config.get_optional_string(KEY_DELAY)?,
             delay_strategy: config.get_optional_string(KEY_DELAY_STRATEGY)?,
             fixed_delay_millis: config.get_optional(KEY_FIXED_DELAY_MILLIS)?,
-            random_min_delay_millis: config.get_optional(KEY_RANDOM_MIN_DELAY_MILLIS)?,
-            random_max_delay_millis: config.get_optional(KEY_RANDOM_MAX_DELAY_MILLIS)?,
-            exponential_initial_delay_millis: config.get_optional(KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS)?,
-            exponential_max_delay_millis: config.get_optional(KEY_EXPONENTIAL_MAX_DELAY_MILLIS)?,
-            exponential_multiplier: config.get_optional(KEY_EXPONENTIAL_MULTIPLIER)?,
+            random_min_delay_millis: config
+                .get_optional(KEY_RANDOM_MIN_DELAY_MILLIS)?,
+            random_max_delay_millis: config
+                .get_optional(KEY_RANDOM_MAX_DELAY_MILLIS)?,
+            exponential_initial_delay_millis: config
+                .get_optional(KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS)?,
+            exponential_max_delay_millis: config
+                .get_optional(KEY_EXPONENTIAL_MAX_DELAY_MILLIS)?,
+            exponential_multiplier: config
+                .get_optional(KEY_EXPONENTIAL_MULTIPLIER)?,
             jitter_factor: config.get_optional(KEY_JITTER_FACTOR)?,
         })
     }
@@ -151,7 +161,10 @@ impl RetryConfigValues {
     /// # Errors
     /// Returns [`RetryConfigError`] when the delay strategy name is unsupported
     /// or the resulting options fail validation.
-    pub fn to_options(&self, default: &RetryOptions) -> Result<RetryOptions, RetryConfigError> {
+    pub fn to_options(
+        &self,
+        default: &RetryOptions,
+    ) -> Result<RetryOptions, RetryConfigError> {
         let max_attempts = self.max_attempts.unwrap_or(default.max_attempts());
         let max_operation_elapsed = self.get_max_operation_elapsed(default);
         let max_total_elapsed = self.get_max_total_elapsed(default);
@@ -175,16 +188,21 @@ impl RetryConfigValues {
     /// Resolves the cumulative user operation elapsed-time budget.
     ///
     /// # Parameters
-    /// - `default`: Fallback when `max_operation_elapsed_millis` is absent from config.
+    /// - `default`: Fallback when `max_operation_elapsed_millis` is absent from
+    ///   config.
     ///
     /// # Returns
     /// - `None` when `max_operation_elapsed_unlimited` is configured as `true`.
-    /// - `Some(Duration)` when `max_operation_elapsed_millis` is present (including zero).
+    /// - `Some(Duration)` when `max_operation_elapsed_millis` is present
+    ///   (including zero).
     /// - `default.max_operation_elapsed` when the key is absent.
     ///
     /// # Errors
     /// This method does not return errors.
-    fn get_max_operation_elapsed(&self, default: &RetryOptions) -> Option<Duration> {
+    fn get_max_operation_elapsed(
+        &self,
+        default: &RetryOptions,
+    ) -> Option<Duration> {
         if self.max_operation_elapsed_unlimited.unwrap_or(false) {
             return None;
         }
@@ -197,16 +215,21 @@ impl RetryConfigValues {
     /// Resolves the total retry-flow elapsed-time budget.
     ///
     /// # Parameters
-    /// - `default`: Fallback when `max_total_elapsed_millis` is absent from config.
+    /// - `default`: Fallback when `max_total_elapsed_millis` is absent from
+    ///   config.
     ///
     /// # Returns
     /// - `None` when `max_total_elapsed_unlimited` is configured as `true`.
-    /// - `Some(Duration)` when `max_total_elapsed_millis` is present (including zero).
+    /// - `Some(Duration)` when `max_total_elapsed_millis` is present (including
+    ///   zero).
     /// - `default.max_total_elapsed` when the key is absent.
     ///
     /// # Errors
     /// This method does not return errors.
-    fn get_max_total_elapsed(&self, default: &RetryOptions) -> Option<Duration> {
+    fn get_max_total_elapsed(
+        &self,
+        default: &RetryOptions,
+    ) -> Option<Duration> {
         if self.max_total_elapsed_unlimited.unwrap_or(false) {
             return None;
         }
@@ -228,7 +251,10 @@ impl RetryConfigValues {
     /// # Errors
     /// Returns [`RetryConfigError`] when policy text is unsupported or when a
     /// policy is configured without a timeout and no default timeout exists.
-    fn get_attempt_timeout(&self, default: &RetryOptions) -> Result<Option<AttemptTimeoutOption>, RetryConfigError> {
+    fn get_attempt_timeout(
+        &self,
+        default: &RetryOptions,
+    ) -> Result<Option<AttemptTimeoutOption>, RetryConfigError> {
         let default_attempt_timeout = default.attempt_timeout();
         let policy = self
             .attempt_timeout_policy
@@ -239,7 +265,10 @@ impl RetryConfigValues {
         match self.attempt_timeout_millis {
             Some(timeout_millis) => {
                 let policy = policy
-                    .or_else(|| default_attempt_timeout.map(|attempt_timeout| attempt_timeout.policy()))
+                    .or_else(|| {
+                        default_attempt_timeout
+                            .map(|attempt_timeout| attempt_timeout.policy())
+                    })
                     .unwrap_or_default();
                 Ok(Some(AttemptTimeoutOption::new(
                     Duration::from_millis(timeout_millis),
@@ -248,7 +277,8 @@ impl RetryConfigValues {
             }
             None => {
                 if let Some(policy) = policy {
-                    let Some(default_attempt_timeout) = default_attempt_timeout else {
+                    let Some(default_attempt_timeout) = default_attempt_timeout
+                    else {
                         return Err(RetryConfigError::invalid_value(
                             KEY_ATTEMPT_TIMEOUT_POLICY,
                             "attempt_timeout_policy requires attempt_timeout_millis when the default has no attempt timeout",
@@ -291,12 +321,19 @@ impl RetryConfigValues {
     /// # Errors
     /// Returns [`RetryConfigError`] when the explicit delay strategy name is
     /// unsupported.
-    fn get_delay(&self, default: &RetryOptions) -> Result<RetryDelay, RetryConfigError> {
+    fn get_delay(
+        &self,
+        default: &RetryOptions,
+    ) -> Result<RetryDelay, RetryConfigError> {
         let strategy = self
             .delay
             .as_deref()
             .map(|value| (KEY_DELAY, value))
-            .or_else(|| self.delay_strategy.as_deref().map(|value| (KEY_DELAY_STRATEGY, value)))
+            .or_else(|| {
+                self.delay_strategy
+                    .as_deref()
+                    .map(|value| (KEY_DELAY_STRATEGY, value))
+            })
             .map(|(key, value)| (key, value.trim().to_ascii_lowercase()));
         match strategy {
             None => Ok(self.get_implicit_delay().unwrap_or_else(|| default.delay().clone())),
@@ -356,13 +393,15 @@ impl RetryConfigValues {
         }
     }
 
-    /// Resolves a delay strategy from parameter keys when no strategy name is configured.
+    /// Resolves a delay strategy from parameter keys when no strategy name is
+    /// configured.
     ///
     /// # Parameters
     /// This method has no parameters.
     ///
     /// # Returns
-    /// `Some(RetryDelay)` when any delay parameter key is present; otherwise `None`.
+    /// `Some(RetryDelay)` when any delay parameter key is present; otherwise
+    /// `None`.
     ///
     /// # Errors
     /// This method does not return errors because all config reads have already
@@ -371,7 +410,9 @@ impl RetryConfigValues {
         if let Some(millis) = self.fixed_delay_millis {
             return Some(RetryDelay::fixed(Duration::from_millis(millis)));
         }
-        if self.random_min_delay_millis.is_some() || self.random_max_delay_millis.is_some() {
+        if self.random_min_delay_millis.is_some()
+            || self.random_max_delay_millis.is_some()
+        {
             return Some(RetryDelay::random(
                 Duration::from_millis(
                     self.random_min_delay_millis
@@ -389,8 +430,9 @@ impl RetryConfigValues {
         {
             return Some(RetryDelay::exponential(
                 Duration::from_millis(
-                    self.exponential_initial_delay_millis
-                        .unwrap_or(DEFAULT_RETRY_EXPONENTIAL_INITIAL_DELAY_MILLIS),
+                    self.exponential_initial_delay_millis.unwrap_or(
+                        DEFAULT_RETRY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
+                    ),
                 ),
                 Duration::from_millis(
                     self.exponential_max_delay_millis
@@ -413,11 +455,13 @@ impl RetryConfigValues {
     /// The configured or default [`RetryJitter`] strategy.
     ///
     /// # Errors
-    /// This method does not return errors. RetryJitter value validation is handled
-    /// by [`RetryOptions::new`].
+    /// This method does not return errors. RetryJitter value validation is
+    /// handled by [`RetryOptions::new`].
     fn get_jitter(&self, default: &RetryOptions) -> RetryJitter {
         match self.jitter_factor {
-            Some(factor) if factor == DEFAULT_RETRY_JITTER_FACTOR => RetryJitter::None,
+            Some(factor) if factor == DEFAULT_RETRY_JITTER_FACTOR => {
+                RetryJitter::None
+            }
             None => default.jitter(),
             Some(factor) => RetryJitter::Factor(factor),
         }
@@ -434,7 +478,10 @@ impl RetryConfigValues {
 ///
 /// # Errors
 /// Returns [`RetryConfigError`] when the policy text is unsupported.
-fn parse_attempt_timeout_policy(value: &str) -> Result<AttemptTimeoutPolicy, RetryConfigError> {
-    AttemptTimeoutPolicy::from_str(value)
-        .map_err(|message| RetryConfigError::invalid_value(KEY_ATTEMPT_TIMEOUT_POLICY, message))
+fn parse_attempt_timeout_policy(
+    value: &str,
+) -> Result<AttemptTimeoutPolicy, RetryConfigError> {
+    AttemptTimeoutPolicy::from_str(value).map_err(|message| {
+        RetryConfigError::invalid_value(KEY_ATTEMPT_TIMEOUT_POLICY, message)
+    })
 }

@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Retry event context payload.
 //!
 //! A retry context is the shared metadata snapshot passed to attempt, failure,
@@ -201,17 +199,19 @@ impl RetryContext {
     /// This method has no parameters.
     ///
     /// # Returns
-    /// `Some(AttemptTimeoutSource::Configured)` when the current attempt timeout
-    /// came from configured attempt timeout options, `Some(AttemptTimeoutSource::MaxOperationElapsed)`
-    /// when it came from remaining max-operation-elapsed budget,
-    /// `Some(AttemptTimeoutSource::MaxTotalElapsed)` when it came from remaining
-    /// max-total-elapsed budget, otherwise `None`.
+    /// `Some(AttemptTimeoutSource::Configured)` when the current attempt
+    /// timeout came from configured attempt timeout options,
+    /// `Some(AttemptTimeoutSource::MaxOperationElapsed)` when it came from
+    /// remaining max-operation-elapsed budget,
+    /// `Some(AttemptTimeoutSource::MaxTotalElapsed)` when it came from
+    /// remaining max-total-elapsed budget, otherwise `None`.
     #[inline]
     pub fn attempt_timeout_source(&self) -> Option<AttemptTimeoutSource> {
         self.attempt_timeout_source
     }
 
-    /// Returns the number of worker attempts not observed to exit after cancellation.
+    /// Returns the number of worker attempts not observed to exit after
+    /// cancellation.
     ///
     /// # Parameters
     /// This method has no parameters.
@@ -265,7 +265,10 @@ impl RetryContext {
     /// # Returns
     /// A context carrying the refreshed total elapsed value.
     #[inline]
-    pub(crate) fn with_total_elapsed(mut self, total_elapsed: Duration) -> Self {
+    pub(crate) fn with_total_elapsed(
+        mut self,
+        total_elapsed: Duration,
+    ) -> Self {
         self.total_elapsed = total_elapsed;
         self
     }
@@ -278,7 +281,10 @@ impl RetryContext {
     /// # Returns
     /// A context carrying the hint.
     #[inline]
-    pub(crate) fn with_retry_after_hint(mut self, hint: Option<Duration>) -> Self {
+    pub(crate) fn with_retry_after_hint(
+        mut self,
+        hint: Option<Duration>,
+    ) -> Self {
         self.retry_after_hint = hint;
         self
     }
@@ -291,7 +297,10 @@ impl RetryContext {
     /// # Returns
     /// A context carrying the timeout source when available.
     #[inline]
-    pub(crate) fn with_attempt_timeout_source(mut self, source: Option<AttemptTimeoutSource>) -> Self {
+    pub(crate) fn with_attempt_timeout_source(
+        mut self,
+        source: Option<AttemptTimeoutSource>,
+    ) -> Self {
         if let Some(source) = source {
             self.attempt_timeout_source = Some(source);
         }
@@ -301,7 +310,8 @@ impl RetryContext {
     /// Returns a copy of this context with unreaped worker count.
     ///
     /// # Parameters
-    /// - `count`: Number of worker attempts not observed to exit after cancellation.
+    /// - `count`: Number of worker attempts not observed to exit after
+    ///   cancellation.
     ///
     /// # Returns
     /// A context carrying the worker cleanup metric.

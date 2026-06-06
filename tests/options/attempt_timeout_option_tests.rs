@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
 use std::time::Duration;
 
@@ -65,10 +63,12 @@ fn test_attempt_timeout_option_validate_rejects_zero_duration() {
 #[test]
 fn test_attempt_timeout_option_serde_uses_milliseconds() {
     let option = AttemptTimeoutOption::abort(Duration::from_millis(25));
-    let json = serde_json::to_string(&option).expect("timeout option should serialize");
+    let json = serde_json::to_string(&option)
+        .expect("timeout option should serialize");
     assert!(json.contains("\"timeout\":25"));
     assert!(json.contains("\"policy\":\"Abort\""));
 
-    let decoded: AttemptTimeoutOption = serde_json::from_str(&json).expect("timeout option should deserialize");
+    let decoded: AttemptTimeoutOption =
+        serde_json::from_str(&json).expect("timeout option should deserialize");
     assert_eq!(decoded, option);
 }

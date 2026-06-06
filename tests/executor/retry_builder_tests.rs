@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
 use std::time::Duration;
 
@@ -44,11 +42,20 @@ fn test_builder_default_and_delay_helpers_work() {
         .expect("retry should build");
 
     assert_eq!(retry.options().max_attempts(), 3);
-    assert_eq!(retry.options().max_total_elapsed(), Some(Duration::from_secs(5)));
-    assert_eq!(retry.options().delay(), &RetryDelay::fixed(Duration::from_millis(1)));
+    assert_eq!(
+        retry.options().max_total_elapsed(),
+        Some(Duration::from_secs(5))
+    );
+    assert_eq!(
+        retry.options().delay(),
+        &RetryDelay::fixed(Duration::from_millis(1))
+    );
     assert_eq!(retry.options().jitter(), RetryJitter::factor(0.0));
     assert_eq!(retry.options().attempt_timeout(), None);
-    assert_eq!(retry.options().worker_cancel_grace(), Duration::from_millis(25));
+    assert_eq!(
+        retry.options().worker_cancel_grace(),
+        Duration::from_millis(25)
+    );
     assert!(format!("{retry:?}").contains("Retry"));
 }
 
@@ -72,7 +79,8 @@ fn test_builder_options_random_exponential_and_default_work() {
         RetryJitter::none(),
     )
     .expect("retry options should be valid");
-    let retry = Retry::<TestError>::from_options(options.clone()).expect("retry should build");
+    let retry = Retry::<TestError>::from_options(options.clone())
+        .expect("retry should build");
     assert_eq!(retry.options(), &options);
 
     let random = Retry::<TestError>::builder()
@@ -85,21 +93,36 @@ fn test_builder_options_random_exponential_and_default_work() {
     );
 
     let exponential = Retry::<TestError>::builder()
-        .exponential_backoff(Duration::from_millis(10), Duration::from_millis(80))
+        .exponential_backoff(
+            Duration::from_millis(10),
+            Duration::from_millis(80),
+        )
         .build()
         .expect("retry should build");
     assert_eq!(
         exponential.options().delay(),
-        &RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 2.0)
+        &RetryDelay::exponential(
+            Duration::from_millis(10),
+            Duration::from_millis(80),
+            2.0
+        )
     );
 
     let custom_exponential = Retry::<TestError>::builder()
-        .exponential_backoff_with_multiplier(Duration::from_millis(10), Duration::from_millis(80), 3.0)
+        .exponential_backoff_with_multiplier(
+            Duration::from_millis(10),
+            Duration::from_millis(80),
+            3.0,
+        )
         .build()
         .expect("retry should build");
     assert_eq!(
         custom_exponential.options().delay(),
-        &RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 3.0)
+        &RetryDelay::exponential(
+            Duration::from_millis(10),
+            Duration::from_millis(80),
+            3.0
+        )
     );
 
     let timeout = Retry::<TestError>::builder()
@@ -112,7 +135,8 @@ fn test_builder_options_random_exponential_and_default_work() {
         Some(AttemptTimeoutOption::abort(Duration::from_millis(7)))
     );
 
-    let default_builder: qubit_retry::RetryBuilder<TestError> = Default::default();
+    let default_builder: qubit_retry::RetryBuilder<TestError> =
+        Default::default();
     assert_eq!(
         default_builder
             .build()
@@ -138,7 +162,13 @@ fn test_build_validates_max_attempts_and_options() {
         .expect_err("zero max attempts should be rejected");
     assert!(error.to_string().contains("max_attempts"));
 
-    let invalid = RetryOptions::new(3, None, None, RetryDelay::fixed(Duration::ZERO), RetryJitter::none());
+    let invalid = RetryOptions::new(
+        3,
+        None,
+        None,
+        RetryDelay::fixed(Duration::ZERO),
+        RetryJitter::none(),
+    );
     assert!(invalid.is_err());
 }
 
@@ -174,13 +204,19 @@ fn test_timeout_convenience_methods_work() {
     let abort_decision = retry_abort
         .run(|| -> Result<(), TestError> { Err(TestError("error")) })
         .expect_err("run with attempt timeout must be unsupported");
-    assert_eq!(abort_decision.reason(), RetryErrorReason::UnsupportedOperation);
+    assert_eq!(
+        abort_decision.reason(),
+        RetryErrorReason::UnsupportedOperation
+    );
     assert_eq!(abort_decision.attempts(), 0);
 
     let continue_decision = retry_continue
         .run(|| -> Result<(), TestError> { Err(TestError("error")) })
         .expect_err("run with attempt timeout must be unsupported");
-    assert_eq!(continue_decision.reason(), RetryErrorReason::UnsupportedOperation);
+    assert_eq!(
+        continue_decision.reason(),
+        RetryErrorReason::UnsupportedOperation
+    );
     assert_eq!(continue_decision.attempts(), 0);
 }
 
@@ -195,8 +231,12 @@ fn test_timeout_convenience_methods_work() {
 fn test_on_failure_accepts_function_trait() {
     struct AbortFatal;
 
-    impl qubit_function::BiFunction<AttemptFailure<TestError>, qubit_retry::RetryContext, AttemptFailureDecision>
-        for AbortFatal
+    impl
+        qubit_function::BiFunction<
+            AttemptFailure<TestError>,
+            qubit_retry::RetryContext,
+            AttemptFailureDecision,
+        > for AbortFatal
     {
         /// Applies the test decider.
         ///
@@ -212,7 +252,9 @@ fn test_on_failure_accepts_function_trait() {
             _context: &qubit_retry::RetryContext,
         ) -> AttemptFailureDecision {
             match failure {
-                AttemptFailure::Error(TestError("fatal")) => AttemptFailureDecision::Abort,
+                AttemptFailure::Error(TestError("fatal")) => {
+                    AttemptFailureDecision::Abort
+                }
                 _ => AttemptFailureDecision::UseDefault,
             }
         }
@@ -243,9 +285,11 @@ fn test_retry_if_error_retries_true_and_aborts_false() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(3)
         .no_delay()
-        .retry_if_error(|error: &TestError, context: &qubit_retry::RetryContext| {
-            error.0 == "retry" && context.attempt() == 1
-        })
+        .retry_if_error(
+            |error: &TestError, context: &qubit_retry::RetryContext| {
+                error.0 == "retry" && context.attempt() == 1
+            },
+        )
         .build()
         .expect("retry should build");
     let mut attempts = 0;
@@ -275,14 +319,17 @@ fn test_retry_if_error_retries_true_and_aborts_false() {
 /// This test returns nothing.
 ///
 /// # Errors
-/// The test fails through assertions when timeout failures reach the error predicate.
+/// The test fails through assertions when timeout failures reach the error
+/// predicate.
 #[cfg(feature = "tokio")]
 #[tokio::test(start_paused = true)]
 async fn test_retry_if_error_uses_default_for_timeout() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .attempt_timeout(Some(Duration::from_millis(1)))
-        .retry_if_error(|_error: &TestError, _context: &qubit_retry::RetryContext| false)
+        .retry_if_error(
+            |_error: &TestError, _context: &qubit_retry::RetryContext| false,
+        )
         .no_delay()
         .build()
         .expect("retry should build");
@@ -296,7 +343,10 @@ async fn test_retry_if_error_uses_default_for_timeout() {
         .expect_err("timeout should use default attempt limit");
 
     assert_eq!(error.attempts(), 1);
-    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
 }
 
 /// Verifies timeout retry convenience handles actual timeout failures.
@@ -329,7 +379,10 @@ async fn test_retry_on_timeout_retries_timeout_failures() {
         .expect_err("timed-out attempts should exhaust retry limit");
 
     assert_eq!(error.attempts(), 2);
-    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
 }
 
 /// Verifies listener panic isolation substitutes default listener outcomes.
@@ -348,13 +401,26 @@ fn test_isolate_listener_panics_suppresses_listener_panics() {
         .max_attempts(2)
         .no_delay()
         .isolate_listener_panics()
-        .before_attempt(|_context: &qubit_retry::RetryContext| panic!("before panic"))
+        .before_attempt(|_context: &qubit_retry::RetryContext| {
+            panic!("before panic")
+        })
         .on_failure(
-            |_failure: &AttemptFailure<TestError>, _context: &qubit_retry::RetryContext| panic!("failure panic"),
+            |_failure: &AttemptFailure<TestError>,
+             _context: &qubit_retry::RetryContext| {
+                panic!("failure panic")
+            },
         )
-        .on_retry(|_failure: &AttemptFailure<TestError>, _context: &qubit_retry::RetryContext| panic!("retry panic"))
+        .on_retry(
+            |_failure: &AttemptFailure<TestError>,
+             _context: &qubit_retry::RetryContext| {
+                panic!("retry panic")
+            },
+        )
         .on_error(
-            |_error: &qubit_retry::RetryError<TestError>, _context: &qubit_retry::RetryContext| panic!("error panic"),
+            |_error: &qubit_retry::RetryError<TestError>,
+             _context: &qubit_retry::RetryContext| {
+                panic!("error panic")
+            },
         )
         .build()
         .expect("retry should build");
@@ -367,7 +433,8 @@ fn test_isolate_listener_panics_suppresses_listener_panics() {
     assert_eq!(error.last_error(), Some(&TestError("isolated")));
 }
 
-/// Verifies `options()` carries timeout policy into later timeout duration updates.
+/// Verifies `options()` carries timeout policy into later timeout duration
+/// updates.
 #[test]
 fn test_options_sets_pending_attempt_timeout_policy() {
     let options = RetryOptions::new_with_attempt_timeout(
@@ -396,7 +463,9 @@ fn test_options_sets_pending_attempt_timeout_policy() {
 #[test]
 fn test_attempt_timeout_option_updates_pending_policy_for_later_duration() {
     let retry = Retry::<TestError>::builder()
-        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(Duration::from_millis(3))))
+        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(
+            Duration::from_millis(3),
+        )))
         .attempt_timeout(Some(Duration::from_millis(5)))
         .build()
         .expect("retry should build");
@@ -411,7 +480,9 @@ fn test_attempt_timeout_option_updates_pending_policy_for_later_duration() {
 #[test]
 fn test_attempt_timeout_option_none_resets_pending_policy_for_later_duration() {
     let retry = Retry::<TestError>::builder()
-        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(Duration::from_millis(3))))
+        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(
+            Duration::from_millis(3),
+        )))
         .attempt_timeout_option(None)
         .attempt_timeout(Some(Duration::from_millis(5)))
         .build()

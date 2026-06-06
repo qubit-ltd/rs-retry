@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
 #[cfg(feature = "tokio")]
 use qubit_retry::Retry;
@@ -20,7 +18,8 @@ use qubit_retry::Retry;
 /// This test returns nothing.
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn test_async_value_operation_is_observable_through_async_success_value() {
+async fn test_async_value_operation_is_observable_through_async_success_value()
+{
     #[derive(Debug, PartialEq, Eq)]
     struct Token(String);
 

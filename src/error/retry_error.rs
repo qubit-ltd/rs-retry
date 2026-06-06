@@ -1,16 +1,14 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Retry execution errors.
 //!
-//! This module contains the error returned when a retry executor stops without a
-//! successful result. The original application error type is preserved in the
+//! This module contains the error returned when a retry executor stops without
+//! a successful result. The original application error type is preserved in the
 //! generic parameter `E`.
 
 use serde::{
@@ -33,7 +31,10 @@ use crate::{
 /// the user operation. Runtime failures such as timeout, panic, and executor
 /// failures are preserved through [`RetryError::last_failure`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(serialize = "E: serde::Serialize", deserialize = "E: serde::de::DeserializeOwned"))]
+#[serde(bound(
+    serialize = "E: serde::Serialize",
+    deserialize = "E: serde::de::DeserializeOwned"
+))]
 pub struct RetryError<E> {
     /// Terminal reason selected by the retry flow.
     reason: RetryErrorReason,
@@ -97,7 +98,8 @@ impl<E> RetryError<E> {
         &self.context
     }
 
-    /// Returns the timeout source that produced the final attempt timeout, if any.
+    /// Returns the timeout source that produced the final attempt timeout, if
+    /// any.
     ///
     /// # Parameters
     /// This method has no parameters.
@@ -106,11 +108,14 @@ impl<E> RetryError<E> {
     /// The timeout source when present, or `None` when no attempt timeout was
     /// selected for the terminal context.
     #[inline]
-    pub fn attempt_timeout_source(&self) -> Option<crate::event::AttemptTimeoutSource> {
+    pub fn attempt_timeout_source(
+        &self,
+    ) -> Option<crate::event::AttemptTimeoutSource> {
         self.context.attempt_timeout_source()
     }
 
-    /// Returns the number of worker threads not observed to exit after cancellation.
+    /// Returns the number of worker threads not observed to exit after
+    /// cancellation.
     ///
     /// # Parameters
     /// This method has no parameters.
@@ -135,8 +140,8 @@ impl<E> RetryError<E> {
     /// Returns the last failure, if one exists.
     ///
     /// # Returns
-    /// `Some(&AttemptFailure<E>)` when at least one attempt failure was observed;
-    /// `None` when the retry flow stopped before any attempt ran.
+    /// `Some(&AttemptFailure<E>)` when at least one attempt failure was
+    /// observed; `None` when the retry flow stopped before any attempt ran.
     #[inline]
     pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
         self.last_failure.as_ref()
@@ -179,7 +184,9 @@ impl<E> RetryError<E> {
     /// # Returns
     /// A tuple `(reason, last_failure, context)` preserving all terminal data.
     #[inline]
-    pub fn into_parts(self) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
+    pub fn into_parts(
+        self,
+    ) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
         (self.reason, self.last_failure, self.context)
     }
 }
@@ -247,9 +254,15 @@ where
     /// This method does not return errors.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self.last_failure() {
-            Some(AttemptFailure::Error(error)) => Some(error as &(dyn Error + 'static)),
-            Some(AttemptFailure::Panic(panic)) => Some(panic as &(dyn Error + 'static)),
-            Some(AttemptFailure::Executor(error)) => Some(error as &(dyn Error + 'static)),
+            Some(AttemptFailure::Error(error)) => {
+                Some(error as &(dyn Error + 'static))
+            }
+            Some(AttemptFailure::Panic(panic)) => {
+                Some(panic as &(dyn Error + 'static))
+            }
+            Some(AttemptFailure::Executor(error)) => {
+                Some(error as &(dyn Error + 'static))
+            }
             Some(AttemptFailure::Timeout) | None => None,
         }
     }

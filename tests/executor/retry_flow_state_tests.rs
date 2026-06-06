@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
 use std::sync::{
     Arc,
@@ -56,6 +54,8 @@ fn test_retry_flow_state_counts_attempts_and_preserves_last_failure() {
     assert_eq!(Some(&"always"), error.last_error());
     assert_eq!(
         vec![1, 2],
-        *before_attempts.lock().expect("attempt list should be lockable")
+        *before_attempts
+            .lock()
+            .expect("attempt list should be lockable")
     );
 }

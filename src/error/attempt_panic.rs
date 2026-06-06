@@ -1,14 +1,11 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Captured attempt panic information.
-//!
 
 use std::any::Any;
 use std::error::Error;
@@ -69,7 +66,9 @@ impl AttemptPanic {
             Ok(message) => Self::from_string(*message),
             Err(payload) => match payload.downcast::<&'static str>() {
                 Ok(message) => Self::new(*message),
-                Err(_) => Self::new("attempt panicked with a non-string payload"),
+                Err(_) => {
+                    Self::new("attempt panicked with a non-string payload")
+                }
             },
         }
     }

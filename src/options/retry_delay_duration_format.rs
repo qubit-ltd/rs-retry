@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! `parse_display` bridge for [`std::time::Duration`] fields on
 //! [`RetryDelay`](crate::RetryDelay).
 //!
@@ -24,13 +22,19 @@ use parse_display::{
 use qubit_serde::serde::duration_with_unit;
 
 /// Bridges `parse_display` for [`Duration`] fields to [`duration_with_unit`].
-/// `regex` returns `None` so the default non-greedy `.*?` capture is used, which
-/// supports multi-unit text and characters such as `µ` in `µs` (unlike a strict ASCII token).
+/// `regex` returns `None` so the default non-greedy `.*?` capture is used,
+/// which supports multi-unit text and characters such as `µ` in `µs` (unlike a
+/// strict ASCII token).
 pub(crate) struct RetryDelayDurationFormat;
 
 impl DisplayFormat<Duration> for RetryDelayDurationFormat {
-    /// Same output as [`duration_with_unit::format`]: saturated whole milliseconds and `ms`.
-    fn write(&self, f: &mut fmt::Formatter<'_>, value: &Duration) -> fmt::Result {
+    /// Same output as [`duration_with_unit::format`]: saturated whole
+    /// milliseconds and `ms`.
+    fn write(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        value: &Duration,
+    ) -> fmt::Result {
         f.write_str(&duration_with_unit::format(value))
     }
 }
@@ -38,8 +42,9 @@ impl DisplayFormat<Duration> for RetryDelayDurationFormat {
 impl FromStrFormat<Duration> for RetryDelayDurationFormat {
     type Err = ParseError;
 
-    /// Uses [`duration_with_unit::parse`]. Dynamic parse errors are collapsed to a
-    /// fixed [`parse_display::ParseError`] because its message is `&'static str` only.
+    /// Uses [`duration_with_unit::parse`]. Dynamic parse errors are collapsed
+    /// to a fixed [`parse_display::ParseError`] because its message is
+    /// `&'static str` only.
     fn parse(&self, s: &str) -> Result<Duration, Self::Err> {
         duration_with_unit::parse(s).map_err(|_| {
             ParseError::with_message("invalid retry delay duration: expected a value accepted by `duration_with_unit`")

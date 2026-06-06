@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 #![cfg(feature = "tokio")]
 
 use std::time::Duration;
@@ -68,15 +66,22 @@ async fn test_run_async_attempt_timeout_can_abort() {
         .expect_err("timeout should abort");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
-    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
-    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(1)));
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
+    assert_eq!(
+        error.context().attempt_timeout(),
+        Some(Duration::from_millis(1))
+    );
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::Configured)
     );
 }
 
-/// Verifies max elapsed caps an in-flight async attempt before a configured timeout.
+/// Verifies max elapsed caps an in-flight async attempt before a configured
+/// timeout.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -84,7 +89,8 @@ async fn test_run_async_attempt_timeout_can_abort() {
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_configured_timeout() {
+async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_configured_timeout()
+ {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .max_operation_elapsed(Some(Duration::from_millis(20)))
@@ -103,10 +109,19 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
         .expect_err("max elapsed should stop the in-flight async attempt");
     let elapsed = started.elapsed();
 
-    assert_eq!(error.reason(), RetryErrorReason::MaxOperationElapsedExceeded);
+    assert_eq!(
+        error.reason(),
+        RetryErrorReason::MaxOperationElapsedExceeded
+    );
     assert_eq!(error.attempts(), 1);
-    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
-    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(20)));
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
+    assert_eq!(
+        error.context().attempt_timeout(),
+        Some(Duration::from_millis(20))
+    );
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::MaxOperationElapsed)
@@ -117,7 +132,8 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
     );
 }
 
-/// Verifies max total elapsed caps an in-flight async attempt before a configured timeout.
+/// Verifies max total elapsed caps an in-flight async attempt before a
+/// configured timeout.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -125,7 +141,8 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configured_timeout() {
+async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configured_timeout()
+ {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .max_total_elapsed(Some(Duration::from_millis(20)))
@@ -141,12 +158,17 @@ async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configur
             Ok::<_, TestError>("late")
         })
         .await
-        .expect_err("max total elapsed should stop the in-flight async attempt");
+        .expect_err(
+            "max total elapsed should stop the in-flight async attempt",
+        );
     let elapsed = started.elapsed();
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 1);
-    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
     assert!(
         error.context().attempt_timeout() <= Some(Duration::from_millis(20)),
         "max total elapsed timeout should not exceed configured budget: {:?}",
@@ -170,7 +192,8 @@ async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configur
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_elapsed() {
+async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_elapsed()
+ {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .max_operation_elapsed(Some(Duration::from_millis(200)))
@@ -189,15 +212,22 @@ async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_
         .expect_err("configured attempt timeout should abort first");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
-    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(20)));
+    assert_eq!(
+        error.context().attempt_timeout(),
+        Some(Duration::from_millis(20))
+    );
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::Configured)
     );
-    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
 }
 
-/// Verifies a configured timeout policy wins when it equals remaining max elapsed.
+/// Verifies a configured timeout policy wins when it equals remaining max
+/// elapsed.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -205,7 +235,8 @@ async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_elapsed() {
+async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_elapsed()
+ {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_operation_elapsed(Some(Duration::from_millis(20)))
@@ -224,15 +255,22 @@ async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_e
         .expect_err("configured timeout policy should abort on equal timeout");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
-    assert_eq!(error.context().attempt_timeout(), Some(Duration::from_millis(20)));
+    assert_eq!(
+        error.context().attempt_timeout(),
+        Some(Duration::from_millis(20))
+    );
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::Configured)
     );
-    assert!(matches!(error.last_failure(), Some(AttemptFailure::Timeout)));
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
 }
 
-/// Verifies ordinary async failures can retry while max elapsed bounds attempts.
+/// Verifies ordinary async failures can retry while max elapsed bounds
+/// attempts.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -267,7 +305,8 @@ async fn test_run_async_error_before_remaining_elapsed_timeout_can_retry() {
     assert_eq!(attempts, 2);
 }
 
-/// Verifies async retry succeeds without per-attempt timeout after a retry delay.
+/// Verifies async retry succeeds without per-attempt timeout after a retry
+/// delay.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -314,7 +353,8 @@ async fn test_run_async_without_timeout_retries_until_success() {
 /// This test returns nothing.
 ///
 /// # Errors
-/// The test fails through assertions when timeout wrapping changes success output.
+/// The test fails through assertions when timeout wrapping changes success
+/// output.
 #[tokio::test(start_paused = true)]
 async fn test_run_async_with_attempt_timeout_allows_fast_success() {
     let retry = Retry::<TestError>::builder()
@@ -332,7 +372,8 @@ async fn test_run_async_with_attempt_timeout_allows_fast_success() {
     assert_eq!(value, "fast");
 }
 
-/// Verifies async execution can stop before the first attempt on elapsed budget.
+/// Verifies async execution can stop before the first attempt on elapsed
+/// budget.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -341,7 +382,8 @@ async fn test_run_async_with_attempt_timeout_allows_fast_success() {
 /// This test returns nothing.
 ///
 /// # Errors
-/// The test fails through assertions when async elapsed-budget handling differs.
+/// The test fails through assertions when async elapsed-budget handling
+/// differs.
 #[tokio::test]
 async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
     let retry = Retry::<TestError>::builder()
@@ -356,7 +398,10 @@ async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
         .await
         .expect_err("zero elapsed budget should stop before first attempt");
 
-    assert_eq!(error.reason(), RetryErrorReason::MaxOperationElapsedExceeded);
+    assert_eq!(
+        error.reason(),
+        RetryErrorReason::MaxOperationElapsedExceeded
+    );
     assert_eq!(error.attempts(), 0);
     assert_eq!(error.context().attempt_timeout(), Some(Duration::ZERO));
     assert_eq!(
@@ -365,7 +410,8 @@ async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
     );
 }
 
-/// Verifies async execution includes before-attempt listener time in max total elapsed.
+/// Verifies async execution includes before-attempt listener time in max total
+/// elapsed.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -373,7 +419,8 @@ async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
 /// # Returns
 /// This test returns nothing.
 #[tokio::test]
-async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time() {
+async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time()
+ {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_total_elapsed(Some(Duration::from_millis(20)))
@@ -387,7 +434,9 @@ async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time(
     let error = retry
         .run_async::<(), _, _>(|| async { panic!("operation must not run") })
         .await
-        .expect_err("before-attempt listener time should exhaust total elapsed");
+        .expect_err(
+            "before-attempt listener time should exhaust total elapsed",
+        );
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 1);
@@ -404,7 +453,8 @@ async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time(
 /// This test returns nothing.
 ///
 /// # Errors
-/// The test fails through assertions when zero-delay async retry does not proceed.
+/// The test fails through assertions when zero-delay async retry does not
+/// proceed.
 #[tokio::test]
 async fn test_run_async_zero_delay_retry_skips_sleep() {
     let retry = Retry::<TestError>::builder()

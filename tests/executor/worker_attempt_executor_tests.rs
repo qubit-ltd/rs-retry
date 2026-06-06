@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
 use std::sync::Arc;
 use std::sync::atomic::{
@@ -22,7 +20,8 @@ use qubit_retry::{
     RetryErrorReason,
 };
 
-/// Verifies worker-attempt execution is observable through the public worker API.
+/// Verifies worker-attempt execution is observable through the public worker
+/// API.
 ///
 /// # Parameters
 /// This test has no parameters.
@@ -45,7 +44,11 @@ fn test_worker_attempt_executor_paths_are_observable_through_run_in_worker() {
             let attempts = Arc::clone(&attempts);
             move |_token: AttemptCancelToken| {
                 let current = attempts.fetch_add(1, Ordering::SeqCst) + 1;
-                if current == 1 { Err("retry") } else { Ok("done") }
+                if current == 1 {
+                    Err("retry")
+                } else {
+                    Ok("done")
+                }
             }
         })
         .expect("ordinary worker error should retry");
