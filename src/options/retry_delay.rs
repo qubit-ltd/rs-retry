@@ -36,6 +36,10 @@ use parse_display::{
     Display,
     FromStr,
 };
+use qubit_argument::{
+    ArgumentResult,
+    require_that,
+};
 use rand::RngExt;
 use serde::{
     Deserialize,
@@ -44,6 +48,7 @@ use serde::{
 
 use super::retry_delay_duration_format::RetryDelayDurationFormat;
 use crate::constants::DEFAULT_RETRY_DELAY;
+use crate::error::argument_error_message;
 
 /// Base delay strategy before jitter is applied.
 ///
@@ -303,45 +308,88 @@ impl RetryDelay {
     /// random bounds cannot be sampled as `u64` nanoseconds, or exponential
     /// backoff parameters are zero, inverted, non-finite, or too small.
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_argument("delay")
+            .map_err(argument_error_message)
+    }
+
+    /// Validates strategy parameters with structured argument error context.
+    ///
+    /// # Parameters
+    /// - `path`: Configuration path associated with the delay strategy.
+    ///
+    /// # Returns
+    /// `Ok(())` when the delay strategy is usable.
+    ///
+    /// # Errors
+    /// Returns an argument error at `path` when the selected strategy cannot
+    /// be used safely by an executor.
+    pub(super) fn validate_argument(&self, path: &str) -> ArgumentResult<()> {
         match self {
             Self::None => Ok(()),
             Self::Fixed(delay) => {
-                if delay.is_zero() {
-                    Err("fixed delay cannot be zero".to_string())
-                } else {
-                    Ok(())
-                }
+                require_that(
+                    *delay,
+                    path,
+                    |delay| !delay.is_zero(),
+                    "fixed_delay_positive",
+                    "fixed delay cannot be zero",
+                )?;
+                Ok(())
             }
             Self::Random { min, max } => {
-                if min.is_zero() {
-                    Err("random delay minimum cannot be zero".to_string())
-                } else if min > max {
-                    Err("random delay minimum cannot be greater than maximum"
-                        .to_string())
-                } else if !Self::duration_fits_nanos_u64(*min)
-                    || !Self::duration_fits_nanos_u64(*max)
-                {
-                    Err("random delay bounds must fit into u64 nanoseconds"
-                        .to_string())
-                } else {
-                    Ok(())
-                }
+                require_that(
+                    *min,
+                    path,
+                    |min| !min.is_zero(),
+                    "random_delay_minimum_positive",
+                    "random delay minimum cannot be zero",
+                )?;
+                require_that(
+                    (*min, *max),
+                    path,
+                    |(min, max)| min <= max,
+                    "random_delay_order",
+                    "random delay minimum cannot be greater than maximum",
+                )?;
+                require_that(
+                    (*min, *max),
+                    path,
+                    |(min, max)| {
+                        Self::duration_fits_nanos_u64(*min)
+                            && Self::duration_fits_nanos_u64(*max)
+                    },
+                    "random_delay_nanos_range",
+                    "random delay bounds must fit into u64 nanoseconds",
+                )?;
+                Ok(())
             }
             Self::Exponential {
                 initial,
                 max,
                 multiplier,
             } => {
-                if initial.is_zero() {
-                    Err("exponential delay initial value cannot be zero"
-                        .to_string())
-                } else if max < initial {
-                    Err("exponential delay maximum cannot be smaller than initial".to_string())
-                } else if !multiplier.is_finite() || *multiplier <= 1.0 {
-                    Err("exponential delay multiplier must be finite and greater than 1.0".to_string())
-                } else {
-                    Ok(())
-                }
+                require_that(
+                    *initial,
+                    path,
+                    |initial| !initial.is_zero(),
+                    "exponential_delay_initial_positive",
+                    "exponential delay initial value cannot be zero",
+                )?;
+                require_that(
+                    (*initial, *max),
+                    path,
+                    |(initial, max)| max >= initial,
+                    "exponential_delay_order",
+                    "exponential delay maximum cannot be smaller than initial",
+                )?;
+                require_that(
+                    *multiplier,
+                    path,
+                    |multiplier| multiplier.is_finite() && *multiplier > 1.0,
+                    "exponential_delay_multiplier",
+                    "exponential delay multiplier must be finite and greater than 1.0",
+                )?;
+                Ok(())
             }
         }
     }

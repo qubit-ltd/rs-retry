@@ -18,6 +18,7 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
+use qubit_argument::require_that;
 #[cfg(feature = "config")]
 use qubit_config::ConfigReader;
 
@@ -245,12 +246,15 @@ impl RetryOptions {
         jitter: RetryJitter,
         attempt_timeout: Option<AttemptTimeoutOption>,
     ) -> Result<Self, RetryConfigError> {
-        let max_attempts = NonZeroU32::new(max_attempts).ok_or_else(|| {
-            RetryConfigError::invalid_value(
-                KEY_MAX_ATTEMPTS,
-                "max_attempts must be greater than zero",
-            )
-        })?;
+        require_that(
+            max_attempts,
+            KEY_MAX_ATTEMPTS,
+            |max_attempts| *max_attempts > 0,
+            "positive",
+            "max_attempts must be greater than zero",
+        )?;
+        let max_attempts = NonZeroU32::new(max_attempts)
+            .expect("validated max_attempts must be nonzero");
         let options = Self {
             max_attempts,
             max_operation_elapsed,
@@ -306,19 +310,10 @@ impl RetryOptions {
     /// Returns [`RetryConfigError`] with the relevant config key when the delay
     /// or jitter strategy is invalid.
     pub fn validate(&self) -> Result<(), RetryConfigError> {
-        self.delay.validate().map_err(|message| {
-            RetryConfigError::invalid_value(KEY_DELAY, message)
-        })?;
-        self.jitter.validate().map_err(|message| {
-            RetryConfigError::invalid_value(KEY_JITTER_FACTOR, message)
-        })?;
+        self.delay.validate_argument(KEY_DELAY)?;
+        self.jitter.validate_argument(KEY_JITTER_FACTOR)?;
         if let Some(attempt_timeout) = self.attempt_timeout {
-            attempt_timeout.validate().map_err(|message| {
-                RetryConfigError::invalid_value(
-                    KEY_ATTEMPT_TIMEOUT_MILLIS,
-                    message,
-                )
-            })?;
+            attempt_timeout.validate_argument(KEY_ATTEMPT_TIMEOUT_MILLIS)?;
         }
         Ok(())
     }
