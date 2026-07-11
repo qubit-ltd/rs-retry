@@ -9,12 +9,17 @@
 
 use std::time::Duration;
 
+use qubit_argument::{
+    ArgumentResult,
+    require_that,
+};
 use serde::{
     Deserialize,
     Serialize,
 };
 
 use super::attempt_timeout_policy::AttemptTimeoutPolicy;
+use crate::error::argument_error_message;
 
 /// Per-attempt timeout settings.
 ///
@@ -106,10 +111,28 @@ impl AttemptTimeoutOption {
     /// # Errors
     /// Returns an error when the timeout duration is zero.
     pub fn validate(&self) -> Result<(), String> {
-        if self.timeout.is_zero() {
-            Err("attempt timeout must be greater than zero".to_string())
-        } else {
-            Ok(())
-        }
+        self.validate_argument("attempt_timeout")
+            .map_err(argument_error_message)
+    }
+
+    /// Validates this timeout with structured argument error context.
+    ///
+    /// # Parameters
+    /// - `path`: Configuration path associated with the timeout.
+    ///
+    /// # Returns
+    /// `Ok(())` when the timeout is positive.
+    ///
+    /// # Errors
+    /// Returns an argument error at `path` when the timeout is zero.
+    pub(super) fn validate_argument(&self, path: &str) -> ArgumentResult<()> {
+        require_that(
+            self.timeout,
+            path,
+            |timeout| !timeout.is_zero(),
+            "positive",
+            "attempt timeout must be greater than zero",
+        )?;
+        Ok(())
     }
 }

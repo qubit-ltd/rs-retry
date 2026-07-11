@@ -14,6 +14,11 @@
 use std::error::Error;
 use std::fmt;
 
+use qubit_argument::{
+    ArgumentError,
+    ArgumentErrorKind,
+};
+
 #[cfg(feature = "config")]
 use qubit_config::ConfigError;
 
@@ -127,6 +132,44 @@ impl fmt::Display for RetryConfigError {
 }
 
 impl Error for RetryConfigError {}
+
+/// Extracts the compatibility message from an argument validation error.
+///
+/// Custom validators carry the legacy public message directly. Other error
+/// kinds fall back to their complete structured diagnostic.
+///
+/// # Parameters
+/// - `error`: Structured argument validation error.
+///
+/// # Returns
+/// The legacy custom message or complete structured diagnostic.
+pub(crate) fn argument_error_message(error: ArgumentError) -> String {
+    match error.kind() {
+        ArgumentErrorKind::Custom { message, .. } => message.clone(),
+        _ => error.to_string(),
+    }
+}
+
+impl From<ArgumentError> for RetryConfigError {
+    /// Converts a structured argument failure into a retry configuration error.
+    ///
+    /// Custom validation messages are preserved without the argument display
+    /// prefix so existing retry diagnostics remain stable.
+    ///
+    /// # Parameters
+    /// - `source`: Structured argument validation error.
+    ///
+    /// # Returns
+    /// A retry configuration error preserving the validation path and message.
+    ///
+    /// # Errors
+    /// This function does not return errors.
+    fn from(source: ArgumentError) -> Self {
+        let path = source.path().as_str().to_owned();
+        let message = argument_error_message(source);
+        Self::invalid_value(path, message)
+    }
+}
 
 #[cfg(feature = "config")]
 impl From<ConfigError> for RetryConfigError {

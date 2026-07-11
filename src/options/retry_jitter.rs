@@ -33,6 +33,10 @@ use parse_display::{
     FromStrFormat,
     ParseError,
 };
+use qubit_argument::{
+    ArgumentResult,
+    require_that,
+};
 use rand::RngExt;
 use serde::{
     Deserialize,
@@ -41,6 +45,7 @@ use serde::{
 
 use crate::RetryDelay;
 use crate::constants::DEFAULT_RETRY_JITTER;
+use crate::error::argument_error_message;
 
 /// Jitter strategy applied after a base [`crate::RetryDelay`] has been
 /// calculated.
@@ -254,15 +259,33 @@ impl RetryJitter {
     /// Returns an error when the factor is negative, greater than `1.0`, NaN,
     /// or infinite.
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_argument("jitter_factor")
+            .map_err(argument_error_message)
+    }
+
+    /// Validates jitter with structured argument error context.
+    ///
+    /// # Parameters
+    /// - `path`: Configuration path associated with the jitter factor.
+    ///
+    /// # Returns
+    /// `Ok(())` when the jitter strategy is usable.
+    ///
+    /// # Errors
+    /// Returns an argument error at `path` when the factor is non-finite or
+    /// outside the inclusive range from zero to one.
+    pub(super) fn validate_argument(&self, path: &str) -> ArgumentResult<()> {
         match self {
             Self::None => Ok(()),
             Self::Factor(factor) => {
-                if !factor.is_finite() || *factor < 0.0 || *factor > 1.0 {
-                    Err("jitter factor must be finite and in range [0.0, 1.0]"
-                        .to_string())
-                } else {
-                    Ok(())
-                }
+                require_that(
+                    *factor,
+                    path,
+                    |factor| factor.is_finite() && (0.0..=1.0).contains(factor),
+                    "jitter_factor_range",
+                    "jitter factor must be finite and in range [0.0, 1.0]",
+                )?;
+                Ok(())
             }
         }
     }
