@@ -25,11 +25,14 @@ use qubit_config::ConfigError;
 /// Invalid retry configuration.
 ///
 /// `path` stores the configuration key that failed when such context is
-/// available. `message` stores the human-readable reason.
+/// available. `message` stores the human-readable reason. Structured argument
+/// failures are retained so their diagnostic can be rendered without
+/// duplicating the path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryConfigError {
     path: String,
     message: String,
+    argument_source: Option<ArgumentError>,
 }
 
 impl RetryConfigError {
@@ -52,6 +55,7 @@ impl RetryConfigError {
         Self {
             path: path.into(),
             message: message.into(),
+            argument_source: None,
         }
     }
 
@@ -72,6 +76,7 @@ impl RetryConfigError {
         Self {
             path: path.into(),
             message: source.to_string(),
+            argument_source: None,
         }
     }
 
@@ -119,7 +124,9 @@ impl fmt::Display for RetryConfigError {
     /// # Errors
     /// Returns a formatting error if the underlying formatter fails.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.path.is_empty() {
+        if let Some(source) = &self.argument_source {
+            write!(f, "invalid retry configuration: {source}")
+        } else if self.path.is_empty() {
             write!(f, "invalid retry configuration: {}", self.message)
         } else {
             write!(
@@ -131,7 +138,13 @@ impl fmt::Display for RetryConfigError {
     }
 }
 
-impl Error for RetryConfigError {}
+impl Error for RetryConfigError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.argument_source
+            .as_ref()
+            .map(|source| source as &(dyn Error + 'static))
+    }
+}
 
 /// Extracts the compatibility message from an argument validation error.
 ///
@@ -166,8 +179,17 @@ impl From<ArgumentError> for RetryConfigError {
     /// This function does not return errors.
     fn from(source: ArgumentError) -> Self {
         let path = source.path().as_str().to_owned();
-        let message = argument_error_message(source);
-        Self::invalid_value(path, message)
+        if matches!(source.kind(), ArgumentErrorKind::Custom { .. }) {
+            let message = argument_error_message(source);
+            Self::invalid_value(path, message)
+        } else {
+            let message = source.to_string();
+            Self {
+                path,
+                message,
+                argument_source: Some(source),
+            }
+        }
     }
 }
 

@@ -6,7 +6,12 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_argument::require_that;
+use std::error::Error;
+
+use qubit_argument::{
+    StringArgument,
+    require_that,
+};
 use qubit_retry::RetryConfigError;
 
 /// Verifies basic configuration error accessors and empty-path formatting.
@@ -67,4 +72,45 @@ fn test_retry_config_error_from_argument_error() {
 
     assert_eq!(error.path(), "max_attempts");
     assert_eq!(error.message(), "max_attempts must be greater than zero");
+    assert_eq!(
+        error.to_string(),
+        "invalid retry configuration at 'max_attempts': max_attempts must be greater than zero"
+    );
+    assert!(error.source().is_none());
+}
+
+/// Verifies standard argument diagnostics render their path only once.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+///
+/// # Errors
+/// The test fails through assertions when structured diagnostics duplicate
+/// their argument path during conversion.
+#[test]
+fn test_retry_config_error_from_standard_argument_error() {
+    let argument_error = "   "
+        .require_non_blank("retry.name")
+        .expect_err("blank names should be rejected");
+
+    let error = RetryConfigError::from(argument_error);
+    let diagnostic = error.to_string();
+
+    assert_eq!(error.path(), "retry.name");
+    assert_eq!(error.message(), "argument 'retry.name' must not be blank");
+    assert_eq!(
+        error
+            .source()
+            .expect("structured argument source should be retained")
+            .to_string(),
+        "argument 'retry.name' must not be blank"
+    );
+    assert_eq!(diagnostic.matches("retry.name").count(), 1);
+    assert_eq!(
+        diagnostic,
+        "invalid retry configuration: argument 'retry.name' must not be blank"
+    );
 }
