@@ -70,7 +70,7 @@ impl<'a, E> RetryFailureHandler<'a, E> {
     /// A retry action selected from listeners and configured limits.
     pub(in crate::executor) fn handle(
         &self,
-        state: &RetryFlowState<E>,
+        state: &RetryFlowState<'_, E>,
         failure: AttemptFailure<E>,
         context: RetryContext,
         retry_block_reason: Option<RetryErrorReason>,

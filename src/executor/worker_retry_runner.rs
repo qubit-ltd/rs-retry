@@ -14,10 +14,7 @@
 //! reported as `WorkerStillRunning` before another worker can be spawned.
 
 use std::sync::Arc;
-use std::time::{
-    Duration,
-    Instant,
-};
+use std::time::Duration;
 
 use super::attempt_cancel_token::AttemptCancelToken;
 use super::blocking_attempt::BlockingAttempt;
@@ -94,8 +91,9 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
     {
         let options = self.retry.options();
         let events = self.retry.events();
+        let sleeper = self.retry.blocking_sleeper();
         let handler = RetryFailureHandler::new(options, events);
-        let mut state = RetryFlowState::new();
+        let mut state = RetryFlowState::new(sleeper);
 
         loop {
             // Worker execution has the same budget model as async execution:
@@ -133,13 +131,13 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
             // WorkerAttemptExecutor owns the thread-level details for a single
             // attempt. The runner only turns the resulting attempt outcome into
             // retry-flow state and policy decisions.
-            let attempt_start = Instant::now();
+            let attempt_start = sleeper.now();
             let outcome = WorkerAttemptExecutor::run(
                 Arc::clone(&operation),
                 attempt_timeout.duration(),
                 options.worker_cancel_grace(),
             );
-            let attempt_elapsed = attempt_start.elapsed();
+            let attempt_elapsed = state.elapsed_since(attempt_start);
             state.add_operation_elapsed(attempt_elapsed);
             let context = state
                 .context(options, attempt_elapsed, attempt_timeout)
@@ -173,7 +171,11 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
                         retry_block_reason,
                     ) {
                         RetryFlowAction::Retry { delay, failure } => {
-                            sleep_blocking(delay);
+                            if let Err(error) = sleep_blocking(sleeper, delay) {
+                                return Err(events.error(
+                                    state.sleeper_error(options, error),
+                                ));
+                            }
                             state.record_last_failure(failure);
                         }
                         RetryFlowAction::Finished(error) => {

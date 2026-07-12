@@ -15,7 +15,11 @@
 use std::fmt;
 #[cfg(feature = "tokio")]
 use std::future::Future;
+use std::sync::Arc;
 
+#[cfg(feature = "tokio")]
+use qubit_clock::AsyncSleeper;
+use qubit_clock::BlockingSleeper;
 use qubit_error::BoxError;
 
 #[cfg(feature = "tokio")]
@@ -77,6 +81,11 @@ pub struct Retry<E = BoxError> {
     options: RetryOptions,
     /// Retry lifecycle event dispatcher.
     events: RetryEvents<E>,
+    /// Sleeper and monotonic clock for sync and worker execution.
+    blocking_sleeper: Arc<dyn BlockingSleeper>,
+    /// Sleeper and monotonic clock for Tokio async execution.
+    #[cfg(feature = "tokio")]
+    async_sleeper: Arc<dyn AsyncSleeper>,
 }
 
 #[allow(clippy::result_large_err)]
@@ -130,8 +139,8 @@ impl<E> Retry<E> {
     ///    operation time, and fire success or failure events.
     /// 5. On failure, let `RetryFailureHandler` apply retry limits, error
     ///    predicates, retry-after hints, elapsed budgets, and backoff. If it
-    ///    chooses retry, sleep with `std::thread::sleep` and start the next
-    ///    attempt; otherwise return the produced [`RetryError`].
+    ///    chooses retry, wait through the injected blocking sleeper and start
+    ///    the next attempt; otherwise return the produced [`RetryError`].
     ///
     /// # Parameters
     /// - `operation`: Operation called once per attempt until it succeeds or
@@ -145,8 +154,9 @@ impl<E> Retry<E> {
     /// isolation is enabled.
     ///
     /// # Blocking
-    /// Blocks the current thread with `std::thread::sleep` between attempts
-    /// when a non-zero retry delay is selected.
+    /// Blocks the current thread through the configured
+    /// [`qubit_clock::BlockingSleeper`] between attempts when a non-zero retry
+    /// delay is selected.
     ///
     /// # Elapsed Budget
     /// `max_operation_elapsed` counts only user operation execution time.
@@ -177,11 +187,11 @@ impl<E> Retry<E> {
     ///    remaining `max_total_elapsed`; the shortest available budget wins.
     /// 4. Fire `before_attempt`, recompute budgets in case listeners consumed
     ///    total elapsed time, then await the attempt future. If an effective
-    ///    timeout exists, the future is wrapped in `tokio::time::timeout` and
-    ///    dropped when the timer fires.
+    ///    timeout exists, the future is raced against the injected async
+    ///    sleeper and dropped when its timer fires.
     /// 5. Record elapsed operation time, fire success events, or route the
     ///    failure through elapsed-budget classification and
-    ///    `RetryFailureHandler`. Retry delays use `tokio::time::sleep`;
+    ///    `RetryFailureHandler`. Retry delays use the same async sleeper;
     ///    terminal decisions return [`RetryError`].
     ///
     /// # Parameters
@@ -297,6 +307,8 @@ impl<E> Retry<E> {
         retry_after_hint: Option<RetryAfterHint<E>>,
         isolate_listener_panics: bool,
         listeners: RetryListeners<E>,
+        blocking_sleeper: Arc<dyn BlockingSleeper>,
+        #[cfg(feature = "tokio")] async_sleeper: Arc<dyn AsyncSleeper>,
     ) -> Self {
         Self {
             options,
@@ -305,7 +317,23 @@ impl<E> Retry<E> {
                 isolate_listener_panics,
                 listeners,
             ),
+            blocking_sleeper,
+            #[cfg(feature = "tokio")]
+            async_sleeper,
         }
+    }
+
+    /// Returns the blocking sleeper used by sync and worker runners.
+    #[inline]
+    pub(in crate::executor) fn blocking_sleeper(&self) -> &dyn BlockingSleeper {
+        self.blocking_sleeper.as_ref()
+    }
+
+    /// Returns the async sleeper used by the Tokio runner.
+    #[cfg(feature = "tokio")]
+    #[inline]
+    pub(in crate::executor) fn async_sleeper(&self) -> &dyn AsyncSleeper {
+        self.async_sleeper.as_ref()
     }
 
     /// Returns the internal event dispatcher.

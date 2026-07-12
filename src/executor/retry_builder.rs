@@ -12,8 +12,20 @@
 //! It is the main public configuration surface; once [`RetryBuilder::build`]
 //! succeeds, the resulting policy is immutable and can be cloned cheaply.
 
+use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(feature = "tokio")]
+use qubit_clock::{
+    AsyncSleeper,
+    TokioAsyncSleeper,
+    TokioMonotonicClock,
+};
+use qubit_clock::{
+    BlockingSleeper,
+    StdBlockingSleeper,
+    StdMonotonicClock,
+};
 use qubit_error::BoxError;
 use qubit_function::{
     BiConsumer,
@@ -58,6 +70,11 @@ pub struct RetryBuilder<E = BoxError> {
     isolate_listener_panics: bool,
     /// Stored validation error when max attempts is configured as zero.
     max_attempts_error: Option<RetryConfigError>,
+    /// Sleeper and monotonic clock used by sync and worker execution.
+    blocking_sleeper: Arc<dyn BlockingSleeper>,
+    /// Sleeper and monotonic clock used by Tokio async execution.
+    #[cfg(feature = "tokio")]
+    async_sleeper: Arc<dyn AsyncSleeper>,
 }
 
 impl<E> RetryBuilder<E> {
@@ -67,6 +84,9 @@ impl<E> RetryBuilder<E> {
     /// A retry builder using [`RetryOptions::default`].
     #[inline]
     pub fn new() -> Self {
+        let blocking_clock = Arc::new(StdMonotonicClock::new());
+        #[cfg(feature = "tokio")]
+        let async_clock = Arc::new(TokioMonotonicClock::new());
         Self {
             options: RetryOptions::default(),
             pending_attempt_timeout_policy: AttemptTimeoutPolicy::default(),
@@ -74,7 +94,50 @@ impl<E> RetryBuilder<E> {
             listeners: RetryListeners::default(),
             isolate_listener_panics: false,
             max_attempts_error: None,
+            blocking_sleeper: Arc::new(StdBlockingSleeper::from_clock(
+                blocking_clock,
+            )),
+            #[cfg(feature = "tokio")]
+            async_sleeper: Arc::new(TokioAsyncSleeper::from_clock(async_clock)),
         }
+    }
+
+    /// Sets the sleeper and monotonic clock for sync and worker execution.
+    ///
+    /// The same object measures operation and total elapsed time and performs
+    /// retry backoff waits. Supplying a manual sleeper therefore makes both
+    /// elapsed budgets and retry delays deterministic.
+    ///
+    /// # Parameters
+    /// - `sleeper`: Shared blocking sleeper for [`Retry::run`] and
+    ///   [`Retry::run_in_worker`].
+    ///
+    /// # Returns
+    /// The updated builder.
+    #[inline]
+    pub fn blocking_sleeper(
+        mut self,
+        sleeper: Arc<dyn BlockingSleeper>,
+    ) -> Self {
+        self.blocking_sleeper = sleeper;
+        self
+    }
+
+    /// Sets the sleeper and monotonic clock for Tokio async execution.
+    ///
+    /// The same object measures operation and total elapsed time, enforces
+    /// async attempt timeouts, and performs retry backoff waits.
+    ///
+    /// # Parameters
+    /// - `sleeper`: Shared async sleeper for [`Retry::run_async`].
+    ///
+    /// # Returns
+    /// The updated builder.
+    #[cfg(feature = "tokio")]
+    #[inline]
+    pub fn async_sleeper(mut self, sleeper: Arc<dyn AsyncSleeper>) -> Self {
+        self.async_sleeper = sleeper;
+        self
     }
 
     /// Replaces all retry options.
@@ -556,6 +619,9 @@ impl<E> RetryBuilder<E> {
             self.retry_after_hint,
             self.isolate_listener_panics,
             self.listeners,
+            self.blocking_sleeper,
+            #[cfg(feature = "tokio")]
+            self.async_sleeper,
         ))
     }
 }

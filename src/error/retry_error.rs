@@ -222,6 +222,9 @@ where
             RetryErrorReason::UnsupportedOperation => {
                 "run() does not support attempt timeout; use run_async() or run_in_worker()".to_string()
             }
+            RetryErrorReason::SleeperFailed => {
+                format!("retry sleeper failed after {attempts} attempt(s)")
+            }
             RetryErrorReason::WorkerStillRunning => {
                 format!(
                     "retry worker still running after timeout cancellation grace, unreaped {}",
