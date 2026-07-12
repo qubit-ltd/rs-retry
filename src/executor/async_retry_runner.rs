@@ -8,14 +8,16 @@
 //! Asynchronous retry runner.
 //!
 //! This runner executes each attempt future on the current Tokio task. It can
-//! enforce per-attempt timeouts by wrapping the future in
-//! `tokio::time::timeout`, but it does not create a panic boundary; operation
-//! panics still unwind the async task.
+//! enforce per-attempt timeouts by racing the future against the policy's
+//! injected [`qubit_clock::AsyncSleeper`], but it does not create a panic
+//! boundary; operation panics still unwind the async task.
 
 use std::future::Future;
-use std::time::{
-    Duration,
-    Instant,
+use std::time::Duration;
+
+use qubit_clock::{
+    AsyncSleeper,
+    TimeError,
 };
 
 use super::async_attempt::AsyncAttempt;
@@ -84,8 +86,9 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
     ) -> Result<(), RetryError<E>> {
         let options = self.retry.options();
         let events = self.retry.events();
+        let sleeper = self.retry.async_sleeper();
         let handler = RetryFailureHandler::new(options, events);
-        let mut state = RetryFlowState::new();
+        let mut state = RetryFlowState::new(sleeper);
 
         loop {
             // The effective timeout may be selected by the configured
@@ -125,17 +128,27 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
             // timer fires. The timeout source is kept in the context so a later
             // timeout failure can be classified as configured timeout vs an
             // elapsed-budget terminal stop.
-            let attempt_start = Instant::now();
+            let attempt_start = sleeper.now();
             let result = if let Some(timeout) = attempt_timeout.duration() {
-                match tokio::time::timeout(timeout, operation.call()).await {
-                    Ok(result) => result,
-                    Err(_) => Err(AttemptFailure::Timeout),
+                tokio::select! {
+                    biased;
+                    timeout_result = sleeper.sleep_for_async(timeout) => {
+                        match timeout_result {
+                            Ok(()) => Err(AttemptFailure::Timeout),
+                            Err(error) => {
+                                return Err(events.error(
+                                    state.sleeper_error(options, error),
+                                ));
+                            }
+                        }
+                    }
+                    result = operation.call() => result,
                 }
             } else {
                 operation.call().await
             };
 
-            let attempt_elapsed = attempt_start.elapsed();
+            let attempt_elapsed = state.elapsed_since(attempt_start);
             state.add_operation_elapsed(attempt_elapsed);
             let context =
                 state.context(options, attempt_elapsed, attempt_timeout);
@@ -159,7 +172,13 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
                     }
                     match handler.handle(&state, failure, context, None) {
                         RetryFlowAction::Retry { delay, failure } => {
-                            sleep_async(delay).await;
+                            if let Err(error) =
+                                sleep_async(sleeper, delay).await
+                            {
+                                return Err(events.error(
+                                    state.sleeper_error(options, error),
+                                ));
+                            }
                             state.record_last_failure(failure);
                         }
                         RetryFlowAction::Finished(error) => {
@@ -179,8 +198,12 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
 ///
 /// # Returns
 /// This function returns after the sleep completes.
-async fn sleep_async(delay: Duration) {
+async fn sleep_async(
+    sleeper: &dyn AsyncSleeper,
+    delay: Duration,
+) -> Result<(), TimeError> {
     if !delay.is_zero() {
-        tokio::time::sleep(delay).await;
+        sleeper.sleep_for_async(delay).await?;
     }
+    Ok(())
 }

@@ -14,24 +14,30 @@
 //! so a pre-attempt elapsed-budget stop can still report the failure that led
 //! to the sleep.
 
-use std::time::{
-    Duration,
-    Instant,
-};
+use std::time::Duration;
 
 use crate::event::RetryContextParts;
 use crate::options::EffectiveAttemptTimeout;
 use crate::{
+    AttemptExecutorError,
     AttemptFailure,
     RetryContext,
     RetryError,
+    RetryErrorReason,
     RetryOptions,
+};
+use qubit_clock::{
+    MonotonicClock,
+    MonotonicInstant,
+    TimeError,
 };
 
 /// Mutable retry-flow state shared by sync, async, and worker execution loops.
-pub(in crate::executor) struct RetryFlowState<E> {
+pub(in crate::executor) struct RetryFlowState<'a, E> {
+    /// Monotonic clock used throughout this retry execution mode.
+    clock: &'a dyn MonotonicClock,
     /// Monotonic instant when the retry flow started.
-    started_at: Instant,
+    started_at: MonotonicInstant,
     /// Cumulative user operation time consumed by attempts.
     operation_elapsed: Duration,
     /// Attempts executed or currently being prepared.
@@ -41,14 +47,15 @@ pub(in crate::executor) struct RetryFlowState<E> {
     last_failure: Option<AttemptFailure<E>>,
 }
 
-impl<E> RetryFlowState<E> {
+impl<'a, E> RetryFlowState<'a, E> {
     /// Creates an empty retry-flow state.
     ///
     /// # Returns
     /// A state with zero attempts and no accumulated operation elapsed time.
-    pub(in crate::executor) fn new() -> Self {
+    pub(in crate::executor) fn new(clock: &'a dyn MonotonicClock) -> Self {
         Self {
-            started_at: Instant::now(),
+            clock,
+            started_at: clock.now(),
             operation_elapsed: Duration::ZERO,
             attempts: 0,
             last_failure: None,
@@ -61,7 +68,25 @@ impl<E> RetryFlowState<E> {
     /// Elapsed time since this retry flow started.
     #[inline]
     pub(in crate::executor) fn total_elapsed(&self) -> Duration {
-        self.started_at.elapsed()
+        self.elapsed_since(self.started_at)
+    }
+
+    /// Measures elapsed time since an instant from this state's clock.
+    ///
+    /// # Parameters
+    /// - `earlier`: Earlier instant returned by the same clock.
+    ///
+    /// # Returns
+    /// Non-decreasing elapsed duration.
+    #[inline]
+    pub(in crate::executor) fn elapsed_since(
+        &self,
+        earlier: MonotonicInstant,
+    ) -> Duration {
+        self.clock
+            .now()
+            .duration_since(earlier)
+            .expect("a monotonic clock must stay in one non-decreasing domain")
     }
 
     /// Returns cumulative user operation time consumed by attempts.
@@ -167,6 +192,35 @@ impl<E> RetryFlowState<E> {
             })
             .with_attempt_timeout_source(attempt_timeout.source()),
         ))
+    }
+
+    /// Builds a terminal error for an injected sleeper failure.
+    ///
+    /// # Parameters
+    /// - `options`: Retry options used to build the terminal context.
+    /// - `error`: Clock or sleeper error returned by `rs-clock`.
+    ///
+    /// # Returns
+    /// A terminal retry error preserving the sleeper diagnostic.
+    pub(in crate::executor) fn sleeper_error(
+        &self,
+        options: &RetryOptions,
+        error: TimeError,
+    ) -> RetryError<E> {
+        RetryError::new(
+            RetryErrorReason::SleeperFailed,
+            Some(AttemptFailure::Executor(
+                AttemptExecutorError::with_context(
+                    "retry sleeper failed",
+                    &error.to_string(),
+                ),
+            )),
+            self.context(
+                options,
+                Duration::ZERO,
+                EffectiveAttemptTimeout::none(),
+            ),
+        )
     }
 
     /// Stores the last failure observed before a retry sleep.

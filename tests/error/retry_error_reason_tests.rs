@@ -8,10 +8,11 @@ fn test_retry_error_reason_serializes_and_compares_terminal_reasons() {
         RetryErrorReason::MaxOperationElapsedExceeded,
         RetryErrorReason::MaxTotalElapsedExceeded,
         RetryErrorReason::UnsupportedOperation,
+        RetryErrorReason::SleeperFailed,
         RetryErrorReason::WorkerStillRunning,
     ];
 
-    assert_eq!(6, reasons.len());
+    assert_eq!(7, reasons.len());
     assert_eq!(
         "\"AttemptsExceeded\"",
         serde_json::to_string(&RetryErrorReason::AttemptsExceeded).unwrap(),

@@ -20,7 +20,7 @@ Qubit Retry 适用于需要对易失败任务进行明确、可观测重试控�
 ## 特性
 
 - 同步重试不依赖任何可选 feature。
-- 基于 Tokio 的异步重试支持真正的单次 attempt 超时。
+- 基于 Tokio 的异步重试通过可注入的单调 sleeper 支持单次 attempt 超时。
 - 阻塞操作可通过 `run_in_worker` 使用线程隔离执行、panic 捕获、超时等待和协作取消。
 - 可选的 `qubit-config` 集成可从配置中读取重试设置。
 - 回调基于 `rs-function` 函子保存，既支持闭包，也支持自定义函数对象。
@@ -45,7 +45,8 @@ qubit-retry = { version = "0.15", features = ["tokio", "config"] }
 
 可选 feature：
 
-- `tokio`：启用 `Retry::run_async`，并通过 `tokio::time::timeout` 支持异步单次 attempt 超时。
+- `tokio`：启用 `Retry::run_async`，并通过可注入的
+  `qubit_clock::AsyncSleeper` 支持异步单次 attempt 超时。
 - `config`：启用 `RetryOptions::from_config` 和 `RetryConfigValues`，用于从 `qubit-config` 读取配置。
 
 默认 feature 为空，因此同步重试不会引入 `tokio` 或 `qubit-config`。
@@ -144,7 +145,8 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
 
 ## Elapsed 预算
 
-Retry 的 elapsed 预算使用单调 `Instant` 计时，不使用 wall-clock 时间：
+Retry 的 elapsed 预算通过当前执行模式所注入的单调 sleeper 计时，不使用
+wall-clock 时间：
 
 - `max_operation_elapsed`：累计用户 operation attempt 的执行时间。retry sleep、Retry-After sleep 和 listener 时间都不计入。
 - `max_total_elapsed`：整个 retry flow 的总时间。operation attempt、retry sleep、Retry-After sleep、retry hint 提取、`before_attempt`、`on_failure` 和 `on_retry` 时间都计入。
@@ -152,6 +154,36 @@ Retry 的 elapsed 预算使用单调 `Instant` 计时，不使用 wall-clock 时
 终态 listener 保持通知语义。`on_success` 和 `on_error` 的耗时会增加调用方实际等待时间，但不会把已经成功的 operation 反向变成 retry failure。
 
 async 和 worker-thread attempt 会从配置的 `attempt_timeout`、剩余 `max_operation_elapsed`、剩余 `max_total_elapsed` 中选最短值作为有效 attempt timeout。如果下一次 retry 或 Retry-After 延迟会耗尽剩余 `max_total_elapsed`，流程会在 sleep 前以 `RetryErrorReason::MaxTotalElapsedExceeded` 失败。retry sleep 不会被截断。
+
+## 测试中的确定性时间
+
+`RetryBuilder::blocking_sleeper` 配置 `run()` 和 `run_in_worker()` 使用的
+clock 与等待机制。启用 `tokio` feature 后，`RetryBuilder::async_sleeper` 对
+`run_async()` 提供同样能力，并负责异步 attempt timeout。因此固定延迟、指数退避和
+Retry-After 延迟都可以使用手动时钟测试，无需等待真实时间：
+
+```rust
+use std::{sync::Arc, time::Duration};
+
+use qubit_clock::{ManualBlockingSleeper, ManualMonotonicClock};
+use qubit_retry::Retry;
+
+let clock = Arc::new(ManualMonotonicClock::new());
+let sleeper = Arc::new(ManualBlockingSleeper::from_clock(Arc::clone(&clock)));
+let retry = Retry::<std::io::Error>::builder()
+    .max_attempts(3)
+    .exponential_backoff(Duration::from_secs(1), Duration::from_secs(8))
+    .blocking_sleeper(sleeper)
+    .build()?;
+```
+
+同一个 sleeper 始终同时承担单调 clock 与 delay driver，elapsed 预算和 sleep
+不会悄悄落入不同时间域。如果 sleeper 无法表示某个 deadline，执行会以
+`RetryErrorReason::SleeperFailed` 终止。
+
+worker attempt timeout 和 cancellation grace 仍使用操作系统线程/channel 时间：
+注入的 blocking sleeper 控制 retry flow 的 elapsed 统计与 attempt 之间的退避，
+但不能替代用于观察真实 worker 线程是否退出的原生等待。
 
 ## Worker 线程重试
 

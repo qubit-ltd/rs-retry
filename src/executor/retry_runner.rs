@@ -8,13 +8,16 @@
 //! Same-thread synchronous retry runner.
 //!
 //! This runner is the simplest execution mode: the caller's closure is invoked
-//! directly on the current thread and retry sleeps use `std::thread::sleep`.
+//! directly on the current thread and retry sleeps use the policy's injected
+//! [`qubit_clock::BlockingSleeper`].
 //! Because there is no cancellation boundary, configured per-attempt timeout is
 //! rejected before the first attempt instead of being simulated unsafely.
 
-use std::time::{
-    Duration,
-    Instant,
+use std::time::Duration;
+
+use qubit_clock::{
+    BlockingSleeper,
+    TimeError,
 };
 
 use super::attempt::Attempt;
@@ -87,9 +90,10 @@ impl<'a, E> RetryRunner<'a, E> {
     ) -> Result<(), RetryError<E>> {
         let options = self.retry.options();
         let events = self.retry.events();
+        let sleeper = self.retry.blocking_sleeper();
         let handler = RetryFailureHandler::new(options, events);
         let no_timeout = EffectiveAttemptTimeout::none();
-        let mut state = RetryFlowState::new();
+        let mut state = RetryFlowState::new(sleeper);
 
         loop {
             // Same-thread execution cannot interrupt a running closure. Budget
@@ -110,10 +114,10 @@ impl<'a, E> RetryRunner<'a, E> {
             // Only user closure time contributes to max_operation_elapsed.
             // Listener time and retry sleeps are included by total_elapsed
             // through RetryFlowState's monotonic start instant.
-            let attempt_start = Instant::now();
+            let attempt_start = sleeper.now();
             match operation.call() {
                 Ok(()) => {
-                    let attempt_elapsed = attempt_start.elapsed();
+                    let attempt_elapsed = state.elapsed_since(attempt_start);
                     state.add_operation_elapsed(attempt_elapsed);
                     let context =
                         state.context(options, attempt_elapsed, no_timeout);
@@ -121,7 +125,7 @@ impl<'a, E> RetryRunner<'a, E> {
                     return Ok(());
                 }
                 Err(failure) => {
-                    let attempt_elapsed = attempt_start.elapsed();
+                    let attempt_elapsed = state.elapsed_since(attempt_start);
                     state.add_operation_elapsed(attempt_elapsed);
                     let context =
                         state.context(options, attempt_elapsed, no_timeout);
@@ -132,7 +136,11 @@ impl<'a, E> RetryRunner<'a, E> {
                             // next pre-attempt check exhausts a budget, this is
                             // the last meaningful failure to attach to the
                             // terminal RetryError.
-                            sleep_blocking(delay);
+                            if let Err(error) = sleep_blocking(sleeper, delay) {
+                                return Err(events.error(
+                                    state.sleeper_error(options, error),
+                                ));
+                            }
                             state.record_last_failure(failure);
                         }
                         RetryFlowAction::Finished(error) => {
@@ -151,7 +159,8 @@ impl<'a, E> RetryRunner<'a, E> {
     /// per-attempt timeout.
     fn unsupported_attempt_timeout_error(&self) -> RetryError<E> {
         let options = self.retry.options();
-        let state: RetryFlowState<E> = RetryFlowState::new();
+        let state: RetryFlowState<'_, E> =
+            RetryFlowState::new(self.retry.blocking_sleeper());
         let attempt_timeout = EffectiveAttemptTimeout::new(
             options.attempt_timeout_duration(),
             Some(AttemptTimeoutSource::Configured),
@@ -168,8 +177,12 @@ impl<'a, E> RetryRunner<'a, E> {
 ///
 /// # Parameters
 /// - `delay`: Delay to sleep.
-pub(in crate::executor) fn sleep_blocking(delay: Duration) {
+pub(in crate::executor) fn sleep_blocking(
+    sleeper: &dyn BlockingSleeper,
+    delay: Duration,
+) -> Result<(), TimeError> {
     if !delay.is_zero() {
-        std::thread::sleep(delay);
+        sleeper.sleep_for(delay)?;
     }
+    Ok(())
 }

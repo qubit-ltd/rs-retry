@@ -13,6 +13,11 @@ use std::sync::{
 };
 use std::time::Duration;
 
+use qubit_clock::{
+    ManualBlockingSleeper,
+    ManualMonotonicClock,
+    MonotonicClock,
+};
 use qubit_error::BoxError;
 use qubit_retry::{
     AttemptFailure,
@@ -28,6 +33,122 @@ use crate::support::{
     NonCloneValue,
     TestError,
 };
+
+/// Verifies exponential backoff is driven entirely by injected manual time.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_exponential_backoff_uses_injected_blocking_sleeper() {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    let sleeper =
+        Arc::new(ManualBlockingSleeper::from_clock(Arc::clone(&clock)));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(3)
+        .exponential_backoff(Duration::from_secs(1), Duration::from_secs(8))
+        .blocking_sleeper(sleeper.clone())
+        .build()
+        .expect("retry should build");
+
+    let worker = std::thread::spawn(move || {
+        let mut attempts = 0;
+        let result = retry.run(|| {
+            attempts += 1;
+            if attempts < 3 {
+                Err(TestError("temporary"))
+            } else {
+                Ok(attempts)
+            }
+        });
+        (result, attempts)
+    });
+
+    assert!(clock.wait_for_waiters(1, Duration::from_secs(1)));
+    assert_eq!(
+        clock
+            .next_deadline()
+            .expect("first backoff deadline should be registered")
+            .duration_since(clock.now())
+            .expect("deadline should share the manual domain"),
+        Duration::from_secs(1)
+    );
+    clock
+        .advance(Duration::from_secs(1))
+        .expect("manual time should advance");
+
+    let second_deadline = loop {
+        if let Some(deadline) = clock.next_deadline()
+            && deadline
+                .duration_since(clock.now())
+                .is_ok_and(|remaining| remaining == Duration::from_secs(2))
+        {
+            break deadline;
+        }
+        assert!(
+            !worker.is_finished(),
+            "retry thread finished before registering the second backoff"
+        );
+        std::thread::yield_now();
+    };
+    assert_eq!(
+        second_deadline
+            .duration_since(clock.now())
+            .expect("deadline should share the manual domain"),
+        Duration::from_secs(2)
+    );
+    clock
+        .advance(Duration::from_secs(2))
+        .expect("manual time should advance");
+
+    let (result, attempts) = worker.join().expect("retry thread should join");
+    assert_eq!(result.expect("third attempt should succeed"), 3);
+    assert_eq!(attempts, 3);
+    assert_eq!(clock.now().elapsed_since_origin(), Duration::from_secs(3));
+}
+
+/// Verifies an injected blocking sleeper overflow becomes a typed error.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[test]
+fn test_run_reports_injected_blocking_sleeper_failure() {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    clock
+        .advance(Duration::MAX)
+        .expect("manual clock should reach its maximum instant");
+    let sleeper = Arc::new(ManualBlockingSleeper::from_clock(clock));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .fixed_delay(Duration::from_nanos(1))
+        .blocking_sleeper(sleeper)
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run(|| -> Result<(), TestError> { Err(TestError("temporary")) })
+        .expect_err("deadline overflow should terminate retry");
+
+    assert_eq!(error.reason(), RetryErrorReason::SleeperFailed);
+    assert_eq!(error.attempts(), 1);
+    assert!(
+        error
+            .last_failure()
+            .and_then(AttemptFailure::as_executor_error)
+            .expect("sleeper failure should be preserved")
+            .message()
+            .contains("instant overflow")
+    );
+    assert_eq!(
+        error.to_string(),
+        "retry sleeper failed after 1 attempt(s); last failure: attempt executor failed: retry sleeper failed: monotonic instant overflow"
+    );
+}
 
 /// Verifies sync retry succeeds and emits attempt lifecycle events.
 ///

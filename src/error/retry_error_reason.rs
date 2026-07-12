@@ -28,6 +28,8 @@ pub enum RetryErrorReason {
     /// Currently used when [`Retry::run`](crate::Retry::run) receives
     /// configured per-attempt timeout options.
     UnsupportedOperation,
+    /// The injected sleeper could not create or complete a retry timer.
+    SleeperFailed,
     /// A timed-out blocking worker did not exit within the cancellation grace
     /// period.
     WorkerStillRunning,

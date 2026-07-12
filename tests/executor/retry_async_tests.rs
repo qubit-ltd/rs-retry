@@ -7,8 +7,19 @@
 // =============================================================================
 #![cfg(feature = "tokio")]
 
+use std::sync::{
+    Arc,
+    atomic::{
+        AtomicUsize,
+        Ordering,
+    },
+};
 use std::time::Duration;
 
+use qubit_clock::{
+    ManualAsyncSleeper,
+    ManualMonotonicClock,
+};
 use qubit_retry::{
     AttemptFailure,
     AttemptTimeoutSource,
@@ -18,6 +29,136 @@ use qubit_retry::{
 };
 
 use crate::support::TestError;
+
+/// Verifies async attempt timeout is driven by injected manual time.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[tokio::test]
+async fn test_run_async_attempt_timeout_uses_injected_async_sleeper() {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .attempt_timeout(Some(Duration::from_secs(30)))
+        .abort_on_timeout()
+        .async_sleeper(sleeper.clone())
+        .build()
+        .expect("retry should build");
+
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<(), TestError>>);
+    tokio::pin!(retry_future);
+    let waiter_registration = clock.wait_for_waiters_async(1);
+    tokio::select! {
+        result = &mut retry_future => {
+            panic!("attempt completed before manual time advanced: {result:?}");
+        }
+        () = waiter_registration => {}
+    }
+    assert_eq!(clock.pending_waiters(), 1);
+
+    clock
+        .advance(Duration::from_secs(30))
+        .expect("manual time should advance");
+    let error = retry_future
+        .await
+        .expect_err("manual timeout should abort the attempt");
+
+    assert_eq!(error.reason(), RetryErrorReason::Aborted);
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Timeout)
+    ));
+    assert_eq!(error.context().attempt_elapsed(), Duration::from_secs(30));
+}
+
+/// Verifies async retry backoff is driven by injected manual time.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[tokio::test]
+async fn test_run_async_backoff_uses_injected_async_sleeper() {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .fixed_delay(Duration::from_secs(5))
+        .async_sleeper(sleeper.clone())
+        .build()
+        .expect("retry should build");
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let operation_attempts = Arc::clone(&attempts);
+    let retry_future = retry.run_async(move || {
+        let attempt = operation_attempts.fetch_add(1, Ordering::SeqCst) + 1;
+        async move {
+            if attempt == 1 {
+                Err(TestError("temporary"))
+            } else {
+                Ok(attempt)
+            }
+        }
+    });
+    tokio::pin!(retry_future);
+    let waiter_registration = clock.wait_for_waiters_async(1);
+
+    tokio::select! {
+        result = &mut retry_future => {
+            panic!("retry completed before manual backoff advanced: {result:?}");
+        }
+        () = waiter_registration => {}
+    }
+    assert_eq!(clock.pending_waiters(), 1);
+
+    clock
+        .advance(Duration::from_secs(5))
+        .expect("manual time should advance");
+    assert_eq!(
+        retry_future.await.expect("second attempt should succeed"),
+        2
+    );
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
+/// Verifies an injected async sleeper overflow becomes a typed error.
+///
+/// # Parameters
+/// This test has no parameters.
+///
+/// # Returns
+/// This test returns nothing.
+#[tokio::test]
+async fn test_run_async_reports_injected_sleeper_failure() {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    clock
+        .advance(Duration::MAX)
+        .expect("manual clock should reach its maximum instant");
+    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(clock));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .fixed_delay(Duration::from_nanos(1))
+        .async_sleeper(sleeper)
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_async(|| async { Err::<(), _>(TestError("temporary")) })
+        .await
+        .expect_err("deadline overflow should terminate retry");
+
+    assert_eq!(error.reason(), RetryErrorReason::SleeperFailed);
+    assert_eq!(error.attempts(), 1);
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Executor(_))
+    ));
+}
 
 /// Verifies async operation panic still propagates through the current task.
 ///

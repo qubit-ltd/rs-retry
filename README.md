@@ -20,7 +20,8 @@ Use this crate when you need typed retry errors, bounded elapsed-time budgets, r
 ## Features
 
 - Synchronous retry works without optional features.
-- Tokio-backed async retry supports true per-attempt timeouts.
+- Tokio-backed async retry supports per-attempt timeouts through an injectable
+  monotonic sleeper.
 - Blocking operations can use `run_in_worker` for thread-isolated execution, panic capture, timeout waiting, and cooperative cancellation.
 - Optional `qubit-config` integration reads retry settings from configuration.
 - Retry callbacks are stored as `rs-function` functors, so both closures and custom function objects are supported.
@@ -45,7 +46,8 @@ qubit-retry = { version = "0.15", features = ["tokio", "config"] }
 
 Optional features:
 
-- `tokio`: enables `Retry::run_async` and per-attempt async timeouts through `tokio::time::timeout`.
+- `tokio`: enables `Retry::run_async` and per-attempt async timeouts through an
+  injectable `qubit_clock::AsyncSleeper`.
 - `config`: enables `RetryOptions::from_config` and `RetryConfigValues` for reading settings from `qubit-config`.
 
 The default feature set is empty, so synchronous retry does not pull in `tokio` or `qubit-config`.
@@ -144,7 +146,8 @@ Plain `run()` keeps normal same-thread synchronous execution. It is the lowest-o
 
 ## Elapsed Budgets
 
-Retry elapsed budgets are measured with monotonic `Instant` time, not wall-clock time:
+Retry elapsed budgets are measured through the execution mode's injected
+monotonic sleeper, not wall-clock time:
 
 - `max_operation_elapsed`: cumulative time spent executing user operation attempts. Retry sleeps, retry-after sleeps, and listener time are excluded.
 - `max_total_elapsed`: total retry-flow time. Operation attempts, retry sleeps, retry-after sleeps, retry hint extraction, `before_attempt`, `on_failure`, and `on_retry` time are included.
@@ -152,6 +155,39 @@ Retry elapsed budgets are measured with monotonic `Instant` time, not wall-clock
 Terminal listeners keep notification semantics. `on_success` and `on_error` can add caller-visible latency, but they do not turn an already successful operation into a retry failure.
 
 Async and worker-thread attempts use the shortest of configured `attempt_timeout`, remaining `max_operation_elapsed`, and remaining `max_total_elapsed` as the effective attempt timeout. If the selected retry or retry-after delay would consume the remaining `max_total_elapsed` budget, the flow fails with `RetryErrorReason::MaxTotalElapsedExceeded` before sleeping. Retry sleeps are not truncated.
+
+## Deterministic Time in Tests
+
+`RetryBuilder::blocking_sleeper` configures the clock and waits used by
+`run()` and `run_in_worker()`. With the `tokio` feature,
+`RetryBuilder::async_sleeper` does the same for `run_async()`, including async
+attempt timeouts. A manual clock can therefore test fixed, exponential, or
+Retry-After delays without waiting for real time:
+
+```rust
+use std::{sync::Arc, time::Duration};
+
+use qubit_clock::{ManualBlockingSleeper, ManualMonotonicClock};
+use qubit_retry::Retry;
+
+let clock = Arc::new(ManualMonotonicClock::new());
+let sleeper = Arc::new(ManualBlockingSleeper::from_clock(Arc::clone(&clock)));
+let retry = Retry::<std::io::Error>::builder()
+    .max_attempts(3)
+    .exponential_backoff(Duration::from_secs(1), Duration::from_secs(8))
+    .blocking_sleeper(sleeper)
+    .build()?;
+```
+
+The same sleeper is always used both as the monotonic clock and as the delay
+driver, so elapsed budgets and sleeps cannot silently diverge into different
+time domains. If a sleeper cannot represent a deadline, execution stops with
+`RetryErrorReason::SleeperFailed`.
+
+Worker attempt timeout and cancellation-grace waiting still use operating
+system thread/channel time: an injected blocking sleeper controls retry-flow
+elapsed accounting and inter-attempt backoff, but it cannot replace the native
+wait used to observe whether a real worker thread has exited.
 
 ## Worker-Thread Retry
 
