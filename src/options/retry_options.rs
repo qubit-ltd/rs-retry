@@ -18,7 +18,10 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
-use qubit_argument::require_that;
+use qubit_argument::{
+    OptionArgument,
+    require_that,
+};
 #[cfg(feature = "config")]
 use qubit_config::ConfigReader;
 
@@ -312,9 +315,9 @@ impl RetryOptions {
     pub fn validate(&self) -> Result<(), RetryConfigError> {
         self.delay.validate_argument(KEY_DELAY)?;
         self.jitter.validate_argument(KEY_JITTER_FACTOR)?;
-        if let Some(attempt_timeout) = self.attempt_timeout {
-            attempt_timeout.validate_argument(KEY_ATTEMPT_TIMEOUT_MILLIS)?;
-        }
+        self.attempt_timeout.validate_some(|attempt_timeout| {
+            attempt_timeout.validate_argument(KEY_ATTEMPT_TIMEOUT_MILLIS)
+        })?;
         Ok(())
     }
 

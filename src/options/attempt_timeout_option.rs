@@ -111,7 +111,9 @@ impl AttemptTimeoutOption {
     /// # Errors
     /// Returns an error when the timeout duration is zero.
     pub fn validate(&self) -> Result<(), String> {
-        self.validate_argument("attempt_timeout")
+        (*self)
+            .validate_argument("attempt_timeout")
+            .map(|_| ())
             .map_err(argument_error_message)
     }
 
@@ -121,11 +123,11 @@ impl AttemptTimeoutOption {
     /// - `path`: Configuration path associated with the timeout.
     ///
     /// # Returns
-    /// `Ok(())` when the timeout is positive.
+    /// The unchanged timeout option when its duration is positive.
     ///
     /// # Errors
     /// Returns an argument error at `path` when the timeout is zero.
-    pub(super) fn validate_argument(&self, path: &str) -> ArgumentResult<()> {
+    pub(super) fn validate_argument(self, path: &str) -> ArgumentResult<Self> {
         require_that(
             self.timeout,
             path,
@@ -133,6 +135,6 @@ impl AttemptTimeoutOption {
             "positive",
             "attempt timeout must be greater than zero",
         )?;
-        Ok(())
+        Ok(self)
     }
 }
