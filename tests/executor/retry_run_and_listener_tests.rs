@@ -79,20 +79,13 @@ fn test_run_exponential_backoff_uses_injected_blocking_sleeper() {
         .advance(Duration::from_secs(1))
         .expect("manual time should advance");
 
-    let second_deadline = loop {
-        if let Some(deadline) = clock.next_deadline()
-            && deadline
-                .duration_since(clock.now())
-                .is_ok_and(|remaining| remaining == Duration::from_secs(2))
-        {
-            break deadline;
-        }
-        assert!(
-            !worker.is_finished(),
-            "retry thread finished before registering the second backoff"
-        );
-        std::thread::yield_now();
-    };
+    let second_deadline = clock
+        .wait_for_next_deadline(Duration::from_secs(1))
+        .expect("second backoff deadline should be registered");
+    assert!(
+        !worker.is_finished(),
+        "retry thread finished before the second backoff advanced",
+    );
     assert_eq!(
         second_deadline
             .duration_since(clock.now())

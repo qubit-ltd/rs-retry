@@ -8,9 +8,9 @@
 //! Asynchronous retry runner.
 //!
 //! This runner executes each attempt future on the current Tokio task. It can
-//! enforce per-attempt timeouts by racing the future against the policy's
-//! injected [`qubit_clock::AsyncSleeper`], but it does not create a panic
-//! boundary; operation panics still unwind the async task.
+//! enforce per-attempt timeouts by racing the future against the selected
+//! [`qubit_clock::AsyncSleeper`], but it does not create a panic boundary;
+//! operation panics still unwind the async task.
 
 use std::future::Future;
 use std::time::Duration;
@@ -35,6 +35,8 @@ use crate::{
 pub(in crate::executor) struct AsyncRetryRunner<'a, E> {
     /// Retry policy facade that owns options and events.
     retry: &'a Retry<E>,
+    /// Sleeper and monotonic clock bound to this async execution.
+    sleeper: &'a dyn AsyncSleeper,
 }
 
 #[allow(clippy::result_large_err)]
@@ -43,12 +45,16 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
     ///
     /// # Parameters
     /// - `retry`: Retry policy facade.
+    /// - `sleeper`: Async sleeper used for elapsed time, timeouts, and backoff.
     ///
     /// # Returns
     /// A runner borrowing the retry policy.
     #[inline]
-    pub(in crate::executor) fn new(retry: &'a Retry<E>) -> Self {
-        Self { retry }
+    pub(in crate::executor) fn new(
+        retry: &'a Retry<E>,
+        sleeper: &'a dyn AsyncSleeper,
+    ) -> Self {
+        Self { retry, sleeper }
     }
 
     /// Runs an asynchronous operation with retry.
@@ -86,9 +92,9 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
     ) -> Result<(), RetryError<E>> {
         let options = self.retry.options();
         let events = self.retry.events();
-        let sleeper = self.retry.async_sleeper();
+        let sleeper = self.sleeper;
         let handler = RetryFailureHandler::new(options, events);
-        let mut state = RetryFlowState::new(sleeper);
+        let mut state = RetryFlowState::new(sleeper.clock());
 
         loop {
             // The effective timeout may be selected by the configured
@@ -128,7 +134,7 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
             // timer fires. The timeout source is kept in the context so a later
             // timeout failure can be classified as configured timeout vs an
             // elapsed-budget terminal stop.
-            let attempt_start = sleeper.now();
+            let attempt_start = sleeper.clock().now();
             let result = if let Some(timeout) = attempt_timeout.duration() {
                 tokio::select! {
                     biased;

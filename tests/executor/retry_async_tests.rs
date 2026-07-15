@@ -30,6 +30,49 @@ use qubit_retry::{
 
 use crate::support::TestError;
 
+/// Verifies that the default async sleeper binds to a paused runtime when the
+/// retry future is first polled, rather than when the policy is built.
+///
+/// # Panics
+///
+/// Panics if the retry policy cannot be built or the async retry fails.
+#[test]
+fn test_run_async_default_sleeper_binds_on_first_poll() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .start_paused(true)
+        .build()
+        .expect("paused Tokio runtime should build");
+    std::thread::sleep(Duration::from_millis(10));
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .fixed_delay(Duration::from_secs(5))
+        .build()
+        .expect("retry should build outside the runtime");
+
+    let (result, runtime_elapsed) = runtime.block_on(async {
+        let started_at = tokio::time::Instant::now();
+        let mut attempts = 0;
+        let result = retry
+            .run_async(|| {
+                attempts += 1;
+                let attempt = attempts;
+                async move {
+                    if attempt == 1 {
+                        Err(TestError("temporary"))
+                    } else {
+                        Ok(attempt)
+                    }
+                }
+            })
+            .await;
+        (result, tokio::time::Instant::now() - started_at)
+    });
+
+    assert_eq!(result.expect("second attempt should succeed"), 2);
+    assert_eq!(runtime_elapsed, Duration::from_secs(5));
+}
+
 /// Verifies async attempt timeout is driven by injected manual time.
 ///
 /// # Parameters

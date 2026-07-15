@@ -17,17 +17,18 @@
 //! form:
 //!
 //! - `none`
-//! - `fixed(<duration>)` — duration fields are displayed as saturated whole
-//!   milliseconds with an `ms` suffix; `FromStr` accepts any duration string
-//!   parsed by [`qubit_serde::serde::duration_with_unit`]
+//! - `fixed(<duration>)` — duration fields are displayed as half-up rounded
+//!   whole milliseconds with an `ms` suffix; `FromStr` accepts any duration
+//!   string parsed by [`qubit_serde::serde::duration_millis_with_unit`]
 //! - `random(<min>..=<max>)` — same rules for the two duration fields
 //! - `exponential(initial=<...>, max=<...>, multiplier=<f64>)` — same for
 //!   `initial` and `max`
 //!
 //! For [`std::str::FromStr`], substrings for duration fields follow
-//! [`qubit_serde::serde::duration_with_unit`] (bare integer as milliseconds,
-//! unit suffixes, etc.; see that module). [`std::fmt::Display`] normalizes to
-//! whole millisecond + `ms` for those fields.
+//! [`qubit_serde::serde::duration_millis_with_unit`] (bare integer as
+//! milliseconds, unit suffixes, etc.; see that module).
+//! [`std::fmt::Display`] normalizes to whole millisecond + `ms` for those
+//! fields.
 
 use std::str::FromStr;
 use std::time::Duration;

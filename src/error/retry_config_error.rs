@@ -217,8 +217,7 @@ impl From<ConfigError> for RetryConfigError {
             | ConfigError::ConversionError { key, .. } => key.clone(),
             ConfigError::DeserializeError { path, .. } => path.clone(),
             ConfigError::KeyConflict { path, .. } => path.clone(),
-            ConfigError::IndexOutOfBounds { .. }
-            | ConfigError::SubstitutionError(_)
+            ConfigError::SubstitutionError(_)
             | ConfigError::SubstitutionDepthExceeded(_)
             | ConfigError::SubstitutionCycle { .. }
             | ConfigError::MergeError(_)
