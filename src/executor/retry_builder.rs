@@ -16,11 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[cfg(feature = "tokio")]
-use qubit_clock::{
-    AsyncSleeper,
-    TokioAsyncSleeper,
-    TokioMonotonicClock,
-};
+use qubit_clock::AsyncSleeper;
 use qubit_clock::{
     BlockingSleeper,
     StdBlockingSleeper,
@@ -28,6 +24,9 @@ use qubit_clock::{
 };
 use qubit_error::BoxError;
 use qubit_function::{
+    ArcBiConsumer,
+    ArcBiFunction,
+    ArcConsumer,
     BiConsumer,
     BiFunction,
     BiPredicate,
@@ -72,21 +71,23 @@ pub struct RetryBuilder<E = BoxError> {
     max_attempts_error: Option<RetryConfigError>,
     /// Sleeper and monotonic clock used by sync and worker execution.
     blocking_sleeper: Arc<dyn BlockingSleeper>,
-    /// Sleeper and monotonic clock used by Tokio async execution.
+    /// Optional caller-supplied sleeper used by Tokio async execution.
     #[cfg(feature = "tokio")]
-    async_sleeper: Arc<dyn AsyncSleeper>,
+    async_sleeper: Option<Arc<dyn AsyncSleeper>>,
 }
 
 impl<E> RetryBuilder<E> {
     /// Creates a builder with default options and no listeners.
+    ///
+    /// With the `tokio` feature enabled, the default async clock and sleeper
+    /// are created when the built policy's [`Retry::run_async`] future is first
+    /// polled. Constructing the builder does not bind it to a Tokio runtime.
     ///
     /// # Returns
     /// A retry builder using [`RetryOptions::default`].
     #[inline]
     pub fn new() -> Self {
         let blocking_clock = Arc::new(StdMonotonicClock::new());
-        #[cfg(feature = "tokio")]
-        let async_clock = Arc::new(TokioMonotonicClock::new());
         Self {
             options: RetryOptions::default(),
             pending_attempt_timeout_policy: AttemptTimeoutPolicy::default(),
@@ -98,7 +99,7 @@ impl<E> RetryBuilder<E> {
                 blocking_clock,
             )),
             #[cfg(feature = "tokio")]
-            async_sleeper: Arc::new(TokioAsyncSleeper::from_clock(async_clock)),
+            async_sleeper: None,
         }
     }
 
@@ -126,7 +127,9 @@ impl<E> RetryBuilder<E> {
     /// Sets the sleeper and monotonic clock for Tokio async execution.
     ///
     /// The same object measures operation and total elapsed time, enforces
-    /// async attempt timeouts, and performs retry backoff waits.
+    /// async attempt timeouts, and performs retry backoff waits. The caller is
+    /// responsible for satisfying the sleeper clock's runtime-affinity
+    /// contract.
     ///
     /// # Parameters
     /// - `sleeper`: Shared async sleeper for [`Retry::run_async`].
@@ -136,7 +139,7 @@ impl<E> RetryBuilder<E> {
     #[cfg(feature = "tokio")]
     #[inline]
     pub fn async_sleeper(mut self, sleeper: Arc<dyn AsyncSleeper>) -> Self {
-        self.async_sleeper = sleeper;
+        self.async_sleeper = Some(sleeper);
         self
     }
 
@@ -433,7 +436,7 @@ impl<E> RetryBuilder<E> {
             + Sync
             + 'static,
     {
-        self.retry_after_hint = Some(hint.into_arc());
+        self.retry_after_hint = Some(ArcBiFunction::new(hint));
         self
     }
 
@@ -466,7 +469,9 @@ impl<E> RetryBuilder<E> {
     where
         C: Consumer<RetryContext> + Send + Sync + 'static,
     {
-        self.listeners.before_attempt.push(listener.into_arc());
+        self.listeners
+            .before_attempt
+            .push(ArcConsumer::new(listener));
         self
     }
 
@@ -481,7 +486,9 @@ impl<E> RetryBuilder<E> {
     where
         C: Consumer<RetryContext> + Send + Sync + 'static,
     {
-        self.listeners.attempt_success.push(listener.into_arc());
+        self.listeners
+            .attempt_success
+            .push(ArcConsumer::new(listener));
         self
     }
 
@@ -499,7 +506,7 @@ impl<E> RetryBuilder<E> {
             + Sync
             + 'static,
     {
-        self.listeners.failure.push(listener.into_arc());
+        self.listeners.failure.push(ArcBiFunction::new(listener));
         self
     }
 
@@ -520,7 +527,9 @@ impl<E> RetryBuilder<E> {
     where
         C: BiConsumer<AttemptFailure<E>, RetryContext> + Send + Sync + 'static,
     {
-        self.listeners.retry_scheduled.push(listener.into_arc());
+        self.listeners
+            .retry_scheduled
+            .push(ArcBiConsumer::new(listener));
         self
     }
 
@@ -566,7 +575,7 @@ impl<E> RetryBuilder<E> {
     where
         C: BiConsumer<RetryError<E>, RetryContext> + Send + Sync + 'static,
     {
-        self.listeners.error.push(listener.into_arc());
+        self.listeners.error.push(ArcBiConsumer::new(listener));
         self
     }
 

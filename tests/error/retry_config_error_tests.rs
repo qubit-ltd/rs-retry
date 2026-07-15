@@ -5,7 +5,10 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-use qubit_datatype::DataType;
+use qubit_datatype::{
+    DataConversionError,
+    DataType,
+};
 
 /// Verifies configuration error display output for empty and non-empty paths.
 ///
@@ -103,7 +106,11 @@ fn test_from_config_error_preserves_typed_key_variants() {
     let conversion = qubit_retry::RetryConfigError::from(
         qubit_config::ConfigError::ConversionError {
             key: "converted.key".to_string(),
-            message: "bad value".to_string(),
+            source_index: None,
+            source: DataConversionError::Unsupported {
+                from: DataType::String,
+                to: DataType::UInt32,
+            },
         },
     );
     assert_eq!(conversion.path(), "converted.key");

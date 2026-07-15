@@ -33,14 +33,14 @@ Qubit Retry 适用于需要对易失败任务进行明确、可观测重试控�
 
 ```toml
 [dependencies]
-qubit-retry = "0.15"
+qubit-retry = "0.16"
 ```
 
 按需开启可选集成：
 
 ```toml
 [dependencies]
-qubit-retry = { version = "0.15", features = ["tokio", "config"] }
+qubit-retry = { version = "0.16", features = ["tokio", "config"] }
 ```
 
 可选 feature：
@@ -114,6 +114,11 @@ let retry = Retry::<ServiceError>::builder()
 ## 异步重试和超时
 
 异步执行需要开启 `tokio` feature。单次 attempt 超时通过 builder 写入 `RetryOptions`。当 attempt 超时时，执行器会报告 `AttemptFailure::Timeout`，监听器可以通过 `RetryContext::attempt_timeout()` 读取配置的超时时间。operation panic 仍会在当前 async task 中继续 unwind；`run_async()` 不会把它转换成 `AttemptFailure::Panic`。
+
+未注入 async sleeper 时，默认 Tokio clock 与 sleeper 会在 `run_async()` future
+首次 poll 时创建。因此 retry policy 可以在 runtime 外构建，同时 paused Tokio time
+仍与实际执行它的 runtime 对齐。显式注入的 sleeper 继续遵循其自身 clock 的 runtime
+affinity 契约。
 
 ```rust
 use qubit_retry::Retry;

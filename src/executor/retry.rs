@@ -17,9 +17,13 @@ use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 
-#[cfg(feature = "tokio")]
-use qubit_clock::AsyncSleeper;
 use qubit_clock::BlockingSleeper;
+#[cfg(feature = "tokio")]
+use qubit_clock::{
+    AsyncSleeper,
+    TokioAsyncSleeper,
+    TokioMonotonicClock,
+};
 use qubit_error::BoxError;
 
 #[cfg(feature = "tokio")]
@@ -83,9 +87,9 @@ pub struct Retry<E = BoxError> {
     events: RetryEvents<E>,
     /// Sleeper and monotonic clock for sync and worker execution.
     blocking_sleeper: Arc<dyn BlockingSleeper>,
-    /// Sleeper and monotonic clock for Tokio async execution.
+    /// Optional caller-supplied sleeper for Tokio async execution.
     #[cfg(feature = "tokio")]
-    async_sleeper: Arc<dyn AsyncSleeper>,
+    async_sleeper: Option<Arc<dyn AsyncSleeper>>,
 }
 
 #[allow(clippy::result_large_err)]
@@ -178,7 +182,8 @@ impl<E> Retry<E> {
     ///
     /// This method is the Tokio execution path. The call flow is:
     ///
-    /// 1. Create an `AsyncRetryRunner` that borrows this retry policy.
+    /// 1. Select the injected async sleeper or create a default Tokio sleeper,
+    ///    then create an `AsyncRetryRunner` that borrows it and this policy.
     /// 2. Wrap `operation` in an async value-capturing adapter. The operation
     ///    is a factory: it must create a fresh future for every attempt because
     ///    a Rust future cannot be polled again after it completes.
@@ -187,12 +192,17 @@ impl<E> Retry<E> {
     ///    remaining `max_total_elapsed`; the shortest available budget wins.
     /// 4. Fire `before_attempt`, recompute budgets in case listeners consumed
     ///    total elapsed time, then await the attempt future. If an effective
-    ///    timeout exists, the future is raced against the injected async
+    ///    timeout exists, the future is raced against the selected async
     ///    sleeper and dropped when its timer fires.
     /// 5. Record elapsed operation time, fire success events, or route the
     ///    failure through elapsed-budget classification and
     ///    `RetryFailureHandler`. Retry delays use the same async sleeper;
     ///    terminal decisions return [`RetryError`].
+    ///
+    /// When no async sleeper was injected, the default Tokio clock and sleeper
+    /// are created when this future is first polled. This binds paused Tokio
+    /// time to the runtime that actually executes the retry flow rather than to
+    /// the context in which the retry policy was built.
     ///
     /// # Parameters
     /// - `operation`: Factory returning a fresh future for each attempt.
@@ -222,7 +232,12 @@ impl<E> Retry<E> {
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
-        AsyncRetryRunner::new(self).run(operation).await
+        if let Some(sleeper) = self.async_sleeper.as_deref() {
+            return AsyncRetryRunner::new(self, sleeper).run(operation).await;
+        }
+        let clock = Arc::new(TokioMonotonicClock::new());
+        let sleeper = TokioAsyncSleeper::from_clock(clock);
+        AsyncRetryRunner::new(self, &sleeper).run(operation).await
     }
 
     /// Runs a blocking operation with retry inside worker-thread attempts.
@@ -299,6 +314,8 @@ impl<E> Retry<E> {
     /// - `retry_after_hint`: Optional hint extractor.
     /// - `isolate_listener_panics`: Whether listener panics are isolated.
     /// - `listeners`: Lifecycle listeners.
+    /// - `blocking_sleeper`: Sleeper used by sync and worker execution.
+    /// - `async_sleeper`: Optional caller-supplied Tokio async sleeper.
     ///
     /// # Returns
     /// A retry policy.
@@ -308,7 +325,7 @@ impl<E> Retry<E> {
         isolate_listener_panics: bool,
         listeners: RetryListeners<E>,
         blocking_sleeper: Arc<dyn BlockingSleeper>,
-        #[cfg(feature = "tokio")] async_sleeper: Arc<dyn AsyncSleeper>,
+        #[cfg(feature = "tokio")] async_sleeper: Option<Arc<dyn AsyncSleeper>>,
     ) -> Self {
         Self {
             options,
@@ -327,13 +344,6 @@ impl<E> Retry<E> {
     #[inline]
     pub(in crate::executor) fn blocking_sleeper(&self) -> &dyn BlockingSleeper {
         self.blocking_sleeper.as_ref()
-    }
-
-    /// Returns the async sleeper used by the Tokio runner.
-    #[cfg(feature = "tokio")]
-    #[inline]
-    pub(in crate::executor) fn async_sleeper(&self) -> &dyn AsyncSleeper {
-        self.async_sleeper.as_ref()
     }
 
     /// Returns the internal event dispatcher.

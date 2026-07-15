@@ -34,14 +34,14 @@ Use this crate when you need typed retry errors, bounded elapsed-time budgets, r
 
 ```toml
 [dependencies]
-qubit-retry = "0.15"
+qubit-retry = "0.16"
 ```
 
 Enable optional integrations as needed:
 
 ```toml
 [dependencies]
-qubit-retry = { version = "0.15", features = ["tokio", "config"] }
+qubit-retry = { version = "0.16", features = ["tokio", "config"] }
 ```
 
 Optional features:
@@ -115,6 +115,12 @@ let retry = Retry::<ServiceError>::builder()
 ## Async Retry and Timeout
 
 Async execution requires the `tokio` feature. Per-attempt timeouts are stored in `RetryOptions` through the builder. When an attempt times out, the executor reports `AttemptFailure::Timeout`, and listeners can inspect the configured timeout through `RetryContext::attempt_timeout()`. Operation panics still unwind through the current async task; `run_async()` does not convert them to `AttemptFailure::Panic`.
+
+When no async sleeper is injected, the default Tokio clock and sleeper are
+created when the `run_async()` future is first polled. A retry policy can
+therefore be built outside the runtime while paused Tokio time remains aligned
+with the runtime executing it. An explicitly injected sleeper continues to
+follow the runtime-affinity contract of its own clock.
 
 ```rust
 use qubit_retry::Retry;

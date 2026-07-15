@@ -93,7 +93,7 @@ impl<'a, E> RetryRunner<'a, E> {
         let sleeper = self.retry.blocking_sleeper();
         let handler = RetryFailureHandler::new(options, events);
         let no_timeout = EffectiveAttemptTimeout::none();
-        let mut state = RetryFlowState::new(sleeper);
+        let mut state = RetryFlowState::new(sleeper.clock());
 
         loop {
             // Same-thread execution cannot interrupt a running closure. Budget
@@ -114,7 +114,7 @@ impl<'a, E> RetryRunner<'a, E> {
             // Only user closure time contributes to max_operation_elapsed.
             // Listener time and retry sleeps are included by total_elapsed
             // through RetryFlowState's monotonic start instant.
-            let attempt_start = sleeper.now();
+            let attempt_start = sleeper.clock().now();
             match operation.call() {
                 Ok(()) => {
                     let attempt_elapsed = state.elapsed_since(attempt_start);
@@ -160,7 +160,7 @@ impl<'a, E> RetryRunner<'a, E> {
     fn unsupported_attempt_timeout_error(&self) -> RetryError<E> {
         let options = self.retry.options();
         let state: RetryFlowState<'_, E> =
-            RetryFlowState::new(self.retry.blocking_sleeper());
+            RetryFlowState::new(self.retry.blocking_sleeper().clock());
         let attempt_timeout = EffectiveAttemptTimeout::new(
             options.attempt_timeout_duration(),
             Some(AttemptTimeoutSource::Configured),
