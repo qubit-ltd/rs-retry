@@ -316,6 +316,7 @@ dependencies = [
  "qubit-error",
  "qubit-function",
  "qubit-serde",
+ "qubit-value",
  "rand",
  "serde",
  "serde_json",

@@ -16,7 +16,7 @@ pub(in crate::executor) trait BlockingAttempt<E>:
 {
     /// Calls the wrapped operation once.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `token`: Cooperative cancellation token for this attempt.
     ///
     /// # Returns

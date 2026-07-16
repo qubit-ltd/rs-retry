@@ -23,15 +23,6 @@ use qubit_retry::{
 };
 
 /// Verifies default retry options expose all default fields.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when default option fields drift.
 #[test]
 fn test_retry_options_default_accessors() {
     let options = RetryOptions::default();
@@ -53,16 +44,6 @@ fn test_retry_options_default_accessors() {
 }
 
 /// Verifies direct retry option construction and validation errors.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when constructors accept invalid values or
-/// report the wrong invalid key.
 #[test]
 fn test_retry_options_constructors_validate_invalid_values() {
     let options = RetryOptions::new(
@@ -128,15 +109,6 @@ fn test_retry_options_constructors_validate_invalid_values() {
 }
 
 /// Verifies retry delay helpers on direct retry options.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when helper calculations drift.
 #[test]
 fn test_retry_options_delay_helpers() {
     let exponential = RetryOptions::new(

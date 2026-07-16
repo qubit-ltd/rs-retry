@@ -256,13 +256,15 @@ listener 也可以通过 `RetryContext::retry_after_hint()` 读取提取结果�
 
 listener 是生命周期 hook，而不是另一套策略系统：
 
-- `before_attempt`：在**每次真正执行用户操作之前**调用（含首次 attempt）。用于记录「即将开始第 N 次」；此时本次 attempt 尚未开始，**不**表示「刚失败、正在等重试」。
+- `before_attempt`：在**每次真正执行用户操作之前**调用（含首次 attempt），接收即将执行的一基序号。只有 callback 返回且 post-listener 预算复查通过后，本次 attempt 才算准入；因此 callback 可能看到 attempt `1`，但 operation 调用次数为 `0`，终态 `RetryError::attempts()` 也为 `0`。
 - `on_success`：每次 attempt 成功后调用。
-- `on_failure`：每次产生 `AttemptFailure` 后调用，并返回 `AttemptFailureDecision`；在**选定**到下一次 attempt 前的等待时间、以及 `on_retry` **之前**执行，可影响退避/中止等决策。
+- `on_failure`：每个已准入 attempt 产生 `AttemptFailure` 时恰好调用一次，并返回 `AttemptFailureDecision`；在**选定**到下一次 attempt 前的等待时间、以及 `on_retry` **之前**执行，通常可影响退避/中止等决策。
 - `on_retry`：在**已确认**会再试、且**到下一次** `before_attempt` **之前**的等待时间已从策略中**算出之后**调用（即晚于与本次失败相关的 `on_failure` 与决策合并）；在 executor **进入 sleep 等待**、以及下一次 `before_attempt` **之前**触发。**只读观察**（不能改变重试/退避）；`RetryContext::next_delay()` 为即将用于 sleep 的等待时长。若不会重试（资源用尽、被中止、已达末次等），**不会**调用 `on_retry`。
 - `on_error`：retry 流程返回终止 `RetryError` 时调用一次。
 
 注册多个 failure listener 时，所有 listener 会按注册顺序执行。最后一个非 `UseDefault` 的 `AttemptFailureDecision` 会成为最终生效决策；如果所有 listener 都返回 `UseDefault`，则交回已配置的 retry 策略处理。
+
+如果 in-flight timeout 来自已耗尽的 `max_operation_elapsed` 或 `max_total_elapsed`，它属于不可覆盖的硬终止。retry-after extractor 和所有 `on_failure` listener 仍会各执行一次，但 listener 决策不能覆盖已耗尽的预算，且不会发出 `on_retry`；随后 `on_error` 恰好观察一次硬预算终态。未由已准入 attempt 产生的终态诊断——例如 pre-attempt 预算终止、不受支持的执行配置，或 attempt 外的 sleeper/executor 失败——会直接进入 `on_error`，不会合成 `on_failure` 事件。
 
 `before_attempt` 与 `on_retry` 的直观差别：`before_attempt` 对准「**下一次** attempt **开始前**」；`on_retry` 对准「**某次** attempt **已经失败**、且**已经**为**后续**重试**选好间隔**、但**尚未**开始等待或下一轮 attempt 的那一刻」。
 
@@ -371,7 +373,7 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
     Ok(text) => println!("{text}"),
     Err(error) => {
         eprintln!("reason: {:?}", error.reason());
-        eprintln!("attempts: {}", error.context().attempt());
+        eprintln!("admitted attempts: {}", error.attempts());
         eprintln!("operation elapsed: {:?}", error.context().operation_elapsed());
         eprintln!("total elapsed: {:?}", error.context().total_elapsed());
 

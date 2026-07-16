@@ -6,12 +6,15 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::sync::Arc;
 use std::sync::atomic::{
     AtomicUsize,
     Ordering,
 };
-use std::thread;
+use std::sync::{
+    Arc,
+    Mutex,
+    mpsc,
+};
 use std::time::Duration;
 
 use qubit_retry::{
@@ -22,12 +25,6 @@ use qubit_retry::{
 
 /// Verifies worker-attempt execution is observable through the public worker
 /// API.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_worker_attempt_executor_paths_are_observable_through_run_in_worker() {
     let attempts = Arc::new(AtomicUsize::new(0));
@@ -56,12 +53,28 @@ fn test_worker_attempt_executor_paths_are_observable_through_run_in_worker() {
     assert_eq!(value, "done");
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
 
+    let (release_tx, release_rx) = mpsc::channel();
+    let release_rx = Arc::new(Mutex::new(release_rx));
+    let (finished_tx, finished_rx) = mpsc::channel();
     let error = retry
-        .run_in_worker(|_token: AttemptCancelToken| {
-            thread::sleep(Duration::from_millis(50));
+        .run_in_worker(move |_token: AttemptCancelToken| {
+            release_rx
+                .lock()
+                .expect("release receiver should be lockable")
+                .recv()
+                .expect("test should release the worker");
+            finished_tx
+                .send(())
+                .expect("worker completion should be observable");
             Ok::<_, &'static str>("late")
         })
         .expect_err("uncooperative timed-out worker should stop retrying");
+    release_tx
+        .send(())
+        .expect("timed-out worker should be releasable");
+    finished_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("released worker should finish");
     assert_eq!(error.reason(), RetryErrorReason::WorkerStillRunning);
     assert_eq!(error.unreaped_worker_count(), 1);
 }

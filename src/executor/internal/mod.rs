@@ -5,14 +5,12 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+//! Internal retry lifecycle helpers.
 
-use qubit_retry::AttemptFailureDecision;
+mod attempt_lifecycle;
 
-/// Verifies the default failure decision delegates to the retry policy.
-#[test]
-fn test_attempt_failure_decision_default_uses_policy_default() {
-    assert_eq!(
-        AttemptFailureDecision::default(),
-        AttemptFailureDecision::UseDefault
-    );
-}
+pub(in crate::executor) use attempt_lifecycle::{
+    complete_attempt,
+    prepare_same_thread_attempt,
+    prepare_timed_attempt,
+};

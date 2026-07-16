@@ -15,12 +15,6 @@ use qubit_retry::{
 };
 
 /// Verifies retry and terminal flow branches through public retry behavior.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_retry_flow_action_paths_cover_retry_and_finished_results() {
     let retry = Retry::<&'static str>::builder()

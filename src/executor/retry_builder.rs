@@ -20,7 +20,6 @@ use qubit_clock::AsyncSleeper;
 use qubit_clock::{
     BlockingSleeper,
     StdBlockingSleeper,
-    StdMonotonicClock,
 };
 use qubit_error::BoxError;
 use qubit_function::{
@@ -80,14 +79,13 @@ impl<E> RetryBuilder<E> {
     /// Creates a builder with default options and no listeners.
     ///
     /// With the `tokio` feature enabled, the default async clock and sleeper
-    /// are created when the built policy's [`Retry::run_async`] future is first
+    /// are created when the built policy's `Retry::run_async` future is first
     /// polled. Constructing the builder does not bind it to a Tokio runtime.
     ///
     /// # Returns
     /// A retry builder using [`RetryOptions::default`].
     #[inline]
     pub fn new() -> Self {
-        let blocking_clock = Arc::new(StdMonotonicClock::new());
         Self {
             options: RetryOptions::default(),
             pending_attempt_timeout_policy: AttemptTimeoutPolicy::default(),
@@ -95,9 +93,7 @@ impl<E> RetryBuilder<E> {
             listeners: RetryListeners::default(),
             isolate_listener_panics: false,
             max_attempts_error: None,
-            blocking_sleeper: Arc::new(StdBlockingSleeper::from_clock(
-                blocking_clock,
-            )),
+            blocking_sleeper: Arc::new(StdBlockingSleeper::new()),
             #[cfg(feature = "tokio")]
             async_sleeper: None,
         }
@@ -109,13 +105,13 @@ impl<E> RetryBuilder<E> {
     /// retry backoff waits. Supplying a manual sleeper therefore makes both
     /// elapsed budgets and retry delays deterministic.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `sleeper`: Shared blocking sleeper for [`Retry::run`] and
     ///   [`Retry::run_in_worker`].
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn blocking_sleeper(
         mut self,
         sleeper: Arc<dyn BlockingSleeper>,
@@ -131,13 +127,13 @@ impl<E> RetryBuilder<E> {
     /// responsible for satisfying the sleeper clock's runtime-affinity
     /// contract.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `sleeper`: Shared async sleeper for [`Retry::run_async`].
     ///
     /// # Returns
     /// The updated builder.
     #[cfg(feature = "tokio")]
-    #[inline]
+    #[inline(always)]
     pub fn async_sleeper(mut self, sleeper: Arc<dyn AsyncSleeper>) -> Self {
         self.async_sleeper = Some(sleeper);
         self
@@ -145,7 +141,7 @@ impl<E> RetryBuilder<E> {
 
     /// Replaces all retry options.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `options`: Retry option snapshot.
     ///
     /// # Returns
@@ -163,7 +159,7 @@ impl<E> RetryBuilder<E> {
 
     /// Sets the maximum total attempts, including the initial attempt.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `max_attempts`: Maximum attempts. Zero is recorded as a build error.
     ///
     /// # Returns
@@ -183,25 +179,25 @@ impl<E> RetryBuilder<E> {
 
     /// Sets the maximum retry count after the initial attempt.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `max_retries`: Number of retries after the first attempt.
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn max_retries(self, max_retries: u32) -> Self {
         self.max_attempts(max_retries.saturating_add(1))
     }
 
     /// Sets the maximum cumulative user operation time.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `max_operation_elapsed`: Optional cumulative user operation time
     ///   budget.
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn max_operation_elapsed(
         mut self,
         max_operation_elapsed: Option<Duration>,
@@ -212,14 +208,14 @@ impl<E> RetryBuilder<E> {
 
     /// Sets the maximum total monotonic retry-flow elapsed time.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `max_total_elapsed`: Optional total retry-flow time budget. Operation
     ///   execution, retry sleeps, retry-after sleeps, and retry control-path
     ///   listener time are included.
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn max_total_elapsed(
         mut self,
         max_total_elapsed: Option<Duration>,
@@ -230,12 +226,12 @@ impl<E> RetryBuilder<E> {
 
     /// Sets the retry delay strategy.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `delay`: Base delay strategy used between attempts.
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn delay(mut self, delay: RetryDelay) -> Self {
         self.options.delay = delay;
         self
@@ -245,59 +241,59 @@ impl<E> RetryBuilder<E> {
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn no_delay(self) -> Self {
         self.delay(RetryDelay::none())
     }
 
     /// Configures a fixed retry delay.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `delay`: Delay slept before each retry.
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn fixed_delay(self, delay: Duration) -> Self {
         self.delay(RetryDelay::fixed(delay))
     }
 
     /// Configures a random retry delay range.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `min`: Inclusive lower delay bound.
     /// - `max`: Inclusive upper delay bound.
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn random_delay(self, min: Duration, max: Duration) -> Self {
         self.delay(RetryDelay::random(min, max))
     }
 
     /// Configures exponential backoff with the default multiplier `2.0`.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `initial`: First retry delay.
     /// - `max`: Maximum retry delay.
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn exponential_backoff(self, initial: Duration, max: Duration) -> Self {
         self.exponential_backoff_with_multiplier(initial, max, 2.0)
     }
 
     /// Configures exponential backoff with a custom multiplier.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `initial`: First retry delay.
     /// - `max`: Maximum retry delay.
     /// - `multiplier`: Multiplier applied after each failed attempt.
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn exponential_backoff_with_multiplier(
         self,
         initial: Duration,
@@ -309,12 +305,12 @@ impl<E> RetryBuilder<E> {
 
     /// Sets the jitter strategy.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `jitter`: Jitter strategy applied to base delays.
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn jitter(mut self, jitter: RetryJitter) -> Self {
         self.options.jitter = jitter;
         self
@@ -322,19 +318,19 @@ impl<E> RetryBuilder<E> {
 
     /// Sets relative jitter by factor.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `factor`: Relative jitter factor in `[0.0, 1.0]`.
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn jitter_factor(self, factor: f64) -> Self {
         self.jitter(RetryJitter::factor(factor))
     }
 
     /// Sets a per-attempt timeout.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `attempt_timeout`: Timeout applied by `run_async` and `run_in_worker`.
     ///   `None` disables per-attempt timeout.
     ///
@@ -360,7 +356,7 @@ impl<E> RetryBuilder<E> {
 
     /// Sets the complete per-attempt timeout option.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `attempt_timeout`: Timeout option. `None` disables per-attempt
     ///   timeout.
     ///
@@ -387,7 +383,7 @@ impl<E> RetryBuilder<E> {
     /// timeout option. Otherwise the policy is kept and applied when
     /// [`RetryBuilder::attempt_timeout`] is called later.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `policy`: Timeout policy to use.
     ///
     /// # Returns
@@ -408,14 +404,14 @@ impl<E> RetryBuilder<E> {
     /// Sets how long worker-thread execution waits after cancelling a timed-out
     /// worker.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `grace`: Duration to wait after the attempt timeout fires and the
     ///   cooperative cancellation token is marked as cancelled. Use zero to
     ///   skip the grace wait.
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn worker_cancel_grace(mut self, grace: Duration) -> Self {
         self.options.worker_cancel_grace = grace;
         self
@@ -423,12 +419,13 @@ impl<E> RetryBuilder<E> {
 
     /// Extracts an optional retry-after hint from each failure.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `hint`: Function that inspects a failure and context before failure
     ///   listeners run.
     ///
     /// # Returns
     /// The updated builder.
+    #[inline(always)]
     pub fn retry_after_hint<H>(mut self, hint: H) -> Self
     where
         H: BiFunction<AttemptFailure<E>, RetryContext, Option<Duration>>
@@ -442,11 +439,12 @@ impl<E> RetryBuilder<E> {
 
     /// Extracts an optional retry-after hint from operation errors.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `hint`: Function returning a delay hint for application errors.
     ///
     /// # Returns
     /// The updated builder.
+    #[inline(always)]
     pub fn retry_after_from_error<H>(self, hint: H) -> Self
     where
         H: Fn(&E) -> Option<Duration> + Send + Sync + 'static,
@@ -460,11 +458,12 @@ impl<E> RetryBuilder<E> {
 
     /// Registers a listener invoked before every attempt.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `listener`: Listener receiving the retry context.
     ///
     /// # Returns
     /// The updated builder.
+    #[inline(always)]
     pub fn before_attempt<C>(mut self, listener: C) -> Self
     where
         C: Consumer<RetryContext> + Send + Sync + 'static,
@@ -477,11 +476,12 @@ impl<E> RetryBuilder<E> {
 
     /// Registers a listener invoked when an attempt succeeds.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `listener`: Listener receiving the success context.
     ///
     /// # Returns
     /// The updated builder.
+    #[inline(always)]
     pub fn on_success<C>(mut self, listener: C) -> Self
     where
         C: Consumer<RetryContext> + Send + Sync + 'static,
@@ -494,11 +494,24 @@ impl<E> RetryBuilder<E> {
 
     /// Registers a listener invoked after each attempt failure.
     ///
-    /// # Parameters
+    /// The listener observes every failure produced by an admitted attempt,
+    /// after retry-after extraction has populated
+    /// [`RetryContext::retry_after_hint`]. All registered failure listeners run
+    /// once in registration order. Normally their returned decisions control
+    /// abort, retry, and delay selection.
+    ///
+    /// A timeout caused by exhausted max-operation or max-total elapsed budget
+    /// is a hard stop: failure listeners still observe it exactly once, but
+    /// their decisions are ignored, and no retry-scheduled event is emitted.
+    /// Terminal diagnostics not produced by an admitted attempt bypass failure
+    /// listeners and are delivered to the terminal error listeners.
+    ///
+    /// # Arguments
     /// - `listener`: Listener returning a retry failure decision.
     ///
     /// # Returns
     /// The updated builder.
+    #[inline(always)]
     pub fn on_failure<F>(mut self, listener: F) -> Self
     where
         F: BiFunction<AttemptFailure<E>, RetryContext, AttemptFailureDecision>
@@ -517,12 +530,13 @@ impl<E> RetryBuilder<E> {
     /// before the next attempt. The listener is observational and cannot
     /// change the retry decision.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `listener`: Listener receiving the failure and scheduled-retry
     ///   context.
     ///
     /// # Returns
     /// The updated builder.
+    #[inline(always)]
     pub fn on_retry<C>(mut self, listener: C) -> Self
     where
         C: BiConsumer<AttemptFailure<E>, RetryContext> + Send + Sync + 'static,
@@ -535,7 +549,7 @@ impl<E> RetryBuilder<E> {
 
     /// Registers an error-only predicate where `true` means retry.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `predicate`: Predicate applied only to [`AttemptFailure::Error`].
     ///
     /// # Returns
@@ -566,11 +580,12 @@ impl<E> RetryBuilder<E> {
 
     /// Registers a listener invoked when the retry flow returns [`RetryError`].
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `listener`: Observational listener that cannot resume the retry flow.
     ///
     /// # Returns
     /// The updated builder.
+    #[inline(always)]
     pub fn on_error<C>(mut self, listener: C) -> Self
     where
         C: BiConsumer<RetryError<E>, RetryContext> + Send + Sync + 'static,
@@ -586,6 +601,7 @@ impl<E> RetryBuilder<E> {
     ///
     /// # Returns
     /// The updated builder.
+    #[inline(always)]
     pub fn abort_on_timeout(self) -> Self {
         self.attempt_timeout_policy(AttemptTimeoutPolicy::Abort)
     }
@@ -597,6 +613,7 @@ impl<E> RetryBuilder<E> {
     ///
     /// # Returns
     /// The updated builder.
+    #[inline(always)]
     pub fn retry_on_timeout(self) -> Self {
         self.attempt_timeout_policy(AttemptTimeoutPolicy::Retry)
     }
@@ -605,7 +622,7 @@ impl<E> RetryBuilder<E> {
     ///
     /// # Returns
     /// The updated builder.
-    #[inline]
+    #[inline(always)]
     pub fn isolate_listener_panics(mut self) -> Self {
         self.isolate_listener_panics = true;
         self

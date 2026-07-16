@@ -76,116 +76,9 @@ pub struct RetryOptions {
 }
 
 impl RetryOptions {
-    /// Returns maximum attempts, including the initial attempt.
-    ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
-    /// # Returns
-    /// Maximum attempts configured for one retry execution.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
-    pub fn max_attempts(&self) -> u32 {
-        self.max_attempts.get()
-    }
-
-    /// Returns maximum cumulative user operation time budget.
-    ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
-    /// # Returns
-    /// `Some(Duration)` for bounded executions, or `None` for unlimited.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
-    pub fn max_operation_elapsed(&self) -> Option<Duration> {
-        self.max_operation_elapsed
-    }
-
-    /// Returns maximum total retry-flow elapsed time budget.
-    ///
-    /// This budget is measured with monotonic time and includes operation
-    /// execution, retry sleeps, retry-after sleeps, and retry control-path
-    /// listener time.
-    ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
-    /// # Returns
-    /// `Some(Duration)` for bounded executions, or `None` for unlimited.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
-    pub fn max_total_elapsed(&self) -> Option<Duration> {
-        self.max_total_elapsed
-    }
-
-    /// Returns the base delay strategy.
-    ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
-    /// # Returns
-    /// Borrowed delay strategy used by the executor.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
-    pub fn delay(&self) -> &RetryDelay {
-        &self.delay
-    }
-
-    /// Returns the jitter strategy.
-    ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
-    /// # Returns
-    /// Jitter strategy used by the executor.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
-    pub fn jitter(&self) -> RetryJitter {
-        self.jitter
-    }
-
-    /// Returns the optional per-attempt timeout settings.
-    ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
-    /// # Returns
-    /// `Some(AttemptTimeoutOption)` when per-attempt timeout is configured.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
-    pub fn attempt_timeout(&self) -> Option<AttemptTimeoutOption> {
-        self.attempt_timeout
-    }
-
-    /// Returns the worker cancellation grace period.
-    ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
-    /// # Returns
-    /// Duration the worker-thread executor waits after requesting cooperative
-    /// cancellation for a timed-out worker attempt.
-    #[inline]
-    pub fn worker_cancel_grace(&self) -> Duration {
-        self.worker_cancel_grace
-    }
-
     /// Creates and validates a retry option snapshot.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `max_attempts`: Maximum number of attempts, including the first call.
     ///   Must be greater than zero.
     /// - `max_operation_elapsed`: Optional cumulative user operation time
@@ -222,7 +115,7 @@ impl RetryOptions {
 
     /// Creates and validates a retry option snapshot with attempt timeout.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `max_attempts`: Maximum number of attempts, including the first call.
     ///   Must be greater than zero.
     /// - `max_operation_elapsed`: Optional cumulative user operation time
@@ -275,10 +168,10 @@ impl RetryOptions {
 
     /// Reads a retry option snapshot from a `ConfigReader`.
     ///
-    /// Keys are relative to the reader. Use `config.prefix_view("retry")` when
+    /// Keys are relative to the reader. Use `config.section("retry")` when
     /// the retry settings are nested under a `retry.` prefix.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `config`: Configuration reader whose keys are relative to the retry
     ///   configuration prefix.
     ///
@@ -301,13 +194,78 @@ impl RetryOptions {
         values.to_options(&default)
     }
 
+    /// Returns maximum attempts, including the initial attempt.
+    ///
+    /// # Returns
+    /// Maximum attempts configured for one retry execution.
+    #[inline(always)]
+    pub fn max_attempts(&self) -> u32 {
+        self.max_attempts.get()
+    }
+
+    /// Returns maximum cumulative user operation time budget.
+    ///
+    /// # Returns
+    /// `Some(Duration)` for bounded executions, or `None` for unlimited.
+    #[inline(always)]
+    pub fn max_operation_elapsed(&self) -> Option<Duration> {
+        self.max_operation_elapsed
+    }
+
+    /// Returns maximum total retry-flow elapsed time budget.
+    ///
+    /// This budget is measured with monotonic time and includes operation
+    /// execution, retry sleeps, retry-after sleeps, and retry control-path
+    /// listener time.
+    ///
+    /// # Returns
+    /// `Some(Duration)` for bounded executions, or `None` for unlimited.
+    #[inline(always)]
+    pub fn max_total_elapsed(&self) -> Option<Duration> {
+        self.max_total_elapsed
+    }
+
+    /// Returns the base delay strategy.
+    ///
+    /// # Returns
+    /// Borrowed delay strategy used by the executor.
+    #[inline(always)]
+    pub fn delay(&self) -> &RetryDelay {
+        &self.delay
+    }
+
+    /// Returns the jitter strategy.
+    ///
+    /// # Returns
+    /// Jitter strategy used by the executor.
+    #[inline(always)]
+    pub fn jitter(&self) -> RetryJitter {
+        self.jitter
+    }
+
+    /// Returns the optional per-attempt timeout settings.
+    ///
+    /// # Returns
+    /// `Some(AttemptTimeoutOption)` when per-attempt timeout is configured.
+    #[inline(always)]
+    pub fn attempt_timeout(&self) -> Option<AttemptTimeoutOption> {
+        self.attempt_timeout
+    }
+
+    /// Returns the worker cancellation grace period.
+    ///
+    /// # Returns
+    /// Duration the worker-thread executor waits after requesting cooperative
+    /// cancellation for a timed-out worker attempt.
+    #[inline(always)]
+    pub fn worker_cancel_grace(&self) -> Duration {
+        self.worker_cancel_grace
+    }
+
     /// Validates all options.
     ///
     /// # Returns
     /// `Ok(())` when all contained strategy parameters are usable.
-    ///
-    /// # Parameters
-    /// This method has no parameters.
     ///
     /// # Errors
     /// Returns [`RetryConfigError`] with the relevant config key when the delay
@@ -323,22 +281,24 @@ impl RetryOptions {
 
     /// Calculates the base retry delay for one failed-attempt index.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `attempt`: Failed-attempt index, starting at 1.
     ///
     /// # Returns
     /// Base delay before jitter.
+    #[inline(always)]
     pub fn base_delay_for_attempt(&self, attempt: u32) -> Duration {
         self.delay.base_delay(attempt)
     }
 
     /// Calculates the retry delay for one failed-attempt index after jitter.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `attempt`: Failed-attempt index, starting at 1.
     ///
     /// # Returns
     /// Delay after jitter is applied.
+    #[inline(always)]
     pub fn delay_for_attempt(&self, attempt: u32) -> Duration {
         self.jitter.delay_for_attempt(&self.delay, attempt)
     }
@@ -350,7 +310,7 @@ impl RetryOptions {
     /// base delay and returns the exponential initial delay. For other
     /// strategies, this delegates to the strategy's per-attempt base behavior.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `current`: Current base delay before jitter.
     ///
     /// # Returns
@@ -377,11 +337,12 @@ impl RetryOptions {
 
     /// Applies configured jitter to `base_delay`.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `base_delay`: Base delay before jitter.
     ///
     /// # Returns
     /// Delay after jitter.
+    #[inline(always)]
     pub fn jittered_delay(&self, base_delay: Duration) -> Duration {
         self.jitter.apply(base_delay)
     }
@@ -389,11 +350,12 @@ impl RetryOptions {
     /// Calculates the next delay from the current base delay and applies
     /// jitter.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `current`: Current base delay before jitter.
     ///
     /// # Returns
     /// Next delay after jitter.
+    #[inline(always)]
     pub fn next_delay_from_current(&self, current: Duration) -> Duration {
         self.jittered_delay(self.next_base_delay_from_current(current))
     }
@@ -402,7 +364,7 @@ impl RetryOptions {
     ///
     /// # Returns
     /// `Some(Duration)` when per-attempt timeout is configured.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn attempt_timeout_duration(&self) -> Option<Duration> {
         self.attempt_timeout
             .map(|attempt_timeout| attempt_timeout.timeout())
@@ -410,7 +372,7 @@ impl RetryOptions {
 
     /// Returns the effective timeout used by the next attempt.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation_elapsed`: Cumulative user operation time consumed so far.
     /// - `total_elapsed`: Total monotonic retry-flow time consumed so far.
     ///
@@ -458,7 +420,7 @@ impl RetryOptions {
 
     /// Returns the first elapsed-budget reason that is exhausted.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation_elapsed`: Cumulative user operation time consumed by this
     ///   flow.
     /// - `total_elapsed`: Total monotonic retry-flow time consumed by this
@@ -492,7 +454,7 @@ impl RetryOptions {
     /// Returns whether a selected retry sleep would consume the remaining total
     /// budget.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `total_elapsed`: Total monotonic retry-flow time consumed before
     ///   sleep.
     /// - `delay`: Selected retry delay.
@@ -517,7 +479,7 @@ impl RetryOptions {
 
     /// Selects the delay used before the next retry.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `decision`: Failure decision.
     /// - `attempts`: Attempts executed so far.
     /// - `hint`: Optional retry-after hint.
@@ -548,7 +510,7 @@ impl RetryOptions {
     /// Returns remaining user operation time before the max-operation-elapsed
     /// budget is exhausted.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation_elapsed`: Cumulative user operation time consumed so far.
     ///
     /// # Returns
@@ -567,7 +529,7 @@ impl RetryOptions {
     /// Returns remaining total retry-flow time before the max-total-elapsed
     /// budget is exhausted.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `total_elapsed`: Total monotonic retry-flow time consumed so far.
     ///
     /// # Returns
@@ -590,16 +552,6 @@ impl Default for RetryOptions {
     /// # Returns
     /// Options with five attempts, no cumulative user operation time limit,
     /// exponential delay, no jitter, and the default worker cancellation grace.
-    ///
-    /// # Parameters
-    /// This function has no parameters.
-    ///
-    /// # Errors
-    /// This function does not return errors.
-    ///
-    /// # Panics
-    /// This function does not panic because the hard-coded attempt count is
-    /// non-zero.
     #[inline]
     fn default() -> Self {
         Self {

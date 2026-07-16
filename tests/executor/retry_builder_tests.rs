@@ -24,12 +24,6 @@ use qubit_retry::{
 use crate::support::TestError;
 
 /// Verifies builder defaults and convenience methods.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_builder_default_and_delay_helpers_work() {
     let retry = Retry::<TestError>::builder()
@@ -60,15 +54,6 @@ fn test_builder_default_and_delay_helpers_work() {
 }
 
 /// Verifies builder replacement options and delay convenience variants.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when builder helpers set wrong options.
 #[test]
 fn test_builder_options_random_exponential_and_default_work() {
     let options = RetryOptions::new(
@@ -148,12 +133,6 @@ fn test_builder_options_random_exponential_and_default_work() {
 }
 
 /// Verifies builder validation rejects invalid attempt counts.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_build_validates_max_attempts_and_options() {
     let error = Retry::<TestError>::builder()
@@ -173,12 +152,6 @@ fn test_build_validates_max_attempts_and_options() {
 }
 
 /// Verifies timeout convenience methods configure timeout policies.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_timeout_convenience_methods_work() {
     let retry_abort = Retry::<TestError>::builder()
@@ -221,12 +194,6 @@ fn test_timeout_convenience_methods_work() {
 }
 
 /// Verifies custom failure listeners can be registered with rs-function traits.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_on_failure_accepts_function_trait() {
     struct AbortFatal;
@@ -240,7 +207,7 @@ fn test_on_failure_accepts_function_trait() {
     {
         /// Applies the test decider.
         ///
-        /// # Parameters
+        /// # Arguments
         /// - `failure`: Failure being handled.
         /// - `_context`: Retry context.
         ///
@@ -271,15 +238,6 @@ fn test_on_failure_accepts_function_trait() {
 }
 
 /// Verifies `retry_if_error` can both retry and abort application errors.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when the predicate decision is ignored.
 #[test]
 fn test_retry_if_error_retries_true_and_aborts_false() {
     let retry = Retry::<TestError>::builder()
@@ -311,16 +269,6 @@ fn test_retry_if_error_retries_true_and_aborts_false() {
 }
 
 /// Verifies `retry_if_error` keeps timeout failures on the default policy path.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when timeout failures reach the error
-/// predicate.
 #[cfg(feature = "tokio")]
 #[tokio::test(start_paused = true)]
 async fn test_retry_if_error_uses_default_for_timeout() {
@@ -336,6 +284,7 @@ async fn test_retry_if_error_uses_default_for_timeout() {
 
     let error = retry
         .run_async(|| async {
+            // Tokio time is paused, so this is deterministic virtual time.
             tokio::time::sleep(Duration::from_millis(10)).await;
             Ok::<(), TestError>(())
         })
@@ -350,15 +299,6 @@ async fn test_retry_if_error_uses_default_for_timeout() {
 }
 
 /// Verifies timeout retry convenience handles actual timeout failures.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when timeout retry decisions are wrong.
 #[cfg(feature = "tokio")]
 #[tokio::test(start_paused = true)]
 async fn test_retry_on_timeout_retries_timeout_failures() {
@@ -372,6 +312,7 @@ async fn test_retry_on_timeout_retries_timeout_failures() {
 
     let error = retry
         .run_async(|| async {
+            // Tokio time is paused, so this is deterministic virtual time.
             tokio::time::sleep(Duration::from_millis(10)).await;
             Ok::<(), TestError>(())
         })
@@ -386,15 +327,6 @@ async fn test_retry_on_timeout_retries_timeout_failures() {
 }
 
 /// Verifies listener panic isolation substitutes default listener outcomes.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when isolated listener panics escape.
 #[test]
 fn test_isolate_listener_panics_suppresses_listener_panics() {
     let retry = Retry::<TestError>::builder()

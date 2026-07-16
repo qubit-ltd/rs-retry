@@ -55,7 +55,7 @@ pub(in crate::executor) struct WorkerAttemptExecutor;
 impl WorkerAttemptExecutor {
     /// Runs one blocking attempt on a worker thread.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation`: Shared blocking operation.
     /// - `attempt_timeout`: Effective timeout for this attempt, if any.
     /// - `worker_cancel_grace`: Maximum time to wait for a timed-out worker
@@ -122,7 +122,7 @@ impl WorkerAttemptExecutor {
 
 /// Converts a blocking worker receive result into an attempt outcome.
 ///
-/// # Parameters
+/// # Arguments
 /// - `result`: Result from waiting for the worker without an attempt timeout.
 /// - `worker`: Worker thread handle for joining the finished worker.
 ///
@@ -140,7 +140,7 @@ fn worker_recv_result_to_attempt_outcome<E>(
 
 /// Converts a timed worker receive result into a blocking attempt outcome.
 ///
-/// # Parameters
+/// # Arguments
 /// - `result`: Result from waiting for the worker up to the attempt timeout.
 /// - `receiver`: Receiver used for the post-timeout cancellation grace wait.
 /// - `worker`: Worker thread handle for joining finished workers.
@@ -181,7 +181,7 @@ where
 
 /// Waits briefly for a cancelled worker to exit.
 ///
-/// # Parameters
+/// # Arguments
 /// - `receiver`: Worker result receiver used only to observe whether the worker
 ///   exited.
 /// - `worker`: Worker thread handle, joined when exit is observed.
@@ -215,7 +215,7 @@ fn wait_for_cancelled_worker<E>(
 
 /// Joins a worker thread that has already been observed to finish.
 ///
-/// # Parameters
+/// # Arguments
 /// - `worker`: Worker thread handle.
 fn join_finished_worker(worker: JoinHandle<()>) {
     let _ = worker.join();

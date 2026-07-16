@@ -28,7 +28,7 @@ pub struct AttemptExecutorError {
 impl AttemptExecutorError {
     /// Creates an executor failure from a message.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `message`: Failure message to store.
     ///
     /// # Returns
@@ -42,7 +42,7 @@ impl AttemptExecutorError {
 
     /// Creates an executor failure from a message and diagnostic detail.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `message`: High-level failure message to store.
     /// - `detail`: Lower-level diagnostic detail appended to the message.
     ///
@@ -60,7 +60,7 @@ impl AttemptExecutorError {
     ///
     /// # Returns
     /// Failure message text.
-    #[inline]
+    #[inline(always)]
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -69,7 +69,7 @@ impl AttemptExecutorError {
 impl fmt::Display for AttemptExecutorError {
     /// Formats the executor failure message.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `f`: Formatter provided by the standard formatting machinery.
     ///
     /// # Returns

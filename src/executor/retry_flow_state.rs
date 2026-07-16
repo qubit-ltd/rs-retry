@@ -40,7 +40,7 @@ pub(in crate::executor) struct RetryFlowState<'a, E> {
     started_at: MonotonicInstant,
     /// Cumulative user operation time consumed by attempts.
     operation_elapsed: Duration,
-    /// Attempts executed or currently being prepared.
+    /// Attempts admitted into execution.
     attempts: u32,
     /// Last failure retained for elapsed-budget errors raised before another
     /// attempt.
@@ -66,19 +66,19 @@ impl<'a, E> RetryFlowState<'a, E> {
     ///
     /// # Returns
     /// Elapsed time since this retry flow started.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn total_elapsed(&self) -> Duration {
         self.elapsed_since(self.started_at)
     }
 
     /// Measures elapsed time since an instant from this state's clock.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `earlier`: Earlier instant returned by the same clock.
     ///
     /// # Returns
     /// Non-decreasing elapsed duration.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn elapsed_since(
         &self,
         earlier: MonotonicInstant,
@@ -93,16 +93,16 @@ impl<'a, E> RetryFlowState<'a, E> {
     ///
     /// # Returns
     /// Accumulated user operation duration.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn operation_elapsed(&self) -> Duration {
         self.operation_elapsed
     }
 
-    /// Returns attempts executed or currently being prepared.
+    /// Returns attempts admitted into execution.
     ///
     /// # Returns
-    /// One-based attempt count for attempt contexts, or zero before attempts.
-    #[inline]
+    /// The number of attempts admitted into execution, or zero before attempts.
+    #[inline(always)]
     pub(in crate::executor) fn attempts(&self) -> u32 {
         self.attempts
     }
@@ -111,7 +111,7 @@ impl<'a, E> RetryFlowState<'a, E> {
     ///
     /// # Returns
     /// The one-based attempt number after incrementing.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn start_next_attempt(&mut self) -> u32 {
         self.attempts += 1;
         self.attempts
@@ -119,9 +119,9 @@ impl<'a, E> RetryFlowState<'a, E> {
 
     /// Adds elapsed user operation time.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `attempt_elapsed`: Duration consumed by the latest attempt.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn add_operation_elapsed(
         &mut self,
         attempt_elapsed: Duration,
@@ -132,7 +132,7 @@ impl<'a, E> RetryFlowState<'a, E> {
 
     /// Builds a context snapshot from this retry-flow state.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `options`: Retry options that define configured limits.
     /// - `attempt_elapsed`: Elapsed time in the current attempt.
     /// - `attempt_timeout`: Effective timeout configured for the current
@@ -146,22 +146,43 @@ impl<'a, E> RetryFlowState<'a, E> {
         attempt_elapsed: Duration,
         attempt_timeout: EffectiveAttemptTimeout,
     ) -> RetryContext {
-        RetryContext::from_parts(RetryContextParts {
-            attempt: self.attempts,
-            max_attempts: options.max_attempts(),
-            max_operation_elapsed: options.max_operation_elapsed(),
-            max_total_elapsed: options.max_total_elapsed(),
-            operation_elapsed: self.operation_elapsed,
-            total_elapsed: self.total_elapsed(),
+        self.context_with_attempt(
+            self.attempts,
+            options,
             attempt_elapsed,
-            attempt_timeout: attempt_timeout.duration(),
-        })
-        .with_attempt_timeout_source(attempt_timeout.source())
+            attempt_timeout,
+        )
+    }
+
+    /// Builds a context for the attempt that will run after pre-attempt checks.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - Retry limits copied into the context.
+    /// * `attempt_elapsed` - Elapsed time for the upcoming attempt, normally
+    ///   zero.
+    /// * `attempt_timeout` - Effective timeout visible to listeners.
+    ///
+    /// # Returns
+    ///
+    /// A context whose attempt is one greater than the committed attempt count.
+    pub(in crate::executor) fn next_attempt_context(
+        &self,
+        options: &RetryOptions,
+        attempt_elapsed: Duration,
+        attempt_timeout: EffectiveAttemptTimeout,
+    ) -> RetryContext {
+        self.context_with_attempt(
+            self.attempts + 1,
+            options,
+            attempt_elapsed,
+            attempt_timeout,
+        )
     }
 
     /// Takes an elapsed-budget terminal error when a budget is exhausted.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `options`: Retry options that define elapsed budgets.
     /// - `attempt_timeout`: Effective timeout visible in the terminal context.
     ///
@@ -196,7 +217,7 @@ impl<'a, E> RetryFlowState<'a, E> {
 
     /// Builds a terminal error for an injected sleeper failure.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `options`: Retry options used to build the terminal context.
     /// - `error`: Clock or sleeper error returned by `rs-clock`.
     ///
@@ -225,9 +246,9 @@ impl<'a, E> RetryFlowState<'a, E> {
 
     /// Stores the last failure observed before a retry sleep.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `failure`: Failure from the latest attempt.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn record_last_failure(
         &mut self,
         failure: AttemptFailure<E>,
@@ -239,10 +260,43 @@ impl<'a, E> RetryFlowState<'a, E> {
     ///
     /// # Returns
     /// The retained last failure, if one exists.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn take_last_failure(
         &mut self,
     ) -> Option<AttemptFailure<E>> {
         self.last_failure.take()
+    }
+
+    /// Builds a context snapshot for an explicit attempt number.
+    ///
+    /// # Arguments
+    ///
+    /// * `attempt` - Attempt number stored in the context.
+    /// * `options` - Retry limits copied into the context.
+    /// * `attempt_elapsed` - Elapsed time for the represented attempt.
+    /// * `attempt_timeout` - Effective timeout for the represented attempt.
+    ///
+    /// # Returns
+    ///
+    /// A retry context using the supplied attempt and this state's elapsed
+    /// values.
+    fn context_with_attempt(
+        &self,
+        attempt: u32,
+        options: &RetryOptions,
+        attempt_elapsed: Duration,
+        attempt_timeout: EffectiveAttemptTimeout,
+    ) -> RetryContext {
+        RetryContext::from_parts(RetryContextParts {
+            attempt,
+            max_attempts: options.max_attempts(),
+            max_operation_elapsed: options.max_operation_elapsed(),
+            max_total_elapsed: options.max_total_elapsed(),
+            operation_elapsed: self.operation_elapsed,
+            total_elapsed: self.total_elapsed(),
+            attempt_elapsed,
+            attempt_timeout: attempt_timeout.duration(),
+        })
+        .with_attempt_timeout_source(attempt_timeout.source())
     }
 }

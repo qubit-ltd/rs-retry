@@ -105,70 +105,57 @@ pub enum RetryDelay {
 impl RetryDelay {
     /// Creates a no-delay strategy.
     ///
-    /// # Parameters
-    /// This function has no parameters.
-    ///
     /// # Returns
     /// A [`RetryDelay::None`] strategy.
-    ///
-    /// # Errors
-    /// This function does not return errors.
-    #[inline]
+    #[inline(always)]
     pub fn none() -> Self {
         Self::None
     }
 
     /// Creates a fixed-delay strategy.
     ///
-    /// # Parameters
+    /// This constructor stores `delay` without validating it; call
+    /// [`RetryDelay::validate`] to reject a zero duration.
+    ///
+    /// # Arguments
     /// - `delay`: Duration slept after each failed attempt.
     ///
     /// # Returns
     /// A [`RetryDelay::Fixed`] strategy.
-    ///
-    /// # Errors
-    /// This constructor does not validate `delay`; use [`RetryDelay::validate`]
-    /// to reject a zero duration.
-    #[inline]
+    #[inline(always)]
     pub fn fixed(delay: Duration) -> Self {
         Self::Fixed(delay)
     }
 
     /// Creates a random-delay strategy.
     ///
-    /// # Parameters
+    /// This constructor stores the range without validating it; call
+    /// [`RetryDelay::validate`] before using caller-supplied bounds.
+    ///
+    /// # Arguments
     /// - `min`: Inclusive lower bound for generated delays.
     /// - `max`: Inclusive upper bound for generated delays.
     ///
     /// # Returns
     /// A [`RetryDelay::Random`] strategy.
-    ///
-    /// # Errors
-    /// This constructor does not validate the range; use
-    /// [`RetryDelay::validate`] to reject a zero minimum, a minimum greater
-    /// than the maximum, or bounds that cannot be sampled as `u64`
-    /// nanoseconds.
-    #[inline]
+    #[inline(always)]
     pub fn random(min: Duration, max: Duration) -> Self {
         Self::Random { min, max }
     }
 
     /// Creates an exponential-backoff strategy.
     ///
-    /// # Parameters
+    /// This constructor stores the parameters without validating them; call
+    /// [`RetryDelay::validate`] before using caller-supplied values.
+    ///
+    /// # Arguments
     /// - `initial`: RetryDelay used for the first retry.
     /// - `max`: Upper bound applied to every calculated delay.
     /// - `multiplier`: Factor applied for each subsequent failed attempt.
     ///
     /// # Returns
     /// A [`RetryDelay::Exponential`] strategy.
-    ///
-    /// # Errors
-    /// This constructor does not validate the parameters; use
-    /// [`RetryDelay::validate`] to reject a zero initial delay, `max <
-    /// initial`, or a multiplier that is non-finite or less than or equal
-    /// to `1.0`.
-    #[inline]
+    #[inline(always)]
     pub fn exponential(
         initial: Duration,
         max: Duration,
@@ -186,18 +173,15 @@ impl RetryDelay {
     /// Attempt `1` means the first failed attempt, so exponential backoff
     /// returns `initial` for attempts `0` and `1`. Random delays use a fresh
     /// random value for every call.
+    /// Caller-supplied strategies should be checked with
+    /// [`RetryDelay::validate`] before execution.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `attempt`: Failed attempt number. Values `0` and `1` are treated as
     ///   the first exponential-backoff step.
     ///
     /// # Returns
     /// The base delay before jitter is applied.
-    ///
-    /// # Errors
-    /// This function does not return errors. Invalid strategies should be
-    /// rejected with [`RetryDelay::validate`] before they are used in an
-    /// executor.
     pub fn base_delay(&self, attempt: u32) -> Duration {
         match self {
             Self::None => Duration::ZERO,
@@ -219,79 +203,6 @@ impl RetryDelay {
         }
     }
 
-    /// Returns whether a duration can be represented as whole nanoseconds in
-    /// `u64`.
-    ///
-    /// # Parameters
-    /// - `duration`: Duration to inspect.
-    ///
-    /// # Returns
-    /// `true` when the duration can be sampled by the random delay generator
-    /// without lossy saturation.
-    ///
-    /// # Errors
-    /// This function does not return errors.
-    fn duration_fits_nanos_u64(duration: Duration) -> bool {
-        duration.as_nanos() <= u64::MAX as u128
-    }
-
-    /// Converts a [`Duration`] to whole nanoseconds as `u64`.
-    ///
-    /// Values larger than [`u64::MAX`] nanoseconds are saturated to
-    /// [`u64::MAX`] so the result fits in `u64` for uniform random delay
-    /// sampling in [`RetryDelay::base_delay`].
-    ///
-    /// # Parameters
-    /// - `duration`: Duration to convert.
-    ///
-    /// # Returns
-    /// The duration in nanoseconds, capped at [`u64::MAX`].
-    ///
-    /// # Errors
-    /// This function does not return errors.
-    fn duration_to_nanos_u64(duration: Duration) -> u64 {
-        duration.as_nanos().min(u64::MAX as u128) as u64
-    }
-
-    /// Computes the exponential backoff delay for a given failed-attempt index.
-    ///
-    /// The effective exponent is `attempt.saturating_sub(1)`, so attempts `0`
-    /// and `1` both yield the initial delay (matching
-    /// [`RetryDelay::base_delay`]). Each further attempt multiplies the
-    /// base nanosecond count by `multiplier` that many times, then the
-    /// result is capped at `max`.
-    ///
-    /// # Parameters
-    /// - `initial`: RetryDelay for the first retry step (attempts `0` and `1`).
-    /// - `max`: Upper bound on the returned delay.
-    /// - `multiplier`: Factor applied per additional attempt beyond the first.
-    /// - `attempt`: Failed attempt number (see [`RetryDelay::base_delay`]).
-    ///
-    /// # Returns
-    /// The computed delay, or `max` when the scaled value is not finite or is
-    /// not less than `max` in nanoseconds.
-    ///
-    /// # Errors
-    /// This function does not return errors. Callers must ensure parameters
-    /// satisfy [`RetryDelay::validate`] when constructing a public executor.
-    fn exponential_delay(
-        initial: Duration,
-        max: Duration,
-        multiplier: f64,
-        attempt: u32,
-    ) -> Duration {
-        let power = attempt.saturating_sub(1);
-        let factor = multiplier.powi(power.min(i32::MAX as u32) as i32);
-        if !factor.is_finite() {
-            return max;
-        }
-        let secs = initial.as_secs_f64() * factor;
-        if !secs.is_finite() || secs >= max.as_secs_f64() {
-            return max;
-        }
-        Duration::try_from_secs_f64(secs).map_or(max, |delay| delay.min(max))
-    }
-
     /// Validates strategy parameters.
     ///
     /// Returns a human-readable message describing the invalid field when the
@@ -300,9 +211,6 @@ impl RetryDelay {
     /// # Returns
     /// `Ok(())` when all parameters are usable; otherwise an error message that
     /// can be wrapped by [`crate::RetryConfigError`].
-    ///
-    /// # Parameters
-    /// This method has no parameters.
     ///
     /// # Errors
     /// Returns an error when a fixed delay is zero, a random range is invalid,
@@ -315,7 +223,7 @@ impl RetryDelay {
 
     /// Validates strategy parameters with structured argument error context.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `path`: Configuration path associated with the delay strategy.
     ///
     /// # Returns
@@ -394,6 +302,68 @@ impl RetryDelay {
             }
         }
     }
+    /// Returns whether a duration can be represented as whole nanoseconds in
+    /// `u64`.
+    ///
+    /// # Arguments
+    /// - `duration`: Duration to inspect.
+    ///
+    /// # Returns
+    /// `true` when the duration can be sampled by the random delay generator
+    /// without lossy saturation.
+    fn duration_fits_nanos_u64(duration: Duration) -> bool {
+        duration.as_nanos() <= u64::MAX as u128
+    }
+
+    /// Converts a [`Duration`] to whole nanoseconds as `u64`.
+    ///
+    /// Values larger than [`u64::MAX`] nanoseconds are saturated to
+    /// [`u64::MAX`] so the result fits in `u64` for uniform random delay
+    /// sampling in [`RetryDelay::base_delay`].
+    ///
+    /// # Arguments
+    /// - `duration`: Duration to convert.
+    ///
+    /// # Returns
+    /// The duration in nanoseconds, capped at [`u64::MAX`].
+    fn duration_to_nanos_u64(duration: Duration) -> u64 {
+        duration.as_nanos().min(u64::MAX as u128) as u64
+    }
+
+    /// Computes the exponential backoff delay for a given failed-attempt index.
+    ///
+    /// The effective exponent is `attempt.saturating_sub(1)`, so attempts `0`
+    /// and `1` both yield the initial delay (matching
+    /// [`RetryDelay::base_delay`]). Each further attempt multiplies the
+    /// base nanosecond count by `multiplier` that many times, then the
+    /// result is capped at `max`.
+    ///
+    /// # Arguments
+    /// - `initial`: RetryDelay for the first retry step (attempts `0` and `1`).
+    /// - `max`: Upper bound on the returned delay.
+    /// - `multiplier`: Factor applied per additional attempt beyond the first.
+    /// - `attempt`: Failed attempt number (see [`RetryDelay::base_delay`]).
+    ///
+    /// # Returns
+    /// The computed delay, or `max` when the scaled value is not finite or is
+    /// not less than `max` in nanoseconds.
+    fn exponential_delay(
+        initial: Duration,
+        max: Duration,
+        multiplier: f64,
+        attempt: u32,
+    ) -> Duration {
+        let power = attempt.saturating_sub(1);
+        let factor = multiplier.powi(power.min(i32::MAX as u32) as i32);
+        if !factor.is_finite() {
+            return max;
+        }
+        let secs = initial.as_secs_f64() * factor;
+        if !secs.is_finite() || secs >= max.as_secs_f64() {
+            return max;
+        }
+        Duration::try_from_secs_f64(secs).map_or(max, |delay| delay.min(max))
+    }
 }
 
 impl Default for RetryDelay {
@@ -402,12 +372,6 @@ impl Default for RetryDelay {
     /// # Returns
     /// The value obtained by parsing [`crate::constants::DEFAULT_RETRY_DELAY`]
     /// using [`RetryDelay::from_str`].
-    ///
-    /// # Parameters
-    /// This function has no parameters.
-    ///
-    /// # Errors
-    /// This function does not return errors.
     ///
     /// # Panics
     /// Panics if [`crate::constants::DEFAULT_RETRY_DELAY`] is not a valid

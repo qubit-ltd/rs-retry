@@ -9,9 +9,18 @@
 use std::error::Error;
 use std::fmt;
 use std::fmt::Write;
+use std::sync::{
+    Arc,
+    Mutex,
+    mpsc,
+};
 use std::thread;
 use std::time::Duration;
 
+use qubit_clock::{
+    ManualBlockingSleeper,
+    ManualMonotonicClock,
+};
 use qubit_retry::{
     AttemptFailure,
     AttemptFailureDecision,
@@ -32,9 +41,6 @@ struct FailingWriter {
 impl FailingWriter {
     /// Creates a writer that fails immediately.
     ///
-    /// # Parameters
-    /// This function has no parameters.
-    ///
     /// # Returns
     /// A writer whose first write returns [`fmt::Error`].
     fn fail_immediately() -> Self {
@@ -46,7 +52,7 @@ impl FailingWriter {
 
     /// Creates a writer that fails when a fragment appears.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `fragment`: Text fragment that triggers [`fmt::Error`].
     ///
     /// # Returns
@@ -62,7 +68,7 @@ impl FailingWriter {
 impl fmt::Write for FailingWriter {
     /// Writes a string or returns a configured formatting error.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `s`: Text fragment emitted by the formatter.
     ///
     /// # Returns
@@ -83,12 +89,6 @@ impl fmt::Write for FailingWriter {
 }
 
 /// Verifies retry errors preserve terminal reason, context, and last failure.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_retry_error_preserves_reason_context_and_last_failure() {
     let retry = Retry::<TestError>::builder()
@@ -113,12 +113,6 @@ fn test_retry_error_preserves_reason_context_and_last_failure() {
 }
 
 /// Verifies `into_parts()` returns complete terminal retry data.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_retry_error_into_parts_returns_reason_failure_and_context() {
     let retry = Retry::<TestError>::builder()
@@ -142,15 +136,6 @@ fn test_retry_error_into_parts_returns_reason_failure_and_context() {
 }
 
 /// Verifies retry error display output covers all terminal reasons.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when display output changes unexpectedly.
 #[test]
 fn test_retry_error_display_formats_terminal_reasons() {
     let aborted = Retry::<TestError>::builder()
@@ -182,14 +167,22 @@ fn test_retry_error_display_formats_terminal_reasons() {
         "retry attempts exceeded after 1 attempt(s), max 1; last failure: failed"
     );
 
+    let elapsed_clock = Arc::new(ManualMonotonicClock::new());
+    let elapsed_sleeper = Arc::new(ManualBlockingSleeper::from_clock(
+        Arc::clone(&elapsed_clock),
+    ));
+    let operation_clock = Arc::clone(&elapsed_clock);
     let elapsed_with_failure = Retry::<TestError>::builder()
         .max_attempts(2)
-        .max_operation_elapsed(Some(Duration::from_millis(5)))
+        .max_operation_elapsed(Some(Duration::from_secs(5)))
         .no_delay()
+        .blocking_sleeper(elapsed_sleeper)
         .build()
         .expect("retry should build")
-        .run(|| -> Result<(), TestError> {
-            std::thread::sleep(Duration::from_millis(10));
+        .run(move || -> Result<(), TestError> {
+            operation_clock
+                .advance(Duration::from_secs(10))
+                .expect("manual time should advance");
             Err(TestError("slow"))
         })
         .expect_err("operation execution should exceed elapsed budget");
@@ -241,6 +234,9 @@ fn test_retry_error_display_formats_terminal_reasons() {
         Some(qubit_retry::AttemptTimeoutSource::Configured)
     );
 
+    let (release_tx, release_rx) = mpsc::channel();
+    let release_rx = Arc::new(Mutex::new(release_rx));
+    let (finished_tx, finished_rx) = mpsc::channel();
     let worker_still_running = Retry::<TestError>::builder()
         .max_attempts(2)
         .no_delay()
@@ -250,11 +246,24 @@ fn test_retry_error_display_formats_terminal_reasons() {
         .worker_cancel_grace(Duration::from_millis(5))
         .build()
         .expect("retry should build")
-        .run_in_worker(|_token| {
-            thread::sleep(Duration::from_millis(120));
+        .run_in_worker(move |_token| {
+            release_rx
+                .lock()
+                .expect("release receiver should be lockable")
+                .recv()
+                .expect("test should release the worker");
+            finished_tx
+                .send(())
+                .expect("worker completion should be observable");
             Ok::<_, TestError>("late")
         })
         .expect_err("uncooperative worker should stop retries");
+    release_tx
+        .send(())
+        .expect("timed-out worker should be releasable");
+    finished_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("released worker should finish");
     assert_eq!(
         worker_still_running.to_string(),
         "retry worker still running after timeout cancellation grace, unreaped 1; last failure: attempt timed out"
@@ -263,15 +272,6 @@ fn test_retry_error_display_formats_terminal_reasons() {
 
 /// Verifies retry errors expose terminal failures as their source when
 /// possible.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when source propagation is incorrect.
 #[test]
 fn test_retry_error_source_returns_terminal_failure() {
     let with_source = Retry::<TestError>::builder()
@@ -325,7 +325,7 @@ fn test_retry_error_source_returns_terminal_failure() {
         .expect("retry should build")
         .run_in_worker(|token| {
             while !token.is_cancelled() {
-                thread::sleep(Duration::from_millis(1));
+                thread::yield_now();
             }
             Err::<(), TestError>(TestError("cancelled too late"))
         })
@@ -340,16 +340,6 @@ fn test_retry_error_source_returns_terminal_failure() {
 }
 
 /// Verifies retry error display propagates formatter failures.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when display formatting swallows write
-/// errors.
 #[test]
 fn test_retry_error_display_propagates_formatter_errors() {
     let aborted = Retry::<TestError>::builder()

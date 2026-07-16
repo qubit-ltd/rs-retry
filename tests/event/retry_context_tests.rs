@@ -11,15 +11,6 @@ use std::time::Duration;
 use qubit_retry::RetryContext;
 
 /// Verifies retry context carries expected retry metadata fields.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when retry context fields mismatch.
 #[test]
 fn test_retry_context_fields() {
     let context = RetryContext::new(2, 5);

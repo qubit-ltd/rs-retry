@@ -37,47 +37,59 @@ pub struct AttemptTimeoutOption {
 impl AttemptTimeoutOption {
     /// Creates a per-attempt timeout option.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `timeout`: Maximum duration for one attempt.
     /// - `policy`: Action selected when the timeout is reached.
     ///
     /// # Returns
     /// A timeout option. Call [`AttemptTimeoutOption::validate`] before using
     /// values that come from configuration or user input.
-    #[inline]
+    #[inline(always)]
     pub fn new(timeout: Duration, policy: AttemptTimeoutPolicy) -> Self {
         Self { timeout, policy }
     }
 
     /// Creates a timeout option that retries timed-out attempts.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `timeout`: Maximum duration for one attempt.
     ///
     /// # Returns
     /// A timeout option using [`AttemptTimeoutPolicy::Retry`].
-    #[inline]
+    #[inline(always)]
     pub fn retry(timeout: Duration) -> Self {
         Self::new(timeout, AttemptTimeoutPolicy::Retry)
     }
 
     /// Creates a timeout option that aborts on the first timed-out attempt.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `timeout`: Maximum duration for one attempt.
     ///
     /// # Returns
     /// A timeout option using [`AttemptTimeoutPolicy::Abort`].
-    #[inline]
+    #[inline(always)]
     pub fn abort(timeout: Duration) -> Self {
         Self::new(timeout, AttemptTimeoutPolicy::Abort)
+    }
+
+    /// Returns a copy with another timeout policy.
+    ///
+    /// # Arguments
+    /// - `policy`: Replacement timeout policy.
+    ///
+    /// # Returns
+    /// A timeout option with the same duration and the new policy.
+    #[inline(always)]
+    pub fn with_policy(self, policy: AttemptTimeoutPolicy) -> Self {
+        Self { policy, ..self }
     }
 
     /// Returns the timeout duration.
     ///
     /// # Returns
     /// Maximum duration allowed for one attempt.
-    #[inline]
+    #[inline(always)]
     pub fn timeout(&self) -> Duration {
         self.timeout
     }
@@ -86,21 +98,9 @@ impl AttemptTimeoutOption {
     ///
     /// # Returns
     /// Policy selected when one attempt times out.
-    #[inline]
+    #[inline(always)]
     pub fn policy(&self) -> AttemptTimeoutPolicy {
         self.policy
-    }
-
-    /// Returns a copy with another timeout policy.
-    ///
-    /// # Parameters
-    /// - `policy`: Replacement timeout policy.
-    ///
-    /// # Returns
-    /// A timeout option with the same duration and the new policy.
-    #[inline]
-    pub fn with_policy(self, policy: AttemptTimeoutPolicy) -> Self {
-        Self { policy, ..self }
     }
 
     /// Validates this timeout option.
@@ -119,7 +119,7 @@ impl AttemptTimeoutOption {
 
     /// Validates this timeout with structured argument error context.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `path`: Configuration path associated with the timeout.
     ///
     /// # Returns

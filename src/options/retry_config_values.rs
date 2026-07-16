@@ -101,7 +101,7 @@ pub struct RetryConfigValues {
 impl RetryConfigValues {
     /// Creates a snapshot by reading all retry-related configuration values.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `config`: Configuration reader whose keys are relative to the retry
     ///   configuration prefix.
     ///
@@ -152,7 +152,7 @@ impl RetryConfigValues {
 
     /// Converts the raw configuration snapshot into validated retry options.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `default`: Default options used when a config key is absent.
     ///
     /// # Returns
@@ -187,7 +187,7 @@ impl RetryConfigValues {
 
     /// Resolves the cumulative user operation elapsed-time budget.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `default`: Fallback when `max_operation_elapsed_millis` is absent from
     ///   config.
     ///
@@ -196,9 +196,6 @@ impl RetryConfigValues {
     /// - `Some(Duration)` when `max_operation_elapsed_millis` is present
     ///   (including zero).
     /// - `default.max_operation_elapsed` when the key is absent.
-    ///
-    /// # Errors
-    /// This method does not return errors.
     fn get_max_operation_elapsed(
         &self,
         default: &RetryOptions,
@@ -214,7 +211,7 @@ impl RetryConfigValues {
 
     /// Resolves the total retry-flow elapsed-time budget.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `default`: Fallback when `max_total_elapsed_millis` is absent from
     ///   config.
     ///
@@ -223,9 +220,6 @@ impl RetryConfigValues {
     /// - `Some(Duration)` when `max_total_elapsed_millis` is present (including
     ///   zero).
     /// - `default.max_total_elapsed` when the key is absent.
-    ///
-    /// # Errors
-    /// This method does not return errors.
     fn get_max_total_elapsed(
         &self,
         default: &RetryOptions,
@@ -241,7 +235,7 @@ impl RetryConfigValues {
 
     /// Resolves per-attempt timeout settings.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `default`: Default options used when timeout keys are absent.
     ///
     /// # Returns
@@ -294,15 +288,11 @@ impl RetryConfigValues {
 
     /// Resolves the worker cancellation grace period.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `default`: Default options used when the config key is absent.
     ///
     /// # Returns
     /// Configured grace duration, or the default option's grace duration.
-    ///
-    /// # Errors
-    /// This method does not return errors because the raw config value was read
-    /// as an unsigned integer before this method is called.
     fn get_worker_cancel_grace(&self, default: &RetryOptions) -> Duration {
         self.worker_cancel_grace_millis
             .map(Duration::from_millis)
@@ -311,7 +301,7 @@ impl RetryConfigValues {
 
     /// Resolves the base delay strategy.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `default`: Default options used when neither explicit nor implicit
     ///   delay configuration is present.
     ///
@@ -336,7 +326,9 @@ impl RetryConfigValues {
             })
             .map(|(key, value)| (key, value.trim().to_ascii_lowercase()));
         match strategy {
-            None => Ok(self.get_implicit_delay().unwrap_or_else(|| default.delay().clone())),
+            None => Ok(self
+                .get_implicit_delay()
+                .unwrap_or_else(|| default.delay().clone())),
             Some((_, strategy)) if strategy == "none" => Ok(RetryDelay::None),
             Some((_, strategy)) if strategy == "fixed" => {
                 let Some(fixed_delay_millis) = self.fixed_delay_millis else {
@@ -361,7 +353,9 @@ impl RetryConfigValues {
                     )
                 })?),
             )),
-            Some((_, strategy)) if strategy == "exponential" || strategy == "exponential_backoff" => {
+            Some((_, strategy))
+                if strategy == "exponential" || strategy == "exponential_backoff" =>
+            {
                 let initial_delay = self.exponential_initial_delay_millis.ok_or_else(|| {
                     RetryConfigError::invalid_value(
                         KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
@@ -396,16 +390,9 @@ impl RetryConfigValues {
     /// Resolves a delay strategy from parameter keys when no strategy name is
     /// configured.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// `Some(RetryDelay)` when any delay parameter key is present; otherwise
     /// `None`.
-    ///
-    /// # Errors
-    /// This method does not return errors because all config reads have already
-    /// succeeded.
     fn get_implicit_delay(&self) -> Option<RetryDelay> {
         if let Some(millis) = self.fixed_delay_millis {
             return Some(RetryDelay::fixed(Duration::from_millis(millis)));
@@ -447,16 +434,12 @@ impl RetryConfigValues {
 
     /// Resolves the jitter strategy.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `default`: Default options used when no jitter key is present or the
     ///   jitter factor key is absent.
     ///
     /// # Returns
     /// The configured or default [`RetryJitter`] strategy.
-    ///
-    /// # Errors
-    /// This method does not return errors. RetryJitter value validation is
-    /// handled by [`RetryOptions::new`].
     fn get_jitter(&self, default: &RetryOptions) -> RetryJitter {
         match self.jitter_factor {
             Some(factor) if factor == DEFAULT_RETRY_JITTER_FACTOR => {
@@ -470,7 +453,7 @@ impl RetryConfigValues {
 
 /// Parses a configured attempt-timeout policy.
 ///
-/// # Parameters
+/// # Arguments
 /// - `value`: Raw policy text read from configuration.
 ///
 /// # Returns

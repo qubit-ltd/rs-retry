@@ -16,15 +16,6 @@ use crate::support::TestError;
 
 /// Verifies attempt failure accessors return application errors only for error
 /// variants.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when error accessors return wrong values.
 #[test]
 fn test_attempt_failure_error_accessors_distinguish_timeout() {
     let failure = AttemptFailure::Error(TestError("boom"));
@@ -67,15 +58,6 @@ fn test_attempt_failure_error_accessors_distinguish_timeout() {
 }
 
 /// Verifies attempt failure display output for error and timeout variants.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when display output changes unexpectedly.
 #[test]
 fn test_attempt_failure_display_formats_variants() {
     assert_eq!(

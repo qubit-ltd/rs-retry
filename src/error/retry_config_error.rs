@@ -38,15 +38,12 @@ pub struct RetryConfigError {
 impl RetryConfigError {
     /// Creates a validation error for a retry option.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `path`: Configuration key or option name associated with the failure.
     /// - `message`: Human-readable validation message.
     ///
     /// # Returns
     /// A new [`RetryConfigError`].
-    ///
-    /// # Errors
-    /// This function does not return errors.
     #[inline]
     pub fn invalid_value(
         path: impl Into<String>,
@@ -61,15 +58,12 @@ impl RetryConfigError {
 
     /// Wraps an error returned by `qubit-config`.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `path`: Configuration key that was being read.
     /// - `source`: Error returned by `qubit-config`.
     ///
     /// # Returns
     /// A new [`RetryConfigError`] that preserves the key and source message.
-    ///
-    /// # Errors
-    /// This function does not return errors.
     #[inline]
     #[cfg(feature = "config")]
     pub fn from_config(path: impl Into<String>, source: ConfigError) -> Self {
@@ -82,31 +76,19 @@ impl RetryConfigError {
 
     /// Returns the configuration path associated with this error.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// The configuration path, or an empty string when the error was not tied
     /// to a specific key.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
+    #[inline(always)]
     pub fn path(&self) -> &str {
         &self.path
     }
 
     /// Returns the error message.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// The human-readable validation or configuration read message.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
+    #[inline(always)]
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -115,7 +97,7 @@ impl RetryConfigError {
 impl fmt::Display for RetryConfigError {
     /// Formats the configuration error for diagnostics.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `f`: Formatter provided by the standard formatting machinery.
     ///
     /// # Returns
@@ -151,7 +133,7 @@ impl Error for RetryConfigError {
 /// Custom validators carry the legacy public message directly. Other error
 /// kinds fall back to their complete structured diagnostic.
 ///
-/// # Parameters
+/// # Arguments
 /// - `error`: Structured argument validation error.
 ///
 /// # Returns
@@ -169,14 +151,11 @@ impl From<ArgumentError> for RetryConfigError {
     /// Custom validation messages are preserved without the argument display
     /// prefix so existing retry diagnostics remain stable.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `source`: Structured argument validation error.
     ///
     /// # Returns
     /// A retry configuration error preserving the validation path and message.
-    ///
-    /// # Errors
-    /// This function does not return errors.
     fn from(source: ArgumentError) -> Self {
         let path = source.path().as_str().to_owned();
         if matches!(source.kind(), ArgumentErrorKind::Custom { .. }) {
@@ -197,16 +176,13 @@ impl From<ArgumentError> for RetryConfigError {
 impl From<ConfigError> for RetryConfigError {
     /// Converts a `qubit-config` error into a retry configuration error.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `source`: Error returned by `qubit-config`.
     ///
     /// # Returns
     /// A [`RetryConfigError`] with the path carried by `source` when
     /// available, or an empty path for config errors that do not include key
     /// context.
-    ///
-    /// # Errors
-    /// This function does not return errors.
     #[inline]
     fn from(source: ConfigError) -> Self {
         let path = match &source {
@@ -214,7 +190,8 @@ impl From<ConfigError> for RetryConfigError {
             | ConfigError::PropertyHasNoValue(path)
             | ConfigError::PropertyIsFinal(path) => path.clone(),
             ConfigError::TypeMismatch { key, .. }
-            | ConfigError::ConversionError { key, .. } => key.clone(),
+            | ConfigError::ConversionError { key, .. }
+            | ConfigError::ValueError { key, .. } => key.clone(),
             ConfigError::DeserializeError { path, .. } => path.clone(),
             ConfigError::KeyConflict { path, .. } => path.clone(),
             ConfigError::SubstitutionError(_)

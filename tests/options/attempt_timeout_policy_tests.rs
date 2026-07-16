@@ -9,12 +9,6 @@
 use qubit_retry::AttemptTimeoutPolicy;
 
 /// Verifies timeout policy defaults and display formatting.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_timeout_policy_default_and_display() {
     assert_eq!(AttemptTimeoutPolicy::default(), AttemptTimeoutPolicy::Retry);
@@ -23,12 +17,6 @@ fn test_attempt_timeout_policy_default_and_display() {
 }
 
 /// Verifies timeout policy parsing accepts supported policy text.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_timeout_policy_from_str_accepts_supported_values() {
     assert_eq!(
@@ -46,12 +34,6 @@ fn test_attempt_timeout_policy_from_str_accepts_supported_values() {
 }
 
 /// Verifies timeout policy parsing rejects unsupported policy text.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_timeout_policy_from_str_rejects_unsupported_values() {
     let error = "stop"

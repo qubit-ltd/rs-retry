@@ -10,6 +10,7 @@
 mod attempt_timeout_option;
 mod attempt_timeout_policy;
 mod effective_attempt_timeout;
+mod internal;
 mod parse_retry_jitter_error;
 #[cfg(feature = "config")]
 mod retry_config_values;

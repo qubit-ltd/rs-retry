@@ -30,7 +30,7 @@ pub struct AttemptPanic {
 impl AttemptPanic {
     /// Creates captured panic information from a message.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `message`: Panic message to store.
     ///
     /// # Returns
@@ -42,12 +42,12 @@ impl AttemptPanic {
 
     /// Creates captured panic information from an owned message.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `message`: Panic message to store.
     ///
     /// # Returns
     /// A captured panic value.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn from_string(message: String) -> Self {
         Self {
             message: message.into_boxed_str(),
@@ -56,7 +56,7 @@ impl AttemptPanic {
 
     /// Extracts captured panic information from a panic payload.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `payload`: Payload returned by `catch_unwind`.
     ///
     /// # Returns
@@ -77,7 +77,7 @@ impl AttemptPanic {
     ///
     /// # Returns
     /// Panic message text.
-    #[inline]
+    #[inline(always)]
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -86,7 +86,7 @@ impl AttemptPanic {
 impl fmt::Display for AttemptPanic {
     /// Formats the captured panic message.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `f`: Formatter provided by the standard formatting machinery.
     ///
     /// # Returns
