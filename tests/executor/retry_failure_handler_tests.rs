@@ -14,7 +14,6 @@ use std::sync::{
 use std::time::Duration;
 
 use qubit_clock::{
-    ManualBlockingSleeper,
     ManualMonotonicClock,
     MonotonicClock,
 };
@@ -356,9 +355,8 @@ fn test_retry_after_hint_panic_is_isolated_when_enabled() {
 /// Verifies retry listener time does not count against elapsed budget.
 #[test]
 fn test_on_retry_listener_time_does_not_count_against_elapsed_budget() {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper =
-        Arc::new(ManualBlockingSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_blocking_sleeper();
     let retry_events = Arc::new(Mutex::new(Vec::new()));
     let scheduled_events = Arc::clone(&retry_events);
     let listener_clock = Arc::clone(&clock);
@@ -427,9 +425,8 @@ fn test_on_retry_listener_time_does_not_count_against_elapsed_budget() {
 /// Verifies retry control-path listener time is included in total elapsed.
 #[test]
 fn test_max_total_elapsed_includes_failure_listener_time() {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper =
-        Arc::new(ManualBlockingSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_blocking_sleeper();
     let listener_clock = Arc::clone(&clock);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
@@ -468,9 +465,8 @@ fn test_max_total_elapsed_includes_failure_listener_time() {
 /// Verifies on-retry listener time can exhaust total elapsed before retrying.
 #[test]
 fn test_max_total_elapsed_includes_on_retry_listener_time() {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper =
-        Arc::new(ManualBlockingSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_blocking_sleeper();
     let listener_clock = Arc::clone(&clock);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
@@ -507,9 +503,8 @@ fn test_max_total_elapsed_includes_on_retry_listener_time() {
 /// selected sleep.
 #[test]
 fn test_max_total_elapsed_rechecks_retry_sleep_after_on_retry_listener() {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper =
-        Arc::new(ManualBlockingSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_blocking_sleeper();
     let listener_clock = Arc::clone(&clock);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
