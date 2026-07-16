@@ -94,18 +94,22 @@ async fn test_run_async_attempt_timeout_uses_injected_async_sleeper() {
     let retry_future =
         retry.run_async(std::future::pending::<Result<(), TestError>>);
     tokio::pin!(retry_future);
-    let waiter_registration = clock.wait_for_waiters_async(1);
+    let deadline_registration = clock.wait_for_next_deadline_async();
     tokio::select! {
         result = &mut retry_future => {
             panic!("attempt completed before manual time advanced: {result:?}");
         }
-        () = waiter_registration => {}
+        _ = deadline_registration => {}
     }
     assert_eq!(clock.pending_waiters(), 1);
 
-    clock
-        .advance(Duration::from_secs(30))
-        .expect("manual time should advance");
+    assert_eq!(
+        Duration::from_secs(30),
+        clock
+            .advance_to_next_deadline()
+            .expect("attempt timeout should have an active deadline")
+            .elapsed_since_origin(),
+    );
     let error = retry_future
         .await
         .expect_err("manual timeout should abort the attempt");
@@ -124,7 +128,7 @@ async fn test_run_async_backoff_uses_injected_async_sleeper() {
     let clock = ManualMonotonicClock::new_shared();
     let sleeper = clock.new_async_sleeper();
     let retry = Retry::<TestError>::builder()
-        .max_attempts(2)
+        .max_attempts(3)
         .fixed_delay(Duration::from_secs(5))
         .async_sleeper(sleeper.clone())
         .build()
@@ -134,7 +138,7 @@ async fn test_run_async_backoff_uses_injected_async_sleeper() {
     let retry_future = retry.run_async(move || {
         let attempt = operation_attempts.fetch_add(1, Ordering::SeqCst) + 1;
         async move {
-            if attempt == 1 {
+            if attempt < 3 {
                 Err(TestError("temporary"))
             } else {
                 Ok(attempt)
@@ -142,24 +146,29 @@ async fn test_run_async_backoff_uses_injected_async_sleeper() {
         }
     });
     tokio::pin!(retry_future);
-    let waiter_registration = clock.wait_for_waiters_async(1);
-
-    tokio::select! {
-        result = &mut retry_future => {
-            panic!("retry completed before manual backoff advanced: {result:?}");
+    for stage in 1_u64..=2 {
+        let deadline_registration = clock.wait_for_next_deadline_async();
+        tokio::select! {
+            result = &mut retry_future => {
+                panic!(
+                    "retry completed before backoff stage {stage}: {result:?}"
+                );
+            }
+            _ = deadline_registration => {}
         }
-        () = waiter_registration => {}
-    }
-    assert_eq!(clock.pending_waiters(), 1);
+        assert_eq!(clock.pending_waiters(), 1);
 
-    clock
-        .advance(Duration::from_secs(5))
-        .expect("manual time should advance");
-    assert_eq!(
-        retry_future.await.expect("second attempt should succeed"),
-        2
-    );
-    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        let reached = clock
+            .advance_to_next_deadline()
+            .expect("the retry should have an active backoff deadline");
+        assert_eq!(
+            Duration::from_secs(stage * 5),
+            reached.elapsed_since_origin(),
+        );
+    }
+
+    assert_eq!(retry_future.await.expect("third attempt should succeed"), 3);
+    assert_eq!(attempts.load(Ordering::SeqCst), 3);
 }
 
 /// Verifies an injected async sleeper overflow becomes a typed error.
@@ -222,16 +231,20 @@ async fn test_run_async_attempt_timeout_can_abort() {
     let retry_future =
         retry.run_async(std::future::pending::<Result<(), TestError>>);
     tokio::pin!(retry_future);
-    let waiter_registration = clock.wait_for_waiters_async(1);
+    let deadline_registration = clock.wait_for_next_deadline_async();
     tokio::select! {
         result = &mut retry_future => {
             panic!("attempt completed before manual time advanced: {result:?}");
         }
-        () = waiter_registration => {}
+        _ = deadline_registration => {}
     }
-    clock
-        .advance(Duration::from_secs(1))
-        .expect("manual time should advance");
+    assert_eq!(
+        Duration::from_secs(1),
+        clock
+            .advance_to_next_deadline()
+            .expect("attempt timeout should have an active deadline")
+            .elapsed_since_origin(),
+    );
     let error = retry_future.await.expect_err("timeout should abort");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
@@ -268,12 +281,12 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
     let retry_future =
         retry.run_async(std::future::pending::<Result<&str, TestError>>);
     tokio::pin!(retry_future);
-    let waiter_registration = clock.wait_for_waiters_async(1);
+    let deadline_registration = clock.wait_for_next_deadline_async();
     tokio::select! {
         result = &mut retry_future => {
             panic!("attempt completed before manual time advanced: {result:?}");
         }
-        () = waiter_registration => {}
+        _ = deadline_registration => {}
     }
     assert_eq!(
         clock
@@ -283,9 +296,13 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
             .expect("deadline should share the manual clock domain"),
         Duration::from_secs(20)
     );
-    clock
-        .advance(Duration::from_secs(20))
-        .expect("manual time should advance");
+    assert_eq!(
+        Duration::from_secs(20),
+        clock
+            .advance_to_next_deadline()
+            .expect("elapsed timeout should have an active deadline")
+            .elapsed_since_origin(),
+    );
     let error = retry_future
         .await
         .expect_err("max elapsed should stop the in-flight async attempt");
@@ -329,16 +346,20 @@ async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configur
     let retry_future =
         retry.run_async(std::future::pending::<Result<&str, TestError>>);
     tokio::pin!(retry_future);
-    let waiter_registration = clock.wait_for_waiters_async(1);
+    let deadline_registration = clock.wait_for_next_deadline_async();
     tokio::select! {
         result = &mut retry_future => {
             panic!("attempt completed before manual time advanced: {result:?}");
         }
-        () = waiter_registration => {}
+        _ = deadline_registration => {}
     }
-    clock
-        .advance(Duration::from_secs(20))
-        .expect("manual time should advance");
+    assert_eq!(
+        Duration::from_secs(20),
+        clock
+            .advance_to_next_deadline()
+            .expect("total timeout should have an active deadline")
+            .elapsed_since_origin(),
+    );
     let error = retry_future.await.expect_err(
         "max total elapsed should stop the in-flight async attempt",
     );
@@ -426,16 +447,20 @@ async fn test_run_async_elapsed_timeout_notifies_failure_without_retrying() {
     let retry_future =
         retry.run_async(std::future::pending::<Result<(), TestError>>);
     tokio::pin!(retry_future);
-    let waiter_registration = clock.wait_for_waiters_async(1);
+    let deadline_registration = clock.wait_for_next_deadline_async();
     tokio::select! {
         result = &mut retry_future => {
             panic!("attempt completed before manual time advanced: {result:?}");
         }
-        () = waiter_registration => {}
+        _ = deadline_registration => {}
     }
-    clock
-        .advance(Duration::from_secs(30))
-        .expect("manual time should advance");
+    assert_eq!(
+        Duration::from_secs(30),
+        clock
+            .advance_to_next_deadline()
+            .expect("elapsed timeout should have an active deadline")
+            .elapsed_since_origin(),
+    );
 
     let error = retry_future
         .await
@@ -500,16 +525,20 @@ async fn test_run_async_total_timeout_notifies_failure_without_retrying() {
     let retry_future =
         retry.run_async(std::future::pending::<Result<(), TestError>>);
     tokio::pin!(retry_future);
-    let waiter_registration = clock.wait_for_waiters_async(1);
+    let deadline_registration = clock.wait_for_next_deadline_async();
     tokio::select! {
         result = &mut retry_future => {
             panic!("attempt completed before manual time advanced: {result:?}");
         }
-        () = waiter_registration => {}
+        _ = deadline_registration => {}
     }
-    clock
-        .advance(Duration::from_secs(30))
-        .expect("manual time should advance");
+    assert_eq!(
+        Duration::from_secs(30),
+        clock
+            .advance_to_next_deadline()
+            .expect("total timeout should have an active deadline")
+            .elapsed_since_origin(),
+    );
 
     let error = retry_future
         .await
@@ -543,16 +572,20 @@ async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_
     let retry_future =
         retry.run_async(std::future::pending::<Result<&str, TestError>>);
     tokio::pin!(retry_future);
-    let waiter_registration = clock.wait_for_waiters_async(1);
+    let deadline_registration = clock.wait_for_next_deadline_async();
     tokio::select! {
         result = &mut retry_future => {
             panic!("attempt completed before manual time advanced: {result:?}");
         }
-        () = waiter_registration => {}
+        _ = deadline_registration => {}
     }
-    clock
-        .advance(Duration::from_secs(20))
-        .expect("manual time should advance");
+    assert_eq!(
+        Duration::from_secs(20),
+        clock
+            .advance_to_next_deadline()
+            .expect("configured timeout should have an active deadline")
+            .elapsed_since_origin(),
+    );
     let error = retry_future
         .await
         .expect_err("configured attempt timeout should abort first");
@@ -592,16 +625,20 @@ async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_e
     let retry_future =
         retry.run_async(std::future::pending::<Result<&str, TestError>>);
     tokio::pin!(retry_future);
-    let waiter_registration = clock.wait_for_waiters_async(1);
+    let deadline_registration = clock.wait_for_next_deadline_async();
     tokio::select! {
         result = &mut retry_future => {
             panic!("attempt completed before manual time advanced: {result:?}");
         }
-        () = waiter_registration => {}
+        _ = deadline_registration => {}
     }
-    clock
-        .advance(Duration::from_secs(20))
-        .expect("manual time should advance");
+    assert_eq!(
+        Duration::from_secs(20),
+        clock
+            .advance_to_next_deadline()
+            .expect("configured timeout should have an active deadline")
+            .elapsed_since_origin(),
+    );
     let error = retry_future
         .await
         .expect_err("configured timeout policy should abort on equal timeout");
