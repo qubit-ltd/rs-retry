@@ -27,19 +27,19 @@ pub(in crate::executor) struct RetryFailurePolicy<'a> {
 impl<'a> RetryFailurePolicy<'a> {
     /// Creates a failure policy.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `options`: Retry options that define timeout policy.
     ///
     /// # Returns
     /// A failure policy using the provided options.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn new(options: &'a RetryOptions) -> Self {
         Self { options }
     }
 
     /// Resolves the effective failure decision after applying default policy.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `decision`: Decision returned by failure listeners.
     /// - `failure`: Attempt failure being handled.
     ///

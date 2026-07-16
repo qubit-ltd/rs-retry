@@ -18,12 +18,6 @@ use qubit_retry::{
 };
 
 /// Verifies retry-flow state attempt counting through public retry contexts.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_retry_flow_state_counts_attempts_and_preserves_last_failure() {
     let before_attempts = Arc::new(Mutex::new(Vec::new()));

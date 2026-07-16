@@ -9,12 +9,6 @@
 use qubit_retry::AttemptCancelToken;
 
 /// Verifies a new cancellation token starts in the non-cancelled state.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_cancel_token_new_starts_not_cancelled() {
     let token = AttemptCancelToken::new();
@@ -23,12 +17,6 @@ fn test_attempt_cancel_token_new_starts_not_cancelled() {
 }
 
 /// Verifies cancellation is visible through cloned tokens.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_cancel_token_cancel_is_shared_by_clones() {
     let token = AttemptCancelToken::new();

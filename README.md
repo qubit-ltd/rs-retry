@@ -261,13 +261,15 @@ Listeners can also read the extracted value from `RetryContext::retry_after_hint
 
 Listeners are lifecycle hooks, not a separate policy system:
 
-- `before_attempt`: invoked **before** the operation runs for **each** attempt (including the first). Use it to mark the start of attempt *N*; the current attempt has not started yet, so this is not the “we failed and are about to back off” moment.
+- `before_attempt`: invoked **before** the operation runs for **each** attempt (including the first). It receives the upcoming one-based ordinal. The attempt is admitted only after this callback and the post-listener budget check, so the callback can observe attempt `1` even when the operation is never called and the terminal `RetryError::attempts()` is `0`.
 - `on_success`: invoked after each successful attempt.
-- `on_failure`: invoked after each `AttemptFailure` and returns `AttemptFailureDecision`. Runs **before** the inter-attempt delay is chosen and **before** `on_retry`, and can influence abort vs retry and how the policy picks the next delay.
+- `on_failure`: invoked exactly once for every `AttemptFailure` produced by an admitted attempt and returns `AttemptFailureDecision`. It runs **before** the inter-attempt delay is chosen and **before** `on_retry`, and normally influences abort vs retry and how the policy picks the next delay.
 - `on_retry`: invoked only after a failed attempt will be retried **and** the **delay before the next** `before_attempt` has been **selected** (after `on_failure` / merged decisions); **before** the executor sleeps and **before** the next `before_attempt`. It is **observational** (cannot change backoff/retry); `RetryContext::next_delay()` is the sleep duration. If the flow will not retry (attempts or time budget exhausted, listener abort, etc.), `on_retry` is **not** called.
 - `on_error`: invoked once when the retry flow returns a terminal `RetryError`.
 
 When multiple failure listeners are registered, all listeners run in registration order. The last non-`UseDefault` `AttemptFailureDecision` becomes the effective decision; if every listener returns `UseDefault`, the configured retry policy handles the failure.
+
+An in-flight timeout caused by exhausted `max_operation_elapsed` or `max_total_elapsed` is a hard stop. Retry-after extraction and every `on_failure` listener still run exactly once, but their decisions cannot override the exhausted budget, and `on_retry` is not emitted; `on_error` observes the terminal hard-budget error once. Terminal diagnostics that are not failures produced by an admitted attempt—such as a pre-attempt budget stop, an unsupported execution configuration, or a sleeper/executor failure outside an attempt—go directly to `on_error` without a synthetic `on_failure` event.
 
 `before_attempt` vs `on_retry` in one line: `before_attempt` fires at the **start of an attempt**; `on_retry` fires **right after a failure** once a **retry is scheduled and the next delay is known**, but **before** the sleep and the next attempt.
 
@@ -376,7 +378,7 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
     Ok(text) => println!("{text}"),
     Err(error) => {
         eprintln!("reason: {:?}", error.reason());
-        eprintln!("attempts: {}", error.context().attempt());
+        eprintln!("admitted attempts: {}", error.attempts());
         eprintln!("operation elapsed: {:?}", error.context().operation_elapsed());
         eprintln!("total elapsed: {:?}", error.context().total_elapsed());
 

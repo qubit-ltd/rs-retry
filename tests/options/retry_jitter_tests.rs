@@ -16,16 +16,6 @@ use qubit_retry::{
 };
 
 /// Verifies factor jitter application and validation bounds.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when jitter output or validation behavior
-/// is incorrect.
 #[test]
 fn test_apply_symmetric_factor_and_validate_bounds() {
     let base = Duration::from_millis(100);
@@ -51,16 +41,6 @@ fn test_apply_symmetric_factor_and_validate_bounds() {
 }
 
 /// Verifies invalid jitter factors do not panic when applied directly.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when invalid factors do not gracefully
-/// degrade to the base delay.
 #[test]
 fn test_apply_invalid_factor_falls_back_to_base_delay() {
     let base = Duration::from_millis(100);
@@ -71,16 +51,6 @@ fn test_apply_invalid_factor_falls_back_to_base_delay() {
 
 /// Verifies jitter preserves very large durations that exceed `u64`
 /// nanoseconds.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when jitter application truncates huge
-/// durations.
 #[test]
 fn test_apply_large_duration_factor_returns_base() {
     let base = Duration::from_secs(20_000_000_000);
@@ -88,16 +58,6 @@ fn test_apply_large_duration_factor_returns_base() {
 }
 
 /// Verifies `delay_for_attempt` combines base-delay strategy and jitter.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when composed delay calculation is
-/// incorrect.
 #[test]
 fn test_delay_for_attempt_combines_delay_strategy_and_jitter() {
     let fixed = RetryDelay::fixed(Duration::from_millis(50));
@@ -131,16 +91,6 @@ fn test_delay_for_attempt_combines_delay_strategy_and_jitter() {
 ///
 /// Accepts `none` (ASCII case-insensitive) or `factor:<f64>` with ASCII
 /// trimming around the number; the factor must lie in `[0.0, 1.0]`.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when parsing behavior changes
-/// unexpectedly.
 #[test]
 fn test_retry_jitter_from_str() {
     assert_eq!(RetryJitter::from_str("none").unwrap(), RetryJitter::None);
@@ -176,16 +126,6 @@ fn test_retry_jitter_from_str() {
 
 /// Covers additional [`RetryJitter::from_str`] branches: boundaries, numeric
 /// forms, ASCII `none` spellings, and case-sensitive `factor:` prefix.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when parsing behavior changes
-/// unexpectedly.
 #[test]
 fn test_retry_jitter_from_str_boundaries_and_numeric_forms() {
     assert_eq!(
@@ -242,16 +182,6 @@ fn test_retry_jitter_from_str_boundaries_and_numeric_forms() {
 
 /// Verifies [`RetryJitter::from_str`] rejects empty / non-matching tokens and
 /// values outside `[0.0, 1.0]` including non-finite floats parsed from text.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when parsing behavior changes
-/// unexpectedly.
 #[test]
 fn test_retry_jitter_from_str_invalid_format_out_of_range_and_bad_number() {
     for s in ["", "   ", "other", "nonee", "fact", "factor"] {
@@ -288,16 +218,6 @@ fn test_retry_jitter_from_str_invalid_format_out_of_range_and_bad_number() {
 
 /// Verifies [`ParseRetryJitterError`] [`std::fmt::Display`] text and
 /// [`Error::source`] behavior.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when error representations change
-/// unexpectedly.
 #[test]
 fn test_parse_retry_jitter_error_display_and_source() {
     let invalid_format = RetryJitter::from_str("nope").unwrap_err();
@@ -315,15 +235,6 @@ fn test_parse_retry_jitter_error_display_and_source() {
 
 /// Verifies [`std::fmt::Display`] / [`std::str::FromStr`] round-trip for edge
 /// factors and stable parsing of [`RetryJitter`] display output.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when display or parsing behavior drifts.
 #[test]
 fn test_retry_jitter_display_parse_round_trip_variants() {
     for jitter in [
@@ -339,16 +250,6 @@ fn test_retry_jitter_display_parse_round_trip_variants() {
 
 /// Documents [`std::fmt::Display`] and display / parse round-trip for
 /// [`RetryJitter`].
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when display behavior changes
-/// unexpectedly.
 #[test]
 fn test_retry_jitter_display_and_round_trip() {
     assert_eq!(format!("{}", RetryJitter::None), "none");
@@ -367,16 +268,6 @@ fn test_retry_jitter_display_and_round_trip() {
 /// the Rust variant name (for example [`RetryJitter::None`] becomes `"None"`).
 /// A **single-field** tuple variant is encoded as a one-key object mapping the
 /// variant name to the inner value (for example `{"Factor":0.25}`).
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when serde JSON encoding changes
-/// unexpectedly.
 #[test]
 fn test_retry_jitter_json_serde_json_shapes() {
     assert_eq!(
@@ -400,16 +291,6 @@ fn test_retry_jitter_json_serde_json_shapes() {
 
 /// Verifies [`qubit_retry::constants::DEFAULT_RETRY_JITTER`] matches
 /// [`RetryJitter::default`].
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when the default string and `Default`
-/// drift apart.
 #[test]
 fn test_default_retry_jitter_string_matches_retry_jitter_default() {
     assert_eq!(

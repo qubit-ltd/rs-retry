@@ -15,16 +15,6 @@ use qubit_argument::{
 use qubit_retry::RetryConfigError;
 
 /// Verifies basic configuration error accessors and empty-path formatting.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when accessor or formatting behavior
-/// changes.
 #[test]
 fn test_retry_config_error_accessors_and_empty_path_display() {
     let empty_path = RetryConfigError::invalid_value("", "missing value");
@@ -48,15 +38,6 @@ fn test_retry_config_error_accessors_and_empty_path_display() {
 }
 
 /// Verifies argument validation errors preserve their path and message.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when conversion loses error context.
 #[test]
 fn test_retry_config_error_from_argument_error() {
     let argument_error = require_that(
@@ -80,16 +61,6 @@ fn test_retry_config_error_from_argument_error() {
 }
 
 /// Verifies standard argument diagnostics render their path only once.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when structured diagnostics duplicate
-/// their argument path during conversion.
 #[test]
 fn test_retry_config_error_from_standard_argument_error() {
     let argument_error = "   "

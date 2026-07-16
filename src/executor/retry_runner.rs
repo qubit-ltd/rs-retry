@@ -21,6 +21,10 @@ use qubit_clock::{
 };
 
 use super::attempt::Attempt;
+use super::internal::{
+    complete_attempt,
+    prepare_same_thread_attempt,
+};
 use super::retry::Retry;
 use super::retry_failure_handler::RetryFailureHandler;
 use super::retry_flow_action::RetryFlowAction;
@@ -28,7 +32,9 @@ use super::retry_flow_state::RetryFlowState;
 use super::value_operation::ValueOperation;
 use crate::options::EffectiveAttemptTimeout;
 use crate::{
+    AttemptFailure,
     AttemptTimeoutSource,
+    RetryContext,
     RetryError,
     RetryErrorReason,
 };
@@ -43,19 +49,19 @@ pub(in crate::executor) struct RetryRunner<'a, E> {
 impl<'a, E> RetryRunner<'a, E> {
     /// Creates a synchronous retry runner.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `retry`: Retry policy facade.
     ///
     /// # Returns
     /// A runner borrowing the retry policy.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn new(retry: &'a Retry<E>) -> Self {
         Self { retry }
     }
 
     /// Runs a synchronous operation with retry.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation`: Operation called once per attempt until it succeeds or
     ///   the retry flow stops.
     ///
@@ -78,7 +84,7 @@ impl<'a, E> RetryRunner<'a, E> {
 
     /// Runs a synchronous value-erased operation with retry.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation`: Operation adapter called once per attempt.
     ///
     /// # Returns
@@ -92,63 +98,72 @@ impl<'a, E> RetryRunner<'a, E> {
         let events = self.retry.events();
         let sleeper = self.retry.blocking_sleeper();
         let handler = RetryFailureHandler::new(options, events);
-        let no_timeout = EffectiveAttemptTimeout::none();
         let mut state = RetryFlowState::new(sleeper.clock());
 
         loop {
-            // Same-thread execution cannot interrupt a running closure. Budget
-            // checks therefore happen only at points where control has returned
-            // to the retry loop: before preparing an attempt and after listener
-            // callbacks that may have consumed total elapsed time.
-            if let Some(error) = state.take_elapsed_error(options, no_timeout) {
-                return Err(events.error(error));
-            }
-
-            state.start_next_attempt();
-            let context = state.context(options, Duration::ZERO, no_timeout);
-            events.before_attempt(&context);
-            if let Some(error) = state.take_elapsed_error(options, no_timeout) {
-                return Err(events.error(error));
-            }
+            let attempt_timeout =
+                prepare_same_thread_attempt(&mut state, options, events)
+                    .map_err(|error| events.error(error))?;
 
             // Only user closure time contributes to max_operation_elapsed.
             // Listener time and retry sleeps are included by total_elapsed
             // through RetryFlowState's monotonic start instant.
             let attempt_start = sleeper.clock().now();
-            match operation.call() {
+            let result = operation.call();
+            let context = complete_attempt(
+                &mut state,
+                options,
+                attempt_start,
+                attempt_timeout,
+            );
+            match result {
                 Ok(()) => {
-                    let attempt_elapsed = state.elapsed_since(attempt_start);
-                    state.add_operation_elapsed(attempt_elapsed);
-                    let context =
-                        state.context(options, attempt_elapsed, no_timeout);
                     events.attempt_success(&context);
                     return Ok(());
                 }
                 Err(failure) => {
-                    let attempt_elapsed = state.elapsed_since(attempt_start);
-                    state.add_operation_elapsed(attempt_elapsed);
-                    let context =
-                        state.context(options, attempt_elapsed, no_timeout);
-                    match handler.handle(&state, failure, context, None) {
-                        RetryFlowAction::Retry { delay, failure } => {
-                            // Keep the failure only after the policy has
-                            // committed to another attempt. If the sleep or the
-                            // next pre-attempt check exhausts a budget, this is
-                            // the last meaningful failure to attach to the
-                            // terminal RetryError.
-                            if let Err(error) = sleep_blocking(sleeper, delay) {
-                                return Err(events.error(
-                                    state.sleeper_error(options, error),
-                                ));
-                            }
-                            state.record_last_failure(failure);
-                        }
-                        RetryFlowAction::Finished(error) => {
-                            return Err(events.error(error));
-                        }
-                    }
+                    self.handle_failure(
+                        &mut state, &handler, failure, context,
+                    )?;
                 }
             }
+        }
+    }
+
+    /// Handles a same-thread attempt failure and any blocking retry sleep.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Mutable state for the active retry flow.
+    /// * `handler` - Shared failure policy and observation pipeline.
+    /// * `failure` - Failure produced by the committed attempt.
+    /// * `context` - Completed-attempt context.
+    ///
+    /// # Errors
+    ///
+    /// Returns a terminal retry error or a sleeper error when another attempt
+    /// cannot be scheduled.
+    fn handle_failure(
+        &self,
+        state: &mut RetryFlowState<'_, E>,
+        handler: &RetryFailureHandler<'_, E>,
+        failure: AttemptFailure<E>,
+        context: RetryContext,
+    ) -> Result<(), RetryError<E>> {
+        let options = self.retry.options();
+        let events = self.retry.events();
+        let sleeper = self.retry.blocking_sleeper();
+        match handler.handle(state, failure, context, None) {
+            RetryFlowAction::Retry { delay, failure } => {
+                // Retain the failure only after the retry sleep succeeds. It
+                // then remains available if the next pre-attempt check stops.
+                sleep_blocking(sleeper, delay).map_err(|error| {
+                    events.error(state.sleeper_error(options, error))
+                })?;
+                state.record_last_failure(failure);
+                Ok(())
+            }
+            RetryFlowAction::Finished(error) => Err(events.error(error)),
         }
     }
 
@@ -175,7 +190,7 @@ impl<'a, E> RetryRunner<'a, E> {
 
 /// Sleeps the current thread when the delay is non-zero.
 ///
-/// # Parameters
+/// # Arguments
 /// - `delay`: Delay to sleep.
 pub(in crate::executor) fn sleep_blocking(
     sleeper: &dyn BlockingSleeper,

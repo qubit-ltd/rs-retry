@@ -9,6 +9,7 @@
 
 use std::sync::{
     Arc,
+    Mutex,
     atomic::{
         AtomicUsize,
         Ordering,
@@ -19,12 +20,15 @@ use std::time::Duration;
 use qubit_clock::{
     ManualAsyncSleeper,
     ManualMonotonicClock,
+    MonotonicClock,
 };
 use qubit_retry::{
     AttemptFailure,
+    AttemptFailureDecision,
     AttemptTimeoutSource,
     Retry,
     RetryContext,
+    RetryError,
     RetryErrorReason,
 };
 
@@ -43,6 +47,8 @@ fn test_run_async_default_sleeper_binds_on_first_poll() {
         .start_paused(true)
         .build()
         .expect("paused Tokio runtime should build");
+    // This real pre-runtime delay distinguishes construction time from the
+    // first-poll clock binding that the test exercises.
     std::thread::sleep(Duration::from_millis(10));
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
@@ -74,12 +80,6 @@ fn test_run_async_default_sleeper_binds_on_first_poll() {
 }
 
 /// Verifies async attempt timeout is driven by injected manual time.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[tokio::test]
 async fn test_run_async_attempt_timeout_uses_injected_async_sleeper() {
     let clock = Arc::new(ManualMonotonicClock::new());
@@ -120,12 +120,6 @@ async fn test_run_async_attempt_timeout_uses_injected_async_sleeper() {
 }
 
 /// Verifies async retry backoff is driven by injected manual time.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[tokio::test]
 async fn test_run_async_backoff_uses_injected_async_sleeper() {
     let clock = Arc::new(ManualMonotonicClock::new());
@@ -170,12 +164,6 @@ async fn test_run_async_backoff_uses_injected_async_sleeper() {
 }
 
 /// Verifies an injected async sleeper overflow becomes a typed error.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[tokio::test]
 async fn test_run_async_reports_injected_sleeper_failure() {
     let clock = Arc::new(ManualMonotonicClock::new());
@@ -204,12 +192,6 @@ async fn test_run_async_reports_injected_sleeper_failure() {
 }
 
 /// Verifies async operation panic still propagates through the current task.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[tokio::test]
 #[should_panic(expected = "async operation panic")]
 async fn test_run_async_panic_propagates() {
@@ -225,29 +207,33 @@ async fn test_run_async_panic_propagates() {
 }
 
 /// Verifies async attempt timeout becomes a retry failure.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[tokio::test]
 async fn test_run_async_attempt_timeout_can_abort() {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
     let retry = Retry::<TestError>::builder()
         .max_attempts(3)
-        .attempt_timeout(Some(Duration::from_millis(1)))
+        .attempt_timeout(Some(Duration::from_secs(1)))
         .abort_on_timeout()
         .no_delay()
+        .async_sleeper(sleeper)
         .build()
         .expect("retry should build");
 
-    let error = retry
-        .run_async(|| async {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-            Ok::<(), TestError>(())
-        })
-        .await
-        .expect_err("timeout should abort");
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<(), TestError>>);
+    tokio::pin!(retry_future);
+    let waiter_registration = clock.wait_for_waiters_async(1);
+    tokio::select! {
+        result = &mut retry_future => {
+            panic!("attempt completed before manual time advanced: {result:?}");
+        }
+        () = waiter_registration => {}
+    }
+    clock
+        .advance(Duration::from_secs(1))
+        .expect("manual time should advance");
+    let error = retry_future.await.expect_err("timeout should abort");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
     assert!(matches!(
@@ -256,7 +242,7 @@ async fn test_run_async_attempt_timeout_can_abort() {
     ));
     assert_eq!(
         error.context().attempt_timeout(),
-        Some(Duration::from_millis(1))
+        Some(Duration::from_secs(1))
     );
     assert_eq!(
         error.context().attempt_timeout_source(),
@@ -266,32 +252,44 @@ async fn test_run_async_attempt_timeout_can_abort() {
 
 /// Verifies max elapsed caps an in-flight async attempt before a configured
 /// timeout.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[tokio::test]
 async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_configured_timeout()
  {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
-        .max_operation_elapsed(Some(Duration::from_millis(20)))
-        .attempt_timeout(Some(Duration::from_millis(200)))
+        .max_operation_elapsed(Some(Duration::from_secs(20)))
+        .attempt_timeout(Some(Duration::from_secs(200)))
         .no_delay()
+        .async_sleeper(sleeper)
         .build()
         .expect("retry should build");
 
-    let started = std::time::Instant::now();
-    let error = retry
-        .run_async(|| async {
-            tokio::time::sleep(Duration::from_millis(120)).await;
-            Ok::<_, TestError>("late")
-        })
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<&str, TestError>>);
+    tokio::pin!(retry_future);
+    let waiter_registration = clock.wait_for_waiters_async(1);
+    tokio::select! {
+        result = &mut retry_future => {
+            panic!("attempt completed before manual time advanced: {result:?}");
+        }
+        () = waiter_registration => {}
+    }
+    assert_eq!(
+        clock
+            .next_deadline()
+            .expect("elapsed timeout should register a deadline")
+            .duration_since(clock.now())
+            .expect("deadline should share the manual clock domain"),
+        Duration::from_secs(20)
+    );
+    clock
+        .advance(Duration::from_secs(20))
+        .expect("manual time should advance");
+    let error = retry_future
         .await
         .expect_err("max elapsed should stop the in-flight async attempt");
-    let elapsed = started.elapsed();
 
     assert_eq!(
         error.reason(),
@@ -304,48 +302,47 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
     ));
     assert_eq!(
         error.context().attempt_timeout(),
-        Some(Duration::from_millis(20))
+        Some(Duration::from_secs(20))
     );
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::MaxOperationElapsed)
     );
-    assert!(
-        elapsed < Duration::from_millis(100),
-        "max elapsed should stop before the configured timeout, elapsed: {elapsed:?}"
-    );
+    assert_eq!(clock.now().elapsed_since_origin(), Duration::from_secs(20));
 }
 
 /// Verifies max total elapsed caps an in-flight async attempt before a
 /// configured timeout.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[tokio::test]
 async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configured_timeout()
  {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
-        .max_total_elapsed(Some(Duration::from_millis(20)))
-        .attempt_timeout(Some(Duration::from_millis(200)))
+        .max_total_elapsed(Some(Duration::from_secs(20)))
+        .attempt_timeout(Some(Duration::from_secs(200)))
         .no_delay()
+        .async_sleeper(sleeper)
         .build()
         .expect("retry should build");
 
-    let started = std::time::Instant::now();
-    let error = retry
-        .run_async(|| async {
-            tokio::time::sleep(Duration::from_millis(120)).await;
-            Ok::<_, TestError>("late")
-        })
-        .await
-        .expect_err(
-            "max total elapsed should stop the in-flight async attempt",
-        );
-    let elapsed = started.elapsed();
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<&str, TestError>>);
+    tokio::pin!(retry_future);
+    let waiter_registration = clock.wait_for_waiters_async(1);
+    tokio::select! {
+        result = &mut retry_future => {
+            panic!("attempt completed before manual time advanced: {result:?}");
+        }
+        () = waiter_registration => {}
+    }
+    clock
+        .advance(Duration::from_secs(20))
+        .expect("manual time should advance");
+    let error = retry_future.await.expect_err(
+        "max total elapsed should stop the in-flight async attempt",
+    );
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 1);
@@ -353,52 +350,218 @@ async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configur
         error.last_failure(),
         Some(AttemptFailure::Timeout)
     ));
-    assert!(
-        error.context().attempt_timeout() <= Some(Duration::from_millis(20)),
-        "max total elapsed timeout should not exceed configured budget: {:?}",
-        error.context().attempt_timeout()
+    assert_eq!(
+        error.context().attempt_timeout(),
+        Some(Duration::from_secs(20))
     );
     assert_eq!(
         error.context().attempt_timeout_source(),
         Some(AttemptTimeoutSource::MaxTotalElapsed)
     );
-    assert!(
-        elapsed < Duration::from_millis(100),
-        "max total elapsed should stop before the configured timeout, elapsed: {elapsed:?}"
+    assert_eq!(clock.now().elapsed_since_origin(), Duration::from_secs(20));
+}
+
+/// Verifies a max-operation timeout is fully observed without allowing a
+/// listener decision to retry it.
+#[tokio::test]
+async fn test_run_async_elapsed_timeout_notifies_failure_without_retrying() {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let hints = Arc::new(AtomicUsize::new(0));
+    let failures = Arc::new(AtomicUsize::new(0));
+    let retries = Arc::new(AtomicUsize::new(0));
+    let terminal_errors = Arc::new(AtomicUsize::new(0));
+    let sources = Arc::new(Mutex::new(Vec::new()));
+    let hint_events = Arc::clone(&hints);
+    let listener_failures = Arc::clone(&failures);
+    let listener_sources = Arc::clone(&sources);
+    let retry_events = Arc::clone(&retries);
+    let error_events = Arc::clone(&terminal_errors);
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(3)
+        .max_operation_elapsed(Some(Duration::from_secs(30)))
+        .no_delay()
+        .async_sleeper(sleeper)
+        .retry_after_hint(
+            move |failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
+                assert!(matches!(failure, AttemptFailure::Timeout));
+                assert_eq!(
+                    context.attempt_timeout_source(),
+                    Some(AttemptTimeoutSource::MaxOperationElapsed)
+                );
+                hint_events.fetch_add(1, Ordering::SeqCst);
+                Some(Duration::from_secs(99))
+            },
+        )
+        .on_failure(
+            move |failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
+                assert!(matches!(failure, AttemptFailure::Timeout));
+                assert_eq!(
+                    context.retry_after_hint(),
+                    Some(Duration::from_secs(99))
+                );
+                listener_failures.fetch_add(1, Ordering::SeqCst);
+                listener_sources
+                    .lock()
+                    .expect("timeout sources should be lockable")
+                    .push(context.attempt_timeout_source());
+                AttemptFailureDecision::Retry
+            },
+        )
+        .on_retry(
+            move |_failure: &AttemptFailure<TestError>,
+                  _context: &RetryContext| {
+                retry_events.fetch_add(1, Ordering::SeqCst);
+            },
+        )
+        .on_error(
+            move |_error: &RetryError<TestError>, _context: &RetryContext| {
+                error_events.fetch_add(1, Ordering::SeqCst);
+            },
+        )
+        .build()
+        .expect("retry should build");
+
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<(), TestError>>);
+    tokio::pin!(retry_future);
+    let waiter_registration = clock.wait_for_waiters_async(1);
+    tokio::select! {
+        result = &mut retry_future => {
+            panic!("attempt completed before manual time advanced: {result:?}");
+        }
+        () = waiter_registration => {}
+    }
+    clock
+        .advance(Duration::from_secs(30))
+        .expect("manual time should advance");
+
+    let error = retry_future
+        .await
+        .expect_err("max-operation elapsed should terminate the attempt");
+    assert_eq!(
+        error.reason(),
+        RetryErrorReason::MaxOperationElapsedExceeded
+    );
+    assert_eq!(error.attempts(), 1);
+    assert_eq!(hints.load(Ordering::SeqCst), 1);
+    assert_eq!(failures.load(Ordering::SeqCst), 1);
+    assert_eq!(retries.load(Ordering::SeqCst), 0);
+    assert_eq!(terminal_errors.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        *sources.lock().expect("timeout sources should be lockable"),
+        vec![Some(AttemptTimeoutSource::MaxOperationElapsed)]
+    );
+    assert_eq!(
+        error.context().retry_after_hint(),
+        Some(Duration::from_secs(99))
+    );
+}
+
+/// Verifies a max-total timeout is fully observed and remains terminal even
+/// when a failure listener asks to abort.
+#[tokio::test]
+async fn test_run_async_total_timeout_notifies_failure_without_retrying() {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let failures = Arc::new(AtomicUsize::new(0));
+    let retries = Arc::new(AtomicUsize::new(0));
+    let sources = Arc::new(Mutex::new(Vec::new()));
+    let listener_failures = Arc::clone(&failures);
+    let listener_sources = Arc::clone(&sources);
+    let retry_events = Arc::clone(&retries);
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(3)
+        .max_total_elapsed(Some(Duration::from_secs(30)))
+        .no_delay()
+        .async_sleeper(sleeper)
+        .on_failure(
+            move |failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
+                assert!(matches!(failure, AttemptFailure::Timeout));
+                listener_failures.fetch_add(1, Ordering::SeqCst);
+                listener_sources
+                    .lock()
+                    .expect("timeout sources should be lockable")
+                    .push(context.attempt_timeout_source());
+                AttemptFailureDecision::Abort
+            },
+        )
+        .on_retry(
+            move |_failure: &AttemptFailure<TestError>,
+                  _context: &RetryContext| {
+                retry_events.fetch_add(1, Ordering::SeqCst);
+            },
+        )
+        .build()
+        .expect("retry should build");
+
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<(), TestError>>);
+    tokio::pin!(retry_future);
+    let waiter_registration = clock.wait_for_waiters_async(1);
+    tokio::select! {
+        result = &mut retry_future => {
+            panic!("attempt completed before manual time advanced: {result:?}");
+        }
+        () = waiter_registration => {}
+    }
+    clock
+        .advance(Duration::from_secs(30))
+        .expect("manual time should advance");
+
+    let error = retry_future
+        .await
+        .expect_err("max-total elapsed should terminate the attempt");
+    assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
+    assert_eq!(error.attempts(), 1);
+    assert_eq!(failures.load(Ordering::SeqCst), 1);
+    assert_eq!(retries.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        *sources.lock().expect("timeout sources should be lockable"),
+        vec![Some(AttemptTimeoutSource::MaxTotalElapsed)]
     );
 }
 
 /// Verifies a shorter configured timeout still wins over remaining max elapsed.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[tokio::test]
 async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_elapsed()
  {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
-        .max_operation_elapsed(Some(Duration::from_millis(200)))
-        .attempt_timeout(Some(Duration::from_millis(20)))
+        .max_operation_elapsed(Some(Duration::from_secs(200)))
+        .attempt_timeout(Some(Duration::from_secs(20)))
         .abort_on_timeout()
         .no_delay()
+        .async_sleeper(sleeper)
         .build()
         .expect("retry should build");
 
-    let error = retry
-        .run_async(|| async {
-            tokio::time::sleep(Duration::from_millis(120)).await;
-            Ok::<_, TestError>("late")
-        })
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<&str, TestError>>);
+    tokio::pin!(retry_future);
+    let waiter_registration = clock.wait_for_waiters_async(1);
+    tokio::select! {
+        result = &mut retry_future => {
+            panic!("attempt completed before manual time advanced: {result:?}");
+        }
+        () = waiter_registration => {}
+    }
+    clock
+        .advance(Duration::from_secs(20))
+        .expect("manual time should advance");
+    let error = retry_future
         .await
         .expect_err("configured attempt timeout should abort first");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
     assert_eq!(
         error.context().attempt_timeout(),
-        Some(Duration::from_millis(20))
+        Some(Duration::from_secs(20))
     );
     assert_eq!(
         error.context().attempt_timeout_source(),
@@ -412,36 +575,42 @@ async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_
 
 /// Verifies a configured timeout policy wins when it equals remaining max
 /// elapsed.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[tokio::test]
 async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_elapsed()
  {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
-        .max_operation_elapsed(Some(Duration::from_millis(20)))
-        .attempt_timeout(Some(Duration::from_millis(20)))
+        .max_operation_elapsed(Some(Duration::from_secs(20)))
+        .attempt_timeout(Some(Duration::from_secs(20)))
         .abort_on_timeout()
         .no_delay()
+        .async_sleeper(sleeper)
         .build()
         .expect("retry should build");
 
-    let error = retry
-        .run_async(|| async {
-            tokio::time::sleep(Duration::from_millis(120)).await;
-            Ok::<_, TestError>("late")
-        })
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<&str, TestError>>);
+    tokio::pin!(retry_future);
+    let waiter_registration = clock.wait_for_waiters_async(1);
+    tokio::select! {
+        result = &mut retry_future => {
+            panic!("attempt completed before manual time advanced: {result:?}");
+        }
+        () = waiter_registration => {}
+    }
+    clock
+        .advance(Duration::from_secs(20))
+        .expect("manual time should advance");
+    let error = retry_future
         .await
         .expect_err("configured timeout policy should abort on equal timeout");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
     assert_eq!(
         error.context().attempt_timeout(),
-        Some(Duration::from_millis(20))
+        Some(Duration::from_secs(20))
     );
     assert_eq!(
         error.context().attempt_timeout_source(),
@@ -455,12 +624,6 @@ async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_e
 
 /// Verifies ordinary async failures can retry while max elapsed bounds
 /// attempts.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[tokio::test]
 async fn test_run_async_error_before_remaining_elapsed_timeout_can_retry() {
     let retry = Retry::<TestError>::builder()
@@ -491,15 +654,6 @@ async fn test_run_async_error_before_remaining_elapsed_timeout_can_retry() {
 
 /// Verifies async retry succeeds without per-attempt timeout after a retry
 /// delay.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when async retry does not reach success.
 #[tokio::test(start_paused = true)]
 async fn test_run_async_without_timeout_retries_until_success() {
     let retry = Retry::<TestError>::builder()
@@ -529,16 +683,6 @@ async fn test_run_async_without_timeout_retries_until_success() {
 }
 
 /// Verifies async timeout wrapping preserves fast successful results.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when timeout wrapping changes success
-/// output.
 #[tokio::test(start_paused = true)]
 async fn test_run_async_with_attempt_timeout_allows_fast_success() {
     let retry = Retry::<TestError>::builder()
@@ -558,16 +702,6 @@ async fn test_run_async_with_attempt_timeout_allows_fast_success() {
 
 /// Verifies async execution can stop before the first attempt on elapsed
 /// budget.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when async elapsed-budget handling
-/// differs.
 #[tokio::test]
 async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
     let retry = Retry::<TestError>::builder()
@@ -596,21 +730,27 @@ async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
 
 /// Verifies async execution includes before-attempt listener time in max total
 /// elapsed.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[tokio::test]
 async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time()
  {
+    let clock = Arc::new(ManualMonotonicClock::new());
+    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let observed_attempts = Arc::new(Mutex::new(Vec::new()));
+    let listener_attempts = Arc::clone(&observed_attempts);
+    let listener_clock = Arc::clone(&clock);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
-        .max_total_elapsed(Some(Duration::from_millis(20)))
+        .max_total_elapsed(Some(Duration::from_secs(20)))
         .no_delay()
-        .before_attempt(|_context: &RetryContext| {
-            std::thread::sleep(Duration::from_millis(40));
+        .async_sleeper(sleeper)
+        .before_attempt(move |context: &RetryContext| {
+            listener_attempts
+                .lock()
+                .expect("observed attempts should be lockable")
+                .push(context.attempt());
+            listener_clock
+                .advance(Duration::from_secs(20))
+                .expect("manual time should advance");
         })
         .build()
         .expect("retry should build");
@@ -623,22 +763,18 @@ async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time(
         );
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
-    assert_eq!(error.attempts(), 1);
+    assert_eq!(error.attempts(), 0);
+    assert_eq!(
+        *observed_attempts
+            .lock()
+            .expect("observed attempts should be lockable"),
+        vec![1]
+    );
     assert!(error.last_failure().is_none());
-    assert!(error.context().total_elapsed() >= Duration::from_millis(20));
+    assert_eq!(error.context().total_elapsed(), Duration::from_secs(20));
 }
 
 /// Verifies async retry handles zero retry delay without sleeping.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when zero-delay async retry does not
-/// proceed.
 #[tokio::test]
 async fn test_run_async_zero_delay_retry_skips_sleep() {
     let retry = Retry::<TestError>::builder()

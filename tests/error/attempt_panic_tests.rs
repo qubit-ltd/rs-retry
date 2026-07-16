@@ -9,12 +9,6 @@
 use qubit_retry::AttemptPanic;
 
 /// Verifies captured panic messages are accessible and displayable.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_panic_message_and_display() {
     let panic = AttemptPanic::new("worker failed");

@@ -14,12 +14,6 @@ use qubit_retry::{
 };
 
 /// Verifies timeout option constructors and accessors.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_timeout_option_constructors_and_accessors() {
     let retry = AttemptTimeoutOption::retry(Duration::from_millis(10));
@@ -36,12 +30,6 @@ fn test_attempt_timeout_option_constructors_and_accessors() {
 }
 
 /// Verifies timeout option validation rejects zero duration.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_timeout_option_validate_rejects_zero_duration() {
     let valid = AttemptTimeoutOption::retry(Duration::from_millis(1));
@@ -54,12 +42,6 @@ fn test_attempt_timeout_option_validate_rejects_zero_duration() {
 }
 
 /// Verifies timeout option serde uses millisecond duration values.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_timeout_option_serde_uses_milliseconds() {
     let option = AttemptTimeoutOption::abort(Duration::from_millis(25));

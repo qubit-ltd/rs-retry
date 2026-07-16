@@ -20,13 +20,13 @@ pub(in crate::executor) struct BlockingAttemptOutcome<T, E> {
 impl<T, E> BlockingAttemptOutcome<T, E> {
     /// Creates a worker-attempt outcome.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `result`: Attempt result exposed to the retry flow.
     /// - `unreaped_worker_count`: Count of worker threads not observed to exit.
     ///
     /// # Returns
     /// A blocking-attempt outcome.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn new(
         result: Result<T, AttemptFailure<E>>,
         unreaped_worker_count: u32,

@@ -15,12 +15,6 @@ use qubit_retry::{
 
 /// Verifies sync attempt failures are observable through the public listener
 /// API.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_failure_is_observable_through_failure_listener() {
     let retry = Retry::<&'static str>::builder()

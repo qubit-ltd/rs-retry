@@ -9,12 +9,6 @@
 use qubit_retry::AttemptExecutorError;
 
 /// Verifies executor failure messages are accessible and displayable.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_executor_error_message_and_display() {
     let error = AttemptExecutorError::new("worker spawn failed");
@@ -24,12 +18,6 @@ fn test_attempt_executor_error_message_and_display() {
 }
 
 /// Verifies executor failures can include lower-level diagnostic context.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_attempt_executor_error_with_context_preserves_detail() {
     let error = AttemptExecutorError::with_context(

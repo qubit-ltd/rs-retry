@@ -12,12 +12,6 @@ use qubit_retry::{
 };
 
 /// Verifies `Retry::run` returns a successful value and exhaustion error.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_retry_run_returns_value_and_exhaustion_error() {
     let retry = Retry::<&'static str>::builder()

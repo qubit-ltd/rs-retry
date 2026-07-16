@@ -24,11 +24,12 @@ pub(in crate::executor) struct BlockingValueOperation<T, F> {
 impl<T, F> BlockingValueOperation<T, F> {
     /// Creates a blocking worker value-capturing operation adapter.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation`: Operation to wrap.
     ///
     /// # Returns
     /// A new adapter with no captured value.
+    #[inline(always)]
     pub(in crate::executor) fn new(operation: F) -> Self {
         Self {
             operation,
@@ -44,6 +45,7 @@ impl<T, F> BlockingValueOperation<T, F> {
     /// # Panics
     /// Panics only if the retry loop reports success without a successful
     /// operation result, which would indicate an internal logic error.
+    #[inline(always)]
     pub(in crate::executor) fn take_value(&self) -> T {
         let mut value = self
             .value
@@ -63,7 +65,7 @@ where
 {
     /// Calls the wrapped operation and stores successful values.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `token`: Cooperative cancellation token for this attempt.
     ///
     /// # Returns

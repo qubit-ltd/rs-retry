@@ -16,12 +16,6 @@ use qubit_retry::{
 
 /// Verifies async attempt failures are observable through the public listener
 /// API.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[cfg(feature = "tokio")]
 #[tokio::test]
 async fn test_async_attempt_failure_is_observable_through_failure_listener() {

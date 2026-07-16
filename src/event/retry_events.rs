@@ -46,14 +46,14 @@ pub(crate) struct RetryEvents<E> {
 impl<E> RetryEvents<E> {
     /// Creates a retry event dispatcher.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `retry_after_hint`: Optional hint extractor.
     /// - `isolate_listener_panics`: Whether listener panics are isolated.
     /// - `listeners`: Lifecycle listeners.
     ///
     /// # Returns
     /// A retry event dispatcher.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn new(
         retry_after_hint: Option<RetryAfterHint<E>>,
         isolate_listener_panics: bool,
@@ -68,7 +68,7 @@ impl<E> RetryEvents<E> {
 
     /// Extracts a retry-after hint from a failure.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `failure`: Failure being handled.
     /// - `context`: Context captured after the failed attempt.
     ///
@@ -87,7 +87,7 @@ impl<E> RetryEvents<E> {
 
     /// Resolves all failure listeners into one decision.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `failure`: Attempt failure.
     /// - `context`: Failure context.
     ///
@@ -115,7 +115,7 @@ impl<E> RetryEvents<E> {
 
     /// Emits before-attempt listeners.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `context`: Context passed to listeners.
     pub(crate) fn before_attempt(&self, context: &RetryContext) {
         for listener in &self.listeners.before_attempt {
@@ -127,7 +127,7 @@ impl<E> RetryEvents<E> {
 
     /// Emits attempt-success listeners.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `context`: Context passed to listeners.
     pub(crate) fn attempt_success(&self, context: &RetryContext) {
         for listener in &self.listeners.attempt_success {
@@ -139,7 +139,7 @@ impl<E> RetryEvents<E> {
 
     /// Emits retry-scheduled listeners.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `failure`: Failure that caused the retry to be scheduled.
     /// - `context`: Context carrying the selected next delay.
     pub(crate) fn retry_scheduled(
@@ -156,7 +156,7 @@ impl<E> RetryEvents<E> {
 
     /// Emits terminal error listeners and returns the same error.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `error`: Terminal retry error.
     ///
     /// # Returns
@@ -175,7 +175,7 @@ impl<E> RetryEvents<E> {
 
     /// Invokes a listener and optionally isolates panics.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `call`: Listener invocation closure.
     ///
     /// # Returns

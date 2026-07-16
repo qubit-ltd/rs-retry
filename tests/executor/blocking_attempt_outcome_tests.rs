@@ -6,6 +6,11 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::sync::{
+    Arc,
+    Mutex,
+    mpsc,
+};
 use std::time::Duration;
 
 use qubit_retry::{
@@ -16,14 +21,11 @@ use qubit_retry::{
 
 /// Verifies blocking attempt outcome cleanup counts through public retry
 /// errors.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_blocking_attempt_outcome_reports_unreaped_worker_count() {
+    let (release_tx, release_rx) = mpsc::channel();
+    let release_rx = Arc::new(Mutex::new(release_rx));
+    let (finished_tx, finished_rx) = mpsc::channel();
     let retry = Retry::<&'static str>::builder()
         .max_attempts(2)
         .attempt_timeout(Some(Duration::from_millis(10)))
@@ -33,11 +35,24 @@ fn test_blocking_attempt_outcome_reports_unreaped_worker_count() {
         .expect("retry should build");
 
     let error = retry
-        .run_in_worker(|_token: AttemptCancelToken| {
-            std::thread::sleep(Duration::from_millis(80));
+        .run_in_worker(move |_token: AttemptCancelToken| {
+            release_rx
+                .lock()
+                .expect("release receiver should be lockable")
+                .recv()
+                .expect("test should release the worker");
+            finished_tx
+                .send(())
+                .expect("worker completion should be observable");
             Err::<(), &'static str>("late")
         })
         .expect_err("unreaped worker should stop retrying");
+    release_tx
+        .send(())
+        .expect("timed-out worker should be releasable");
+    finished_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("released worker should finish");
 
     assert_eq!(RetryErrorReason::WorkerStillRunning, error.reason());
     assert_eq!(1, error.unreaped_worker_count());

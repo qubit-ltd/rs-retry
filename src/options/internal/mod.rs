@@ -5,14 +5,8 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+//! Internal retry-option helpers.
 
-use qubit_retry::AttemptFailureDecision;
+mod retry_jitter_factor_format;
 
-/// Verifies the default failure decision delegates to the retry policy.
-#[test]
-fn test_attempt_failure_decision_default_uses_policy_default() {
-    assert_eq!(
-        AttemptFailureDecision::default(),
-        AttemptFailureDecision::UseDefault
-    );
-}
+pub(in crate::options) use retry_jitter_factor_format::RetryJitterFactorFormat;

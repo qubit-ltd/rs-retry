@@ -30,11 +30,12 @@ pub(in crate::executor) struct AsyncValueOperation<T, F> {
 impl<T, F> AsyncValueOperation<T, F> {
     /// Creates an asynchronous value-capturing operation adapter.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation`: Operation factory to wrap.
     ///
     /// # Returns
     /// A new adapter with no captured value.
+    #[inline(always)]
     pub(in crate::executor) fn new(operation: F) -> Self {
         Self {
             operation,
@@ -50,6 +51,7 @@ impl<T, F> AsyncValueOperation<T, F> {
     /// # Panics
     /// Panics only if the retry loop reports success without a successful
     /// operation result, which would indicate an internal logic error.
+    #[inline(always)]
     pub(in crate::executor) fn into_value(self) -> T {
         self.value
             .expect("retry loop succeeded without an operation value")

@@ -52,16 +52,10 @@ pub enum AttemptFailure<E> {
 impl<E> AttemptFailure<E> {
     /// Returns the application error when this failure wraps one.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// `Some(&E)` for [`AttemptFailure::Error`], or `None` for
     /// runtime-generated failures.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
+    #[inline(always)]
     pub fn as_error(&self) -> Option<&E> {
         match self {
             Self::Error(error) => Some(error),
@@ -71,16 +65,10 @@ impl<E> AttemptFailure<E> {
 
     /// Consumes the failure and returns the application error when present.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// `Some(E)` for [`AttemptFailure::Error`], or `None` for
     /// runtime-generated failures.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
+    #[inline(always)]
     pub fn into_error(self) -> Option<E> {
         match self {
             Self::Error(error) => Some(error),
@@ -90,16 +78,10 @@ impl<E> AttemptFailure<E> {
 
     /// Returns captured panic information when this failure wraps one.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// `Some(&AttemptPanic)` for [`AttemptFailure::Panic`], or `None` for other
     /// variants.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
+    #[inline(always)]
     pub fn as_panic(&self) -> Option<&AttemptPanic> {
         match self {
             Self::Panic(panic) => Some(panic),
@@ -109,16 +91,10 @@ impl<E> AttemptFailure<E> {
 
     /// Returns executor failure information when this failure wraps one.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// `Some(&AttemptExecutorError)` for [`AttemptFailure::Executor`], or
     /// `None` for other variants.
-    ///
-    /// # Errors
-    /// This method does not return errors.
-    #[inline]
+    #[inline(always)]
     pub fn as_executor_error(&self) -> Option<&AttemptExecutorError> {
         match self {
             Self::Executor(error) => Some(error),

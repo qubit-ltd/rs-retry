@@ -9,18 +9,9 @@ use qubit_datatype::{
     DataConversionError,
     DataType,
 };
+use qubit_value::ValueError;
 
 /// Verifies configuration error display output for empty and non-empty paths.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when path, message, or display formatting
-/// is incorrect.
 #[test]
 fn test_display_handles_empty_and_non_empty_paths() {
     let explicit =
@@ -37,15 +28,6 @@ fn test_display_handles_empty_and_non_empty_paths() {
 }
 
 /// Verifies `ConfigError` conversions preserve key context where available.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when conversion loses path information.
 #[test]
 fn test_from_config_error_preserves_path_variants() {
     let not_found = qubit_retry::RetryConfigError::from(
@@ -83,15 +65,6 @@ fn test_from_config_error_preserves_path_variants() {
 }
 
 /// Verifies typed config conversion errors preserve the key field.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when typed config errors lose key context.
 #[test]
 fn test_from_config_error_preserves_typed_key_variants() {
     let type_mismatch = qubit_retry::RetryConfigError::from(
@@ -114,19 +87,20 @@ fn test_from_config_error_preserves_typed_key_variants() {
         },
     );
     assert_eq!(conversion.path(), "converted.key");
+
+    let value_error = qubit_retry::RetryConfigError::from(
+        qubit_config::ConfigError::ValueError {
+            key: "value.key".to_string(),
+            source: ValueError::TypeMismatch {
+                expected: DataType::UInt32,
+                actual: DataType::String,
+            },
+        },
+    );
+    assert_eq!(value_error.path(), "value.key");
 }
 
 /// Verifies config errors without a single key context use an empty path.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when path extraction invents a key for an
-/// error that does not carry one.
 #[test]
 fn test_from_config_error_uses_empty_path_without_key_context() {
     let cycle = qubit_retry::RetryConfigError::from(

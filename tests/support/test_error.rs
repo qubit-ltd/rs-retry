@@ -16,7 +16,7 @@ pub(crate) struct TestError(pub(crate) &'static str);
 impl fmt::Display for TestError {
     /// Formats the test error message.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `f`: Formatter provided by the standard formatting machinery.
     ///
     /// # Returns

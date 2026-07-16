@@ -21,12 +21,6 @@ struct NonCloneValue {
 }
 
 /// Verifies blocking worker value capture through the public retry API.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_blocking_value_operation_is_observable_through_non_clone_success_value()
 {

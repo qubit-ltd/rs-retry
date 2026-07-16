@@ -36,7 +36,7 @@ impl Default for AttemptTimeoutPolicy {
     ///
     /// # Returns
     /// [`AttemptTimeoutPolicy::Retry`].
-    #[inline]
+    #[inline(always)]
     fn default() -> Self {
         Self::Retry
     }
@@ -45,7 +45,7 @@ impl Default for AttemptTimeoutPolicy {
 impl fmt::Display for AttemptTimeoutPolicy {
     /// Formats the policy as lower-case config text.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `f`: Formatter provided by the standard formatting machinery.
     ///
     /// # Returns
@@ -67,7 +67,7 @@ impl FromStr for AttemptTimeoutPolicy {
 
     /// Parses a timeout policy from config text.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `s`: Policy text. ASCII case is ignored.
     ///
     /// # Returns

@@ -37,16 +37,6 @@ use qubit_retry::{
 };
 
 /// Verifies default options and direct construction.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when validation or construction behavior
-/// is incorrect.
 #[test]
 fn test_validate_default_and_new() {
     let options = RetryOptions::default();
@@ -112,16 +102,6 @@ fn test_validate_default_and_new() {
 }
 
 /// Verifies prefixed configuration values are read into fixed-delay options.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when prefixed config values are parsed
-/// incorrectly.
 #[test]
 fn test_from_config_reads_fixed_delay_from_prefixed_config() {
     let mut config = Config::new();
@@ -153,7 +133,7 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
         .set("retry.worker_cancel_grace_millis", 25u64)
         .expect("test config value should be set");
 
-    let options = RetryOptions::from_config(&config.prefix_view("retry"))
+    let options = RetryOptions::from_config(&config.section("retry"))
         .expect("prefixed retry config should be parsed");
 
     assert_eq!(options.max_attempts(), 4);
@@ -178,16 +158,6 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
 }
 
 /// Verifies non-fixed delay config forms and config read errors.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when delay forms or config errors are
-/// handled incorrectly.
 #[test]
 fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
     let mut random_config = Config::new();
@@ -357,16 +327,6 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
 }
 
 /// Verifies implicit delay defaults from configuration.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when implicit default delay values are
-/// applied incorrectly.
 #[test]
 fn test_from_config_reads_implicit_delay_defaults() {
     let mut implicit_random = Config::new();
@@ -400,16 +360,6 @@ fn test_from_config_reads_implicit_delay_defaults() {
 }
 
 /// Verifies delay parameter type errors report the exact config key.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when type errors are accepted or reported
-/// with the wrong path.
 #[test]
 fn test_from_config_reports_delay_parameter_type_errors() {
     let mut elapsed_bad = Config::new();
@@ -597,15 +547,6 @@ fn test_from_config_reports_delay_parameter_type_errors() {
 }
 
 /// Verifies retry delay calculation helpers on [`RetryOptions`].
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when helper methods compute wrong delays.
 #[test]
 fn test_retry_options_delay_calculation_helpers() {
     let options = RetryOptions::new(

@@ -73,15 +73,6 @@ fn test_to_options_worker_cancel_grace_uses_config_or_default() {
 
 /// Verifies missing `max_operation_elapsed_millis` inherits
 /// `default.max_operation_elapsed` in [`RetryConfigValues::to_options`].
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when merge behavior is incorrect.
 #[test]
 fn test_to_options_missing_max_operation_elapsed_millis_uses_default_budget() {
     let default = RetryOptions::new(
@@ -103,15 +94,6 @@ fn test_to_options_missing_max_operation_elapsed_millis_uses_default_budget() {
 
 /// Verifies `max_operation_elapsed_millis` of zero means zero elapsed-time
 /// budget.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when zero-budget semantics are incorrect.
 #[test]
 fn test_to_options_zero_max_operation_elapsed_millis_means_zero_budget() {
     let default = RetryOptions::new(
@@ -129,15 +111,6 @@ fn test_to_options_zero_max_operation_elapsed_millis_means_zero_budget() {
 }
 
 /// Verifies `max_operation_elapsed_unlimited=true` forces unlimited budget.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when unlimited override is ignored.
 #[test]
 fn test_to_options_max_operation_elapsed_unlimited_overrides_budget() {
     let default = RetryOptions::new(
@@ -157,16 +130,6 @@ fn test_to_options_max_operation_elapsed_unlimited_overrides_budget() {
 
 /// Verifies total elapsed budget config merges independently from operation
 /// elapsed budget.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when total elapsed merge behavior is
-/// incorrect.
 #[test]
 fn test_to_options_max_total_elapsed_merges_independently() {
     let default = RetryOptions::new(
@@ -203,15 +166,6 @@ fn test_to_options_max_total_elapsed_merges_independently() {
 }
 
 /// Verifies timeout values merge with default timeout policy.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when timeout merge behavior is incorrect.
 #[test]
 fn test_to_options_attempt_timeout_uses_default_policy() {
     let default = RetryOptions::new_with_attempt_timeout(
@@ -235,16 +189,6 @@ fn test_to_options_attempt_timeout_uses_default_policy() {
 }
 
 /// Verifies timeout policy can override a default timeout duration.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when policy override behavior is
-/// incorrect.
 #[test]
 fn test_to_options_attempt_timeout_policy_overrides_default_timeout() {
     let default = RetryOptions::new_with_attempt_timeout(

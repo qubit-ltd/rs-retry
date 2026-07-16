@@ -18,12 +18,6 @@ use qubit_retry::{
 
 /// Verifies effective attempt timeout source selection through public retry
 /// behavior.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
 #[test]
 fn test_effective_attempt_timeout_configured_source_wins_equal_elapsed_budget()
 {
@@ -41,7 +35,7 @@ fn test_effective_attempt_timeout_configured_source_wins_equal_elapsed_budget()
     let error = retry
         .run_in_worker(|token: AttemptCancelToken| {
             while !token.is_cancelled() {
-                std::thread::sleep(Duration::from_millis(1));
+                std::thread::yield_now();
             }
             Err::<(), &'static str>("cancelled")
         })

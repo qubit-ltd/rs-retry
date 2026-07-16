@@ -54,7 +54,7 @@ pub type RetryResult<T, E> = Result<T, RetryError<E>>;
 impl<E> RetryError<E> {
     /// Creates a retry error.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `reason`: Terminal reason.
     /// - `last_failure`: Last observed attempt failure, if any.
     /// - `context`: Retry context captured at termination.
@@ -76,24 +76,18 @@ impl<E> RetryError<E> {
 
     /// Returns the terminal retry error reason.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// The reason the retry flow stopped.
-    #[inline]
+    #[inline(always)]
     pub fn reason(&self) -> RetryErrorReason {
         self.reason
     }
 
     /// Returns the retry context captured at termination.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// A context snapshot with attempt counts and timing metadata.
-    #[inline]
+    #[inline(always)]
     pub fn context(&self) -> &RetryContext {
         &self.context
     }
@@ -101,13 +95,10 @@ impl<E> RetryError<E> {
     /// Returns the timeout source that produced the final attempt timeout, if
     /// any.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// The timeout source when present, or `None` when no attempt timeout was
     /// selected for the terminal context.
-    #[inline]
+    #[inline(always)]
     pub fn attempt_timeout_source(
         &self,
     ) -> Option<crate::event::AttemptTimeoutSource> {
@@ -117,22 +108,25 @@ impl<E> RetryError<E> {
     /// Returns the number of worker threads not observed to exit after
     /// cancellation.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// Count of timed-out worker attempts that did not finish within the worker
     /// cancellation grace period.
-    #[inline]
+    #[inline(always)]
     pub fn unreaped_worker_count(&self) -> u32 {
         self.context.unreaped_worker_count()
     }
 
-    /// Returns the number of attempts that were executed.
+    /// Returns the number of attempts admitted into execution.
+    ///
+    /// `before_attempt` receives the upcoming one-based attempt number before
+    /// it is committed. If a pre-attempt listener exhausts a budget, this count
+    /// does not include that unexecuted attempt.
+    /// In particular, the first `before_attempt` callback may see `1` while the
+    /// operation runs zero times and this method returns `0`.
     ///
     /// # Returns
-    /// The number of operation attempts observed before termination.
-    #[inline]
+    /// The committed operation-attempt count at termination.
+    #[inline(always)]
     pub fn attempts(&self) -> u32 {
         self.context.attempt()
     }
@@ -142,21 +136,18 @@ impl<E> RetryError<E> {
     /// # Returns
     /// `Some(&AttemptFailure<E>)` when at least one attempt failure was
     /// observed; `None` when the retry flow stopped before any attempt ran.
-    #[inline]
+    #[inline(always)]
     pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
         self.last_failure.as_ref()
     }
 
     /// Returns the last application error, if one exists.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// `Some(&E)` when the terminal failure wraps an application error;
     /// `None` for timeout, panic, executor failures, or elapsed-budget failures
     /// with no attempt.
-    #[inline]
+    #[inline(always)]
     pub fn last_error(&self) -> Option<&E> {
         self.last_failure().and_then(AttemptFailure::as_error)
     }
@@ -164,26 +155,20 @@ impl<E> RetryError<E> {
     /// Consumes the retry error and returns the last application error when
     /// the final failure wraps one.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// `Some(E)` when the terminal failure owns an application error; `None`
     /// when the terminal failure was a timeout, panic, executor failure, or
     /// when no attempt ran.
-    #[inline]
+    #[inline(always)]
     pub fn into_last_error(self) -> Option<E> {
         self.last_failure.and_then(AttemptFailure::into_error)
     }
 
     /// Consumes the retry error and returns all terminal parts.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// A tuple `(reason, last_failure, context)` preserving all terminal data.
-    #[inline]
+    #[inline(always)]
     pub fn into_parts(
         self,
     ) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
@@ -197,7 +182,7 @@ where
 {
     /// Formats the retry error for diagnostics.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `f`: Formatter provided by the standard formatting machinery.
     ///
     /// # Returns
@@ -220,7 +205,8 @@ where
                 format!("retry max total elapsed exceeded after {attempts} attempt(s)")
             }
             RetryErrorReason::UnsupportedOperation => {
-                "run() does not support attempt timeout; use run_async() or run_in_worker()".to_string()
+                "run() does not support attempt timeout; use run_async() or run_in_worker()"
+                    .to_string()
             }
             RetryErrorReason::SleeperFailed => {
                 format!("retry sleeper failed after {attempts} attempt(s)")
@@ -246,15 +232,9 @@ where
 {
     /// Returns the source terminal failure when one is available.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Returns
     /// `Some(&dyn Error)` when the terminal failure wraps an application error,
     /// captured panic, or executor failure; otherwise `None`.
-    ///
-    /// # Errors
-    /// This method does not return errors.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self.last_failure() {
             Some(AttemptFailure::Error(error)) => {

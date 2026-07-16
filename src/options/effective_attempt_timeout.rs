@@ -32,13 +32,13 @@ pub(crate) struct EffectiveAttemptTimeout {
 impl EffectiveAttemptTimeout {
     /// Creates an effective attempt timeout.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `duration`: Timeout duration enforced for the attempt.
     /// - `source`: Source that selected the timeout.
     ///
     /// # Returns
     /// A timeout descriptor for one attempt.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn new(
         duration: Option<Duration>,
         source: Option<AttemptTimeoutSource>,
@@ -50,7 +50,7 @@ impl EffectiveAttemptTimeout {
     ///
     /// # Returns
     /// A timeout descriptor with no duration and no source.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn none() -> Self {
         Self::new(None, None)
     }
@@ -59,7 +59,7 @@ impl EffectiveAttemptTimeout {
     ///
     /// # Returns
     /// `Some(Duration)` when this attempt is bounded.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn duration(self) -> Option<Duration> {
         self.duration
     }
@@ -69,14 +69,14 @@ impl EffectiveAttemptTimeout {
     /// # Returns
     /// `Some(AttemptTimeoutSource)` when this timeout came from a configured or
     /// elapsed-budget limit.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn source(self) -> Option<AttemptTimeoutSource> {
         self.source
     }
 
     /// Returns the elapsed-budget reason represented by a timeout failure.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `failure`: Failure produced by the attempt.
     ///
     /// # Returns

@@ -22,7 +22,6 @@ use qubit_clock::BlockingSleeper;
 use qubit_clock::{
     AsyncSleeper,
     TokioAsyncSleeper,
-    TokioMonotonicClock,
 };
 use qubit_error::BoxError;
 
@@ -98,14 +97,14 @@ impl<E> Retry<E> {
     ///
     /// # Returns
     /// A [`RetryBuilder`] configured with defaults.
-    #[inline]
+    #[inline(always)]
     pub fn builder() -> RetryBuilder<E> {
         RetryBuilder::new()
     }
 
     /// Creates a retry policy from options.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `options`: Retry options to validate and install.
     ///
     /// # Returns
@@ -113,17 +112,51 @@ impl<E> Retry<E> {
     ///
     /// # Errors
     /// Returns [`RetryConfigError`] if the options are invalid.
+    #[inline(always)]
     pub fn from_options(
         options: RetryOptions,
     ) -> Result<Self, RetryConfigError> {
         Self::builder().options(options).build()
     }
 
+    /// Creates a retry policy from validated parts.
+    ///
+    /// # Arguments
+    /// - `options`: Retry options.
+    /// - `retry_after_hint`: Optional hint extractor.
+    /// - `isolate_listener_panics`: Whether listener panics are isolated.
+    /// - `listeners`: Lifecycle listeners.
+    /// - `blocking_sleeper`: Sleeper used by sync and worker execution.
+    /// - `async_sleeper`: Optional caller-supplied Tokio async sleeper.
+    ///
+    /// # Returns
+    /// A retry policy.
+    pub(super) fn new(
+        options: RetryOptions,
+        retry_after_hint: Option<RetryAfterHint<E>>,
+        isolate_listener_panics: bool,
+        listeners: RetryListeners<E>,
+        blocking_sleeper: Arc<dyn BlockingSleeper>,
+        #[cfg(feature = "tokio")] async_sleeper: Option<Arc<dyn AsyncSleeper>>,
+    ) -> Self {
+        Self {
+            options,
+            events: RetryEvents::new(
+                retry_after_hint,
+                isolate_listener_panics,
+                listeners,
+            ),
+            blocking_sleeper,
+            #[cfg(feature = "tokio")]
+            async_sleeper,
+        }
+    }
+
     /// Returns the immutable options used by this retry policy.
     ///
     /// # Returns
     /// Shared retry options.
-    #[inline]
+    #[inline(always)]
     pub fn options(&self) -> &RetryOptions {
         &self.options
     }
@@ -146,7 +179,7 @@ impl<E> Retry<E> {
     ///    chooses retry, wait through the injected blocking sleeper and start
     ///    the next attempt; otherwise return the produced [`RetryError`].
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation`: Operation called once per attempt until it succeeds or
     ///   the retry flow stops.
     ///
@@ -204,7 +237,7 @@ impl<E> Retry<E> {
     /// time to the runtime that actually executes the retry flow rather than to
     /// the context in which the retry policy was built.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation`: Factory returning a fresh future for each attempt.
     ///
     /// # Returns
@@ -235,8 +268,7 @@ impl<E> Retry<E> {
         if let Some(sleeper) = self.async_sleeper.as_deref() {
             return AsyncRetryRunner::new(self, sleeper).run(operation).await;
         }
-        let clock = Arc::new(TokioMonotonicClock::new());
-        let sleeper = TokioAsyncSleeper::from_clock(clock);
+        let sleeper = TokioAsyncSleeper::new();
         AsyncRetryRunner::new(self, &sleeper).run(operation).await
     }
 
@@ -277,7 +309,7 @@ impl<E> Retry<E> {
     /// [`crate::RetryErrorReason::MaxOperationElapsedExceeded`] or
     /// [`crate::RetryErrorReason::MaxTotalElapsedExceeded`].
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation`: Thread-safe operation called once per attempt. It
     ///   receives a cooperative cancellation token for that attempt.
     ///
@@ -307,41 +339,8 @@ impl<E> Retry<E> {
         WorkerRetryRunner::new(self).run(operation)
     }
 
-    /// Creates a retry policy from validated parts.
-    ///
-    /// # Parameters
-    /// - `options`: Retry options.
-    /// - `retry_after_hint`: Optional hint extractor.
-    /// - `isolate_listener_panics`: Whether listener panics are isolated.
-    /// - `listeners`: Lifecycle listeners.
-    /// - `blocking_sleeper`: Sleeper used by sync and worker execution.
-    /// - `async_sleeper`: Optional caller-supplied Tokio async sleeper.
-    ///
-    /// # Returns
-    /// A retry policy.
-    pub(super) fn new(
-        options: RetryOptions,
-        retry_after_hint: Option<RetryAfterHint<E>>,
-        isolate_listener_panics: bool,
-        listeners: RetryListeners<E>,
-        blocking_sleeper: Arc<dyn BlockingSleeper>,
-        #[cfg(feature = "tokio")] async_sleeper: Option<Arc<dyn AsyncSleeper>>,
-    ) -> Self {
-        Self {
-            options,
-            events: RetryEvents::new(
-                retry_after_hint,
-                isolate_listener_panics,
-                listeners,
-            ),
-            blocking_sleeper,
-            #[cfg(feature = "tokio")]
-            async_sleeper,
-        }
-    }
-
     /// Returns the blocking sleeper used by sync and worker runners.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn blocking_sleeper(&self) -> &dyn BlockingSleeper {
         self.blocking_sleeper.as_ref()
     }
@@ -350,7 +349,7 @@ impl<E> Retry<E> {
     ///
     /// # Returns
     /// Event dispatcher used by retry runners.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn events(&self) -> &RetryEvents<E> {
         &self.events
     }
@@ -359,7 +358,7 @@ impl<E> Retry<E> {
 impl<E> fmt::Debug for Retry<E> {
     /// Formats the retry policy without exposing callbacks.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `f`: Formatter.
     ///
     /// # Returns

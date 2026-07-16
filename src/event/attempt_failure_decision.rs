@@ -39,7 +39,7 @@ impl Default for AttemptFailureDecision {
     ///
     /// # Returns
     /// [`AttemptFailureDecision::UseDefault`].
-    #[inline]
+    #[inline(always)]
     fn default() -> Self {
         Self::UseDefault
     }

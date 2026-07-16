@@ -28,10 +28,7 @@ use std::time::Duration;
 
 use parse_display::{
     Display,
-    DisplayFormat,
     FromStr as DeriveFromStr,
-    FromStrFormat,
-    ParseError,
 };
 use qubit_argument::{
     ArgumentResult,
@@ -46,6 +43,8 @@ use serde::{
 use crate::RetryDelay;
 use crate::constants::DEFAULT_RETRY_JITTER;
 use crate::error::argument_error_message;
+
+use super::internal::RetryJitterFactorFormat;
 
 /// Jitter strategy applied after a base [`crate::RetryDelay`] has been
 /// calculated.
@@ -79,70 +78,12 @@ pub enum RetryJitter {
     Factor(#[display(with = RetryJitterFactorFormat)] f64),
 }
 
-/// Formats jitter factors as `f64` text and parses with range validation.
-struct RetryJitterFactorFormat;
-
-impl DisplayFormat<f64> for RetryJitterFactorFormat {
-    /// Writes the factor using the default `f64` formatter.
-    ///
-    /// # Parameters
-    /// - `f`: Output formatter.
-    /// - `value`: Factor value.
-    ///
-    /// # Returns
-    /// `Ok(())` on success, or [`std::fmt::Error`] if formatting fails.
-    ///
-    /// # Errors
-    /// Returns [`std::fmt::Error`] only if the formatter rejects output.
-    fn write(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        value: &f64,
-    ) -> std::fmt::Result {
-        write!(f, "{value}")
-    }
-}
-
-impl FromStrFormat<f64> for RetryJitterFactorFormat {
-    /// Error returned by factor parsing.
-    type Err = ParseError;
-
-    /// Parses and validates a factor in range `[0.0, 1.0]`.
-    ///
-    /// # Parameters
-    /// - `s`: Raw factor text captured by `parse-display`.
-    ///
-    /// # Returns
-    /// The parsed factor.
-    ///
-    /// # Errors
-    /// Returns [`ParseError`] when the input is not a valid `f64` or lies
-    /// outside `[0.0, 1.0]`, including non-finite values.
-    fn parse(&self, s: &str) -> Result<f64, Self::Err> {
-        let value = s.parse::<f64>().map_err(|_| {
-            ParseError::with_message("invalid retry jitter factor")
-        })?;
-        if !(0.0..=1.0).contains(&value) {
-            return Err(ParseError::with_message(
-                "retry jitter factor must be in range [0.0, 1.0]",
-            ));
-        }
-        Ok(value)
-    }
-}
-
 impl RetryJitter {
     /// Creates a no-jitter strategy.
     ///
-    /// # Parameters
-    /// This function has no parameters.
-    ///
     /// # Returns
     /// A [`RetryJitter::None`] strategy.
-    ///
-    /// # Errors
-    /// This function does not return errors.
-    #[inline]
+    #[inline(always)]
     pub fn none() -> Self {
         Self::None
     }
@@ -150,19 +91,16 @@ impl RetryJitter {
     /// Creates a symmetric relative jitter strategy.
     ///
     /// Validation requires `factor` to be finite and within `[0.0, 1.0]`.
+    /// This constructor stores the value without validating it; call
+    /// [`RetryJitter::validate`] for configuration or user input.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `factor`: Relative jitter range. For example, `0.2` samples from `base
     ///   +/- 20%`.
     ///
     /// # Returns
     /// A [`RetryJitter::Factor`] strategy.
-    ///
-    /// # Errors
-    /// This constructor does not validate `factor`; use
-    /// [`RetryJitter::validate`] before applying values that come from
-    /// configuration or user input.
-    #[inline]
+    #[inline(always)]
     pub fn factor(factor: f64) -> Self {
         Self::Factor(factor)
     }
@@ -179,18 +117,11 @@ impl RetryJitter {
     /// exceeds `u64::MAX` nanoseconds, this function returns `base`
     /// unchanged to avoid lossy downcasts.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `base`: Base delay calculated by [`crate::RetryDelay`].
     ///
     /// # Returns
     /// The jittered delay, never below zero.
-    ///
-    /// # Errors
-    /// This function does not return errors.
-    ///
-    /// # Panics
-    /// This function does not panic for non-finite factors. Non-finite values
-    /// gracefully fall back to returning `base`.
     pub fn apply(&self, base: Duration) -> Duration {
         match self {
             Self::None => base,
@@ -220,20 +151,13 @@ impl RetryJitter {
     /// This method combines base-delay strategy selection and jitter
     /// application into one step.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `delay_strategy`: Base delay strategy used to calculate the attempt
     ///   delay.
     /// - `attempt`: Failed-attempt index passed to [`RetryDelay::base_delay`].
     ///
     /// # Returns
     /// The delay for the attempt after jitter is applied.
-    ///
-    /// # Errors
-    /// This function does not return errors.
-    ///
-    /// # Panics
-    /// This function does not panic for non-finite factors. Non-finite values
-    /// gracefully fall back to returning the base delay.
     pub fn delay_for_attempt(
         &self,
         delay_strategy: &RetryDelay,
@@ -252,9 +176,6 @@ impl RetryJitter {
     /// # Returns
     /// `Ok(())` when the jitter configuration is usable.
     ///
-    /// # Parameters
-    /// This method has no parameters.
-    ///
     /// # Errors
     /// Returns an error when the factor is negative, greater than `1.0`, NaN,
     /// or infinite.
@@ -265,7 +186,7 @@ impl RetryJitter {
 
     /// Validates jitter with structured argument error context.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `path`: Configuration path associated with the jitter factor.
     ///
     /// # Returns
@@ -297,12 +218,6 @@ impl Default for RetryJitter {
     /// # Returns
     /// The value obtained by parsing [`crate::constants::DEFAULT_RETRY_JITTER`]
     /// using [`RetryJitter::from_str`].
-    ///
-    /// # Parameters
-    /// This function has no parameters.
-    ///
-    /// # Errors
-    /// This function does not return errors.
     ///
     /// # Panics
     /// Panics if [`crate::constants::DEFAULT_RETRY_JITTER`] is not a valid

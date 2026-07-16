@@ -22,12 +22,18 @@ use qubit_clock::{
 
 use super::async_attempt::AsyncAttempt;
 use super::async_value_operation::AsyncValueOperation;
+use super::internal::{
+    complete_attempt,
+    prepare_timed_attempt,
+};
 use super::retry::Retry;
 use super::retry_failure_handler::RetryFailureHandler;
 use super::retry_flow_action::RetryFlowAction;
 use super::retry_flow_state::RetryFlowState;
+use crate::options::EffectiveAttemptTimeout;
 use crate::{
     AttemptFailure,
+    RetryContext,
     RetryError,
 };
 
@@ -43,13 +49,13 @@ pub(in crate::executor) struct AsyncRetryRunner<'a, E> {
 impl<'a, E> AsyncRetryRunner<'a, E> {
     /// Creates an asynchronous retry runner.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `retry`: Retry policy facade.
     /// - `sleeper`: Async sleeper used for elapsed time, timeouts, and backoff.
     ///
     /// # Returns
     /// A runner borrowing the retry policy.
-    #[inline]
+    #[inline(always)]
     pub(in crate::executor) fn new(
         retry: &'a Retry<E>,
         sleeper: &'a dyn AsyncSleeper,
@@ -59,7 +65,7 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
 
     /// Runs an asynchronous operation with retry.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation`: Factory returning a fresh future for each attempt.
     ///
     /// # Returns
@@ -80,7 +86,7 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
 
     /// Runs an asynchronous value-erased operation with retry.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `operation`: Async operation adapter called once per attempt.
     ///
     /// # Returns
@@ -97,38 +103,9 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
         let mut state = RetryFlowState::new(sleeper.clock());
 
         loop {
-            // The effective timeout may be selected by the configured
-            // per-attempt timeout or by whichever elapsed budget has the least
-            // remaining time. It is recomputed at every control point because
-            // listeners run on the retry path and can consume total elapsed
-            // budget before the user future is created.
-            let attempt_timeout = options.effective_attempt_timeout(
-                state.operation_elapsed(),
-                state.total_elapsed(),
-            );
-            if let Some(error) =
-                state.take_elapsed_error(options, attempt_timeout)
-            {
-                return Err(events.error(error));
-            }
-
-            let attempt_timeout = options.effective_attempt_timeout(
-                state.operation_elapsed(),
-                state.total_elapsed(),
-            );
-            state.start_next_attempt();
-            let context =
-                state.context(options, Duration::ZERO, attempt_timeout);
-            events.before_attempt(&context);
-            let attempt_timeout = options.effective_attempt_timeout(
-                state.operation_elapsed(),
-                state.total_elapsed(),
-            );
-            if let Some(error) =
-                state.take_elapsed_error(options, attempt_timeout)
-            {
-                return Err(events.error(error));
-            }
+            let attempt_timeout =
+                prepare_timed_attempt(&mut state, options, events)
+                    .map_err(|error| events.error(error))?;
 
             // Async timeout is enforced by dropping the future after the Tokio
             // timer fires. The timeout source is kept in the context so a later
@@ -154,52 +131,76 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
                 operation.call().await
             };
 
-            let attempt_elapsed = state.elapsed_since(attempt_start);
-            state.add_operation_elapsed(attempt_elapsed);
-            let context =
-                state.context(options, attempt_elapsed, attempt_timeout);
+            let context = complete_attempt(
+                &mut state,
+                options,
+                attempt_start,
+                attempt_timeout,
+            );
             match result {
                 Ok(()) => {
                     events.attempt_success(&context);
                     return Ok(());
                 }
                 Err(failure) => {
-                    if let Some(reason) =
-                        attempt_timeout.elapsed_timeout_reason(&failure)
-                    {
-                        // A timeout caused by an elapsed budget is already
-                        // terminal. Only configured attempt timeouts are routed
-                        // through the normal failure policy.
-                        return Err(events.error(RetryError::new(
-                            reason,
-                            Some(failure),
-                            context,
-                        )));
-                    }
-                    match handler.handle(&state, failure, context, None) {
-                        RetryFlowAction::Retry { delay, failure } => {
-                            if let Err(error) =
-                                sleep_async(sleeper, delay).await
-                            {
-                                return Err(events.error(
-                                    state.sleeper_error(options, error),
-                                ));
-                            }
-                            state.record_last_failure(failure);
-                        }
-                        RetryFlowAction::Finished(error) => {
-                            return Err(events.error(error));
-                        }
-                    }
+                    self.handle_failure(
+                        &mut state,
+                        &handler,
+                        attempt_timeout,
+                        failure,
+                        context,
+                    )
+                    .await?;
                 }
             }
+        }
+    }
+
+    /// Handles an async attempt failure and any asynchronous retry sleep.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Mutable state for the active retry flow.
+    /// * `handler` - Shared failure policy and observation pipeline.
+    /// * `attempt_timeout` - Effective timeout used by the failed attempt.
+    /// * `failure` - Failure produced by the committed attempt.
+    /// * `context` - Completed-attempt context.
+    ///
+    /// # Errors
+    ///
+    /// Returns a hard elapsed-timeout error, another terminal retry error, or a
+    /// sleeper error when another attempt cannot be scheduled.
+    async fn handle_failure(
+        &self,
+        state: &mut RetryFlowState<'_, E>,
+        handler: &RetryFailureHandler<'_, E>,
+        attempt_timeout: EffectiveAttemptTimeout,
+        failure: AttemptFailure<E>,
+        context: RetryContext,
+    ) -> Result<(), RetryError<E>> {
+        let options = self.retry.options();
+        let events = self.retry.events();
+        if let Some(reason) = attempt_timeout.elapsed_timeout_reason(&failure) {
+            let error =
+                handler.elapsed_timeout_error(state, failure, context, reason);
+            return Err(events.error(error));
+        }
+        match handler.handle(state, failure, context, None) {
+            RetryFlowAction::Retry { delay, failure } => {
+                sleep_async(self.sleeper, delay).await.map_err(|error| {
+                    events.error(state.sleeper_error(options, error))
+                })?;
+                state.record_last_failure(failure);
+                Ok(())
+            }
+            RetryFlowAction::Finished(error) => Err(events.error(error)),
         }
     }
 }
 
 /// Sleeps asynchronously when the delay is non-zero.
 ///
-/// # Parameters
+/// # Arguments
 /// - `delay`: Delay to sleep.
 ///
 /// # Returns

@@ -20,6 +20,7 @@ mod attempt_cancel_token;
 mod blocking_attempt;
 mod blocking_attempt_outcome;
 mod blocking_value_operation;
+mod internal;
 mod retry;
 mod retry_builder;
 mod retry_failure_handler;

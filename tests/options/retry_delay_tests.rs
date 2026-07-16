@@ -13,15 +13,6 @@ use qubit_retry::RetryDelay;
 use qubit_retry::constants::DEFAULT_RETRY_DELAY;
 
 /// Verifies every delay variant calculates the expected base delay.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when a delay calculation is incorrect.
 #[test]
 fn test_base_delay_none_fixed_random_and_exponential_values() {
     assert_eq!(RetryDelay::none().base_delay(1), Duration::ZERO);
@@ -57,16 +48,6 @@ fn test_base_delay_none_fixed_random_and_exponential_values() {
 
 /// Verifies exponential delay handles very large durations without lossy
 /// nanosecond downcasts.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when large-duration exponential delay
-/// calculation truncates unexpectedly.
 #[test]
 fn test_exponential_delay_handles_large_durations() {
     let initial = Duration::from_secs(20_000_000_000);
@@ -110,16 +91,6 @@ fn test_exponential_delay_cap_applied_when_scaled_delay_exceeds_max() {
 }
 
 /// Verifies delay validation rejects invalid strategy parameters.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when invalid values are accepted or valid
-/// values are rejected.
 #[test]
 fn test_validate_rejects_invalid_values() {
     let unsampleable_random_bound = Duration::from_nanos(u64::MAX)
@@ -188,16 +159,6 @@ fn test_validate_rejects_invalid_values() {
 /// Verifies JSON serialization and deserialization for [`RetryDelay`]
 /// (millisecond fields and `f64` multiplier) round-trip for representative
 /// values.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions or serde errors when JSON does not
-/// round-trip.
 #[test]
 fn test_retry_delay_serde_json_roundtrip_variants() {
     let cases = [
@@ -220,16 +181,6 @@ fn test_retry_delay_serde_json_roundtrip_variants() {
 
 /// Documents stable JSON shapes for [`RetryDelay`] literals used in
 /// configuration.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when serialized JSON drifts from
-/// expectations.
 #[test]
 fn test_retry_delay_serde_json_literal_shapes() {
     assert_eq!(
@@ -262,16 +213,6 @@ fn test_retry_delay_serde_json_literal_shapes() {
 
 /// Verifies [`qubit_retry::constants::DEFAULT_RETRY_DELAY`] matches
 /// [`RetryDelay::default`].
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when the default string and `Default`
-/// drift apart.
 #[test]
 fn test_default_retry_delay_string_matches_retry_delay_default() {
     assert_eq!(

@@ -32,14 +32,8 @@ pub(crate) struct RetryListeners<E> {
 impl<E> Default for RetryListeners<E> {
     /// Creates an empty listener set.
     ///
-    /// # Parameters
-    /// This function has no parameters.
-    ///
     /// # Returns
     /// A [`RetryListeners`] value with every callback unset.
-    ///
-    /// # Errors
-    /// This function does not return errors.
     #[inline]
     fn default() -> Self {
         Self {

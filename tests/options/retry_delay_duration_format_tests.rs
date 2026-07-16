@@ -12,15 +12,6 @@ use std::time::Duration;
 use qubit_retry::RetryDelay;
 
 /// Verifies [`std::fmt::Display`] for every [`RetryDelay`] variant.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when the display string is incorrect.
 #[test]
 fn test_retry_delay_display_variants() {
     assert_eq!(RetryDelay::none().to_string(), "none");
@@ -49,16 +40,6 @@ fn test_retry_delay_display_variants() {
 }
 
 /// Verifies [`std::str::FromStr`] for every [`RetryDelay`] variant.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when parsing does not match the expected
-/// rules.
 #[test]
 fn test_retry_delay_from_str_variants() {
     assert_eq!(RetryDelay::from_str("none").unwrap(), RetryDelay::none());
@@ -107,15 +88,6 @@ fn test_retry_delay_from_str_variants() {
 }
 
 /// Verifies [`std::str::FromStr`] rejects malformed retry-delay strings.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when invalid input is accepted.
 #[test]
 fn test_retry_delay_from_str_rejects_invalid_inputs() {
     for s in [
@@ -143,15 +115,6 @@ fn test_retry_delay_from_str_rejects_invalid_inputs() {
 
 /// Verifies display → parse round-trip for representative [`RetryDelay`]
 /// values.
-///
-/// # Parameters
-/// This test has no parameters.
-///
-/// # Returns
-/// This test returns nothing.
-///
-/// # Errors
-/// The test fails through assertions when the round-trip does not hold.
 #[test]
 fn test_retry_delay_display_parse_round_trip_variants() {
     let cases = [
