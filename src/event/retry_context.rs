@@ -84,107 +84,6 @@ impl RetryContext {
         })
     }
 
-    /// Creates a retry context snapshot from internal parts.
-    ///
-    /// # Arguments
-    /// - `parts`: Internal context payload.
-    ///
-    /// # Returns
-    /// A retry context with no selected next delay or retry-after hint.
-    pub(crate) fn from_parts(parts: RetryContextParts) -> Self {
-        Self {
-            attempt: parts.attempt,
-            max_attempts: parts.max_attempts,
-            max_operation_elapsed: parts.max_operation_elapsed,
-            max_total_elapsed: parts.max_total_elapsed,
-            operation_elapsed: parts.operation_elapsed,
-            total_elapsed: parts.total_elapsed,
-            attempt_elapsed: parts.attempt_elapsed,
-            attempt_timeout: parts.attempt_timeout,
-            next_delay: None,
-            retry_after_hint: None,
-            attempt_timeout_source: None,
-            unreaped_worker_count: 0,
-        }
-    }
-
-    /// Returns a copy of this context with a selected retry delay.
-    ///
-    /// # Arguments
-    /// - `delay`: Delay selected before the next attempt.
-    ///
-    /// # Returns
-    /// A context carrying the selected delay.
-    #[inline(always)]
-    pub(crate) fn with_next_delay(mut self, delay: Duration) -> Self {
-        self.next_delay = Some(delay);
-        self
-    }
-
-    /// Returns a copy of this context with refreshed total elapsed time.
-    ///
-    /// # Arguments
-    /// - `total_elapsed`: Total monotonic time consumed by the retry flow.
-    ///
-    /// # Returns
-    /// A context carrying the refreshed total elapsed value.
-    #[inline(always)]
-    pub(crate) fn with_total_elapsed(
-        mut self,
-        total_elapsed: Duration,
-    ) -> Self {
-        self.total_elapsed = total_elapsed;
-        self
-    }
-
-    /// Returns a copy of this context with a retry-after hint.
-    ///
-    /// # Arguments
-    /// - `hint`: Optional retry-after hint.
-    ///
-    /// # Returns
-    /// A context carrying the hint.
-    #[inline(always)]
-    pub(crate) fn with_retry_after_hint(
-        mut self,
-        hint: Option<Duration>,
-    ) -> Self {
-        self.retry_after_hint = hint;
-        self
-    }
-
-    /// Returns a copy of this context with a timeout source.
-    ///
-    /// # Arguments
-    /// - `source`: Source of the current attempt timeout, if any.
-    ///
-    /// # Returns
-    /// A context carrying the timeout source when available.
-    #[inline]
-    pub(crate) fn with_attempt_timeout_source(
-        mut self,
-        source: Option<AttemptTimeoutSource>,
-    ) -> Self {
-        if let Some(source) = source {
-            self.attempt_timeout_source = Some(source);
-        }
-        self
-    }
-
-    /// Returns a copy of this context with unreaped worker count.
-    ///
-    /// # Arguments
-    /// - `count`: Number of worker attempts not observed to exit after
-    ///   cancellation.
-    ///
-    /// # Returns
-    /// A context carrying the worker cleanup metric.
-    #[inline(always)]
-    pub(crate) fn with_unreaped_worker_count(mut self, count: u32) -> Self {
-        self.unreaped_worker_count = count;
-        self
-    }
-
     /// Returns this event's attempt number.
     ///
     /// A `before_attempt` listener sees the upcoming one-based ordinal before
@@ -321,5 +220,106 @@ impl RetryContext {
     #[inline(always)]
     pub fn retry_after_hint(&self) -> Option<Duration> {
         self.retry_after_hint
+    }
+
+    /// Creates a retry context snapshot from internal parts.
+    ///
+    /// # Arguments
+    /// - `parts`: Internal context payload.
+    ///
+    /// # Returns
+    /// A retry context with no selected next delay or retry-after hint.
+    pub(crate) fn from_parts(parts: RetryContextParts) -> Self {
+        Self {
+            attempt: parts.attempt,
+            max_attempts: parts.max_attempts,
+            max_operation_elapsed: parts.max_operation_elapsed,
+            max_total_elapsed: parts.max_total_elapsed,
+            operation_elapsed: parts.operation_elapsed,
+            total_elapsed: parts.total_elapsed,
+            attempt_elapsed: parts.attempt_elapsed,
+            attempt_timeout: parts.attempt_timeout,
+            next_delay: None,
+            retry_after_hint: None,
+            attempt_timeout_source: None,
+            unreaped_worker_count: 0,
+        }
+    }
+
+    /// Returns a copy of this context with a selected retry delay.
+    ///
+    /// # Arguments
+    /// - `delay`: Delay selected before the next attempt.
+    ///
+    /// # Returns
+    /// A context carrying the selected delay.
+    #[inline(always)]
+    pub(crate) fn with_next_delay(mut self, delay: Duration) -> Self {
+        self.next_delay = Some(delay);
+        self
+    }
+
+    /// Returns a copy of this context with refreshed total elapsed time.
+    ///
+    /// # Arguments
+    /// - `total_elapsed`: Total monotonic time consumed by the retry flow.
+    ///
+    /// # Returns
+    /// A context carrying the refreshed total elapsed value.
+    #[inline(always)]
+    pub(crate) fn with_total_elapsed(
+        mut self,
+        total_elapsed: Duration,
+    ) -> Self {
+        self.total_elapsed = total_elapsed;
+        self
+    }
+
+    /// Returns a copy of this context with a retry-after hint.
+    ///
+    /// # Arguments
+    /// - `hint`: Optional retry-after hint.
+    ///
+    /// # Returns
+    /// A context carrying the hint.
+    #[inline(always)]
+    pub(crate) fn with_retry_after_hint(
+        mut self,
+        hint: Option<Duration>,
+    ) -> Self {
+        self.retry_after_hint = hint;
+        self
+    }
+
+    /// Returns a copy of this context with a timeout source.
+    ///
+    /// # Arguments
+    /// - `source`: Source of the current attempt timeout, if any.
+    ///
+    /// # Returns
+    /// A context carrying the timeout source when available.
+    #[inline]
+    pub(crate) fn with_attempt_timeout_source(
+        mut self,
+        source: Option<AttemptTimeoutSource>,
+    ) -> Self {
+        if let Some(source) = source {
+            self.attempt_timeout_source = Some(source);
+        }
+        self
+    }
+
+    /// Returns a copy of this context with unreaped worker count.
+    ///
+    /// # Arguments
+    /// - `count`: Number of worker attempts not observed to exit after
+    ///   cancellation.
+    ///
+    /// # Returns
+    /// A context carrying the worker cleanup metric.
+    #[inline(always)]
+    pub(crate) fn with_unreaped_worker_count(mut self, count: u32) -> Self {
+        self.unreaped_worker_count = count;
+        self
     }
 }
