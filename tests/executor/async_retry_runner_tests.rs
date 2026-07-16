@@ -18,7 +18,6 @@ use std::sync::{
 use std::time::Duration;
 
 use qubit_clock::{
-    ManualAsyncSleeper,
     ManualMonotonicClock,
     MonotonicClock,
 };
@@ -82,8 +81,8 @@ fn test_run_async_default_sleeper_binds_on_first_poll() {
 /// Verifies async attempt timeout is driven by injected manual time.
 #[tokio::test]
 async fn test_run_async_attempt_timeout_uses_injected_async_sleeper() {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_async_sleeper();
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .attempt_timeout(Some(Duration::from_secs(30)))
@@ -122,8 +121,8 @@ async fn test_run_async_attempt_timeout_uses_injected_async_sleeper() {
 /// Verifies async retry backoff is driven by injected manual time.
 #[tokio::test]
 async fn test_run_async_backoff_uses_injected_async_sleeper() {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_async_sleeper();
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .fixed_delay(Duration::from_secs(5))
@@ -166,11 +165,11 @@ async fn test_run_async_backoff_uses_injected_async_sleeper() {
 /// Verifies an injected async sleeper overflow becomes a typed error.
 #[tokio::test]
 async fn test_run_async_reports_injected_sleeper_failure() {
-    let clock = Arc::new(ManualMonotonicClock::new());
+    let clock = ManualMonotonicClock::new_shared();
     clock
         .advance(Duration::MAX)
         .expect("manual clock should reach its maximum instant");
-    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(clock));
+    let sleeper = clock.new_async_sleeper();
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .fixed_delay(Duration::from_nanos(1))
@@ -209,8 +208,8 @@ async fn test_run_async_panic_propagates() {
 /// Verifies async attempt timeout becomes a retry failure.
 #[tokio::test]
 async fn test_run_async_attempt_timeout_can_abort() {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_async_sleeper();
     let retry = Retry::<TestError>::builder()
         .max_attempts(3)
         .attempt_timeout(Some(Duration::from_secs(1)))
@@ -255,8 +254,8 @@ async fn test_run_async_attempt_timeout_can_abort() {
 #[tokio::test]
 async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_configured_timeout()
  {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_async_sleeper();
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .max_operation_elapsed(Some(Duration::from_secs(20)))
@@ -316,8 +315,8 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
 #[tokio::test]
 async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configured_timeout()
  {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_async_sleeper();
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .max_total_elapsed(Some(Duration::from_secs(20)))
@@ -365,8 +364,8 @@ async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configur
 /// listener decision to retry it.
 #[tokio::test]
 async fn test_run_async_elapsed_timeout_notifies_failure_without_retrying() {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_async_sleeper();
     let hints = Arc::new(AtomicUsize::new(0));
     let failures = Arc::new(AtomicUsize::new(0));
     let retries = Arc::new(AtomicUsize::new(0));
@@ -464,8 +463,8 @@ async fn test_run_async_elapsed_timeout_notifies_failure_without_retrying() {
 /// when a failure listener asks to abort.
 #[tokio::test]
 async fn test_run_async_total_timeout_notifies_failure_without_retrying() {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_async_sleeper();
     let failures = Arc::new(AtomicUsize::new(0));
     let retries = Arc::new(AtomicUsize::new(0));
     let sources = Arc::new(Mutex::new(Vec::new()));
@@ -529,8 +528,8 @@ async fn test_run_async_total_timeout_notifies_failure_without_retrying() {
 #[tokio::test]
 async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_elapsed()
  {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_async_sleeper();
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .max_operation_elapsed(Some(Duration::from_secs(200)))
@@ -578,8 +577,8 @@ async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_
 #[tokio::test]
 async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_elapsed()
  {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_async_sleeper();
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_operation_elapsed(Some(Duration::from_secs(20)))
@@ -733,8 +732,8 @@ async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
 #[tokio::test]
 async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time()
  {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper = Arc::new(ManualAsyncSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_async_sleeper();
     let observed_attempts = Arc::new(Mutex::new(Vec::new()));
     let listener_attempts = Arc::clone(&observed_attempts);
     let listener_clock = Arc::clone(&clock);

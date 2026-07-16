@@ -20,7 +20,6 @@ use std::thread;
 use std::time::Duration;
 
 use qubit_clock::{
-    ManualBlockingSleeper,
     ManualMonotonicClock,
     MonotonicClock,
 };
@@ -108,11 +107,11 @@ fn test_run_in_worker_with_timeout_allows_fast_success() {
 /// Verifies an injected blocking sleeper overflow is preserved in worker mode.
 #[test]
 fn test_run_in_worker_reports_injected_sleeper_failure() {
-    let clock = Arc::new(ManualMonotonicClock::new());
+    let clock = ManualMonotonicClock::new_shared();
     clock
         .advance(Duration::MAX)
         .expect("manual clock should reach its maximum instant");
-    let sleeper = Arc::new(ManualBlockingSleeper::from_clock(clock));
+    let sleeper = clock.new_blocking_sleeper();
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .fixed_delay(Duration::from_nanos(1))
@@ -775,9 +774,8 @@ fn test_run_in_worker_max_total_elapsed_includes_before_attempt_listener_time()
         .lock()
         .expect("worker probe lock should be available");
     WORKER_THREAD_ID_CALLS.store(0, Ordering::SeqCst);
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper =
-        Arc::new(ManualBlockingSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_blocking_sleeper();
     let observed_attempts = Arc::new(Mutex::new(Vec::new()));
     let listener_attempts = Arc::clone(&observed_attempts);
     let listener_clock = Arc::clone(&clock);
@@ -818,9 +816,8 @@ fn test_run_in_worker_max_total_elapsed_includes_before_attempt_listener_time()
 /// Verifies worker mode sleeps when retrying with non-zero delay.
 #[test]
 fn test_run_in_worker_retries_with_non_zero_delay() {
-    let clock = Arc::new(ManualMonotonicClock::new());
-    let sleeper =
-        Arc::new(ManualBlockingSleeper::from_clock(Arc::clone(&clock)));
+    let clock = ManualMonotonicClock::new_shared();
+    let sleeper = clock.new_blocking_sleeper();
     let attempts = Arc::new(AtomicUsize::new(0));
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
@@ -836,8 +833,7 @@ fn test_run_in_worker_retries_with_non_zero_delay() {
                 .run_in_worker({
                     let attempts = Arc::clone(&attempts);
                     move |_token: AttemptCancelToken| -> Result<&'static str, TestError> {
-                        let attempt =
-                            attempts.fetch_add(1, Ordering::SeqCst) + 1;
+                        let attempt = attempts.fetch_add(1, Ordering::SeqCst) + 1;
                         if attempt == 1 {
                             Err(TestError("retry-once"))
                         } else {
