@@ -80,10 +80,10 @@ fn test_from_config_error_preserves_typed_key_variants() {
         qubit_config::ConfigError::ConversionError {
             key: "converted.key".to_string(),
             source_index: None,
-            source: DataConversionError::Unsupported {
-                from: DataType::String,
-                to: DataType::UInt32,
-            },
+            source: DataConversionError::unsupported(
+                DataType::String,
+                DataType::UInt32,
+            ),
         },
     );
     assert_eq!(conversion.path(), "converted.key");

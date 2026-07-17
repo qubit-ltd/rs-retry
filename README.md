@@ -47,7 +47,7 @@ qubit-retry = { version = "0.16", features = ["tokio", "config"] }
 Optional features:
 
 - `tokio`: enables `Retry::run_async` and per-attempt async timeouts through an
-  injectable `qubit_clock::AsyncSleeper`.
+  injectable `qubit_clock::Timer`.
 - `config`: enables `RetryOptions::from_config` and `RetryConfigValues` for reading settings from `qubit-config`.
 
 The default feature set is empty, so synchronous retry does not pull in `tokio` or `qubit-config`.
@@ -116,10 +116,10 @@ let retry = Retry::<ServiceError>::builder()
 
 Async execution requires the `tokio` feature. Per-attempt timeouts are stored in `RetryOptions` through the builder. When an attempt times out, the executor reports `AttemptFailure::Timeout`, and listeners can inspect the configured timeout through `RetryContext::attempt_timeout()`. Operation panics still unwind through the current async task; `run_async()` does not convert them to `AttemptFailure::Panic`.
 
-When no async sleeper is injected, the default Tokio clock and sleeper are
+When no async timer is injected, the default Tokio clock and timer are
 created when the `run_async()` future is first polled. A retry policy can
 therefore be built outside the runtime while paused Tokio time remains aligned
-with the runtime executing it. An explicitly injected sleeper continues to
+with the runtime executing it. An explicitly injected timer continues to
 follow the runtime-affinity contract of its own clock.
 
 ```rust
@@ -164,34 +164,34 @@ Async and worker-thread attempts use the shortest of configured `attempt_timeout
 
 ## Deterministic Time in Tests
 
-`RetryBuilder::blocking_sleeper` configures the clock and waits used by
+`RetryBuilder::blocking_timer` configures the clock and waits used by
 `run()` and `run_in_worker()`. With the `tokio` feature,
-`RetryBuilder::async_sleeper` does the same for `run_async()`, including async
+`RetryBuilder::async_timer` does the same for `run_async()`, including async
 attempt timeouts. A manual clock can therefore test fixed, exponential, or
 Retry-After delays without waiting for real time:
 
 ```rust
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use qubit_clock::{ManualBlockingSleeper, ManualMonotonicClock};
+use qubit_clock::{ManualMonotonicClock, MonotonicClock};
 use qubit_retry::Retry;
 
-let clock = Arc::new(ManualMonotonicClock::new());
-let sleeper = Arc::new(ManualBlockingSleeper::from_clock(Arc::clone(&clock)));
+let clock = ManualMonotonicClock::new_shared();
+let timer = clock.new_timer();
 let retry = Retry::<std::io::Error>::builder()
     .max_attempts(3)
     .exponential_backoff(Duration::from_secs(1), Duration::from_secs(8))
-    .blocking_sleeper(sleeper)
+    .blocking_timer(timer)
     .build()?;
 ```
 
-The same sleeper is always used both as the monotonic clock and as the delay
+The same timer is always used both as the monotonic clock and as the delay
 driver, so elapsed budgets and sleeps cannot silently diverge into different
-time domains. If a sleeper cannot represent a deadline, execution stops with
+time domains. If a timer cannot represent a deadline, execution stops with
 `RetryErrorReason::SleeperFailed`.
 
 Worker attempt timeout and cancellation-grace waiting still use operating
-system thread/channel time: an injected blocking sleeper controls retry-flow
+system thread/channel time: an injected blocking timer controls retry-flow
 elapsed accounting and inter-attempt backoff, but it cannot replace the native
 wait used to observe whether a real worker thread has exited.
 

@@ -104,18 +104,18 @@ fn test_run_in_worker_with_timeout_allows_fast_success() {
     assert_eq!(WORKER_THREAD_ID_CALLS.load(Ordering::SeqCst), 1);
 }
 
-/// Verifies an injected blocking sleeper overflow is preserved in worker mode.
+/// Verifies an injected blocking timer overflow is preserved in worker mode.
 #[test]
 fn test_run_in_worker_reports_injected_sleeper_failure() {
     let clock = ManualMonotonicClock::new_shared();
     clock
         .advance(Duration::MAX)
         .expect("manual clock should reach its maximum instant");
-    let sleeper = clock.new_blocking_sleeper();
+    let sleeper = clock.new_timer();
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .fixed_delay(Duration::from_nanos(1))
-        .blocking_sleeper(sleeper)
+        .blocking_timer(sleeper)
         .build()
         .expect("retry should build");
 
@@ -775,7 +775,7 @@ fn test_run_in_worker_max_total_elapsed_includes_before_attempt_listener_time()
         .expect("worker probe lock should be available");
     WORKER_THREAD_ID_CALLS.store(0, Ordering::SeqCst);
     let clock = ManualMonotonicClock::new_shared();
-    let sleeper = clock.new_blocking_sleeper();
+    let sleeper = clock.new_timer();
     let observed_attempts = Arc::new(Mutex::new(Vec::new()));
     let listener_attempts = Arc::clone(&observed_attempts);
     let listener_clock = Arc::clone(&clock);
@@ -783,7 +783,7 @@ fn test_run_in_worker_max_total_elapsed_includes_before_attempt_listener_time()
         .max_attempts(2)
         .max_total_elapsed(Some(Duration::from_secs(20)))
         .no_delay()
-        .blocking_sleeper(sleeper)
+        .blocking_timer(sleeper)
         .before_attempt(move |context: &RetryContext| {
             listener_attempts
                 .lock()
@@ -817,12 +817,12 @@ fn test_run_in_worker_max_total_elapsed_includes_before_attempt_listener_time()
 #[test]
 fn test_run_in_worker_retries_with_non_zero_delay() {
     let clock = ManualMonotonicClock::new_shared();
-    let sleeper = clock.new_blocking_sleeper();
+    let sleeper = clock.new_timer();
     let attempts = Arc::new(AtomicUsize::new(0));
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .fixed_delay(Duration::from_secs(2))
-        .blocking_sleeper(sleeper)
+        .blocking_timer(sleeper)
         .build()
         .expect("retry should build");
 

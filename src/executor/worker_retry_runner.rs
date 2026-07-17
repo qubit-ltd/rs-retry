@@ -99,7 +99,7 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
         let events = self.retry.events();
         let sleeper = self.retry.blocking_sleeper();
         let handler = RetryFailureHandler::new(options, events);
-        let mut state = RetryFlowState::new(sleeper.clock());
+        let mut state = RetryFlowState::new(sleeper.timer().clock());
 
         loop {
             let attempt_timeout =
@@ -109,7 +109,7 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
             // WorkerAttemptExecutor owns the thread-level details for a single
             // attempt. The runner only turns the resulting attempt outcome into
             // retry-flow state and policy decisions.
-            let attempt_start = sleeper.clock().now();
+            let attempt_start = sleeper.timer().clock().now();
             let outcome = WorkerAttemptExecutor::run(
                 Arc::clone(&operation),
                 attempt_timeout.duration(),

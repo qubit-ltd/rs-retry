@@ -15,11 +15,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(feature = "tokio")]
-use qubit_clock::AsyncSleeper;
 use qubit_clock::{
-    BlockingSleeper,
-    StdBlockingSleeper,
+    MonotonicClock,
+    StdMonotonicClock,
+    Timer,
 };
 use qubit_error::BoxError;
 use qubit_function::{
@@ -68,17 +67,17 @@ pub struct RetryBuilder<E = BoxError> {
     isolate_listener_panics: bool,
     /// Stored validation error when max attempts is configured as zero.
     max_attempts_error: Option<RetryConfigError>,
-    /// Sleeper and monotonic clock used by sync and worker execution.
-    blocking_sleeper: Arc<dyn BlockingSleeper>,
-    /// Optional caller-supplied sleeper used by Tokio async execution.
+    /// Timer used by sync and worker execution.
+    blocking_timer: Arc<dyn Timer>,
+    /// Optional caller-supplied timer used by Tokio async execution.
     #[cfg(feature = "tokio")]
-    async_sleeper: Option<Arc<dyn AsyncSleeper>>,
+    async_timer: Option<Arc<dyn Timer>>,
 }
 
 impl<E> RetryBuilder<E> {
     /// Creates a builder with default options and no listeners.
     ///
-    /// With the `tokio` feature enabled, the default async clock and sleeper
+    /// With the `tokio` feature enabled, the default async clock and timer
     /// are created when the built policy's `Retry::run_async` future is first
     /// polled. Constructing the builder does not bind it to a Tokio runtime.
     ///
@@ -93,49 +92,45 @@ impl<E> RetryBuilder<E> {
             listeners: RetryListeners::default(),
             isolate_listener_panics: false,
             max_attempts_error: None,
-            blocking_sleeper: Arc::new(StdBlockingSleeper::new()),
+            blocking_timer: StdMonotonicClock::new().new_timer(),
             #[cfg(feature = "tokio")]
-            async_sleeper: None,
+            async_timer: None,
         }
     }
 
-    /// Sets the sleeper and monotonic clock for sync and worker execution.
+    /// Sets the timer for sync and worker execution.
     ///
     /// The same object measures operation and total elapsed time and performs
-    /// retry backoff waits. Supplying a manual sleeper therefore makes both
+    /// retry backoff waits. Supplying a manual timer therefore makes both
     /// elapsed budgets and retry delays deterministic.
     ///
     /// # Arguments
-    /// - `sleeper`: Shared blocking sleeper for [`Retry::run`] and
-    ///   [`Retry::run_in_worker`].
+    /// - `timer`: Shared timer for [`Retry::run`] and [`Retry::run_in_worker`].
     ///
     /// # Returns
     /// The updated builder.
     #[inline(always)]
-    pub fn blocking_sleeper(
-        mut self,
-        sleeper: Arc<dyn BlockingSleeper>,
-    ) -> Self {
-        self.blocking_sleeper = sleeper;
+    pub fn blocking_timer(mut self, timer: Arc<dyn Timer>) -> Self {
+        self.blocking_timer = timer;
         self
     }
 
-    /// Sets the sleeper and monotonic clock for Tokio async execution.
+    /// Sets the timer and monotonic clock for Tokio async execution.
     ///
     /// The same object measures operation and total elapsed time, enforces
     /// async attempt timeouts, and performs retry backoff waits. The caller is
-    /// responsible for satisfying the sleeper clock's runtime-affinity
+    /// responsible for satisfying the timer clock's runtime-affinity
     /// contract.
     ///
     /// # Arguments
-    /// - `sleeper`: Shared async sleeper for [`Retry::run_async`].
+    /// - `timer`: Shared timer for [`Retry::run_async`].
     ///
     /// # Returns
     /// The updated builder.
     #[cfg(feature = "tokio")]
     #[inline(always)]
-    pub fn async_sleeper(mut self, sleeper: Arc<dyn AsyncSleeper>) -> Self {
-        self.async_sleeper = Some(sleeper);
+    pub fn async_timer(mut self, timer: Arc<dyn Timer>) -> Self {
+        self.async_timer = Some(timer);
         self
     }
 
@@ -645,9 +640,9 @@ impl<E> RetryBuilder<E> {
             self.retry_after_hint,
             self.isolate_listener_panics,
             self.listeners,
-            self.blocking_sleeper,
+            self.blocking_timer,
             #[cfg(feature = "tokio")]
-            self.async_sleeper,
+            self.async_timer,
         ))
     }
 }
