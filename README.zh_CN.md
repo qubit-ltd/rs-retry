@@ -46,7 +46,7 @@ qubit-retry = { version = "0.16", features = ["tokio", "config"] }
 可选 feature：
 
 - `tokio`：启用 `Retry::run_async`，并通过可注入的
-  `qubit_clock::AsyncSleeper` 支持异步单次 attempt 超时。
+  `qubit_clock::Timer` 支持异步单次 attempt 超时。
 - `config`：启用 `RetryOptions::from_config` 和 `RetryConfigValues`，用于从 `qubit-config` 读取配置。
 
 默认 feature 为空，因此同步重试不会引入 `tokio` 或 `qubit-config`。
@@ -115,9 +115,9 @@ let retry = Retry::<ServiceError>::builder()
 
 异步执行需要开启 `tokio` feature。单次 attempt 超时通过 builder 写入 `RetryOptions`。当 attempt 超时时，执行器会报告 `AttemptFailure::Timeout`，监听器可以通过 `RetryContext::attempt_timeout()` 读取配置的超时时间。operation panic 仍会在当前 async task 中继续 unwind；`run_async()` 不会把它转换成 `AttemptFailure::Panic`。
 
-未注入 async sleeper 时，默认 Tokio clock 与 sleeper 会在 `run_async()` future
+未注入 async timer 时，默认 Tokio clock 与 timer 会在 `run_async()` future
 首次 poll 时创建。因此 retry policy 可以在 runtime 外构建，同时 paused Tokio time
-仍与实际执行它的 runtime 对齐。显式注入的 sleeper 继续遵循其自身 clock 的 runtime
+仍与实际执行它的 runtime 对齐。显式注入的 timer 继续遵循其自身 clock 的 runtime
 affinity 契约。
 
 ```rust
@@ -162,32 +162,32 @@ async 和 worker-thread attempt 会从配置的 `attempt_timeout`、剩余 `max_
 
 ## 测试中的确定性时间
 
-`RetryBuilder::blocking_sleeper` 配置 `run()` 和 `run_in_worker()` 使用的
-clock 与等待机制。启用 `tokio` feature 后，`RetryBuilder::async_sleeper` 对
+`RetryBuilder::blocking_timer` 配置 `run()` 和 `run_in_worker()` 使用的
+clock 与等待机制。启用 `tokio` feature 后，`RetryBuilder::async_timer` 对
 `run_async()` 提供同样能力，并负责异步 attempt timeout。因此固定延迟、指数退避和
 Retry-After 延迟都可以使用手动时钟测试，无需等待真实时间：
 
 ```rust
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use qubit_clock::{ManualBlockingSleeper, ManualMonotonicClock};
+use qubit_clock::{ManualMonotonicClock, MonotonicClock};
 use qubit_retry::Retry;
 
-let clock = Arc::new(ManualMonotonicClock::new());
-let sleeper = Arc::new(ManualBlockingSleeper::from_clock(Arc::clone(&clock)));
+let clock = ManualMonotonicClock::new_shared();
+let timer = clock.new_timer();
 let retry = Retry::<std::io::Error>::builder()
     .max_attempts(3)
     .exponential_backoff(Duration::from_secs(1), Duration::from_secs(8))
-    .blocking_sleeper(sleeper)
+    .blocking_timer(timer)
     .build()?;
 ```
 
-同一个 sleeper 始终同时承担单调 clock 与 delay driver，elapsed 预算和 sleep
-不会悄悄落入不同时间域。如果 sleeper 无法表示某个 deadline，执行会以
+同一个 timer 始终同时承担单调 clock 与 delay driver，elapsed 预算和 sleep
+不会悄悄落入不同时间域。如果 timer 无法表示某个 deadline，执行会以
 `RetryErrorReason::SleeperFailed` 终止。
 
 worker attempt timeout 和 cancellation grace 仍使用操作系统线程/channel 时间：
-注入的 blocking sleeper 控制 retry flow 的 elapsed 统计与 attempt 之间的退避，
+注入的 blocking timer 控制 retry flow 的 elapsed 统计与 attempt 之间的退避，
 但不能替代用于观察真实 worker 线程是否退出的原生等待。
 
 ## Worker 线程重试

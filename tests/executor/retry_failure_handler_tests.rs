@@ -356,7 +356,7 @@ fn test_retry_after_hint_panic_is_isolated_when_enabled() {
 #[test]
 fn test_on_retry_listener_time_does_not_count_against_elapsed_budget() {
     let clock = ManualMonotonicClock::new_shared();
-    let sleeper = clock.new_blocking_sleeper();
+    let sleeper = clock.new_timer();
     let retry_events = Arc::new(Mutex::new(Vec::new()));
     let scheduled_events = Arc::clone(&retry_events);
     let listener_clock = Arc::clone(&clock);
@@ -364,7 +364,7 @@ fn test_on_retry_listener_time_does_not_count_against_elapsed_budget() {
         .max_attempts(2)
         .max_operation_elapsed(Some(Duration::from_secs(10)))
         .fixed_delay(Duration::from_secs(25))
-        .blocking_sleeper(sleeper)
+        .blocking_timer(sleeper)
         .on_retry(
             move |failure: &AttemptFailure<TestError>,
                   context: &RetryContext| {
@@ -426,13 +426,13 @@ fn test_on_retry_listener_time_does_not_count_against_elapsed_budget() {
 #[test]
 fn test_max_total_elapsed_includes_failure_listener_time() {
     let clock = ManualMonotonicClock::new_shared();
-    let sleeper = clock.new_blocking_sleeper();
+    let sleeper = clock.new_timer();
     let listener_clock = Arc::clone(&clock);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_total_elapsed(Some(Duration::from_secs(20)))
         .no_delay()
-        .blocking_sleeper(sleeper)
+        .blocking_timer(sleeper)
         .on_failure(
             move |_failure: &AttemptFailure<TestError>,
                   _context: &RetryContext| {
@@ -466,13 +466,13 @@ fn test_max_total_elapsed_includes_failure_listener_time() {
 #[test]
 fn test_max_total_elapsed_includes_on_retry_listener_time() {
     let clock = ManualMonotonicClock::new_shared();
-    let sleeper = clock.new_blocking_sleeper();
+    let sleeper = clock.new_timer();
     let listener_clock = Arc::clone(&clock);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_total_elapsed(Some(Duration::from_secs(20)))
         .no_delay()
-        .blocking_sleeper(sleeper)
+        .blocking_timer(sleeper)
         .on_retry(
             move |_failure: &AttemptFailure<TestError>,
                   _context: &RetryContext| {
@@ -504,13 +504,13 @@ fn test_max_total_elapsed_includes_on_retry_listener_time() {
 #[test]
 fn test_max_total_elapsed_rechecks_retry_sleep_after_on_retry_listener() {
     let clock = ManualMonotonicClock::new_shared();
-    let sleeper = clock.new_blocking_sleeper();
+    let sleeper = clock.new_timer();
     let listener_clock = Arc::clone(&clock);
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_total_elapsed(Some(Duration::from_secs(80)))
         .fixed_delay(Duration::from_secs(50))
-        .blocking_sleeper(sleeper)
+        .blocking_timer(sleeper)
         .on_retry(
             move |_failure: &AttemptFailure<TestError>,
                   _context: &RetryContext| {

@@ -17,7 +17,10 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-use qubit_clock::ManualMonotonicClock;
+use qubit_clock::{
+    ManualMonotonicClock,
+    MonotonicClock,
+};
 use qubit_retry::{
     AttemptFailure,
     AttemptFailureDecision,
@@ -165,13 +168,13 @@ fn test_retry_error_display_formats_terminal_reasons() {
     );
 
     let elapsed_clock = ManualMonotonicClock::new_shared();
-    let elapsed_sleeper = elapsed_clock.new_blocking_sleeper();
+    let elapsed_sleeper = elapsed_clock.new_timer();
     let operation_clock = Arc::clone(&elapsed_clock);
     let elapsed_with_failure = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_operation_elapsed(Some(Duration::from_secs(5)))
         .no_delay()
-        .blocking_sleeper(elapsed_sleeper)
+        .blocking_timer(elapsed_sleeper)
         .build()
         .expect("retry should build")
         .run(move || -> Result<(), TestError> {

@@ -98,7 +98,7 @@ impl<'a, E> RetryRunner<'a, E> {
         let events = self.retry.events();
         let sleeper = self.retry.blocking_sleeper();
         let handler = RetryFailureHandler::new(options, events);
-        let mut state = RetryFlowState::new(sleeper.clock());
+        let mut state = RetryFlowState::new(sleeper.timer().clock());
 
         loop {
             let attempt_timeout =
@@ -108,7 +108,7 @@ impl<'a, E> RetryRunner<'a, E> {
             // Only user closure time contributes to max_operation_elapsed.
             // Listener time and retry sleeps are included by total_elapsed
             // through RetryFlowState's monotonic start instant.
-            let attempt_start = sleeper.clock().now();
+            let attempt_start = sleeper.timer().clock().now();
             let result = operation.call();
             let context = complete_attempt(
                 &mut state,
@@ -175,7 +175,7 @@ impl<'a, E> RetryRunner<'a, E> {
     fn unsupported_attempt_timeout_error(&self) -> RetryError<E> {
         let options = self.retry.options();
         let state: RetryFlowState<'_, E> =
-            RetryFlowState::new(self.retry.blocking_sleeper().clock());
+            RetryFlowState::new(self.retry.blocking_sleeper().timer().clock());
         let attempt_timeout = EffectiveAttemptTimeout::new(
             options.attempt_timeout_duration(),
             Some(AttemptTimeoutSource::Configured),
@@ -193,7 +193,7 @@ impl<'a, E> RetryRunner<'a, E> {
 /// # Arguments
 /// - `delay`: Delay to sleep.
 pub(in crate::executor) fn sleep_blocking(
-    sleeper: &dyn BlockingSleeper,
+    sleeper: &BlockingSleeper,
     delay: Duration,
 ) -> Result<(), TimeError> {
     if !delay.is_zero() {

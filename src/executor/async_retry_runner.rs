@@ -9,15 +9,15 @@
 //!
 //! This runner executes each attempt future on the current Tokio task. It can
 //! enforce per-attempt timeouts by racing the future against the selected
-//! [`qubit_clock::AsyncSleeper`], but it does not create a panic boundary;
+//! [`qubit_clock::Timer`], but it does not create a panic boundary;
 //! operation panics still unwind the async task.
 
 use std::future::Future;
 use std::time::Duration;
 
 use qubit_clock::{
-    AsyncSleeper,
     TimeError,
+    Timer,
 };
 
 use super::async_attempt::AsyncAttempt;
@@ -41,8 +41,8 @@ use crate::{
 pub(in crate::executor) struct AsyncRetryRunner<'a, E> {
     /// Retry policy facade that owns options and events.
     retry: &'a Retry<E>,
-    /// Sleeper and monotonic clock bound to this async execution.
-    sleeper: &'a dyn AsyncSleeper,
+    /// Timer and monotonic clock bound to this async execution.
+    timer: &'a dyn Timer,
 }
 
 #[allow(clippy::result_large_err)]
@@ -51,16 +51,16 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
     ///
     /// # Arguments
     /// - `retry`: Retry policy facade.
-    /// - `sleeper`: Async sleeper used for elapsed time, timeouts, and backoff.
+    /// - `timer`: Timer used for elapsed time, timeouts, and backoff.
     ///
     /// # Returns
     /// A runner borrowing the retry policy.
     #[inline(always)]
     pub(in crate::executor) fn new(
         retry: &'a Retry<E>,
-        sleeper: &'a dyn AsyncSleeper,
+        timer: &'a dyn Timer,
     ) -> Self {
-        Self { retry, sleeper }
+        Self { retry, timer }
     }
 
     /// Runs an asynchronous operation with retry.
@@ -98,9 +98,9 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
     ) -> Result<(), RetryError<E>> {
         let options = self.retry.options();
         let events = self.retry.events();
-        let sleeper = self.sleeper;
+        let timer = self.timer;
         let handler = RetryFailureHandler::new(options, events);
-        let mut state = RetryFlowState::new(sleeper.clock());
+        let mut state = RetryFlowState::new(timer.clock());
 
         loop {
             let attempt_timeout =
@@ -111,20 +111,14 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
             // timer fires. The timeout source is kept in the context so a later
             // timeout failure can be classified as configured timeout vs an
             // elapsed-budget terminal stop.
-            let attempt_start = sleeper.clock().now();
+            let attempt_start = timer.clock().now();
             let result = if let Some(timeout) = attempt_timeout.duration() {
+                let timeout_future = timer.after(timeout).map_err(|error| {
+                    events.error(state.sleeper_error(options, error))
+                })?;
                 tokio::select! {
                     biased;
-                    timeout_result = sleeper.sleep_for_async(timeout) => {
-                        match timeout_result {
-                            Ok(()) => Err(AttemptFailure::Timeout),
-                            Err(error) => {
-                                return Err(events.error(
-                                    state.sleeper_error(options, error),
-                                ));
-                            }
-                        }
-                    }
+                    () = timeout_future => Err(AttemptFailure::Timeout),
                     result = operation.call() => result,
                 }
             } else {
@@ -187,7 +181,7 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
         }
         match handler.handle(state, failure, context, None) {
             RetryFlowAction::Retry { delay, failure } => {
-                sleep_async(self.sleeper, delay).await.map_err(|error| {
+                sleep_async(self.timer, delay).await.map_err(|error| {
                     events.error(state.sleeper_error(options, error))
                 })?;
                 state.record_last_failure(failure);
@@ -206,11 +200,11 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
 /// # Returns
 /// This function returns after the sleep completes.
 async fn sleep_async(
-    sleeper: &dyn AsyncSleeper,
+    timer: &dyn Timer,
     delay: Duration,
 ) -> Result<(), TimeError> {
     if !delay.is_zero() {
-        sleeper.sleep_for_async(delay).await?;
+        timer.after(delay)?.await;
     }
     Ok(())
 }
