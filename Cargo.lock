@@ -312,6 +312,7 @@ name = "qubit-config"
 version = "0.14.0"
 dependencies = [
  "qubit-datatype",
+ "qubit-sanitize",
  "qubit-value",
  "regex",
  "serde",
@@ -358,6 +359,10 @@ dependencies = [
  "tokio",
  "tokio-test",
 ]
+
+[[package]]
+name = "qubit-sanitize"
+version = "0.3.0"
 
 [[package]]
 name = "qubit-serde"
