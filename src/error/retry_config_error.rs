@@ -185,23 +185,7 @@ impl From<ConfigError> for RetryConfigError {
     /// context.
     #[inline]
     fn from(source: ConfigError) -> Self {
-        let path = match &source {
-            ConfigError::PropertyNotFound(path)
-            | ConfigError::PropertyHasNoValue(path)
-            | ConfigError::PropertyIsFinal(path) => path.clone(),
-            ConfigError::TypeMismatch { key, .. }
-            | ConfigError::ConversionError { key, .. }
-            | ConfigError::ValueError { key, .. } => key.clone(),
-            ConfigError::DeserializeError { path, .. } => path.clone(),
-            ConfigError::KeyConflict { path, .. } => path.clone(),
-            ConfigError::SubstitutionError(_)
-            | ConfigError::SubstitutionDepthExceeded(_)
-            | ConfigError::SubstitutionCycle { .. }
-            | ConfigError::MergeError(_)
-            | ConfigError::IoError(_)
-            | ConfigError::ParseError(_)
-            | ConfigError::Other(_) => String::new(),
-        };
+        let path = source.path().unwrap_or_default().to_owned();
         Self::from_config(path, source)
     }
 }

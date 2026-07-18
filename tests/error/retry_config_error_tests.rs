@@ -100,14 +100,15 @@ fn test_from_config_error_preserves_typed_key_variants() {
     assert_eq!(value_error.path(), "value.key");
 }
 
-/// Verifies config errors without a single key context use an empty path.
+/// Verifies substitution errors retain their originating configuration path.
 #[test]
-fn test_from_config_error_uses_empty_path_without_key_context() {
+fn test_from_config_error_preserves_substitution_path() {
     let cycle = qubit_retry::RetryConfigError::from(
         qubit_config::ConfigError::SubstitutionCycle {
+            path: "retry.delay".to_string(),
             chain: vec!["a".to_string(), "b".to_string(), "a".to_string()],
         },
     );
-    assert_eq!(cycle.path(), "");
+    assert_eq!(cycle.path(), "retry.delay");
     assert!(cycle.message().contains("a -> b -> a"));
 }
