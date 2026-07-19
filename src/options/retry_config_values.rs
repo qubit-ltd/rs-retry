@@ -130,11 +130,11 @@ impl RetryConfigValues {
             attempt_timeout_millis: config
                 .get_optional(KEY_ATTEMPT_TIMEOUT_MILLIS)?,
             attempt_timeout_policy: config
-                .get_optional_string(KEY_ATTEMPT_TIMEOUT_POLICY)?,
+                .get_optional::<String>(KEY_ATTEMPT_TIMEOUT_POLICY)?,
             worker_cancel_grace_millis: config
                 .get_optional(KEY_WORKER_CANCEL_GRACE_MILLIS)?,
-            delay: config.get_optional_string(KEY_DELAY)?,
-            delay_strategy: config.get_optional_string(KEY_DELAY_STRATEGY)?,
+            delay: config.get_optional::<String>(KEY_DELAY)?,
+            delay_strategy: config.get_optional::<String>(KEY_DELAY_STRATEGY)?,
             fixed_delay_millis: config.get_optional(KEY_FIXED_DELAY_MILLIS)?,
             random_min_delay_millis: config
                 .get_optional(KEY_RANDOM_MIN_DELAY_MILLIS)?,
