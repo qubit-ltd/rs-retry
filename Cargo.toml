@@ -45,7 +45,7 @@ qubit-error = "0.2"
 qubit-serde = { version = "0.4", path = "../rs-serde" }
 qubit-config = { version = "0.14", path = "../rs-config", optional = true }
 qubit-function = { version = "0.16.0", path = "../rs-function" }
-qubit-clock = { version = "0.9", path = "../rs-clock" }
+qubit-clock = { version = "0.10", path = "../rs-clock" }
 
 [dev-dependencies]
 serde_json = "1.0"
