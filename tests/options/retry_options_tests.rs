@@ -157,6 +157,57 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
     assert_eq!(options.worker_cancel_grace(), Duration::from_millis(25));
 }
 
+/// Verifies string-valued retry settings explicitly interpolate placeholders.
+#[test]
+fn test_from_config_interpolates_string_values() {
+    let mut config = Config::new();
+    config
+        .set("delay_value", "fixed")
+        .expect("test config value should be set");
+    config
+        .set("delay", "${delay_value}")
+        .expect("test config value should be set");
+    config
+        .set("fixed_delay_millis", 15u64)
+        .expect("test config value should be set");
+    config
+        .set("timeout_policy_value", "retry")
+        .expect("test config value should be set");
+    config
+        .set("attempt_timeout_policy", "${timeout_policy_value}")
+        .expect("test config value should be set");
+    config
+        .set("attempt_timeout_millis", 30u64)
+        .expect("test config value should be set");
+
+    let options = RetryOptions::from_config(&config)
+        .expect("string-valued retry settings should be interpolated");
+
+    assert_eq!(
+        options.delay(),
+        &RetryDelay::fixed(Duration::from_millis(15))
+    );
+    assert_eq!(
+        options.attempt_timeout(),
+        Some(AttemptTimeoutOption::retry(Duration::from_millis(30)))
+    );
+
+    let mut alias_config = Config::new();
+    alias_config
+        .set("delay_strategy_value", "none")
+        .expect("test config value should be set");
+    alias_config
+        .set("delay_strategy", "${delay_strategy_value}")
+        .expect("test config value should be set");
+
+    assert_eq!(
+        RetryOptions::from_config(&alias_config)
+            .expect("delay strategy alias should be interpolated")
+            .delay(),
+        &RetryDelay::none()
+    );
+}
+
 /// Verifies non-fixed delay config forms and config read errors.
 #[test]
 fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
