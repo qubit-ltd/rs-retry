@@ -102,7 +102,9 @@ impl<E> RetryBuilder<E> {
     ///
     /// The same object measures operation and total elapsed time and performs
     /// retry backoff waits. Supplying a manual timer therefore makes both
-    /// elapsed budgets and retry delays deterministic.
+    /// elapsed budgets and retry delays deterministic. Because sync and worker
+    /// runners park the calling thread, the timer backend must continue making
+    /// progress independently while a retry delay is pending.
     ///
     /// # Arguments
     /// - `timer`: Shared timer for [`Retry::run`] and [`Retry::run_in_worker`].
@@ -118,9 +120,10 @@ impl<E> RetryBuilder<E> {
     /// Sets the timer and monotonic clock for Tokio async execution.
     ///
     /// The same object measures operation and total elapsed time, enforces
-    /// async attempt timeouts, and performs retry backoff waits. The caller is
-    /// responsible for satisfying the timer clock's runtime-affinity
-    /// contract.
+    /// async attempt timeouts, and performs retry backoff waits. The timer's
+    /// clock and deadline driver must remain alive and progressing for the
+    /// retry future's lifetime. A Tokio timer retains its target runtime handle
+    /// and may be polled from another runtime context.
     ///
     /// # Arguments
     /// - `timer`: Shared timer for [`Retry::run_async`].
