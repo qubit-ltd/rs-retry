@@ -17,14 +17,11 @@ use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 
+#[cfg(feature = "tokio")]
+use qubit_clock::TokioTimer;
 use qubit_clock::{
     BlockingSleeper,
     Timer,
-};
-#[cfg(feature = "tokio")]
-use qubit_clock::{
-    MonotonicClock,
-    TokioMonotonicClock,
 };
 use qubit_error::BoxError;
 
@@ -235,10 +232,10 @@ impl<E> Retry<E> {
     ///    `RetryFailureHandler`. Retry delays use the same async timer;
     ///    terminal decisions return [`RetryError`].
     ///
-    /// When no async timer was injected, the default Tokio clock and timer
-    /// are created when this future is first polled. This binds paused Tokio
-    /// time to the runtime that actually executes the retry flow rather than to
-    /// the context in which the retry policy was built.
+    /// When no async timer was injected, the default Tokio timer is created
+    /// when this future is first polled. This binds paused Tokio time to the
+    /// runtime that actually executes the retry flow rather than to the context
+    /// in which the retry policy was built.
     ///
     /// # Arguments
     /// - `operation`: Factory returning a fresh future for each attempt.
@@ -271,10 +268,8 @@ impl<E> Retry<E> {
         if let Some(timer) = self.async_timer.as_deref() {
             return AsyncRetryRunner::new(self, timer).run(operation).await;
         }
-        let timer = TokioMonotonicClock::new().new_timer();
-        AsyncRetryRunner::new(self, timer.as_ref())
-            .run(operation)
-            .await
+        let timer = TokioTimer::current();
+        AsyncRetryRunner::new(self, &timer).run(operation).await
     }
 
     /// Runs a blocking operation with retry inside worker-thread attempts.
