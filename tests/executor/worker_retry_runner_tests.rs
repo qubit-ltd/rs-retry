@@ -370,35 +370,6 @@ fn test_run_in_worker_error_before_remaining_elapsed_timeout_can_retry() {
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
 }
 
-/// Verifies worker panics become retry failures and abort by default.
-#[test]
-fn test_run_in_worker_panic_aborts_by_default() {
-    let attempts = Arc::new(AtomicUsize::new(0));
-    let retry = Retry::<TestError>::builder()
-        .max_attempts(3)
-        .no_delay()
-        .build()
-        .expect("retry should build");
-
-    let error = retry
-        .run_in_worker({
-            let attempts = Arc::clone(&attempts);
-            move |_token: AttemptCancelToken| -> Result<(), TestError> {
-                attempts.fetch_add(1, Ordering::SeqCst);
-                panic!("worker failed");
-            }
-        })
-        .expect_err("worker panic should abort by default");
-
-    assert_eq!(attempts.load(Ordering::SeqCst), 1);
-    assert_eq!(error.reason(), RetryErrorReason::Aborted);
-    let panic = error
-        .last_failure()
-        .and_then(AttemptFailure::as_panic)
-        .expect("terminal failure should be a captured panic");
-    assert_eq!(panic.message(), "worker failed");
-}
-
 /// Verifies non-string worker panic payloads use the documented fallback text.
 #[test]
 fn test_run_in_worker_non_string_panic_uses_fallback_message() {

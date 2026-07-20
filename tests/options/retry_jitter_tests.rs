@@ -248,20 +248,6 @@ fn test_retry_jitter_display_parse_round_trip_variants() {
     }
 }
 
-/// Documents [`std::fmt::Display`] and display / parse round-trip for
-/// [`RetryJitter`].
-#[test]
-fn test_retry_jitter_display_and_round_trip() {
-    assert_eq!(format!("{}", RetryJitter::None), "none");
-    assert_eq!(format!("{}", RetryJitter::none()), "none");
-    assert_eq!(format!("{}", RetryJitter::factor(0.25)), "factor:0.25");
-
-    let parsed =
-        RetryJitter::from_str(&format!("{}", RetryJitter::factor(0.25)))
-            .unwrap();
-    assert_eq!(parsed, RetryJitter::factor(0.25));
-}
-
 /// Documents JSON shape produced by `serde_json` for [`RetryJitter`].
 ///
 /// `serde_json` encodes a **unit** enum variant as a bare JSON string holding
