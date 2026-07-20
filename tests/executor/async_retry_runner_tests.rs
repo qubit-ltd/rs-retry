@@ -20,6 +20,7 @@ use std::time::Duration;
 use qubit_clock::{
     ManualMonotonicClock,
     MonotonicClock,
+    TokioTimer,
 };
 use qubit_retry::{
     AttemptFailure,
@@ -76,6 +77,61 @@ fn test_run_async_default_timer_binds_on_first_poll() {
 
     assert_eq!(result.expect("second attempt should succeed"), 2);
     assert_eq!(runtime_elapsed, Duration::from_secs(5));
+}
+
+/// Verifies that an injected Tokio timer retains its target runtime while the
+/// retry future is polled by a different runtime.
+#[test]
+fn test_run_async_uses_injected_tokio_timer_across_runtimes() {
+    let target = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .start_paused(true)
+        .build()
+        .expect("target runtime should build");
+    let polling = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .start_paused(true)
+        .build()
+        .expect("polling runtime should build");
+    let timer = target.block_on(async { Arc::new(TokioTimer::current()) });
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .fixed_delay(Duration::from_secs(5))
+        .async_timer(timer)
+        .build()
+        .expect("retry should build");
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let operation_attempts = Arc::clone(&attempts);
+    let mut retry_future = Box::pin(retry.run_async(move || {
+        let attempt = operation_attempts.fetch_add(1, Ordering::SeqCst) + 1;
+        async move {
+            if attempt == 1 {
+                Err(TestError("temporary"))
+            } else {
+                Ok(attempt)
+            }
+        }
+    }));
+
+    let early_result = polling.block_on(async {
+        tokio::select! {
+            result = &mut retry_future => Some(result),
+            () = tokio::time::sleep(Duration::from_secs(1)) => None,
+        }
+    });
+    assert!(
+        early_result.is_none(),
+        "advancing the polling runtime must not complete the backoff"
+    );
+
+    target.block_on(tokio::time::advance(Duration::from_secs(5)));
+    assert_eq!(
+        polling
+            .block_on(retry_future)
+            .expect("second attempt should succeed"),
+        2,
+    );
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
 }
 
 /// Verifies async attempt timeout is driven by injected manual time.
