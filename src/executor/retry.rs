@@ -193,7 +193,9 @@ impl<E> Retry<E> {
     /// # Blocking
     /// Blocks the current thread through the configured
     /// [`qubit_clock::BlockingSleeper`] between attempts when a non-zero retry
-    /// delay is selected.
+    /// delay is selected. The injected timer backend must make progress
+    /// independently while this thread is parked. Do not use a Tokio timer
+    /// whose sole current-thread runtime driver is this calling thread.
     ///
     /// # Elapsed Budget
     /// `max_operation_elapsed` counts only user operation execution time.
@@ -233,9 +235,10 @@ impl<E> Retry<E> {
     ///    terminal decisions return [`RetryError`].
     ///
     /// When no async timer was injected, the default Tokio timer is created
-    /// when this future is first polled. This binds paused Tokio time to the
-    /// runtime that actually executes the retry flow rather than to the context
-    /// in which the retry policy was built.
+    /// when this future is first polled, capturing the runtime that begins
+    /// execution. An injected Tokio timer instead retains its own target
+    /// runtime and can be polled from another runtime context, provided the
+    /// target runtime remains alive and driven.
     ///
     /// # Arguments
     /// - `operation`: Factory returning a fresh future for each attempt.
@@ -247,8 +250,9 @@ impl<E> Retry<E> {
     /// Propagates operation panics from the current async task. They are not
     /// converted to [`crate::AttemptFailure::Panic`] because `run_async` does
     /// not create an isolation boundary. Listener panics are propagated unless
-    /// listener panic isolation is enabled. Tokio may panic if timer APIs are
-    /// used outside a runtime with a time driver.
+    /// listener panic isolation is enabled. Without an injected async timer,
+    /// first polling outside a Tokio runtime panics while capturing the default
+    /// timer handle.
     ///
     /// # Elapsed Budget
     /// `max_operation_elapsed` counts only user operation execution time.
@@ -322,7 +326,10 @@ impl<E> Retry<E> {
     ///
     /// # Blocking
     /// Blocks the current thread while waiting for each worker result or
-    /// timeout and while sleeping between retry attempts.
+    /// timeout and while sleeping between retry attempts. The injected timer
+    /// backend must progress independently while this thread is parked. Do not
+    /// use a Tokio timer whose sole current-thread runtime driver is this
+    /// calling thread.
     ///
     /// # Elapsed Budget
     /// `max_operation_elapsed` counts only user operation execution time.

@@ -117,8 +117,9 @@ let retry = Retry::<ServiceError>::builder()
 
 未注入 async timer 时，默认 Tokio clock 与 timer 会在 `run_async()` future
 首次 poll 时创建。因此 retry policy 可以在 runtime 外构建，同时 paused Tokio time
-仍与实际执行它的 runtime 对齐。显式注入的 timer 继续遵循其自身 clock 的 runtime
-affinity 契约。
+仍与实际执行它的 runtime 对齐。显式注入的 Tokio timer 会保存自己的目标 runtime
+Handle，可以在其他 runtime context 中 poll；目标 Runtime 必须保持存活并持续驱动，
+直到 retry future 完成。
 
 ```rust
 use qubit_retry::Retry;
@@ -185,6 +186,12 @@ let retry = Retry::<std::io::Error>::builder()
 同一个 timer 始终同时承担单调 clock 与 delay driver，elapsed 预算和 sleep
 不会悄悄落入不同时间域。如果 timer 无法表示某个 deadline，执行会以
 `RetryErrorReason::SleeperFailed` 终止。
+
+`run()` 和 `run_in_worker()` 会通过 `BlockingSleeper` 适配 `blocking_timer`；调用线程
+park 后，其 backend 必须继续独立推进。standard timer 自带 worker，manual time 必须
+由其他控制方 advance。不要注入以被阻塞调用线程作为唯一 current-thread runtime
+驱动者的 Tokio timer。`async_timer` 没有阻塞要求，但其 deadline driver 必须保持存活
+并持续推进。
 
 worker attempt timeout 和 cancellation grace 仍使用操作系统线程/channel 时间：
 注入的 blocking timer 控制 retry flow 的 elapsed 统计与 attempt 之间的退避，

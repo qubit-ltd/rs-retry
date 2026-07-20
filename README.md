@@ -119,8 +119,9 @@ Async execution requires the `tokio` feature. Per-attempt timeouts are stored in
 When no async timer is injected, the default Tokio clock and timer are
 created when the `run_async()` future is first polled. A retry policy can
 therefore be built outside the runtime while paused Tokio time remains aligned
-with the runtime executing it. An explicitly injected timer continues to
-follow the runtime-affinity contract of its own clock.
+with the runtime executing it. An explicitly injected Tokio timer retains its
+own target runtime Handle and can be polled from another runtime context. That
+target Runtime must remain alive and driven until the retry future completes.
 
 ```rust
 use qubit_retry::Retry;
@@ -189,6 +190,13 @@ The same timer is always used both as the monotonic clock and as the delay
 driver, so elapsed budgets and sleeps cannot silently diverge into different
 time domains. If a timer cannot represent a deadline, execution stops with
 `RetryErrorReason::SleeperFailed`.
+
+`run()` and `run_in_worker()` adapt `blocking_timer` through
+`BlockingSleeper`. Its backend must continue making progress while the caller
+thread is parked. The standard timer has its own worker; manual time must be
+advanced elsewhere. Do not inject a Tokio timer whose only current-thread
+runtime driver is the blocked caller. `async_timer` has no blocking
+requirement, but its deadline driver must remain alive and progressing.
 
 Worker attempt timeout and cancellation-grace waiting still use operating
 system thread/channel time: an injected blocking timer controls retry-flow
