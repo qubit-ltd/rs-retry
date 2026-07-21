@@ -20,6 +20,11 @@ use std::time::Duration;
 use qubit_clock::{
     ManualMonotonicClock,
     MonotonicClock,
+    MonotonicInstant,
+    TimeError,
+    Timer,
+    TimerFuture,
+    TimerUnavailableError,
     TokioTimer,
 };
 use qubit_retry::{
@@ -33,6 +38,35 @@ use qubit_retry::{
 };
 
 use crate::support::TestError;
+
+struct CompletionFailingTimer {
+    clock: ManualMonotonicClock,
+}
+
+impl CompletionFailingTimer {
+    fn new() -> Self {
+        Self {
+            clock: ManualMonotonicClock::new(),
+        }
+    }
+}
+
+impl Timer for CompletionFailingTimer {
+    fn clock(&self) -> &dyn MonotonicClock {
+        &self.clock
+    }
+
+    fn at(
+        &self,
+        _deadline: MonotonicInstant,
+    ) -> Result<TimerFuture, TimeError> {
+        Ok(Box::pin(std::future::ready(Err(
+            TimeError::TimerUnavailable {
+                source: TimerUnavailableError::SchedulerWorkerTerminated,
+            },
+        ))))
+    }
+}
 
 /// Verifies that the default async timer binds to a paused runtime when the
 /// retry future is first polled, rather than when the policy is built.
@@ -242,6 +276,42 @@ async fn test_run_async_reports_injected_timer_failure() {
         error.last_failure(),
         Some(AttemptFailure::Executor(_))
     ));
+}
+
+#[tokio::test]
+async fn test_run_async_reports_timer_delay_completion_failure() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(2)
+        .fixed_delay(Duration::from_secs(1))
+        .async_timer(Arc::new(CompletionFailingTimer::new()))
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_async(|| async { Err::<(), _>(TestError("temporary")) })
+        .await
+        .expect_err("timer completion failure should terminate retry");
+
+    assert_eq!(error.reason(), RetryErrorReason::SleeperFailed);
+    assert_eq!(error.attempts(), 1);
+}
+
+#[tokio::test]
+async fn test_run_async_reports_attempt_timeout_completion_failure() {
+    let retry = Retry::<TestError>::builder()
+        .max_attempts(1)
+        .attempt_timeout(Some(Duration::from_secs(1)))
+        .async_timer(Arc::new(CompletionFailingTimer::new()))
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_async(std::future::pending::<Result<(), TestError>>)
+        .await
+        .expect_err("timer completion failure should terminate retry");
+
+    assert_eq!(error.reason(), RetryErrorReason::SleeperFailed);
+    assert_eq!(error.attempts(), 1);
 }
 
 /// Verifies async operation panic still propagates through the current task.
