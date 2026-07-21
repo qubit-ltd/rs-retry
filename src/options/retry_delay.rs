@@ -17,26 +17,34 @@
 //! form:
 //!
 //! - `none`
-//! - `fixed(<duration>)` — duration fields are displayed as half-up rounded
-//!   whole milliseconds with an `ms` suffix; `FromStr` accepts any duration
-//!   string parsed by [`qubit_serde::serde::duration_millis_with_unit`]
+//! - `fixed(<duration>)` — duration fields are displayed and parsed as half-up
+//!   rounded whole milliseconds with an `ms` suffix
 //! - `random(<min>..=<max>)` — same rules for the two duration fields
 //! - `exponential(initial=<...>, max=<...>, multiplier=<f64>)` — same for
 //!   `initial` and `max`
 //!
-//! For [`std::str::FromStr`], substrings for duration fields follow
-//! [`qubit_serde::serde::duration_millis_with_unit`] (bare integer as
-//! milliseconds, unit suffixes, etc.; see that module).
+//! For [`std::str::FromStr`], duration fields must be canonical
+//! `<integer>ms` strings as defined by
+//! [`qubit_serde::serde::duration_millis_with_unit`].
 //! [`std::fmt::Display`] normalizes to whole millisecond + `ms` for those
 //! fields.
 
 use std::str::FromStr;
 use std::time::Duration;
 
-use parse_display::{Display, FromStr};
-use qubit_argument::{ArgumentResult, require_that};
+use parse_display::{
+    Display,
+    FromStr,
+};
+use qubit_argument::{
+    require_that,
+    ArgumentResult,
+};
 use rand::RngExt;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use super::retry_delay_duration_format::RetryDelayDurationFormat;
 use crate::constants::DEFAULT_RETRY_DELAY;
@@ -76,7 +84,9 @@ pub enum RetryDelay {
     },
 
     /// Exponential backoff capped by `max`.
-    #[display("exponential(initial={initial}, max={max}, multiplier={multiplier})")]
+    #[display(
+        "exponential(initial={initial}, max={max}, multiplier={multiplier})"
+    )]
     Exponential {
         /// RetryDelay used for the first retry.
         #[display(with = RetryDelayDurationFormat)]
@@ -145,7 +155,11 @@ impl RetryDelay {
     /// # Returns
     /// A [`RetryDelay::Exponential`] strategy.
     #[inline(always)]
-    pub fn exponential(initial: Duration, max: Duration, multiplier: f64) -> Self {
+    pub fn exponential(
+        initial: Duration,
+        max: Duration,
+        multiplier: f64,
+    ) -> Self {
         Self::Exponential {
             initial,
             max,
@@ -249,7 +263,8 @@ impl RetryDelay {
                     (*min, *max),
                     path,
                     |(min, max)| {
-                        Self::duration_fits_nanos_u64(*min) && Self::duration_fits_nanos_u64(*max)
+                        Self::duration_fits_nanos_u64(*min)
+                            && Self::duration_fits_nanos_u64(*max)
                     },
                     "random_delay_nanos_range",
                     "random delay bounds must fit into u64 nanoseconds",
