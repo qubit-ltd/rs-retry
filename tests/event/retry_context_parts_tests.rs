@@ -1,11 +1,6 @@
 use std::time::Duration;
 
-use qubit_retry::{
-    AttemptCancelToken,
-    AttemptTimeoutSource,
-    Retry,
-    RetryContext,
-};
+use qubit_retry::{AttemptCancelToken, AttemptTimeoutSource, Retry, RetryContext};
 
 #[test]
 fn test_retry_context_parts_are_observable_in_before_attempt_context() {
@@ -15,10 +10,7 @@ fn test_retry_context_parts_are_observable_in_before_attempt_context() {
         .before_attempt(|context: &RetryContext| {
             assert_eq!(1, context.attempt());
             assert_eq!(1, context.max_attempts());
-            assert_eq!(
-                Some(Duration::from_millis(50)),
-                context.attempt_timeout()
-            );
+            assert_eq!(Some(Duration::from_millis(50)), context.attempt_timeout());
             assert_eq!(
                 Some(AttemptTimeoutSource::Configured),
                 context.attempt_timeout_source(),

@@ -10,10 +10,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use qubit_retry::constants::DEFAULT_RETRY_JITTER;
-use qubit_retry::{
-    RetryDelay,
-    RetryJitter,
-};
+use qubit_retry::{RetryDelay, RetryJitter};
 
 /// Verifies factor jitter application and validation bounds.
 #[test]
@@ -66,11 +63,8 @@ fn test_delay_for_attempt_combines_delay_strategy_and_jitter() {
         Duration::from_millis(50)
     );
 
-    let exponential = RetryDelay::exponential(
-        Duration::from_millis(10),
-        Duration::from_millis(80),
-        2.0,
-    );
+    let exponential =
+        RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 2.0);
     assert_eq!(
         RetryJitter::none().delay_for_attempt(&exponential, 1),
         Duration::from_millis(10)

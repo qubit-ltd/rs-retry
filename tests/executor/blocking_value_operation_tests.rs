@@ -6,10 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_retry::{
-    AttemptCancelToken,
-    Retry,
-};
+use qubit_retry::{AttemptCancelToken, Retry};
 
 use crate::support::TestError;
 
@@ -22,8 +19,7 @@ struct NonCloneValue {
 
 /// Verifies blocking worker value capture through the public retry API.
 #[test]
-fn test_blocking_value_operation_is_observable_through_non_clone_success_value()
-{
+fn test_blocking_value_operation_is_observable_through_non_clone_success_value() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .no_delay()

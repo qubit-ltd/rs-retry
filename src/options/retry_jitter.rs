@@ -26,19 +26,10 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use parse_display::{
-    Display,
-    FromStr as DeriveFromStr,
-};
-use qubit_argument::{
-    ArgumentResult,
-    require_that,
-};
+use parse_display::{Display, FromStr as DeriveFromStr};
+use qubit_argument::{ArgumentResult, require_that};
 use rand::RngExt;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 
 use crate::RetryDelay;
 use crate::constants::DEFAULT_RETRY_JITTER;
@@ -51,16 +42,7 @@ use super::internal::RetryJitterFactorFormat;
 ///
 /// Supports [`RetryJitter::None`] and symmetric [`RetryJitter::Factor`] jitter.
 /// After randomization, delays are clamped to **non-negative** values.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Display,
-    DeriveFromStr,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Display, DeriveFromStr, Serialize, Deserialize)]
 pub enum RetryJitter {
     /// No jitter: [`RetryJitter::apply`] returns the base delay unchanged.
     #[display("none")]
@@ -125,11 +107,7 @@ impl RetryJitter {
     pub fn apply(&self, base: Duration) -> Duration {
         match self {
             Self::None => base,
-            Self::Factor(factor)
-                if !factor.is_finite() || *factor <= 0.0 || base.is_zero() =>
-            {
-                base
-            }
+            Self::Factor(factor) if !factor.is_finite() || *factor <= 0.0 || base.is_zero() => base,
             Self::Factor(factor) => {
                 let base_nanos_u128 = base.as_nanos();
                 if base_nanos_u128 > u64::MAX as u128 {
@@ -139,8 +117,7 @@ impl RetryJitter {
                 let span = base_nanos * factor;
                 let mut rng = rand::rng();
                 let jitter = rng.random_range(-span..=span);
-                let nanos =
-                    (base_nanos + jitter).clamp(0.0, u64::MAX as f64) as u64;
+                let nanos = (base_nanos + jitter).clamp(0.0, u64::MAX as f64) as u64;
                 Duration::from_nanos(nanos)
             }
         }
@@ -158,11 +135,7 @@ impl RetryJitter {
     ///
     /// # Returns
     /// The delay for the attempt after jitter is applied.
-    pub fn delay_for_attempt(
-        &self,
-        delay_strategy: &RetryDelay,
-        attempt: u32,
-    ) -> Duration {
+    pub fn delay_for_attempt(&self, delay_strategy: &RetryDelay, attempt: u32) -> Duration {
         let base_delay = delay_strategy.base_delay(attempt);
         self.apply(base_delay)
     }

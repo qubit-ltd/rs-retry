@@ -17,11 +17,7 @@ use std::time::Duration;
 
 use crate::event::RetryEvents;
 use crate::{
-    AttemptFailure,
-    AttemptFailureDecision,
-    RetryContext,
-    RetryError,
-    RetryErrorReason,
+    AttemptFailure, AttemptFailureDecision, RetryContext, RetryError, RetryErrorReason,
     RetryOptions,
 };
 
@@ -49,10 +45,7 @@ impl<'a, E> RetryFailureHandler<'a, E> {
     /// # Returns
     /// A failure handler for one retry policy.
     #[inline(always)]
-    pub(in crate::executor) fn new(
-        options: &'a RetryOptions,
-        events: &'a RetryEvents<E>,
-    ) -> Self {
+    pub(in crate::executor) fn new(options: &'a RetryOptions, events: &'a RetryEvents<E>) -> Self {
         Self {
             options,
             events,
@@ -80,8 +73,7 @@ impl<'a, E> RetryFailureHandler<'a, E> {
         // Failure listeners may force Retry, RetryAfter, or Abort. If they all
         // choose UseDefault, RetryFailurePolicy applies the library defaults
         // for timeout, panic, executor, and ordinary operation errors.
-        let (hint, listener_decision, context) =
-            self.observe_failure(state, &failure, context);
+        let (hint, listener_decision, context) = self.observe_failure(state, &failure, context);
         let decision = self.policy.resolve(listener_decision, &failure);
         if decision == AttemptFailureDecision::Abort {
             return RetryFlowAction::Finished(RetryError::new(
@@ -95,11 +87,7 @@ impl<'a, E> RetryFailureHandler<'a, E> {
         // For example, worker execution refuses to start another attempt while
         // a timed-out worker is still running.
         if let Some(reason) = retry_block_reason {
-            return RetryFlowAction::Finished(RetryError::new(
-                reason,
-                Some(failure),
-                context,
-            ));
+            return RetryFlowAction::Finished(RetryError::new(reason, Some(failure), context));
         }
 
         // Hard limits are checked after listeners so callers can still observe
@@ -112,15 +100,11 @@ impl<'a, E> RetryFailureHandler<'a, E> {
             ));
         }
 
-        if let Some(reason) = self.options.elapsed_error_reason(
-            context.operation_elapsed(),
-            context.total_elapsed(),
-        ) {
-            return RetryFlowAction::Finished(RetryError::new(
-                reason,
-                Some(failure),
-                context,
-            ));
+        if let Some(reason) = self
+            .options
+            .elapsed_error_reason(context.operation_elapsed(), context.total_elapsed())
+        {
+            return RetryFlowAction::Finished(RetryError::new(reason, Some(failure), context));
         }
 
         // Delay selection order is centralized in RetryOptions. Explicit
@@ -145,15 +129,11 @@ impl<'a, E> RetryFailureHandler<'a, E> {
         // the executor never sleeps past the total budget.
         self.events.retry_scheduled(&failure, &context);
         let context = context.with_total_elapsed(state.total_elapsed());
-        if let Some(reason) = self.options.elapsed_error_reason(
-            context.operation_elapsed(),
-            context.total_elapsed(),
-        ) {
-            return RetryFlowAction::Finished(RetryError::new(
-                reason,
-                Some(failure),
-                context,
-            ));
+        if let Some(reason) = self
+            .options
+            .elapsed_error_reason(context.operation_elapsed(), context.total_elapsed())
+        {
+            return RetryFlowAction::Finished(RetryError::new(reason, Some(failure), context));
         }
         if self
             .options
@@ -187,8 +167,7 @@ impl<'a, E> RetryFailureHandler<'a, E> {
         context: RetryContext,
         reason: RetryErrorReason,
     ) -> RetryError<E> {
-        let (_hint, _listener_decision, context) =
-            self.observe_failure(state, &failure, context);
+        let (_hint, _listener_decision, context) = self.observe_failure(state, &failure, context);
         RetryError::new(reason, Some(failure), context)
     }
 

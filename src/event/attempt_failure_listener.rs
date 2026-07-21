@@ -7,16 +7,9 @@
 // =============================================================================
 //! Attempt failure listener alias.
 
-use qubit_function::{
-    ArcBiConsumer,
-    ArcBiFunction,
-};
+use qubit_function::{ArcBiConsumer, ArcBiFunction};
 
-use crate::{
-    AttemptFailure,
-    AttemptFailureDecision,
-    RetryContext,
-};
+use crate::{AttemptFailure, AttemptFailureDecision, RetryContext};
 
 /// Listener invoked when one operation attempt produces a failure.
 ///
@@ -29,5 +22,4 @@ pub type AttemptFailureListener<E> =
 /// The context includes the selected next delay through
 /// [`RetryContext::next_delay`]. This listener is observational only and cannot
 /// change the retry decision.
-pub type RetryScheduledListener<E> =
-    ArcBiConsumer<AttemptFailure<E>, RetryContext>;
+pub type RetryScheduledListener<E> = ArcBiConsumer<AttemptFailure<E>, RetryContext>;
