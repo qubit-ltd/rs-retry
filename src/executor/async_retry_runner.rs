@@ -118,7 +118,14 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
                 })?;
                 tokio::select! {
                     biased;
-                    () = timeout_future => Err(AttemptFailure::Timeout),
+                    result = timeout_future => match result {
+                        Ok(()) => Err(AttemptFailure::Timeout),
+                        Err(error) => {
+                            return Err(events.error(
+                                state.sleeper_error(options, error),
+                            ));
+                        }
+                    },
                     result = operation.call() => result,
                 }
             } else {
@@ -204,7 +211,7 @@ async fn sleep_async(
     delay: Duration,
 ) -> Result<(), TimeError> {
     if !delay.is_zero() {
-        timer.after(delay)?.await;
+        timer.after(delay)?.await?;
     }
     Ok(())
 }
