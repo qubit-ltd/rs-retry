@@ -21,24 +21,19 @@ fn test_base_delay_none_fixed_random_and_exponential_values() {
         Duration::from_millis(12)
     );
     assert_eq!(
-        RetryDelay::random(Duration::from_millis(7), Duration::from_millis(7))
-            .base_delay(1),
+        RetryDelay::random(Duration::from_millis(7), Duration::from_millis(7)).base_delay(1),
         Duration::from_millis(7)
     );
 
-    let random =
-        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8));
+    let random = RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8));
     for _ in 0..20 {
         let delay = random.base_delay(1);
         assert!(delay >= Duration::from_millis(5));
         assert!(delay <= Duration::from_millis(8));
     }
 
-    let exponential = RetryDelay::exponential(
-        Duration::from_millis(100),
-        Duration::from_millis(500),
-        2.0,
-    );
+    let exponential =
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0);
     assert_eq!(exponential.base_delay(0), Duration::from_millis(100));
     assert_eq!(exponential.base_delay(1), Duration::from_millis(100));
     assert_eq!(exponential.base_delay(2), Duration::from_millis(200));
@@ -63,11 +58,8 @@ fn test_exponential_delay_handles_large_durations() {
 /// stops at the configured cap.
 #[test]
 fn test_exponential_delay_uses_first_attempt_indices_and_caps_at_max() {
-    let exponential = RetryDelay::exponential(
-        Duration::from_millis(100),
-        Duration::from_millis(180),
-        1.7,
-    );
+    let exponential =
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(180), 1.7);
 
     assert_eq!(exponential.base_delay(0), Duration::from_millis(100));
     assert_eq!(exponential.base_delay(1), Duration::from_millis(100));
@@ -80,11 +72,8 @@ fn test_exponential_delay_uses_first_attempt_indices_and_caps_at_max() {
 /// path exceeds it.
 #[test]
 fn test_exponential_delay_cap_applied_when_scaled_delay_exceeds_max() {
-    let exponential = RetryDelay::exponential(
-        Duration::from_millis(100),
-        Duration::from_millis(120),
-        10.0,
-    );
+    let exponential =
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(120), 10.0);
 
     assert_eq!(exponential.base_delay(2), Duration::from_millis(120));
     assert_eq!(exponential.base_delay(3), Duration::from_millis(120));
@@ -114,12 +103,9 @@ fn test_validate_rejects_invalid_values() {
             .is_ok()
     );
     assert!(
-        RetryDelay::random(
-            unsampleable_random_bound,
-            unsampleable_random_bound
-        )
-        .validate()
-        .is_err()
+        RetryDelay::random(unsampleable_random_bound, unsampleable_random_bound)
+            .validate()
+            .is_err()
     );
     assert!(
         RetryDelay::exponential(Duration::ZERO, Duration::from_secs(1), 2.0)
@@ -127,22 +113,14 @@ fn test_validate_rejects_invalid_values() {
             .is_err()
     );
     assert!(
-        RetryDelay::exponential(
-            Duration::from_secs(2),
-            Duration::from_secs(1),
-            2.0
-        )
-        .validate()
-        .is_err()
+        RetryDelay::exponential(Duration::from_secs(2), Duration::from_secs(1), 2.0)
+            .validate()
+            .is_err()
     );
     assert!(
-        RetryDelay::exponential(
-            Duration::from_secs(1),
-            Duration::from_secs(2),
-            1.0
-        )
-        .validate()
-        .is_err()
+        RetryDelay::exponential(Duration::from_secs(1), Duration::from_secs(2), 1.0)
+            .validate()
+            .is_err()
     );
     assert!(
         RetryDelay::exponential(
@@ -165,11 +143,7 @@ fn test_retry_delay_serde_json_roundtrip_variants() {
         RetryDelay::none(),
         RetryDelay::fixed(Duration::from_millis(12)),
         RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8)),
-        RetryDelay::exponential(
-            Duration::from_millis(100),
-            Duration::from_millis(500),
-            2.0,
-        ),
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0),
         RetryDelay::default(),
     ];
     for original in cases {
@@ -188,8 +162,7 @@ fn test_retry_delay_serde_json_literal_shapes() {
         r#""None""#
     );
     assert_eq!(
-        serde_json::to_string(&RetryDelay::fixed(Duration::from_millis(12)))
-            .unwrap(),
+        serde_json::to_string(&RetryDelay::fixed(Duration::from_millis(12))).unwrap(),
         r#"{"Fixed":12}"#
     );
     assert_eq!(

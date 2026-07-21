@@ -8,10 +8,7 @@
 
 use std::time::Duration;
 
-use qubit_retry::{
-    AttemptTimeoutOption,
-    AttemptTimeoutPolicy,
-};
+use qubit_retry::{AttemptTimeoutOption, AttemptTimeoutPolicy};
 
 /// Verifies timeout option constructors and accessors.
 #[test]
@@ -45,8 +42,7 @@ fn test_attempt_timeout_option_validate_rejects_zero_duration() {
 #[test]
 fn test_attempt_timeout_option_serde_uses_milliseconds() {
     let option = AttemptTimeoutOption::abort(Duration::from_millis(25));
-    let json = serde_json::to_string(&option)
-        .expect("timeout option should serialize");
+    let json = serde_json::to_string(&option).expect("timeout option should serialize");
     assert!(json.contains("\"timeout\":25"));
     assert!(json.contains("\"policy\":\"Abort\""));
 

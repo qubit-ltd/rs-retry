@@ -18,8 +18,7 @@ fn test_retry_jitter_factor_format_display_and_parse_round_trip() {
 
     assert_eq!(jitter.to_string(), "factor:0.25");
     assert_eq!(
-        RetryJitter::from_str(&jitter.to_string())
-            .expect("displayed jitter factor should parse"),
+        RetryJitter::from_str(&jitter.to_string()).expect("displayed jitter factor should parse"),
         jitter,
     );
     for invalid in ["factor:-0.1", "factor:1.1", "factor:nan", "factor:inf"] {

@@ -19,18 +19,9 @@ use std::time::Duration;
 use crate::event::RetryContextParts;
 use crate::options::EffectiveAttemptTimeout;
 use crate::{
-    AttemptExecutorError,
-    AttemptFailure,
-    RetryContext,
-    RetryError,
-    RetryErrorReason,
-    RetryOptions,
+    AttemptExecutorError, AttemptFailure, RetryContext, RetryError, RetryErrorReason, RetryOptions,
 };
-use qubit_clock::{
-    MonotonicClock,
-    MonotonicInstant,
-    TimeError,
-};
+use qubit_clock::{MonotonicClock, MonotonicInstant, TimeError};
 
 /// Mutable retry-flow state shared by sync, async, and worker execution loops.
 pub(in crate::executor) struct RetryFlowState<'a, E> {
@@ -79,10 +70,7 @@ impl<'a, E> RetryFlowState<'a, E> {
     /// # Returns
     /// Non-decreasing elapsed duration.
     #[inline(always)]
-    pub(in crate::executor) fn elapsed_since(
-        &self,
-        earlier: MonotonicInstant,
-    ) -> Duration {
+    pub(in crate::executor) fn elapsed_since(&self, earlier: MonotonicInstant) -> Duration {
         self.clock
             .now()
             .duration_since(earlier)
@@ -122,12 +110,8 @@ impl<'a, E> RetryFlowState<'a, E> {
     /// # Arguments
     /// - `attempt_elapsed`: Duration consumed by the latest attempt.
     #[inline(always)]
-    pub(in crate::executor) fn add_operation_elapsed(
-        &mut self,
-        attempt_elapsed: Duration,
-    ) {
-        self.operation_elapsed =
-            self.operation_elapsed.saturating_add(attempt_elapsed);
+    pub(in crate::executor) fn add_operation_elapsed(&mut self, attempt_elapsed: Duration) {
+        self.operation_elapsed = self.operation_elapsed.saturating_add(attempt_elapsed);
     }
 
     /// Builds a context snapshot from this retry-flow state.
@@ -146,12 +130,7 @@ impl<'a, E> RetryFlowState<'a, E> {
         attempt_elapsed: Duration,
         attempt_timeout: EffectiveAttemptTimeout,
     ) -> RetryContext {
-        self.context_with_attempt(
-            self.attempts,
-            options,
-            attempt_elapsed,
-            attempt_timeout,
-        )
+        self.context_with_attempt(self.attempts, options, attempt_elapsed, attempt_timeout)
     }
 
     /// Builds a context for the attempt that will run after pre-attempt checks.
@@ -172,12 +151,7 @@ impl<'a, E> RetryFlowState<'a, E> {
         attempt_elapsed: Duration,
         attempt_timeout: EffectiveAttemptTimeout,
     ) -> RetryContext {
-        self.context_with_attempt(
-            self.attempts + 1,
-            options,
-            attempt_elapsed,
-            attempt_timeout,
-        )
+        self.context_with_attempt(self.attempts + 1, options, attempt_elapsed, attempt_timeout)
     }
 
     /// Takes an elapsed-budget terminal error when a budget is exhausted.
@@ -196,8 +170,7 @@ impl<'a, E> RetryFlowState<'a, E> {
         attempt_timeout: EffectiveAttemptTimeout,
     ) -> Option<RetryError<E>> {
         let total_elapsed = self.total_elapsed();
-        let reason = options
-            .elapsed_error_reason(self.operation_elapsed, total_elapsed)?;
+        let reason = options.elapsed_error_reason(self.operation_elapsed, total_elapsed)?;
         Some(RetryError::new(
             reason,
             self.take_last_failure(),
@@ -231,16 +204,9 @@ impl<'a, E> RetryFlowState<'a, E> {
         RetryError::new(
             RetryErrorReason::SleeperFailed,
             Some(AttemptFailure::Executor(
-                AttemptExecutorError::with_context(
-                    "retry sleeper failed",
-                    &error.to_string(),
-                ),
+                AttemptExecutorError::with_context("retry sleeper failed", &error.to_string()),
             )),
-            self.context(
-                options,
-                Duration::ZERO,
-                EffectiveAttemptTimeout::none(),
-            ),
+            self.context(options, Duration::ZERO, EffectiveAttemptTimeout::none()),
         )
     }
 
@@ -249,10 +215,7 @@ impl<'a, E> RetryFlowState<'a, E> {
     /// # Arguments
     /// - `failure`: Failure from the latest attempt.
     #[inline(always)]
-    pub(in crate::executor) fn record_last_failure(
-        &mut self,
-        failure: AttemptFailure<E>,
-    ) {
+    pub(in crate::executor) fn record_last_failure(&mut self, failure: AttemptFailure<E>) {
         self.last_failure = Some(failure);
     }
 
@@ -261,9 +224,7 @@ impl<'a, E> RetryFlowState<'a, E> {
     /// # Returns
     /// The retained last failure, if one exists.
     #[inline(always)]
-    pub(in crate::executor) fn take_last_failure(
-        &mut self,
-    ) -> Option<AttemptFailure<E>> {
+    pub(in crate::executor) fn take_last_failure(&mut self) -> Option<AttemptFailure<E>> {
         self.last_failure.take()
     }
 

@@ -6,22 +6,11 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::sync::atomic::{
-    AtomicUsize,
-    Ordering,
-};
-use std::sync::{
-    Arc,
-    Mutex,
-    mpsc,
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
-use qubit_retry::{
-    AttemptCancelToken,
-    Retry,
-    RetryErrorReason,
-};
+use qubit_retry::{AttemptCancelToken, Retry, RetryErrorReason};
 
 /// Verifies worker-attempt execution is observable through the public worker
 /// API.
