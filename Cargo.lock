@@ -278,7 +278,7 @@ name = "qubit-config"
 version = "0.14.0"
 dependencies = [
  "qubit-datatype",
- "qubit-sanitize",
+ "qubit-redact",
  "qubit-value",
  "regex",
  "serde",
@@ -309,6 +309,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59f10e916324739b811520fbfb24746f4822ad9ea1adb53c79fc04b7c090e5ed"
 
 [[package]]
+name = "qubit-redact"
+version = "0.3.0"
+
+[[package]]
 name = "qubit-retry"
 version = "0.16.0"
 dependencies = [
@@ -327,10 +331,6 @@ dependencies = [
  "tokio",
  "tokio-test",
 ]
-
-[[package]]
-name = "qubit-sanitize"
-version = "0.3.0"
 
 [[package]]
 name = "qubit-serde"
