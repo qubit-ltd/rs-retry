@@ -8,6 +8,7 @@
 
 mod attempt_timeout_option_tests;
 mod attempt_timeout_policy_tests;
+mod parse_retry_jitter_error_tests;
 #[cfg(feature = "config")]
 mod retry_config_values_tests;
 mod retry_delay_duration_format_tests;

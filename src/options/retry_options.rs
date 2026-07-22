@@ -18,22 +18,39 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
-use qubit_argument::{OptionArgument, require_that};
+use qubit_argument::{
+    OptionArgument,
+    require_that,
+};
 #[cfg(feature = "config")]
 use qubit_config::ConfigReader;
 
 #[cfg(feature = "config")]
 use super::retry_config_values::RetryConfigValues;
-use super::{AttemptTimeoutOption, EffectiveAttemptTimeout};
+use super::{
+    AttemptTimeoutOption,
+    EffectiveAttemptTimeout,
+};
 
 use crate::constants::{
-    DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_MAX_OPERATION_ELAPSED,
-    DEFAULT_RETRY_MAX_TOTAL_ELAPSED, DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS,
-    KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_DELAY, KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
+    DEFAULT_RETRY_MAX_ATTEMPTS,
+    DEFAULT_RETRY_MAX_OPERATION_ELAPSED,
+    DEFAULT_RETRY_MAX_TOTAL_ELAPSED,
+    DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS,
+    KEY_ATTEMPT_TIMEOUT_MILLIS,
+    KEY_DELAY,
+    KEY_JITTER_FACTOR,
+    KEY_MAX_ATTEMPTS,
 };
+use crate::random::ThreadRetryRandomSource;
 use crate::{
-    AttemptFailureDecision, AttemptTimeoutSource, RetryConfigError, RetryDelay, RetryErrorReason,
+    AttemptFailureDecision,
+    AttemptTimeoutSource,
+    RetryConfigError,
+    RetryDelay,
+    RetryErrorReason,
     RetryJitter,
+    RetryRandomSource,
 };
 
 /// Immutable retry option snapshot used by [`crate::Retry`].
@@ -134,8 +151,8 @@ impl RetryOptions {
             "positive",
             "max_attempts must be greater than zero",
         )?;
-        let max_attempts =
-            NonZeroU32::new(max_attempts).expect("validated max_attempts must be nonzero");
+        let max_attempts = NonZeroU32::new(max_attempts)
+            .expect("validated max_attempts must be nonzero");
         let options = Self {
             max_attempts,
             max_operation_elapsed,
@@ -143,7 +160,9 @@ impl RetryOptions {
             delay,
             jitter,
             attempt_timeout,
-            worker_cancel_grace: Duration::from_millis(DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS),
+            worker_cancel_grace: Duration::from_millis(
+                DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS,
+            ),
         };
         options.validate()?;
         Ok(options)
@@ -172,7 +191,8 @@ impl RetryOptions {
         R: ConfigReader + ?Sized,
     {
         let default = Self::default();
-        let values = RetryConfigValues::new(config).map_err(RetryConfigError::from)?;
+        let values =
+            RetryConfigValues::new(config).map_err(RetryConfigError::from)?;
         values.to_options(&default)
     }
 
@@ -270,7 +290,30 @@ impl RetryOptions {
     /// Base delay before jitter.
     #[inline(always)]
     pub fn base_delay_for_attempt(&self, attempt: u32) -> Duration {
-        self.delay.base_delay(attempt)
+        self.base_delay_for_attempt_with_random_source(
+            attempt,
+            &ThreadRetryRandomSource,
+        )
+    }
+
+    /// Calculates the base retry delay with an explicit random source.
+    ///
+    /// # Parameters
+    ///
+    /// * `attempt` - Failed-attempt index, starting at 1.
+    /// * `random_source` - Source used by random delay strategies.
+    ///
+    /// # Returns
+    ///
+    /// Base delay before jitter.
+    #[inline(always)]
+    pub fn base_delay_for_attempt_with_random_source(
+        &self,
+        attempt: u32,
+        random_source: &dyn RetryRandomSource,
+    ) -> Duration {
+        self.delay
+            .base_delay_with_random_source(attempt, random_source)
     }
 
     /// Calculates the retry delay for one failed-attempt index after jitter.
@@ -282,7 +325,33 @@ impl RetryOptions {
     /// Delay after jitter is applied.
     #[inline(always)]
     pub fn delay_for_attempt(&self, attempt: u32) -> Duration {
-        self.jitter.delay_for_attempt(&self.delay, attempt)
+        self.delay_for_attempt_with_random_source(
+            attempt,
+            &ThreadRetryRandomSource,
+        )
+    }
+
+    /// Calculates an attempt delay with an explicit random source.
+    ///
+    /// # Parameters
+    ///
+    /// * `attempt` - Failed-attempt index, starting at 1.
+    /// * `random_source` - Source shared by delay and jitter sampling.
+    ///
+    /// # Returns
+    ///
+    /// Delay after jitter is applied.
+    #[inline(always)]
+    pub fn delay_for_attempt_with_random_source(
+        &self,
+        attempt: u32,
+        random_source: &dyn RetryRandomSource,
+    ) -> Duration {
+        self.jitter.delay_for_attempt_with_random_source(
+            &self.delay,
+            attempt,
+            random_source,
+        )
     }
 
     /// Calculates the next base delay from the current base delay.
@@ -298,10 +367,33 @@ impl RetryOptions {
     /// # Returns
     /// Next base delay before jitter.
     pub fn next_base_delay_from_current(&self, current: Duration) -> Duration {
+        self.next_base_delay_from_current_with_random_source(
+            current,
+            &ThreadRetryRandomSource,
+        )
+    }
+
+    /// Calculates the next base delay with an explicit random source.
+    ///
+    /// # Parameters
+    ///
+    /// * `current` - Current base delay before jitter.
+    /// * `random_source` - Source used by random delay strategies.
+    ///
+    /// # Returns
+    ///
+    /// Next base delay before jitter.
+    pub fn next_base_delay_from_current_with_random_source(
+        &self,
+        current: Duration,
+        random_source: &dyn RetryRandomSource,
+    ) -> Duration {
         match &self.delay {
             RetryDelay::None => Duration::ZERO,
             RetryDelay::Fixed(delay) => *delay,
-            RetryDelay::Random { .. } => self.delay.base_delay(1),
+            RetryDelay::Random { .. } => {
+                self.delay.base_delay_with_random_source(1, random_source)
+            }
             RetryDelay::Exponential {
                 initial,
                 max,
@@ -326,7 +418,30 @@ impl RetryOptions {
     /// Delay after jitter.
     #[inline(always)]
     pub fn jittered_delay(&self, base_delay: Duration) -> Duration {
-        self.jitter.apply(base_delay)
+        self.jittered_delay_with_random_source(
+            base_delay,
+            &ThreadRetryRandomSource,
+        )
+    }
+
+    /// Applies configured jitter with an explicit random source.
+    ///
+    /// # Parameters
+    ///
+    /// * `base_delay` - Base delay before jitter.
+    /// * `random_source` - Source used to sample the jitter span.
+    ///
+    /// # Returns
+    ///
+    /// Delay after jitter.
+    #[inline(always)]
+    pub fn jittered_delay_with_random_source(
+        &self,
+        base_delay: Duration,
+        random_source: &dyn RetryRandomSource,
+    ) -> Duration {
+        self.jitter
+            .apply_with_random_source(base_delay, random_source)
     }
 
     /// Calculates the next delay from the current base delay and applies
@@ -339,7 +454,33 @@ impl RetryOptions {
     /// Next delay after jitter.
     #[inline(always)]
     pub fn next_delay_from_current(&self, current: Duration) -> Duration {
-        self.jittered_delay(self.next_base_delay_from_current(current))
+        self.next_delay_from_current_with_random_source(
+            current,
+            &ThreadRetryRandomSource,
+        )
+    }
+
+    /// Calculates the next jittered delay with an explicit random source.
+    ///
+    /// # Parameters
+    ///
+    /// * `current` - Current base delay before jitter.
+    /// * `random_source` - Source shared by delay and jitter sampling.
+    ///
+    /// # Returns
+    ///
+    /// Next delay after jitter.
+    #[inline(always)]
+    pub fn next_delay_from_current_with_random_source(
+        &self,
+        current: Duration,
+        random_source: &dyn RetryRandomSource,
+    ) -> Duration {
+        let base_delay = self.next_base_delay_from_current_with_random_source(
+            current,
+            random_source,
+        );
+        self.jittered_delay_with_random_source(base_delay, random_source)
     }
 
     /// Returns the configured attempt-timeout duration.
@@ -375,21 +516,27 @@ impl RetryOptions {
         let candidates = [
             self.attempt_timeout_duration()
                 .map(|duration| (duration, AttemptTimeoutSource::Configured)),
-            self.remaining_operation_elapsed(operation_elapsed)
-                .map(|duration| (duration, AttemptTimeoutSource::MaxOperationElapsed)),
-            self.remaining_total_elapsed(total_elapsed)
-                .map(|duration| (duration, AttemptTimeoutSource::MaxTotalElapsed)),
+            self.remaining_operation_elapsed(operation_elapsed).map(
+                |duration| {
+                    (duration, AttemptTimeoutSource::MaxOperationElapsed)
+                },
+            ),
+            self.remaining_total_elapsed(total_elapsed).map(|duration| {
+                (duration, AttemptTimeoutSource::MaxTotalElapsed)
+            }),
         ];
-        let selected = candidates
-            .into_iter()
-            .flatten()
-            .min_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        let selected =
+            candidates.into_iter().flatten().min_by(|left, right| {
+                left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1))
+            });
         // AttemptTimeoutSource derives Ord in the precedence we need for ties:
         // Configured wins over elapsed-budget candidates so a configured
         // timeout exactly equal to the remaining budget remains observable as a
         // configured attempt timeout.
         match selected {
-            Some((duration, source)) => EffectiveAttemptTimeout::new(Some(duration), Some(source)),
+            Some((duration, source)) => {
+                EffectiveAttemptTimeout::new(Some(duration), Some(source))
+            }
             None => EffectiveAttemptTimeout::none(),
         }
     }
@@ -412,7 +559,9 @@ impl RetryOptions {
     ) -> Option<RetryErrorReason> {
         if self
             .max_operation_elapsed
-            .is_some_and(|max_operation_elapsed| operation_elapsed >= max_operation_elapsed)
+            .is_some_and(|max_operation_elapsed| {
+                operation_elapsed >= max_operation_elapsed
+            })
         {
             Some(RetryErrorReason::MaxOperationElapsedExceeded)
         } else if self
@@ -457,6 +606,7 @@ impl RetryOptions {
     /// - `decision`: Failure decision.
     /// - `attempts`: Attempts executed so far.
     /// - `hint`: Optional retry-after hint.
+    /// - `random_source`: Source used by random delay and jitter strategies.
     ///
     /// # Returns
     /// Delay before the next retry.
@@ -465,6 +615,7 @@ impl RetryOptions {
         decision: AttemptFailureDecision,
         attempts: u32,
         hint: Option<Duration>,
+        random_source: &dyn RetryRandomSource,
     ) -> Duration {
         // Delay precedence is part of the public retry contract:
         // RetryAfter is an explicit listener override, retry-after hints apply
@@ -472,11 +623,19 @@ impl RetryOptions {
         // the configured strategy directly.
         match decision {
             AttemptFailureDecision::RetryAfter(delay) => delay,
-            AttemptFailureDecision::UseDefault => {
-                hint.unwrap_or_else(|| self.jitter.delay_for_attempt(&self.delay, attempts))
-            }
+            AttemptFailureDecision::UseDefault => hint.unwrap_or_else(|| {
+                self.jitter.delay_for_attempt_with_random_source(
+                    &self.delay,
+                    attempts,
+                    random_source,
+                )
+            }),
             AttemptFailureDecision::Retry | AttemptFailureDecision::Abort => {
-                self.jitter.delay_for_attempt(&self.delay, attempts)
+                self.jitter.delay_for_attempt_with_random_source(
+                    &self.delay,
+                    attempts,
+                    random_source,
+                )
             }
         }
     }
@@ -491,9 +650,13 @@ impl RetryOptions {
     /// `Some(Duration)` when max elapsed is configured, or `None` when
     /// unlimited.
     #[inline]
-    fn remaining_operation_elapsed(&self, operation_elapsed: Duration) -> Option<Duration> {
-        self.max_operation_elapsed
-            .map(|max_operation_elapsed| max_operation_elapsed.saturating_sub(operation_elapsed))
+    fn remaining_operation_elapsed(
+        &self,
+        operation_elapsed: Duration,
+    ) -> Option<Duration> {
+        self.max_operation_elapsed.map(|max_operation_elapsed| {
+            max_operation_elapsed.saturating_sub(operation_elapsed)
+        })
     }
 
     /// Returns remaining total retry-flow time before the max-total-elapsed
@@ -506,9 +669,13 @@ impl RetryOptions {
     /// `Some(Duration)` when max total elapsed is configured, or `None` when
     /// unlimited.
     #[inline]
-    fn remaining_total_elapsed(&self, total_elapsed: Duration) -> Option<Duration> {
-        self.max_total_elapsed
-            .map(|max_total_elapsed| max_total_elapsed.saturating_sub(total_elapsed))
+    fn remaining_total_elapsed(
+        &self,
+        total_elapsed: Duration,
+    ) -> Option<Duration> {
+        self.max_total_elapsed.map(|max_total_elapsed| {
+            max_total_elapsed.saturating_sub(total_elapsed)
+        })
     }
 }
 
@@ -528,7 +695,9 @@ impl Default for RetryOptions {
             delay: RetryDelay::default(),
             jitter: RetryJitter::default(),
             attempt_timeout: None,
-            worker_cancel_grace: Duration::from_millis(DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS),
+            worker_cancel_grace: Duration::from_millis(
+                DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS,
+            ),
         }
     }
 }

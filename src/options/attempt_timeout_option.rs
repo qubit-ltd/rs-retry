@@ -9,8 +9,14 @@
 
 use std::time::Duration;
 
-use qubit_argument::{ArgumentResult, require_that};
-use serde::{Deserialize, Serialize};
+use qubit_argument::{
+    ArgumentResult,
+    require_that,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use super::attempt_timeout_policy::AttemptTimeoutPolicy;
 use crate::error::argument_error_message;
