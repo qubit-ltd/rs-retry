@@ -17,11 +17,6 @@ include = [
     "/LICENSE",
     "/README.md",
     "/README.zh_CN.md",
-    "/RUST_CODING_STYLE.md",
-    "/RUST_CODING_STYLE.zh_CN.md",
-    "/doc/**/user_guide*.md",
-    "/examples/**",
-    "/resources/**",
     "/src/**",
     "/tests/**",
 ]
@@ -48,11 +43,11 @@ qubit-function = "0.16"
 qubit-clock = { version = "0.10", path = "../rs-clock" }
 
 [dev-dependencies]
+qubit-clock = { version = "0.10", path = "../rs-clock", features = ["test-util"] }
 serde_json = "1.0"
 qubit-datatype = { version = "0.8", path = "../rs-datatype", default-features = false, features = ["converter"] }
 qubit-value = { version = "0.10.0", path = "../rs-value" }
 tokio = { version = "1.52", features = ["full", "test-util"] }
-tokio-test = "0.4"
 
 [patch.crates-io]
 qubit-datatype = { path = "../rs-datatype", version = "0.8" }
