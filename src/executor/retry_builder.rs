@@ -15,18 +15,40 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use qubit_clock::{StdTimer, Timer};
+use qubit_clock::{
+    StdTimer,
+    Timer,
+};
 use qubit_error::BoxError;
 use qubit_function::{
-    ArcBiConsumer, ArcBiFunction, ArcConsumer, BiConsumer, BiFunction, BiPredicate, Consumer,
+    ArcBiConsumer,
+    ArcBiFunction,
+    ArcConsumer,
+    BiConsumer,
+    BiFunction,
+    BiPredicate,
+    Consumer,
 };
 
 use crate::constants::KEY_MAX_ATTEMPTS;
-use crate::event::RetryListeners;
+use crate::event::{
+    RetryAfterHint,
+    RetryListeners,
+};
+use crate::random::ThreadRetryRandomSource;
 use crate::{
-    AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption, AttemptTimeoutPolicy, Retry,
-    RetryAfterHint, RetryConfigError, RetryContext, RetryDelay, RetryError, RetryJitter,
+    AttemptFailure,
+    AttemptFailureDecision,
+    AttemptTimeoutOption,
+    AttemptTimeoutPolicy,
+    Retry,
+    RetryConfigError,
+    RetryContext,
+    RetryDelay,
+    RetryError,
+    RetryJitter,
     RetryOptions,
+    RetryRandomSource,
 };
 
 /// Builder for [`Retry`].
@@ -35,6 +57,16 @@ use crate::{
 /// [`AttemptFailure::Error`]. Failure listeners may observe failures, override
 /// the retry decision, or return [`AttemptFailureDecision::UseDefault`] to let
 /// the policy decide from configured limits and delay strategy.
+///
+/// # Examples
+///
+/// ```compile_fail
+/// #![deny(unused_must_use)]
+/// use qubit_retry::Retry;
+///
+/// Retry::<&'static str>::builder();
+/// ```
+#[must_use]
 pub struct RetryBuilder<E = BoxError> {
     /// Retry limits, delay strategy, jitter, and elapsed budgets.
     options: RetryOptions,
@@ -48,6 +80,8 @@ pub struct RetryBuilder<E = BoxError> {
     isolate_listener_panics: bool,
     /// Stored validation error when max attempts is configured as zero.
     max_attempts_error: Option<RetryConfigError>,
+    /// Random source used by delay and jitter strategies.
+    random_source: Arc<dyn RetryRandomSource>,
     /// Timer used by sync and worker execution.
     blocking_timer: Arc<dyn Timer>,
     /// Optional caller-supplied timer used by Tokio async execution.
@@ -73,10 +107,33 @@ impl<E> RetryBuilder<E> {
             listeners: RetryListeners::default(),
             isolate_listener_panics: false,
             max_attempts_error: None,
+            random_source: Arc::new(ThreadRetryRandomSource),
             blocking_timer: Arc::new(StdTimer::new()),
             #[cfg(feature = "tokio")]
             async_timer: None,
         }
+    }
+
+    /// Sets the random source used by delay and jitter strategies.
+    ///
+    /// The source is shared by every execution of the built policy and must
+    /// therefore provide its own synchronization when it stores mutable state.
+    ///
+    /// # Parameters
+    ///
+    /// * `random_source` - Shared source used for random delay and jitter
+    ///   sampling.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
+    #[inline(always)]
+    pub fn random_source(
+        mut self,
+        random_source: Arc<dyn RetryRandomSource>,
+    ) -> Self {
+        self.random_source = random_source;
+        self
     }
 
     /// Sets the timer for sync and worker execution.
@@ -177,7 +234,10 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline(always)]
-    pub fn max_operation_elapsed(mut self, max_operation_elapsed: Option<Duration>) -> Self {
+    pub fn max_operation_elapsed(
+        mut self,
+        max_operation_elapsed: Option<Duration>,
+    ) -> Self {
         self.options.max_operation_elapsed = max_operation_elapsed;
         self
     }
@@ -192,7 +252,10 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline(always)]
-    pub fn max_total_elapsed(mut self, max_total_elapsed: Option<Duration>) -> Self {
+    pub fn max_total_elapsed(
+        mut self,
+        max_total_elapsed: Option<Duration>,
+    ) -> Self {
         self.options.max_total_elapsed = max_total_elapsed;
         self
     }
@@ -310,14 +373,18 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn attempt_timeout(mut self, attempt_timeout: Option<Duration>) -> Self {
+    pub fn attempt_timeout(
+        mut self,
+        attempt_timeout: Option<Duration>,
+    ) -> Self {
         if let Some(timeout) = attempt_timeout {
             self.options.attempt_timeout = Some(AttemptTimeoutOption::new(
                 timeout,
                 self.pending_attempt_timeout_policy,
             ));
         } else {
-            self.pending_attempt_timeout_policy = AttemptTimeoutPolicy::default();
+            self.pending_attempt_timeout_policy =
+                AttemptTimeoutPolicy::default();
             self.options.attempt_timeout = None;
         }
         self
@@ -332,11 +399,15 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn attempt_timeout_option(mut self, attempt_timeout: Option<AttemptTimeoutOption>) -> Self {
+    pub fn attempt_timeout_option(
+        mut self,
+        attempt_timeout: Option<AttemptTimeoutOption>,
+    ) -> Self {
         if let Some(attempt_timeout) = attempt_timeout {
             self.pending_attempt_timeout_policy = attempt_timeout.policy();
         } else {
-            self.pending_attempt_timeout_policy = AttemptTimeoutPolicy::default();
+            self.pending_attempt_timeout_policy =
+                AttemptTimeoutPolicy::default();
         }
         self.options.attempt_timeout = attempt_timeout;
         self
@@ -354,7 +425,10 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn attempt_timeout_policy(mut self, policy: AttemptTimeoutPolicy) -> Self {
+    pub fn attempt_timeout_policy(
+        mut self,
+        policy: AttemptTimeoutPolicy,
+    ) -> Self {
         self.pending_attempt_timeout_policy = policy;
         self.options.attempt_timeout = self
             .options
@@ -390,7 +464,10 @@ impl<E> RetryBuilder<E> {
     #[inline(always)]
     pub fn retry_after_hint<H>(mut self, hint: H) -> Self
     where
-        H: BiFunction<AttemptFailure<E>, RetryContext, Option<Duration>> + Send + Sync + 'static,
+        H: BiFunction<AttemptFailure<E>, RetryContext, Option<Duration>>
+            + Send
+            + Sync
+            + 'static,
     {
         self.retry_after_hint = Some(ArcBiFunction::new(hint));
         self
@@ -518,17 +595,21 @@ impl<E> RetryBuilder<E> {
         P: BiPredicate<E, RetryContext> + Send + Sync + 'static,
     {
         self.on_failure(
-            move |failure: &AttemptFailure<E>, context: &RetryContext| match failure {
-                AttemptFailure::Error(error) => {
-                    if predicate.test(error, context) {
-                        AttemptFailureDecision::Retry
-                    } else {
-                        AttemptFailureDecision::Abort
+            move |failure: &AttemptFailure<E>, context: &RetryContext| {
+                match failure {
+                    AttemptFailure::Error(error) => {
+                        if predicate.test(error, context) {
+                            AttemptFailureDecision::Retry
+                        } else {
+                            AttemptFailureDecision::Abort
+                        }
+                    }
+                    AttemptFailure::Timeout
+                    | AttemptFailure::Panic(_)
+                    | AttemptFailure::Executor(_) => {
+                        AttemptFailureDecision::UseDefault
                     }
                 }
-                AttemptFailure::Timeout
-                | AttemptFailure::Panic(_)
-                | AttemptFailure::Executor(_) => AttemptFailureDecision::UseDefault,
             },
         )
     }
@@ -600,6 +681,7 @@ impl<E> RetryBuilder<E> {
             self.retry_after_hint,
             self.isolate_listener_panics,
             self.listeners,
+            self.random_source,
             self.blocking_timer,
             #[cfg(feature = "tokio")]
             self.async_timer,

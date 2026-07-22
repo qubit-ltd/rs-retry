@@ -9,13 +9,26 @@
 
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Decision returned by a retry failure listener after inspecting a failure.
 ///
 /// Explicit retry decisions still obey attempt and cumulative user operation
 /// elapsed-time limits.
+///
+/// # Examples
+///
+/// ```compile_fail
+/// #![deny(unused_must_use)]
+/// use qubit_retry::AttemptFailureDecision;
+///
+/// AttemptFailureDecision::Retry;
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[must_use]
 pub enum AttemptFailureDecision {
     /// Use the retry policy's default decision for this failure.
     UseDefault,

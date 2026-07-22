@@ -11,4 +11,5 @@ mod error;
 mod event;
 mod executor;
 mod options;
+mod random;
 mod support;

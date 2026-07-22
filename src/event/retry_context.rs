@@ -12,9 +12,15 @@
 
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
-use super::{AttemptTimeoutSource, RetryContextParts};
+use super::{
+    AttemptTimeoutSource,
+    RetryContextParts,
+};
 
 /// Context emitted for retry lifecycle events.
 ///
@@ -76,6 +82,30 @@ impl RetryContext {
             attempt_elapsed: Duration::ZERO,
             attempt_timeout: None,
         })
+    }
+
+    /// Creates a retry context snapshot from internal parts.
+    ///
+    /// # Arguments
+    /// - `parts`: Internal context payload.
+    ///
+    /// # Returns
+    /// A retry context with no selected next delay or retry-after hint.
+    pub(crate) fn from_parts(parts: RetryContextParts) -> Self {
+        Self {
+            attempt: parts.attempt,
+            max_attempts: parts.max_attempts,
+            max_operation_elapsed: parts.max_operation_elapsed,
+            max_total_elapsed: parts.max_total_elapsed,
+            operation_elapsed: parts.operation_elapsed,
+            total_elapsed: parts.total_elapsed,
+            attempt_elapsed: parts.attempt_elapsed,
+            attempt_timeout: parts.attempt_timeout,
+            next_delay: None,
+            retry_after_hint: None,
+            attempt_timeout_source: None,
+            unreaped_worker_count: 0,
+        }
     }
 
     /// Returns this event's attempt number.
@@ -216,30 +246,6 @@ impl RetryContext {
         self.retry_after_hint
     }
 
-    /// Creates a retry context snapshot from internal parts.
-    ///
-    /// # Arguments
-    /// - `parts`: Internal context payload.
-    ///
-    /// # Returns
-    /// A retry context with no selected next delay or retry-after hint.
-    pub(crate) fn from_parts(parts: RetryContextParts) -> Self {
-        Self {
-            attempt: parts.attempt,
-            max_attempts: parts.max_attempts,
-            max_operation_elapsed: parts.max_operation_elapsed,
-            max_total_elapsed: parts.max_total_elapsed,
-            operation_elapsed: parts.operation_elapsed,
-            total_elapsed: parts.total_elapsed,
-            attempt_elapsed: parts.attempt_elapsed,
-            attempt_timeout: parts.attempt_timeout,
-            next_delay: None,
-            retry_after_hint: None,
-            attempt_timeout_source: None,
-            unreaped_worker_count: 0,
-        }
-    }
-
     /// Returns a copy of this context with a selected retry delay.
     ///
     /// # Arguments
@@ -261,7 +267,10 @@ impl RetryContext {
     /// # Returns
     /// A context carrying the refreshed total elapsed value.
     #[inline(always)]
-    pub(crate) fn with_total_elapsed(mut self, total_elapsed: Duration) -> Self {
+    pub(crate) fn with_total_elapsed(
+        mut self,
+        total_elapsed: Duration,
+    ) -> Self {
         self.total_elapsed = total_elapsed;
         self
     }
@@ -274,7 +283,10 @@ impl RetryContext {
     /// # Returns
     /// A context carrying the hint.
     #[inline(always)]
-    pub(crate) fn with_retry_after_hint(mut self, hint: Option<Duration>) -> Self {
+    pub(crate) fn with_retry_after_hint(
+        mut self,
+        hint: Option<Duration>,
+    ) -> Self {
         self.retry_after_hint = hint;
         self
     }

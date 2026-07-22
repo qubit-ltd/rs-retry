@@ -6,11 +6,79 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::atomic::{
+    AtomicUsize,
+    Ordering,
+};
+use std::sync::{
+    Arc,
+    Mutex,
+    mpsc,
+};
 use std::time::Duration;
 
-use qubit_retry::{AttemptCancelToken, Retry, RetryErrorReason};
+use qubit_retry::{
+    AttemptCancelToken,
+    AttemptFailure,
+    Retry,
+    RetryErrorReason,
+};
+
+use crate::support::PanicOnDrop;
+
+/// Verifies a worker channel disconnect becomes a typed executor failure.
+#[test]
+fn test_run_in_worker_returns_executor_failure_when_worker_disconnects() {
+    let retry = Retry::<&'static str>::builder()
+        .max_attempts(1)
+        .no_delay()
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_in_worker(
+            |_token: AttemptCancelToken| -> Result<(), &'static str> {
+                std::panic::panic_any(PanicOnDrop)
+            },
+        )
+        .expect_err("worker disconnect should return a retry error");
+
+    assert_eq!(error.reason(), RetryErrorReason::Aborted);
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Executor(executor_error))
+            if executor_error.message()
+                == "retry worker thread stopped without sending a result"
+    ));
+}
+
+/// Verifies timed worker receive reports disconnect as an executor failure.
+#[test]
+fn test_run_in_worker_with_timeout_returns_executor_failure_when_worker_disconnects()
+ {
+    let retry = Retry::<&'static str>::builder()
+        .max_attempts(1)
+        .attempt_timeout(Some(Duration::from_secs(1)))
+        .no_delay()
+        .build()
+        .expect("retry should build");
+
+    let error = retry
+        .run_in_worker(
+            |_token: AttemptCancelToken| -> Result<(), &'static str> {
+                std::panic::panic_any(PanicOnDrop)
+            },
+        )
+        .expect_err("worker disconnect should return a retry error");
+
+    assert_eq!(error.reason(), RetryErrorReason::Aborted);
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Executor(executor_error))
+            if executor_error.message()
+                == "retry worker thread stopped without sending a result"
+    ));
+}
 
 /// Verifies worker-attempt execution is observable through the public worker
 /// API.

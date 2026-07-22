@@ -14,7 +14,10 @@
 use std::error::Error;
 use std::fmt;
 
-use qubit_argument::{ArgumentError, ArgumentErrorKind};
+use qubit_argument::{
+    ArgumentError,
+    ArgumentErrorKind,
+};
 
 #[cfg(feature = "config")]
 use qubit_config::ConfigError;
@@ -42,7 +45,10 @@ impl RetryConfigError {
     /// # Returns
     /// A new [`RetryConfigError`].
     #[inline]
-    pub fn invalid_value(path: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn invalid_value(
+        path: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             path: path.into(),
             message: message.into(),
@@ -115,6 +121,11 @@ impl fmt::Display for RetryConfigError {
 }
 
 impl Error for RetryConfigError {
+    /// Returns the structured argument validation error, when available.
+    ///
+    /// # Returns
+    /// `Some` with the underlying validation error, or `None` when this error
+    /// only carries a compatibility message.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         self.argument_source
             .as_ref()

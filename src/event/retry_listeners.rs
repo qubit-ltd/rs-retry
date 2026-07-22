@@ -8,11 +8,15 @@
 //! Internal retry listener collection.
 
 use super::{
-    AttemptFailureListener, AttemptSuccessListener, BeforeAttemptListener, RetryErrorListener,
+    AttemptFailureListener,
+    AttemptSuccessListener,
+    BeforeAttemptListener,
+    RetryErrorListener,
     RetryScheduledListener,
 };
 
 #[derive(Clone)]
+/// Retry lifecycle callbacks collected by a builder.
 pub(crate) struct RetryListeners<E> {
     /// Callbacks invoked before every attempt.
     pub(crate) before_attempt: Vec<BeforeAttemptListener>,

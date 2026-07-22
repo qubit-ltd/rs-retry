@@ -14,4 +14,4 @@ use crate::RetryContext;
 /// Listener invoked before every operation attempt.
 ///
 /// The first attempt also triggers this listener.
-pub type BeforeAttemptListener = ArcConsumer<RetryContext>;
+pub(crate) type BeforeAttemptListener = ArcConsumer<RetryContext>;

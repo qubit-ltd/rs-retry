@@ -15,17 +15,27 @@
 use std::future::Future;
 use std::time::Duration;
 
-use qubit_clock::{TimeError, Timer};
+use qubit_clock::{
+    TimeError,
+    Timer,
+};
 
 use super::async_attempt::AsyncAttempt;
 use super::async_value_operation::AsyncValueOperation;
-use super::internal::{complete_attempt, prepare_timed_attempt};
+use super::internal::{
+    complete_attempt,
+    prepare_timed_attempt,
+};
 use super::retry::Retry;
 use super::retry_failure_handler::RetryFailureHandler;
 use super::retry_flow_action::RetryFlowAction;
 use super::retry_flow_state::RetryFlowState;
 use crate::options::EffectiveAttemptTimeout;
-use crate::{AttemptFailure, RetryContext, RetryError};
+use crate::{
+    AttemptFailure,
+    RetryContext,
+    RetryError,
+};
 
 /// Runs retry flows on the current asynchronous task.
 pub(in crate::executor) struct AsyncRetryRunner<'a, E> {
@@ -46,7 +56,10 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
     /// # Returns
     /// A runner borrowing the retry policy.
     #[inline(always)]
-    pub(in crate::executor) fn new(retry: &'a Retry<E>, timer: &'a dyn Timer) -> Self {
+    pub(in crate::executor) fn new(
+        retry: &'a Retry<E>,
+        timer: &'a dyn Timer,
+    ) -> Self {
         Self { retry, timer }
     }
 
@@ -86,12 +99,17 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
         let options = self.retry.options();
         let events = self.retry.events();
         let timer = self.timer;
-        let handler = RetryFailureHandler::new(options, events);
+        let handler = RetryFailureHandler::new(
+            options,
+            events,
+            self.retry.random_source(),
+        );
         let mut state = RetryFlowState::new(timer.clock());
 
         loop {
-            let attempt_timeout = prepare_timed_attempt(&mut state, options, events)
-                .map_err(|error| events.error(error))?;
+            let attempt_timeout =
+                prepare_timed_attempt(&mut state, options, events)
+                    .map_err(|error| events.error(error))?;
 
             // Async timeout is enforced by dropping the future after the Tokio
             // timer fires. The timeout source is kept in the context so a later
@@ -99,9 +117,9 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
             // elapsed-budget terminal stop.
             let attempt_start = timer.clock().now();
             let result = if let Some(timeout) = attempt_timeout.duration() {
-                let timeout_future = timer
-                    .after(timeout)
-                    .map_err(|error| events.error(state.sleeper_error(options, error)))?;
+                let timeout_future = timer.after(timeout).map_err(|error| {
+                    events.error(state.sleeper_error(options, error))
+                })?;
                 tokio::select! {
                     biased;
                     result = timeout_future => match result {
@@ -118,15 +136,26 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
                 operation.call().await
             };
 
-            let context = complete_attempt(&mut state, options, attempt_start, attempt_timeout);
+            let context = complete_attempt(
+                &mut state,
+                options,
+                attempt_start,
+                attempt_timeout,
+            );
             match result {
                 Ok(()) => {
                     events.attempt_success(&context);
                     return Ok(());
                 }
                 Err(failure) => {
-                    self.handle_failure(&mut state, &handler, attempt_timeout, failure, context)
-                        .await?;
+                    self.handle_failure(
+                        &mut state,
+                        &handler,
+                        attempt_timeout,
+                        failure,
+                        context,
+                    )
+                    .await?;
                 }
             }
         }
@@ -157,14 +186,15 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
         let options = self.retry.options();
         let events = self.retry.events();
         if let Some(reason) = attempt_timeout.elapsed_timeout_reason(&failure) {
-            let error = handler.elapsed_timeout_error(state, failure, context, reason);
+            let error =
+                handler.elapsed_timeout_error(state, failure, context, reason);
             return Err(events.error(error));
         }
         match handler.handle(state, failure, context, None) {
             RetryFlowAction::Retry { delay, failure } => {
-                sleep_async(self.timer, delay)
-                    .await
-                    .map_err(|error| events.error(state.sleeper_error(options, error)))?;
+                sleep_async(self.timer, delay).await.map_err(|error| {
+                    events.error(state.sleeper_error(options, error))
+                })?;
                 state.record_last_failure(failure);
                 Ok(())
             }
@@ -180,7 +210,10 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
 ///
 /// # Returns
 /// This function returns after the sleep completes.
-async fn sleep_async(timer: &dyn Timer, delay: Duration) -> Result<(), TimeError> {
+async fn sleep_async(
+    timer: &dyn Timer,
+    delay: Duration,
+) -> Result<(), TimeError> {
     if !delay.is_zero() {
         timer.after(delay)?.await?;
     }

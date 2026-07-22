@@ -13,7 +13,10 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use super::attempt_executor_error::AttemptExecutorError;
 use super::attempt_panic::AttemptPanic;
@@ -30,7 +33,10 @@ use super::attempt_panic::AttemptPanic;
 ))]
 pub enum AttemptFailure<E> {
     /// The operation returned an application error.
-    Error(E),
+    Error(
+        /// Application error returned by the operation.
+        E,
+    ),
 
     /// The attempt exceeded the effective timeout.
     ///
@@ -40,10 +46,16 @@ pub enum AttemptFailure<E> {
     Timeout,
 
     /// The attempt panicked inside an isolated execution boundary.
-    Panic(AttemptPanic),
+    Panic(
+        /// Captured panic information.
+        AttemptPanic,
+    ),
 
     /// The retry executor failed before the attempt could run normally.
-    Executor(AttemptExecutorError),
+    Executor(
+        /// Retry executor failure details.
+        AttemptExecutorError,
+    ),
 }
 
 impl<E> AttemptFailure<E> {
@@ -101,6 +113,16 @@ impl<E> AttemptFailure<E> {
 }
 
 impl<E: fmt::Display> fmt::Display for AttemptFailure<E> {
+    /// Formats this attempt failure.
+    ///
+    /// # Parameters
+    /// - `f`: Destination formatter.
+    ///
+    /// # Returns
+    /// [`fmt::Result`] indicating whether formatting succeeded.
+    ///
+    /// # Errors
+    /// Returns [`fmt::Error`] if writing to the formatter fails.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Error(error) => write!(f, "{error}"),

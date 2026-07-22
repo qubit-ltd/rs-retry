@@ -14,16 +14,24 @@
 //! be reaped during the grace period.
 
 use std::panic;
-use std::sync::{Arc, mpsc};
+use std::sync::{
+    Arc,
+    mpsc,
+};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use super::attempt_cancel_token::AttemptCancelToken;
 use super::blocking_attempt::BlockingAttempt;
 use super::blocking_attempt_outcome::BlockingAttemptOutcome;
-use crate::{AttemptExecutorError, AttemptFailure, AttemptPanic};
+use crate::{
+    AttemptExecutorError,
+    AttemptFailure,
+    AttemptPanic,
+};
 
-const WORKER_DISCONNECTED_MESSAGE: &str = "retry worker thread stopped without sending a result";
+const WORKER_DISCONNECTED_MESSAGE: &str =
+    "retry worker thread stopped without sending a result";
 const WORKER_SPAWN_FAILED_MESSAGE: &str = "failed to spawn retry worker thread";
 
 /// Builds a spawn-failure attempt outcome at the cold spawn error site.
@@ -39,6 +47,17 @@ macro_rules! worker_spawn_failure {
             0,
         )
     };
+}
+
+/// Builds an executor failure for a worker that exited without a result.
+///
+/// # Returns
+/// An attempt result containing [`AttemptFailure::Executor`].
+#[inline]
+fn worker_disconnected_result<E>() -> Result<(), AttemptFailure<E>> {
+    Err(AttemptFailure::Executor(AttemptExecutorError::new(
+        WORKER_DISCONNECTED_MESSAGE,
+    )))
 }
 
 /// Runs one blocking attempt on a worker thread.
@@ -82,10 +101,14 @@ impl WorkerAttemptExecutor {
                 // isolation boundary. Convert panic payloads into retry
                 // failures so policy and listeners can handle them normally.
                 let result =
-                    panic::catch_unwind(panic::AssertUnwindSafe(|| operation.call(worker_token)));
+                    panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        operation.call(worker_token)
+                    }));
                 let attempt_result = match result {
                     Ok(result) => result,
-                    Err(payload) => Err(AttemptFailure::Panic(AttemptPanic::from_payload(payload))),
+                    Err(payload) => Err(AttemptFailure::Panic(
+                        AttemptPanic::from_payload(payload),
+                    )),
                 };
                 let _ = sender.send(attempt_result);
             }) {
@@ -101,7 +124,9 @@ impl WorkerAttemptExecutor {
                 &token,
                 worker_cancel_grace,
             ),
-            None => worker_recv_result_to_attempt_outcome(receiver.recv(), worker),
+            None => {
+                worker_recv_result_to_attempt_outcome(receiver.recv(), worker)
+            }
         }
     }
 }
@@ -120,7 +145,7 @@ fn worker_recv_result_to_attempt_outcome<E>(
     worker: JoinHandle<()>,
 ) -> BlockingAttemptOutcome<(), E> {
     join_finished_worker(worker);
-    let result = result.expect(WORKER_DISCONNECTED_MESSAGE);
+    let result = result.unwrap_or_else(|_| worker_disconnected_result());
     BlockingAttemptOutcome::new(result, 0)
 }
 
@@ -151,12 +176,16 @@ where
         // token first, then waits briefly so well-behaved operations can return
         // and be joined before retry policy decides what to do next.
         token.cancel();
-        let worker_exited = wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
+        let worker_exited =
+            wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
         let unreaped_worker_count = if worker_exited { 0 } else { 1 };
-        BlockingAttemptOutcome::new(Err(AttemptFailure::Timeout), unreaped_worker_count)
+        BlockingAttemptOutcome::new(
+            Err(AttemptFailure::Timeout),
+            unreaped_worker_count,
+        )
     } else {
         join_finished_worker(worker);
-        let result = result.expect(WORKER_DISCONNECTED_MESSAGE);
+        let result = result.unwrap_or_else(|_| worker_disconnected_result());
         BlockingAttemptOutcome::new(result, 0)
     }
 }
