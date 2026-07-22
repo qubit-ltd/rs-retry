@@ -36,7 +36,8 @@ pub enum AttemptFailureDecision {
     Retry,
     /// Retry after the specified delay if limits still allow it.
     RetryAfter(
-        /// Delay selected by the listener.
+        /// Delay selected by the listener. Serde interchange stores this value
+        /// as half-up rounded whole milliseconds.
         #[serde(with = "qubit_serde::serde::duration_millis")]
         Duration,
     ),

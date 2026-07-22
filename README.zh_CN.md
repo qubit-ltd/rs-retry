@@ -409,6 +409,17 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
 - Crate 发布页：[crates.io/crates/qubit-retry](https://crates.io/crates/qubit-retry)
 - 源码仓库：[github.com/qubit-ltd/rs-retry](https://github.com/qubit-ltd/rs-retry)
 
+## Duration 精度
+
+运行时 API 按 `std::time::Duration` 的原生精度接收数值；稳定的 serde、配置和
+`RetryDelay` 文本交换格式只使用整毫秒。亚毫秒部分采用 half-up 舍入：`499µs`
+变为 `0ms`，`500µs` 变为 `1ms`，`1500µs` 变为 `2ms`。因此，以编程方式传入的
+Duration 经过 serde 或文本往返后可能发生变化。
+
+反序列化不会自动执行语义校验。对不可信序列化输入，在执行前调用
+`RetryDelay::validate` 或 `AttemptTimeoutOption::validate`；例如，小于 `0.5ms`
+的正值会变为零，并被这些校验器拒绝。
+
 ## 测试
 
 ```bash
