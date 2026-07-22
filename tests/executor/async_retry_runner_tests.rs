@@ -8,47 +8,37 @@
 #![cfg(feature = "tokio")]
 
 use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
+    Arc,
+    Mutex,
+    atomic::{
+        AtomicUsize,
+        Ordering,
+    },
 };
 use std::time::Duration;
 
 use qubit_clock::{
-    ManualMonotonicClock, MonotonicClock, MonotonicInstant, TimeError, Timer, TimerFuture,
-    TimerUnavailableError, TokioTimer,
+    ManualMonotonicClock,
+    MonotonicClock,
+    TimeError,
+    TimerUnavailableError,
+    TokioTimer,
+    test_util::{
+        FaultInjectingTimer,
+        TimerFailurePoint,
+    },
 };
 use qubit_retry::{
-    AttemptFailure, AttemptFailureDecision, AttemptTimeoutSource, Retry, RetryContext, RetryError,
+    AttemptFailure,
+    AttemptFailureDecision,
+    AttemptTimeoutSource,
+    Retry,
+    RetryContext,
+    RetryError,
     RetryErrorReason,
 };
 
 use crate::support::TestError;
-
-struct CompletionFailingTimer {
-    clock: ManualMonotonicClock,
-}
-
-impl CompletionFailingTimer {
-    fn new() -> Self {
-        Self {
-            clock: ManualMonotonicClock::new(),
-        }
-    }
-}
-
-impl Timer for CompletionFailingTimer {
-    fn clock(&self) -> &dyn MonotonicClock {
-        &self.clock
-    }
-
-    fn at(&self, _deadline: MonotonicInstant) -> Result<TimerFuture, TimeError> {
-        Ok(Box::pin(std::future::ready(Err(
-            TimeError::TimerUnavailable {
-                source: TimerUnavailableError::SchedulerWorkerTerminated,
-            },
-        ))))
-    }
-}
 
 /// Verifies that the default async timer binds to a paused runtime when the
 /// retry future is first polled, rather than when the policy is built.
@@ -163,7 +153,8 @@ async fn test_run_async_attempt_timeout_uses_injected_async_timer() {
         .build()
         .expect("retry should build");
 
-    let retry_future = retry.run_async(std::future::pending::<Result<(), TestError>>);
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<(), TestError>>);
     tokio::pin!(retry_future);
     let reached = tokio::select! {
         result = &mut retry_future => {
@@ -264,7 +255,12 @@ async fn test_run_async_reports_timer_delay_completion_failure() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .fixed_delay(Duration::from_secs(1))
-        .async_timer(Arc::new(CompletionFailingTimer::new()))
+        .async_timer(Arc::new(FaultInjectingTimer::new(
+            TimerFailurePoint::Completion,
+            || TimeError::TimerUnavailable {
+                source: TimerUnavailableError::SchedulerWorkerTerminated,
+            },
+        )))
         .build()
         .expect("retry should build");
 
@@ -282,7 +278,12 @@ async fn test_run_async_reports_attempt_timeout_completion_failure() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .attempt_timeout(Some(Duration::from_secs(1)))
-        .async_timer(Arc::new(CompletionFailingTimer::new()))
+        .async_timer(Arc::new(FaultInjectingTimer::new(
+            TimerFailurePoint::Completion,
+            || TimeError::TimerUnavailable {
+                source: TimerUnavailableError::SchedulerWorkerTerminated,
+            },
+        )))
         .build()
         .expect("retry should build");
 
@@ -324,7 +325,8 @@ async fn test_run_async_attempt_timeout_can_abort() {
         .build()
         .expect("retry should build");
 
-    let retry_future = retry.run_async(std::future::pending::<Result<(), TestError>>);
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<(), TestError>>);
     tokio::pin!(retry_future);
     let reached = tokio::select! {
         result = &mut retry_future => {
@@ -353,7 +355,8 @@ async fn test_run_async_attempt_timeout_can_abort() {
 /// Verifies max elapsed caps an in-flight async attempt before a configured
 /// timeout.
 #[tokio::test]
-async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_configured_timeout() {
+async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_configured_timeout()
+ {
     let clock = ManualMonotonicClock::new_shared();
     let sleeper = clock.new_timer();
     let retry = Retry::<TestError>::builder()
@@ -365,7 +368,8 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
         .build()
         .expect("retry should build");
 
-    let retry_future = retry.run_async(std::future::pending::<Result<&str, TestError>>);
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<&str, TestError>>);
     tokio::pin!(retry_future);
     let reached = tokio::select! {
         result = &mut retry_future => {
@@ -401,7 +405,8 @@ async fn test_run_async_max_operation_elapsed_caps_in_flight_attempt_before_conf
 /// Verifies max total elapsed caps an in-flight async attempt before a
 /// configured timeout.
 #[tokio::test]
-async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configured_timeout() {
+async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configured_timeout()
+ {
     let clock = ManualMonotonicClock::new_shared();
     let sleeper = clock.new_timer();
     let retry = Retry::<TestError>::builder()
@@ -413,7 +418,8 @@ async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configur
         .build()
         .expect("retry should build");
 
-    let retry_future = retry.run_async(std::future::pending::<Result<&str, TestError>>);
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<&str, TestError>>);
     tokio::pin!(retry_future);
     let reached = tokio::select! {
         result = &mut retry_future => {
@@ -422,9 +428,9 @@ async fn test_run_async_max_total_elapsed_caps_in_flight_attempt_before_configur
         reached = clock.advance_to_next_deadline_async() => reached,
     };
     assert_eq!(Duration::from_secs(20), reached.elapsed_since_origin(),);
-    let error = retry_future
-        .await
-        .expect_err("max total elapsed should stop the in-flight async attempt");
+    let error = retry_future.await.expect_err(
+        "max total elapsed should stop the in-flight async attempt",
+    );
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 1);
@@ -465,7 +471,8 @@ async fn test_run_async_elapsed_timeout_notifies_failure_without_retrying() {
         .no_delay()
         .async_timer(sleeper)
         .retry_after_hint(
-            move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            move |failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
                 assert!(matches!(failure, AttemptFailure::Timeout));
                 assert_eq!(
                     context.attempt_timeout_source(),
@@ -476,9 +483,13 @@ async fn test_run_async_elapsed_timeout_notifies_failure_without_retrying() {
             },
         )
         .on_failure(
-            move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            move |failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
                 assert!(matches!(failure, AttemptFailure::Timeout));
-                assert_eq!(context.retry_after_hint(), Some(Duration::from_secs(99)));
+                assert_eq!(
+                    context.retry_after_hint(),
+                    Some(Duration::from_secs(99))
+                );
                 listener_failures.fetch_add(1, Ordering::SeqCst);
                 listener_sources
                     .lock()
@@ -488,7 +499,8 @@ async fn test_run_async_elapsed_timeout_notifies_failure_without_retrying() {
             },
         )
         .on_retry(
-            move |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>,
+                  _context: &RetryContext| {
                 retry_events.fetch_add(1, Ordering::SeqCst);
             },
         )
@@ -500,7 +512,8 @@ async fn test_run_async_elapsed_timeout_notifies_failure_without_retrying() {
         .build()
         .expect("retry should build");
 
-    let retry_future = retry.run_async(std::future::pending::<Result<(), TestError>>);
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<(), TestError>>);
     tokio::pin!(retry_future);
     let reached = tokio::select! {
         result = &mut retry_future => {
@@ -550,7 +563,8 @@ async fn test_run_async_total_timeout_notifies_failure_without_retrying() {
         .no_delay()
         .async_timer(sleeper)
         .on_failure(
-            move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            move |failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
                 assert!(matches!(failure, AttemptFailure::Timeout));
                 listener_failures.fetch_add(1, Ordering::SeqCst);
                 listener_sources
@@ -561,14 +575,16 @@ async fn test_run_async_total_timeout_notifies_failure_without_retrying() {
             },
         )
         .on_retry(
-            move |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>,
+                  _context: &RetryContext| {
                 retry_events.fetch_add(1, Ordering::SeqCst);
             },
         )
         .build()
         .expect("retry should build");
 
-    let retry_future = retry.run_async(std::future::pending::<Result<(), TestError>>);
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<(), TestError>>);
     tokio::pin!(retry_future);
     let reached = tokio::select! {
         result = &mut retry_future => {
@@ -593,7 +609,8 @@ async fn test_run_async_total_timeout_notifies_failure_without_retrying() {
 
 /// Verifies a shorter configured timeout still wins over remaining max elapsed.
 #[tokio::test]
-async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_elapsed() {
+async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_elapsed()
+ {
     let clock = ManualMonotonicClock::new_shared();
     let sleeper = clock.new_timer();
     let retry = Retry::<TestError>::builder()
@@ -606,7 +623,8 @@ async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_
         .build()
         .expect("retry should build");
 
-    let retry_future = retry.run_async(std::future::pending::<Result<&str, TestError>>);
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<&str, TestError>>);
     tokio::pin!(retry_future);
     let reached = tokio::select! {
         result = &mut retry_future => {
@@ -637,7 +655,8 @@ async fn test_run_async_configured_timeout_wins_when_shorter_than_max_operation_
 /// Verifies a configured timeout policy wins when it equals remaining max
 /// elapsed.
 #[tokio::test]
-async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_elapsed() {
+async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_elapsed()
+ {
     let clock = ManualMonotonicClock::new_shared();
     let sleeper = clock.new_timer();
     let retry = Retry::<TestError>::builder()
@@ -650,7 +669,8 @@ async fn test_run_async_configured_timeout_policy_wins_when_equal_to_remaining_e
         .build()
         .expect("retry should build");
 
-    let retry_future = retry.run_async(std::future::pending::<Result<&str, TestError>>);
+    let retry_future =
+        retry.run_async(std::future::pending::<Result<&str, TestError>>);
     tokio::pin!(retry_future);
     let reached = tokio::select! {
         result = &mut retry_future => {
@@ -787,7 +807,8 @@ async fn test_run_async_max_operation_elapsed_can_stop_before_first_attempt() {
 /// Verifies async execution includes before-attempt listener time in max total
 /// elapsed.
 #[tokio::test]
-async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time() {
+async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time()
+ {
     let clock = ManualMonotonicClock::new_shared();
     let sleeper = clock.new_timer();
     let observed_attempts = Arc::new(Mutex::new(Vec::new()));
@@ -813,7 +834,9 @@ async fn test_run_async_max_total_elapsed_includes_before_attempt_listener_time(
     let error = retry
         .run_async::<(), _, _>(|| async { panic!("operation must not run") })
         .await
-        .expect_err("before-attempt listener time should exhaust total elapsed");
+        .expect_err(
+            "before-attempt listener time should exhaust total elapsed",
+        );
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 0);
