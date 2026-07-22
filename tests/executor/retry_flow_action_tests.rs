@@ -6,7 +6,13 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_retry::{AttemptFailure, AttemptFailureDecision, Retry, RetryContext, RetryErrorReason};
+use qubit_retry::{
+    AttemptFailure,
+    AttemptFailureDecision,
+    Retry,
+    RetryContext,
+    RetryErrorReason,
+};
 
 /// Verifies retry and terminal flow branches through public retry behavior.
 #[test]
@@ -15,7 +21,8 @@ fn test_retry_flow_action_paths_cover_retry_and_finished_results() {
         .max_attempts(3)
         .no_delay()
         .on_failure(
-            |_failure: &AttemptFailure<&'static str>, context: &RetryContext| {
+            |_failure: &AttemptFailure<&'static str>,
+             context: &RetryContext| {
                 if context.attempt() == 1 {
                     AttemptFailureDecision::UseDefault
                 } else {

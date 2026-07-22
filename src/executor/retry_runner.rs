@@ -15,17 +15,29 @@
 
 use std::time::Duration;
 
-use qubit_clock::{BlockingSleeper, TimeError};
+use qubit_clock::{
+    BlockingSleeper,
+    TimeError,
+};
 
 use super::attempt::Attempt;
-use super::internal::{complete_attempt, prepare_same_thread_attempt};
+use super::internal::{
+    complete_attempt,
+    prepare_same_thread_attempt,
+};
 use super::retry::Retry;
 use super::retry_failure_handler::RetryFailureHandler;
 use super::retry_flow_action::RetryFlowAction;
 use super::retry_flow_state::RetryFlowState;
 use super::value_operation::ValueOperation;
 use crate::options::EffectiveAttemptTimeout;
-use crate::{AttemptFailure, AttemptTimeoutSource, RetryContext, RetryError, RetryErrorReason};
+use crate::{
+    AttemptFailure,
+    AttemptTimeoutSource,
+    RetryContext,
+    RetryError,
+    RetryErrorReason,
+};
 
 /// Runs retry flows on the current thread.
 pub(in crate::executor) struct RetryRunner<'a, E> {
@@ -55,7 +67,10 @@ impl<'a, E> RetryRunner<'a, E> {
     ///
     /// # Returns
     /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
-    pub(in crate::executor) fn run<T, F>(&self, mut operation: F) -> Result<T, RetryError<E>>
+    pub(in crate::executor) fn run<T, F>(
+        &self,
+        mut operation: F,
+    ) -> Result<T, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,
     {
@@ -75,30 +90,45 @@ impl<'a, E> RetryRunner<'a, E> {
     /// # Returns
     /// `Ok(())` after a successful attempt, or [`RetryError`] when retrying
     /// stops.
-    fn run_operation(&self, operation: &mut dyn Attempt<E>) -> Result<(), RetryError<E>> {
+    fn run_operation(
+        &self,
+        operation: &mut dyn Attempt<E>,
+    ) -> Result<(), RetryError<E>> {
         let options = self.retry.options();
         let events = self.retry.events();
         let sleeper = self.retry.blocking_sleeper();
-        let handler = RetryFailureHandler::new(options, events);
+        let handler = RetryFailureHandler::new(
+            options,
+            events,
+            self.retry.random_source(),
+        );
         let mut state = RetryFlowState::new(sleeper.timer().clock());
 
         loop {
-            let attempt_timeout = prepare_same_thread_attempt(&mut state, options, events)
-                .map_err(|error| events.error(error))?;
+            let attempt_timeout =
+                prepare_same_thread_attempt(&mut state, options, events)
+                    .map_err(|error| events.error(error))?;
 
             // Only user closure time contributes to max_operation_elapsed.
             // Listener time and retry sleeps are included by total_elapsed
             // through RetryFlowState's monotonic start instant.
             let attempt_start = sleeper.timer().clock().now();
             let result = operation.call();
-            let context = complete_attempt(&mut state, options, attempt_start, attempt_timeout);
+            let context = complete_attempt(
+                &mut state,
+                options,
+                attempt_start,
+                attempt_timeout,
+            );
             match result {
                 Ok(()) => {
                     events.attempt_success(&context);
                     return Ok(());
                 }
                 Err(failure) => {
-                    self.handle_failure(&mut state, &handler, failure, context)?;
+                    self.handle_failure(
+                        &mut state, &handler, failure, context,
+                    )?;
                 }
             }
         }
@@ -131,8 +161,9 @@ impl<'a, E> RetryRunner<'a, E> {
             RetryFlowAction::Retry { delay, failure } => {
                 // Retain the failure only after the retry sleep succeeds. It
                 // then remains available if the next pre-attempt check stops.
-                sleep_blocking(sleeper, delay)
-                    .map_err(|error| events.error(state.sleeper_error(options, error)))?;
+                sleep_blocking(sleeper, delay).map_err(|error| {
+                    events.error(state.sleeper_error(options, error))
+                })?;
                 state.record_last_failure(failure);
                 Ok(())
             }

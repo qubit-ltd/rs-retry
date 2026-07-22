@@ -417,47 +417,35 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
 
 ## Testing
 
-A minimal local run:
-
 ```bash
+# Run tests with the default feature set
+cargo test
+
+# Run tests with all declared features
 cargo test --all-features
-cargo clippy --all-targets --all-features -- -D warnings
-```
 
-To mirror what continuous integration enforces, run the repository scripts from the project root:
-
-```bash
-./align-ci.sh
+# Project CI checks
 ./ci-check.sh
+
+# Check code coverage
 ./coverage.sh
 ```
 
-`./align-ci.sh` formats code and applies local Clippy fixes so the branch follows CI rules. `./ci-check.sh` runs the CI-equivalent pipeline, including formatting checks, Clippy with warnings denied, debug and release builds, all-feature tests, rustdoc with warnings denied, JSON coverage threshold checks, and the security audit. `./coverage.sh` generates coverage reports; use `./coverage.sh help` for output formats such as HTML, text, LCOV, JSON, Cobertura, or all formats.
+## License
+
+Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the
+full license text.
 
 ## Contributing
 
-Issues and pull requests are welcome.
-
-- Open an issue for bug reports, design questions, or larger feature proposals when it helps align on direction.
-- Keep pull requests scoped to one behavior change, fix, or documentation update when practical.
-- Code contributions must run `./align-ci.sh`, pass `./ci-check.sh`, and review coverage with `./coverage.sh` before submission.
-- Add or update tests when you change runtime behavior.
-- Update this README or public rustdoc when user-visible API behavior changes.
-
-By contributing, you agree to license your contributions under the [Apache License, Version 2.0](LICENSE), the same license as this project.
-
-## License
-
-Copyright (c) 2026. Haixing Hu.
-
-This project is licensed under the [Apache License, Version 2.0](LICENSE). See the `LICENSE` file in the repository for the full text.
+Contributions are welcome. Please follow the Rust API guidelines, keep public
+API documentation and tests current, and run `./align-ci.sh` to format code and
+`./ci-check.sh` to satisfy CI requirements before submitting a pull request.
 
 ## Author
 
-**Haixing Hu** — Qubit Co. Ltd.
+**Haixing Hu** - *Qubit Co. Ltd.*
 
-| | |
-| --- | --- |
-| **Repository** | [github.com/qubit-ltd/rs-retry](https://github.com/qubit-ltd/rs-retry) |
-| **Documentation** | [docs.rs/qubit-retry](https://docs.rs/qubit-retry) |
-| **Crate** | [crates.io/crates/qubit-retry](https://crates.io/crates/qubit-retry) |
+Repository: [https://github.com/qubit-ltd/rs-retry](https://github.com/qubit-ltd/rs-retry)

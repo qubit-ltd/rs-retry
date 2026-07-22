@@ -7,7 +7,12 @@
 // =============================================================================
 
 #[cfg(feature = "tokio")]
-use qubit_retry::{AttemptFailure, AttemptFailureDecision, Retry, RetryContext};
+use qubit_retry::{
+    AttemptFailure,
+    AttemptFailureDecision,
+    Retry,
+    RetryContext,
+};
 
 /// Verifies async attempt failures are observable through the public listener
 /// API.
