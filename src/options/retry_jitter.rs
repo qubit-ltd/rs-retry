@@ -26,27 +26,34 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use parse_display::{Display, FromStr as DeriveFromStr};
-use qubit_argument::{ArgumentResult, require_that};
-use rand::RngExt;
-use serde::{Deserialize, Serialize};
+use parse_display::Display;
+use qubit_argument::{
+    ArgumentResult,
+    require_that,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use crate::RetryDelay;
+use crate::RetryRandomSource;
 use crate::constants::DEFAULT_RETRY_JITTER;
 use crate::error::argument_error_message;
+use crate::random::ThreadRetryRandomSource;
 
 use super::internal::RetryJitterFactorFormat;
+use super::parse_retry_jitter_error::ParseRetryJitterError;
 
 /// Jitter strategy applied after a base [`crate::RetryDelay`] has been
 /// calculated.
 ///
 /// Supports [`RetryJitter::None`] and symmetric [`RetryJitter::Factor`] jitter.
 /// After randomization, delays are clamped to **non-negative** values.
-#[derive(Debug, Clone, Copy, PartialEq, Display, DeriveFromStr, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Display, Serialize, Deserialize)]
 pub enum RetryJitter {
     /// No jitter: [`RetryJitter::apply`] returns the base delay unchanged.
     #[display("none")]
-    #[from_str(regex = r"(?i)\s*none\s*")]
     None,
 
     /// Symmetric relative jitter around the base delay.
@@ -56,8 +63,11 @@ pub enum RetryJitter {
     /// [`RetryJitter::apply`]). It must be finite and lie in **`[0.0,
     /// 1.0]`** for validated configurations.
     #[display("factor:{0}")]
-    #[from_str(regex = r"\s*factor:\s*(?<0>\S(?:.*\S)?)\s*")]
-    Factor(#[display(with = RetryJitterFactorFormat)] f64),
+    Factor(
+        /// Relative jitter half-span in the inclusive range `[0.0, 1.0]`.
+        #[display(with = RetryJitterFactorFormat)]
+        f64,
+    ),
 }
 
 impl RetryJitter {
@@ -104,10 +114,33 @@ impl RetryJitter {
     ///
     /// # Returns
     /// The jittered delay, never below zero.
+    #[inline(always)]
     pub fn apply(&self, base: Duration) -> Duration {
+        self.apply_with_random_source(base, &ThreadRetryRandomSource)
+    }
+
+    /// Applies jitter with an explicit random source.
+    ///
+    /// # Parameters
+    ///
+    /// * `base` - Base delay calculated by [`crate::RetryDelay`].
+    /// * `random_source` - Source used to sample the symmetric jitter span.
+    ///
+    /// # Returns
+    ///
+    /// The jittered delay, never below zero.
+    pub fn apply_with_random_source(
+        &self,
+        base: Duration,
+        random_source: &dyn RetryRandomSource,
+    ) -> Duration {
         match self {
             Self::None => base,
-            Self::Factor(factor) if !factor.is_finite() || *factor <= 0.0 || base.is_zero() => base,
+            Self::Factor(factor)
+                if !factor.is_finite() || *factor <= 0.0 || base.is_zero() =>
+            {
+                base
+            }
             Self::Factor(factor) => {
                 let base_nanos_u128 = base.as_nanos();
                 if base_nanos_u128 > u64::MAX as u128 {
@@ -115,9 +148,9 @@ impl RetryJitter {
                 }
                 let base_nanos = base_nanos_u128 as f64;
                 let span = base_nanos * factor;
-                let mut rng = rand::rng();
-                let jitter = rng.random_range(-span..=span);
-                let nanos = (base_nanos + jitter).clamp(0.0, u64::MAX as f64) as u64;
+                let jitter = random_source.random_f64_inclusive(-span, span);
+                let nanos =
+                    (base_nanos + jitter).clamp(0.0, u64::MAX as f64) as u64;
                 Duration::from_nanos(nanos)
             }
         }
@@ -135,9 +168,41 @@ impl RetryJitter {
     ///
     /// # Returns
     /// The delay for the attempt after jitter is applied.
-    pub fn delay_for_attempt(&self, delay_strategy: &RetryDelay, attempt: u32) -> Duration {
-        let base_delay = delay_strategy.base_delay(attempt);
-        self.apply(base_delay)
+    #[inline(always)]
+    pub fn delay_for_attempt(
+        &self,
+        delay_strategy: &RetryDelay,
+        attempt: u32,
+    ) -> Duration {
+        self.delay_for_attempt_with_random_source(
+            delay_strategy,
+            attempt,
+            &ThreadRetryRandomSource,
+        )
+    }
+
+    /// Calculates and jitters one attempt delay with an explicit source.
+    ///
+    /// # Parameters
+    ///
+    /// * `delay_strategy` - Base delay strategy used for the attempt.
+    /// * `attempt` - Failed-attempt index passed to
+    ///   [`RetryDelay::base_delay_with_random_source`].
+    /// * `random_source` - Source shared by base-delay and jitter sampling.
+    ///
+    /// # Returns
+    ///
+    /// The delay for the attempt after jitter is applied.
+    #[inline(always)]
+    pub fn delay_for_attempt_with_random_source(
+        &self,
+        delay_strategy: &RetryDelay,
+        attempt: u32,
+        random_source: &dyn RetryRandomSource,
+    ) -> Duration {
+        let base_delay = delay_strategy
+            .base_delay_with_random_source(attempt, random_source);
+        self.apply_with_random_source(base_delay, random_source)
     }
 
     /// Validates jitter parameters for use with executors and options.
@@ -182,6 +247,42 @@ impl RetryJitter {
                 Ok(())
             }
         }
+    }
+}
+
+impl FromStr for RetryJitter {
+    type Err = ParseRetryJitterError;
+
+    /// Parses the canonical retry-jitter text representation.
+    ///
+    /// # Parameters
+    ///
+    /// * `input` - Text containing `none` or `factor:<f64>`.
+    ///
+    /// # Returns
+    ///
+    /// The parsed jitter strategy.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseRetryJitterError`] when the format is unsupported, the
+    /// factor is not numeric, or the factor is non-finite or outside
+    /// `[0.0, 1.0]`.
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        let input = input.trim();
+        if input.eq_ignore_ascii_case("none") {
+            return Ok(Self::None);
+        }
+        let factor = input
+            .strip_prefix("factor:")
+            .ok_or_else(ParseRetryJitterError::invalid_format)?
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| ParseRetryJitterError::invalid_factor())?;
+        if !factor.is_finite() || !(0.0..=1.0).contains(&factor) {
+            return Err(ParseRetryJitterError::factor_out_of_range());
+        }
+        Ok(Self::Factor(factor))
     }
 }
 

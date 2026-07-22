@@ -54,6 +54,10 @@ impl FromStrFormat<Duration> for RetryDelayDurationFormat {
         })
     }
 
+    /// Returns no additional regular-expression constraint.
+    ///
+    /// # Returns
+    /// Always `None`; parsing performs the complete validation.
     fn regex(&self) -> Option<String> {
         None
     }

@@ -10,7 +10,24 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use qubit_retry::constants::DEFAULT_RETRY_JITTER;
-use qubit_retry::{RetryDelay, RetryJitter};
+use qubit_retry::{
+    RetryDelay,
+    RetryJitter,
+};
+
+use crate::support::FixedRetryRandomSource;
+
+/// Verifies jitter can use a caller-supplied deterministic source.
+#[test]
+fn test_apply_with_random_source_returns_injected_sample() {
+    let source = FixedRetryRandomSource::new(0, 10_000_000.0);
+
+    assert_eq!(
+        RetryJitter::factor(0.2)
+            .apply_with_random_source(Duration::from_millis(100), &source),
+        Duration::from_millis(110)
+    );
+}
 
 /// Verifies factor jitter application and validation bounds.
 #[test]
@@ -63,8 +80,11 @@ fn test_delay_for_attempt_combines_delay_strategy_and_jitter() {
         Duration::from_millis(50)
     );
 
-    let exponential =
-        RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 2.0);
+    let exponential = RetryDelay::exponential(
+        Duration::from_millis(10),
+        Duration::from_millis(80),
+        2.0,
+    );
     assert_eq!(
         RetryJitter::none().delay_for_attempt(&exponential, 1),
         Duration::from_millis(10)
@@ -106,13 +126,13 @@ fn test_retry_jitter_from_str() {
     assert!(RetryJitter::from_str("factor(0.2)").is_err());
     assert_eq!(
         RetryJitter::from_str("factor:1.1").unwrap_err().to_string(),
-        "parse failed."
+        "invalid retry jitter factor: expected a finite value in [0.0, 1.0]"
     );
     assert_eq!(
         RetryJitter::from_str("factor:-0.1")
             .unwrap_err()
             .to_string(),
-        "parse failed."
+        "invalid retry jitter factor: expected a finite value in [0.0, 1.0]"
     );
     assert!(RetryJitter::from_str("factor:").is_err());
     assert!(RetryJitter::from_str("").is_err());
@@ -187,18 +207,18 @@ fn test_retry_jitter_from_str_invalid_format_out_of_range_and_bad_number() {
 
     assert_eq!(
         RetryJitter::from_str("factor:2").unwrap_err().to_string(),
-        "parse failed."
+        "invalid retry jitter factor: expected a finite value in [0.0, 1.0]"
     );
     assert_eq!(
         RetryJitter::from_str("factor:-1").unwrap_err().to_string(),
-        "parse failed."
+        "invalid retry jitter factor: expected a finite value in [0.0, 1.0]"
     );
 
     for s in ["factor:nan", "factor:inf", "factor:Infinity"] {
         let err = RetryJitter::from_str(s).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "parse failed.",
+            "invalid retry jitter factor: expected a finite value in [0.0, 1.0]",
             "expected non-finite range error for {s:?}"
         );
     }
@@ -206,25 +226,8 @@ fn test_retry_jitter_from_str_invalid_format_out_of_range_and_bad_number() {
     assert!(RetryJitter::from_str("factor:  ").is_err());
     assert_eq!(
         RetryJitter::from_str("factor:xyz").unwrap_err().to_string(),
-        "parse failed."
+        "invalid retry jitter factor: expected a floating-point number"
     );
-}
-
-/// Verifies [`ParseRetryJitterError`] [`std::fmt::Display`] text and
-/// [`Error::source`] behavior.
-#[test]
-fn test_parse_retry_jitter_error_display_and_source() {
-    let invalid_format = RetryJitter::from_str("nope").unwrap_err();
-    assert_eq!(invalid_format.to_string(), "parse failed.");
-    assert!(std::error::Error::source(&invalid_format).is_none());
-
-    let out_of_range = RetryJitter::from_str("factor:3").unwrap_err();
-    assert_eq!(out_of_range.to_string(), "parse failed.");
-    assert!(std::error::Error::source(&out_of_range).is_none());
-
-    let bad_number = RetryJitter::from_str("factor:not-a-number").unwrap_err();
-    assert_eq!(bad_number.to_string(), "parse failed.");
-    assert!(std::error::Error::source(&bad_number).is_none());
 }
 
 /// Verifies [`std::fmt::Display`] / [`std::str::FromStr`] round-trip for edge

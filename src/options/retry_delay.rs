@@ -37,18 +37,19 @@ use parse_display::{
     FromStr,
 };
 use qubit_argument::{
-    require_that,
     ArgumentResult,
+    require_that,
 };
-use rand::RngExt;
 use serde::{
     Deserialize,
     Serialize,
 };
 
 use super::retry_delay_duration_format::RetryDelayDurationFormat;
+use crate::RetryRandomSource;
 use crate::constants::DEFAULT_RETRY_DELAY;
 use crate::error::argument_error_message;
+use crate::random::ThreadRetryRandomSource;
 
 /// Base delay strategy before jitter is applied.
 ///
@@ -65,6 +66,7 @@ pub enum RetryDelay {
     /// Wait for a constant delay after every failed attempt.
     #[display("fixed({0})")]
     Fixed(
+        /// Constant delay used after each failed attempt.
         #[display(with = RetryDelayDurationFormat)]
         #[serde(with = "qubit_serde::serde::duration_millis")]
         Duration,
@@ -181,7 +183,33 @@ impl RetryDelay {
     ///
     /// # Returns
     /// The base delay before jitter is applied.
+    #[inline(always)]
     pub fn base_delay(&self, attempt: u32) -> Duration {
+        self.base_delay_with_random_source(attempt, &ThreadRetryRandomSource)
+    }
+
+    /// Calculates the base delay with an explicit random source.
+    ///
+    /// The random source is consulted only for [`RetryDelay::Random`]. Other
+    /// strategies return the same value as [`RetryDelay::base_delay`].
+    /// Caller-supplied strategies should be checked with
+    /// [`RetryDelay::validate`] before execution.
+    ///
+    /// # Parameters
+    ///
+    /// * `attempt` - Failed attempt number. Values `0` and `1` are treated as
+    ///   the first exponential-backoff step.
+    /// * `random_source` - Source used to sample an inclusive random-delay
+    ///   range.
+    ///
+    /// # Returns
+    ///
+    /// The base delay before jitter is applied.
+    pub fn base_delay_with_random_source(
+        &self,
+        attempt: u32,
+        random_source: &dyn RetryRandomSource,
+    ) -> Duration {
         match self {
             Self::None => Duration::ZERO,
             Self::Fixed(delay) => *delay,
@@ -189,10 +217,11 @@ impl RetryDelay {
                 if min >= max {
                     return *min;
                 }
-                let mut rng = rand::rng();
                 let min_nanos = Self::duration_to_nanos_u64(*min);
                 let max_nanos = Self::duration_to_nanos_u64(*max);
-                Duration::from_nanos(rng.random_range(min_nanos..=max_nanos))
+                Duration::from_nanos(
+                    random_source.random_u64_inclusive(min_nanos, max_nanos),
+                )
             }
             Self::Exponential {
                 initial,
