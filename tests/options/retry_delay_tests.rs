@@ -226,6 +226,29 @@ fn test_retry_delay_serde_json_literal_shapes() {
     );
 }
 
+/// Verifies RetryDelay serde quantizes sub-millisecond values half-up.
+#[test]
+fn test_retry_delay_serde_quantizes_sub_millisecond_values() {
+    let cases = [
+        (Duration::from_micros(499), 0_u64),
+        (Duration::from_micros(500), 1_u64),
+        (Duration::from_micros(1500), 2_u64),
+    ];
+
+    for (duration, expected_millis) in cases {
+        let original = RetryDelay::fixed(duration);
+        let json =
+            serde_json::to_string(&original).expect("delay should serialize");
+        assert_eq!(json, format!(r#"{{"Fixed":{expected_millis}}}"#));
+        let decoded: RetryDelay =
+            serde_json::from_str(&json).expect("delay should deserialize");
+        assert_eq!(
+            decoded,
+            RetryDelay::fixed(Duration::from_millis(expected_millis))
+        );
+    }
+}
+
 /// Verifies [`qubit_retry::constants::DEFAULT_RETRY_DELAY`] matches
 /// [`RetryDelay::default`].
 #[test]

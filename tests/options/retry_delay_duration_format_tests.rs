@@ -20,6 +20,14 @@ fn test_retry_delay_display_variants() {
         "fixed(12ms)"
     );
     assert_eq!(
+        RetryDelay::fixed(Duration::from_micros(499)).to_string(),
+        "fixed(0ms)"
+    );
+    assert_eq!(
+        RetryDelay::fixed(Duration::from_micros(500)).to_string(),
+        "fixed(1ms)"
+    );
+    assert_eq!(
         RetryDelay::fixed(Duration::from_micros(1500)).to_string(),
         "fixed(2ms)"
     );
@@ -102,6 +110,26 @@ fn test_retry_delay_from_str_rejects_invalid_inputs() {
             "expected from_str error for {s:?}"
         );
     }
+}
+
+/// Verifies the first unrepresentable millisecond duration is rejected.
+#[test]
+fn test_retry_delay_from_str_rejects_first_unrepresentable_millisecond() {
+    let result = RetryDelay::from_str("fixed(18446744073709551616000ms)");
+
+    assert!(result.is_err());
+}
+
+/// Verifies maximum Duration text saturates to a parseable millisecond value.
+#[test]
+fn test_retry_delay_display_parse_saturates_duration_max() {
+    let text = RetryDelay::fixed(Duration::MAX).to_string();
+
+    assert_eq!(text, format!("fixed({}ms)", Duration::MAX.as_millis()));
+    assert_eq!(
+        RetryDelay::from_str(&text).expect("saturated text should parse"),
+        RetryDelay::fixed(Duration::new(u64::MAX, 999_000_000))
+    );
 }
 
 /// Verifies display → parse round-trip for representative [`RetryDelay`]

@@ -25,7 +25,7 @@ use qubit_serde::serde::duration_millis_with_unit;
 /// Bridges `parse_display` for [`Duration`] fields to
 /// [`duration_millis_with_unit`].
 /// `regex` returns `None` so the default non-greedy `.*?` capture is used,
-/// which supports canonical whole-millisecond input.
+/// while the adapter enforces representable whole-millisecond input.
 pub(crate) struct RetryDelayDurationFormat;
 
 impl DisplayFormat<Duration> for RetryDelayDurationFormat {
@@ -49,7 +49,7 @@ impl FromStrFormat<Duration> for RetryDelayDurationFormat {
     fn parse(&self, s: &str) -> Result<Duration, Self::Err> {
         duration_millis_with_unit::parse(s).map_err(|_| {
             ParseError::with_message(
-                "invalid retry delay duration: expected <integer>ms",
+                "invalid retry delay duration: expected a representable <integer>ms duration",
             )
         })
     }

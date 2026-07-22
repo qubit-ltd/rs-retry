@@ -54,3 +54,27 @@ fn test_attempt_timeout_option_serde_uses_milliseconds() {
         serde_json::from_str(&json).expect("timeout option should deserialize");
     assert_eq!(decoded, option);
 }
+
+/// Verifies timeout serde quantizes sub-millisecond values half-up.
+#[test]
+fn test_attempt_timeout_option_serde_quantizes_sub_millisecond_values() {
+    let cases = [
+        (Duration::from_micros(499), 0_u64),
+        (Duration::from_micros(500), 1_u64),
+        (Duration::from_micros(1500), 2_u64),
+    ];
+
+    for (timeout, expected_millis) in cases {
+        let original = AttemptTimeoutOption::abort(timeout);
+        let json = serde_json::to_string(&original)
+            .expect("timeout option should serialize");
+        let decoded: AttemptTimeoutOption = serde_json::from_str(&json)
+            .expect("timeout option should deserialize");
+        assert_eq!(decoded.timeout(), Duration::from_millis(expected_millis));
+        if expected_millis == 0 {
+            assert!(decoded.validate().is_err());
+        } else {
+            assert!(decoded.validate().is_ok());
+        }
+    }
+}

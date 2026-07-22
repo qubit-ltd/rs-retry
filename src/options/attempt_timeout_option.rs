@@ -24,10 +24,14 @@ use crate::error::argument_error_message;
 /// Per-attempt timeout settings.
 ///
 /// A timeout option combines the timeout duration with the policy selected when
-/// an attempt exceeds that duration.
+/// an attempt exceeds that duration. Runtime constructors retain the native
+/// [`Duration`] precision. Serde interchange stores half-up rounded whole
+/// milliseconds, and deserialization does not automatically call
+/// [`AttemptTimeoutOption::validate`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttemptTimeoutOption {
-    /// Timeout applied to each eligible attempt.
+    /// Timeout applied to each eligible attempt. Serde stores this value as
+    /// half-up rounded whole milliseconds.
     #[serde(with = "qubit_serde::serde::duration_millis")]
     timeout: Duration,
     /// Policy used when the attempt times out.

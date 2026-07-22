@@ -415,6 +415,19 @@ match retry.run(|| std::fs::read_to_string("missing.toml")) {
 - Crate package: [crates.io/crates/qubit-retry](https://crates.io/crates/qubit-retry)
 - Source repository: [github.com/qubit-ltd/rs-retry](https://github.com/qubit-ltd/rs-retry)
 
+## Duration Precision
+
+Runtime APIs accept `std::time::Duration` values at their native precision.
+The stable serde, configuration, and `RetryDelay` text interchange formats use
+whole milliseconds. Sub-millisecond parts are rounded half-up: `499µs` becomes
+`0ms`, `500µs` becomes `1ms`, and `1500µs` becomes `2ms`. Consequently, a serde
+or text round-trip can change a value that was supplied programmatically.
+
+Deserialization does not automatically validate semantic constraints. Call
+`RetryDelay::validate` or `AttemptTimeoutOption::validate` before executing
+values obtained from untrusted serialized input; for example, a positive value
+below `0.5ms` becomes zero and is rejected by those validators.
+
 ## Testing
 
 ```bash

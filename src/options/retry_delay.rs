@@ -11,6 +11,11 @@
 //! The base duration is calculated before [`crate::RetryJitter`] is applied by
 //! a retry executor.
 //!
+//! Constructors and runtime calculations preserve the native precision of
+//! supplied [`std::time::Duration`] values. Serde interchange and the text
+//! forms below use half-up rounded whole milliseconds, so a serialization or
+//! text round-trip can quantize sub-millisecond values.
+//!
 //! # Text interchange
 //!
 //! [`std::fmt::Display`] and [`std::str::FromStr`] share a canonical string
@@ -23,8 +28,8 @@
 //! - `exponential(initial=<...>, max=<...>, multiplier=<f64>)` — same for
 //!   `initial` and `max`
 //!
-//! For [`std::str::FromStr`], duration fields must be canonical
-//! `<integer>ms` strings as defined by
+//! For [`std::str::FromStr`], duration fields must match the untrimmed
+//! `<integer>ms` grammar defined by
 //! [`qubit_serde::serde::duration_millis_with_unit`].
 //! [`std::fmt::Display`] normalizes to whole millisecond + `ms` for those
 //! fields.
@@ -57,6 +62,12 @@ use crate::random::ThreadRetryRandomSource;
 /// Random and exponential strategies are validated separately by
 /// [`RetryDelay::validate`], which is called when building
 /// [`crate::RetryOptions`].
+///
+/// Programmatic construction and runtime delay calculation retain native
+/// [`Duration`] precision. Serde and [`std::fmt::Display`]/
+/// [`std::str::FromStr`] interchange use half-up rounded whole milliseconds;
+/// round-tripping through either representation can therefore change a
+/// sub-millisecond value.
 #[derive(Debug, Clone, PartialEq, Display, FromStr, Serialize, Deserialize)]
 pub enum RetryDelay {
     /// Retry immediately.
