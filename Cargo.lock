@@ -271,7 +271,7 @@ dependencies = [
 name = "qubit-config"
 version = "0.14.0"
 dependencies = [
- "qubit-datatype",
+ "qubit-datatype 0.8.0",
  "qubit-redact",
  "qubit-value",
  "regex",
@@ -288,6 +288,15 @@ checksum = "c7db892a422445a3e7a34c5d5c285d998f32cfb2b0f2ecdea55d40e575a93a8e"
 dependencies = [
  "serde",
  "serde_json",
+ "strum",
+ "thiserror",
+]
+
+[[package]]
+name = "qubit-datatype"
+version = "0.9.0"
+dependencies = [
+ "serde",
  "strum",
  "thiserror",
 ]
@@ -316,10 +325,10 @@ dependencies = [
  "qubit-argument",
  "qubit-clock",
  "qubit-config",
- "qubit-datatype",
+ "qubit-datatype 0.8.0",
+ "qubit-datatype 0.9.0",
  "qubit-error",
  "qubit-function",
- "qubit-serde",
  "qubit-value",
  "rand",
  "serde",
@@ -328,18 +337,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "qubit-serde"
-version = "0.4.0"
-dependencies = [
- "qubit-datatype",
- "serde",
-]
-
-[[package]]
 name = "qubit-value"
 version = "0.10.0"
 dependencies = [
- "qubit-datatype",
+ "qubit-datatype 0.8.0",
  "serde",
  "serde_json",
  "thiserror",

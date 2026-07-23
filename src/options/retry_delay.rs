@@ -30,7 +30,7 @@
 //!
 //! For [`std::str::FromStr`], duration fields must match the untrimmed
 //! `<integer>ms` grammar defined by
-//! [`qubit_serde::serde::duration_millis_with_unit`].
+//! [`qubit_datatype::serde::duration_millis_with_unit`].
 //! [`std::fmt::Display`] normalizes to whole millisecond + `ms` for those
 //! fields.
 
@@ -79,7 +79,7 @@ pub enum RetryDelay {
     Fixed(
         /// Constant delay used after each failed attempt.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_serde::serde::duration_millis")]
+        #[serde(with = "qubit_datatype::serde::duration_millis")]
         Duration,
     ),
 
@@ -88,11 +88,11 @@ pub enum RetryDelay {
     Random {
         /// Lower bound for the delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_serde::serde::duration_millis")]
+        #[serde(with = "qubit_datatype::serde::duration_millis")]
         min: Duration,
         /// Upper bound for the delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_serde::serde::duration_millis")]
+        #[serde(with = "qubit_datatype::serde::duration_millis")]
         max: Duration,
     },
 
@@ -103,11 +103,11 @@ pub enum RetryDelay {
     Exponential {
         /// RetryDelay used for the first retry.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_serde::serde::duration_millis")]
+        #[serde(with = "qubit_datatype::serde::duration_millis")]
         initial: Duration,
         /// Maximum delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_serde::serde::duration_millis")]
+        #[serde(with = "qubit_datatype::serde::duration_millis")]
         max: Duration,
         /// Multiplicative factor applied per failed attempt.
         multiplier: f64,

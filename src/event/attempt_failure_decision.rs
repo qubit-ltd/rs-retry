@@ -38,7 +38,7 @@ pub enum AttemptFailureDecision {
     RetryAfter(
         /// Delay selected by the listener. Serde interchange stores this value
         /// as half-up rounded whole milliseconds.
-        #[serde(with = "qubit_serde::serde::duration_millis")]
+        #[serde(with = "qubit_datatype::serde::duration_millis")]
         Duration,
     ),
     /// Abort immediately and return the current failure.

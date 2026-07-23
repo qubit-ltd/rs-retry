@@ -10,7 +10,7 @@
 //!
 //! See [`RetryDelay`](crate::RetryDelay) for the full text form; this type only
 //! wires each duration field to
-//! [`qubit_serde::serde::duration_millis_with_unit`].
+//! [`qubit_datatype::serde::duration_millis_with_unit`].
 
 use std::fmt;
 use std::time::Duration;
@@ -20,7 +20,7 @@ use parse_display::{
     FromStrFormat,
     ParseError,
 };
-use qubit_serde::serde::duration_millis_with_unit;
+use qubit_datatype::serde::duration_millis_with_unit;
 
 /// Bridges `parse_display` for [`Duration`] fields to
 /// [`duration_millis_with_unit`].
