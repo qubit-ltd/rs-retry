@@ -45,7 +45,6 @@ qubit-clock = { version = "0.10", path = "../rs-clock" }
 [dev-dependencies]
 qubit-clock = { version = "0.10", path = "../rs-clock", features = ["test-util"] }
 serde_json = "1.0"
-qubit-datatype-v08 = { package = "qubit-datatype", version = "0.8", default-features = false, features = ["converter"] }
 qubit-value = { version = "0.10.0", path = "../rs-value" }
 tokio = { version = "1.52", features = ["full", "test-util"] }
 
