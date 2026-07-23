@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-use qubit_datatype_v08::{
+use qubit_datatype::{
     DataConversionError,
     DataType,
 };
