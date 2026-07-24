@@ -14,7 +14,9 @@ use std::time::Duration;
 use qubit_config::{
     ConfigReader,
     ConfigResult,
+    ConfigSerdeExt,
 };
+use serde::Deserialize;
 
 use super::attempt_timeout_option::AttemptTimeoutOption;
 use super::attempt_timeout_policy::AttemptTimeoutPolicy;
@@ -30,7 +32,6 @@ use crate::constants::{
     DEFAULT_RETRY_JITTER_FACTOR,
     DEFAULT_RETRY_RANDOM_MAX_DELAY_MILLIS,
     DEFAULT_RETRY_RANDOM_MIN_DELAY_MILLIS,
-    KEY_ATTEMPT_TIMEOUT_MILLIS,
     KEY_ATTEMPT_TIMEOUT_POLICY,
     KEY_DELAY,
     KEY_DELAY_STRATEGY,
@@ -38,15 +39,8 @@ use crate::constants::{
     KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
     KEY_EXPONENTIAL_MULTIPLIER,
     KEY_FIXED_DELAY_MILLIS,
-    KEY_JITTER_FACTOR,
-    KEY_MAX_ATTEMPTS,
-    KEY_MAX_OPERATION_ELAPSED_MILLIS,
-    KEY_MAX_OPERATION_ELAPSED_UNLIMITED,
-    KEY_MAX_TOTAL_ELAPSED_MILLIS,
-    KEY_MAX_TOTAL_ELAPSED_UNLIMITED,
     KEY_RANDOM_MAX_DELAY_MILLIS,
     KEY_RANDOM_MIN_DELAY_MILLIS,
-    KEY_WORKER_CANCEL_GRACE_MILLIS,
 };
 
 /// Raw retry configuration values read from `qubit-config`.
@@ -58,7 +52,7 @@ use crate::constants::{
 ///
 /// Fields are public so callers and integration tests can build snapshots
 /// programmatically and merge them with [`RetryConfigValues::to_options`].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct RetryConfigValues {
     /// Optional maximum attempts value.
     pub max_attempts: Option<u32>,
@@ -117,40 +111,7 @@ impl RetryConfigValues {
     where
         R: ConfigReader + ?Sized,
     {
-        Ok(Self {
-            max_attempts: config.get_optional(KEY_MAX_ATTEMPTS)?,
-            max_operation_elapsed_millis: config
-                .get_optional(KEY_MAX_OPERATION_ELAPSED_MILLIS)?,
-            max_operation_elapsed_unlimited: config
-                .get_optional(KEY_MAX_OPERATION_ELAPSED_UNLIMITED)?,
-            max_total_elapsed_millis: config
-                .get_optional(KEY_MAX_TOTAL_ELAPSED_MILLIS)?,
-            max_total_elapsed_unlimited: config
-                .get_optional(KEY_MAX_TOTAL_ELAPSED_UNLIMITED)?,
-            attempt_timeout_millis: config
-                .get_optional(KEY_ATTEMPT_TIMEOUT_MILLIS)?,
-            attempt_timeout_policy: config
-                .get_optional_interpolated::<String>(
-                    KEY_ATTEMPT_TIMEOUT_POLICY,
-                )?,
-            worker_cancel_grace_millis: config
-                .get_optional(KEY_WORKER_CANCEL_GRACE_MILLIS)?,
-            delay: config.get_optional_interpolated::<String>(KEY_DELAY)?,
-            delay_strategy: config
-                .get_optional_interpolated::<String>(KEY_DELAY_STRATEGY)?,
-            fixed_delay_millis: config.get_optional(KEY_FIXED_DELAY_MILLIS)?,
-            random_min_delay_millis: config
-                .get_optional(KEY_RANDOM_MIN_DELAY_MILLIS)?,
-            random_max_delay_millis: config
-                .get_optional(KEY_RANDOM_MAX_DELAY_MILLIS)?,
-            exponential_initial_delay_millis: config
-                .get_optional(KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS)?,
-            exponential_max_delay_millis: config
-                .get_optional(KEY_EXPONENTIAL_MAX_DELAY_MILLIS)?,
-            exponential_multiplier: config
-                .get_optional(KEY_EXPONENTIAL_MULTIPLIER)?,
-            jitter_factor: config.get_optional(KEY_JITTER_FACTOR)?,
-        })
+        config.deserialize_interpolated("")
     }
 
     /// Converts the raw configuration snapshot into validated retry options.

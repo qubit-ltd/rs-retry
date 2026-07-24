@@ -106,7 +106,10 @@ fn test_validate_default_and_new() {
 fn test_from_config_reads_fixed_delay_from_prefixed_config() {
     let mut config = Config::new();
     config
-        .set("retry.max_attempts", 4u32)
+        .set("default_attempts", "5")
+        .expect("default attempt count should be set");
+    config
+        .set("retry.max_attempts", "${default_attempts}")
         .expect("test config value should be set");
     config
         .set("retry.max_operation_elapsed_millis", 250u64)
@@ -136,7 +139,7 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
     let options = RetryOptions::from_config(&config.section("retry"))
         .expect("prefixed retry config should be parsed");
 
-    assert_eq!(options.max_attempts(), 4);
+    assert_eq!(options.max_attempts(), 5);
     assert_eq!(
         options.max_operation_elapsed(),
         Some(Duration::from_millis(250))
@@ -162,6 +165,12 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
 fn test_from_config_interpolates_string_values() {
     let mut config = Config::new();
     config
+        .set("max_attempts_value", "4")
+        .expect("attempt count value should be set");
+    config
+        .set("max_attempts", "${max_attempts_value}")
+        .expect("attempt count placeholder should be set");
+    config
         .set("delay_value", "fixed")
         .expect("test config value should be set");
     config
@@ -183,6 +192,7 @@ fn test_from_config_interpolates_string_values() {
     let options = RetryOptions::from_config(&config)
         .expect("string-valued retry settings should be interpolated");
 
+    assert_eq!(options.max_attempts(), 4);
     assert_eq!(
         options.delay(),
         &RetryDelay::fixed(Duration::from_millis(15))
