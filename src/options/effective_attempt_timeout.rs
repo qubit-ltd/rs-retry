@@ -14,11 +14,7 @@
 
 use std::time::Duration;
 
-use crate::{
-    AttemptFailure,
-    AttemptTimeoutSource,
-    RetryErrorReason,
-};
+use crate::{AttemptFailure, AttemptTimeoutSource, RetryErrorReason};
 
 /// Effective timeout selected for a single attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,10 +35,7 @@ impl EffectiveAttemptTimeout {
     /// # Returns
     /// A timeout descriptor for one attempt.
     #[inline(always)]
-    pub(crate) fn new(
-        duration: Option<Duration>,
-        source: Option<AttemptTimeoutSource>,
-    ) -> Self {
+    pub(crate) fn new(duration: Option<Duration>, source: Option<AttemptTimeoutSource>) -> Self {
         Self { duration, source }
     }
 

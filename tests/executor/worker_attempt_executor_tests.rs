@@ -6,23 +6,11 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::sync::atomic::{
-    AtomicUsize,
-    Ordering,
-};
-use std::sync::{
-    Arc,
-    Mutex,
-    mpsc,
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
-use qubit_retry::{
-    AttemptCancelToken,
-    AttemptFailure,
-    Retry,
-    RetryErrorReason,
-};
+use qubit_retry::{AttemptCancelToken, AttemptFailure, Retry, RetryErrorReason};
 
 use crate::support::PanicOnDrop;
 
@@ -36,11 +24,9 @@ fn test_run_in_worker_returns_executor_failure_when_worker_disconnects() {
         .expect("retry should build");
 
     let error = retry
-        .run_in_worker(
-            |_token: AttemptCancelToken| -> Result<(), &'static str> {
-                std::panic::panic_any(PanicOnDrop)
-            },
-        )
+        .run_in_worker(|_token: AttemptCancelToken| -> Result<(), &'static str> {
+            std::panic::panic_any(PanicOnDrop)
+        })
         .expect_err("worker disconnect should return a retry error");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
@@ -54,8 +40,7 @@ fn test_run_in_worker_returns_executor_failure_when_worker_disconnects() {
 
 /// Verifies timed worker receive reports disconnect as an executor failure.
 #[test]
-fn test_run_in_worker_with_timeout_returns_executor_failure_when_worker_disconnects()
- {
+fn test_run_in_worker_with_timeout_returns_executor_failure_when_worker_disconnects() {
     let retry = Retry::<&'static str>::builder()
         .max_attempts(1)
         .attempt_timeout(Some(Duration::from_secs(1)))
@@ -64,11 +49,9 @@ fn test_run_in_worker_with_timeout_returns_executor_failure_when_worker_disconne
         .expect("retry should build");
 
     let error = retry
-        .run_in_worker(
-            |_token: AttemptCancelToken| -> Result<(), &'static str> {
-                std::panic::panic_any(PanicOnDrop)
-            },
-        )
+        .run_in_worker(|_token: AttemptCancelToken| -> Result<(), &'static str> {
+            std::panic::panic_any(PanicOnDrop)
+        })
         .expect_err("worker disconnect should return a retry error");
 
     assert_eq!(error.reason(), RetryErrorReason::Aborted);
@@ -107,7 +90,7 @@ fn test_worker_attempt_executor_paths_are_observable_through_run_in_worker() {
         })
         .expect("ordinary worker error should retry");
 
-    assert_eq!(value, "done");
+    assert_eq!(value.into_value(), "done");
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
 
     let (release_tx, release_rx) = mpsc::channel();

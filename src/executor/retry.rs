@@ -19,10 +19,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "tokio")]
 use qubit_clock::TokioTimer;
-use qubit_clock::{
-    BlockingSleeper,
-    Timer,
-};
+use qubit_clock::{BlockingSleeper, Timer};
 use qubit_error::BoxError;
 
 #[cfg(feature = "tokio")]
@@ -31,17 +28,8 @@ use super::attempt_cancel_token::AttemptCancelToken;
 use super::retry_builder::RetryBuilder;
 use super::retry_runner::RetryRunner;
 use super::worker_retry_runner::WorkerRetryRunner;
-use crate::event::{
-    RetryAfterHint,
-    RetryEvents,
-    RetryListeners,
-};
-use crate::{
-    RetryConfigError,
-    RetryError,
-    RetryOptions,
-    RetryRandomSource,
-};
+use crate::event::{RetryAfterHint, RetryEvents, RetryListeners};
+use crate::{RetryConfigError, RetryOptions, RetryRandomSource};
 
 /// Retry policy and executor facade bound to an operation error type.
 ///
@@ -116,9 +104,7 @@ impl<E> Retry<E> {
     /// # Errors
     /// Returns [`RetryConfigError`] if the options are invalid.
     #[inline(always)]
-    pub fn from_options(
-        options: RetryOptions,
-    ) -> Result<Self, RetryConfigError> {
+    pub fn from_options(options: RetryOptions) -> Result<Self, RetryConfigError> {
         Self::builder().options(options).build()
     }
 
@@ -146,11 +132,7 @@ impl<E> Retry<E> {
     ) -> Self {
         Self {
             options,
-            events: RetryEvents::new(
-                retry_after_hint,
-                isolate_listener_panics,
-                listeners,
-            ),
+            events: RetryEvents::new(retry_after_hint, isolate_listener_panics, listeners),
             random_source,
             blocking_sleeper: BlockingSleeper::new(blocking_timer),
             #[cfg(feature = "tokio")]
@@ -213,7 +195,7 @@ impl<E> Retry<E> {
     /// [`crate::RetryErrorReason::UnsupportedOperation`] because timeout
     /// enforcement requires worker-thread or async execution.
     #[inline(always)]
-    pub fn run<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
+    pub fn run<T, F>(&self, operation: F) -> crate::RetryResult<T, E>
     where
         F: FnMut() -> Result<T, E>,
     {
@@ -268,10 +250,7 @@ impl<E> Retry<E> {
     /// max-operation-elapsed budget, and remaining max-total-elapsed budget as
     /// their effective timeout.
     #[cfg(feature = "tokio")]
-    pub async fn run_async<T, F, Fut>(
-        &self,
-        operation: F,
-    ) -> Result<T, RetryError<E>>
+    pub async fn run_async<T, F, Fut>(&self, operation: F) -> crate::RetryResult<T, E>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -345,7 +324,7 @@ impl<E> Retry<E> {
     /// max-operation-elapsed budget, and remaining max-total-elapsed budget as
     /// their effective timeout.
     #[inline(always)]
-    pub fn run_in_worker<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
+    pub fn run_in_worker<T, F>(&self, operation: F) -> crate::RetryResult<T, E>
     where
         T: Send + 'static,
         E: Send + 'static,
@@ -356,9 +335,7 @@ impl<E> Retry<E> {
 
     /// Returns the blocking sleeper used by sync and worker runners.
     #[inline(always)]
-    pub(in crate::executor) const fn blocking_sleeper(
-        &self,
-    ) -> &BlockingSleeper {
+    pub(in crate::executor) const fn blocking_sleeper(&self) -> &BlockingSleeper {
         &self.blocking_sleeper
     }
 

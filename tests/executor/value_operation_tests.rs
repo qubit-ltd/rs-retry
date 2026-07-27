@@ -21,5 +21,5 @@ fn test_value_operation_is_observable_through_non_clone_success_value() {
         .unwrap();
 
     let value = retry.run(|| Ok(Token("captured".to_owned()))).unwrap();
-    assert_eq!(Token("captured".to_owned()), value);
+    assert_eq!(Token("captured".to_owned()), value.into_value());
 }
