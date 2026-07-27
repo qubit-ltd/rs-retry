@@ -68,7 +68,8 @@ impl<'a, E> RetryRunner<'a, E> {
     ///   the retry flow stops.
     ///
     /// # Returns
-    /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
+    /// `Ok(RetrySuccess<T>)` with the operation value and final retry context,
+    /// or [`RetryError`] when retrying stops.
     pub(in crate::executor) fn run<T, F>(
         &self,
         mut operation: F,

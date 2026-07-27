@@ -52,16 +52,16 @@ pub struct Retry<E = BoxError> {
 
 ```rust
 impl<E> Retry<E> {
-    pub fn run<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
+    pub fn run<T, F>(&self, operation: F) -> RetryResult<T, E>
     where
         F: FnMut() -> Result<T, E>;
 
-    pub async fn run_async<T, F, Fut>(&self, operation: F) -> Result<T, RetryError<E>>
+    pub async fn run_async<T, F, Fut>(&self, operation: F) -> RetryResult<T, E>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>;
 
-    pub fn run_in_worker<T, F>(&self, operation: F) -> Result<T, RetryError<E>>
+    pub fn run_in_worker<T, F>(&self, operation: F) -> RetryResult<T, E>
     where
         T: Send + 'static,
         E: Send + 'static,
@@ -69,7 +69,9 @@ impl<E> Retry<E> {
 }
 ```
 
-这样普通错误重试不会要求 `T: Clone + Eq + Hash`。
+这样普通错误重试不会要求 `T: Clone + Eq + Hash`。成功时，`RetryResult<T, E>` 的
+`Ok` 变体为 `RetrySuccess<T>`，同时携带业务值和最终 `RetryContext`；调用方可用
+`into_value()` 只取业务值，或用 `into_parts()` 同时消费业务值与上下文。
 
 ### 4.2 错误判定由 failure listener 表达
 
@@ -186,7 +188,9 @@ let retry = Retry::<std::io::Error>::builder()
     .fixed_delay(Duration::from_millis(100))
     .build()?;
 
-let text = retry.run(|| std::fs::read_to_string("config.toml"))?;
+let text = retry
+    .run(|| std::fs::read_to_string("config.toml"))?
+    .into_value();
 ```
 
 ### 5.2 自定义错误判定
@@ -325,22 +329,23 @@ src/
     retry_listeners.rs
     mod.rs
   executor/
-    async_attempt.rs
-    async_attempt_future.rs
     async_retry_runner.rs
-    async_value_operation.rs
+    attempt.rs
     attempt_cancel_token.rs
     blocking_attempt.rs
     blocking_attempt_outcome.rs
     blocking_value_operation.rs
+    internal/
+      attempt_lifecycle.rs
+      mod.rs
     retry.rs
     retry_builder.rs
     retry_failure_handler.rs
     retry_failure_policy.rs
     retry_flow_action.rs
     retry_flow_state.rs
-    attempt.rs
     retry_runner.rs
+    retry_success.rs
     value_operation.rs
     worker_attempt_executor.rs
     worker_retry_runner.rs
@@ -349,16 +354,30 @@ src/
     attempt_timeout_option.rs
     attempt_timeout_policy.rs
     effective_attempt_timeout.rs
+    internal/
+      retry_jitter_factor_format.rs
+      mod.rs
     parse_retry_jitter_error.rs
+    retry_after_policy.rs
     retry_config_values.rs
     retry_delay.rs
     retry_delay_duration_format.rs
     retry_jitter.rs
     retry_options.rs
+    retry_options_builder.rs
     mod.rs
+  random/
+    internal/
+      mod.rs
+      thread_retry_random_source.rs
+    mod.rs
+    retry_random_source.rs
 ```
 
-`lib.rs` 对外 re-export `Retry`、`RetryBuilder`、`RetryOptions`、`RetryDelay`、`RetryJitter`、timeout 类型、context/listener 相关类型和错误类型。`RetryListeners`、`RetryContextParts`、attempt adapter、worker message、flow action 等保持 crate 内部可见。
+`lib.rs` 对外 re-export `Retry`、`RetryBuilder`、`RetrySuccess`、`RetryOptions`、
+`RetryDelay`、`RetryJitter`、`RetryAfterPolicy`、`RetryRandomSource`、timeout 类型、
+context/listener 相关类型和错误类型。`RetryListeners`、`RetryContextParts`、attempt
+adapter、worker message、flow action 等保持 crate 内部可见。
 
 ## 8. 对 `qubit-http` 的影响
 
@@ -389,13 +408,12 @@ fn build_retry(&self) -> Retry<HttpError> {
 4. `RetryError<E>` / `AttemptFailure<E>` 保留 typed error、timeout、panic、executor failure 和 context。
 5. `run_async()` 和 `run_in_worker()` 支持真实 per-attempt timeout；`run()` 明确拒绝 configured attempt timeout。
 6. worker timeout 采用合作式取消；未在 grace 内退出时 fail-closed 为 `WorkerStillRunning`，避免叠加不可回收 worker。
-7. README、英文/中文文档和集成测试按当前 API 维护。
+7. `--all-features` 集成测试直接运行 rustdoc，编译英文 README 中的关键 Rust 示例；中文 README 与其保持同步。
 
 仍未实现的可选方向：
 
 1. result-based retry / `run_outcome`。
 2. circuit breaker、hedging、bulkhead 等高层 resilience 能力。
-3. 可注入随机源的 deterministic jitter 测试接口。
 
 ## 10. 测试覆盖
 

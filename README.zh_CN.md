@@ -51,6 +51,10 @@ qubit-retry = { version = "0.17", features = ["tokio", "config"] }
 
 默认 feature 为空，因此同步重试不会引入 `tokio` 或 `qubit-config`。
 
+所有执行方法都返回 `RetryResult<T, E>`。成功时其 `Ok` 变体是
+`RetrySuccess<T>`：只需要业务值时调用 `into_value()`；需要保留最终 retry
+context 时调用 `into_parts()`。
+
 ## 基础同步重试
 
 ```rust
@@ -63,7 +67,9 @@ fn read_config() -> Result<String, Box<dyn std::error::Error>> {
         .fixed_delay(Duration::from_millis(100))
         .build()?;
 
-    let text = retry.run(|| std::fs::read_to_string("config.toml"))?;
+    let text = retry
+        .run(|| std::fs::read_to_string("config.toml"))?
+        .into_value();
     Ok(text)
 }
 ```
@@ -72,7 +78,7 @@ fn read_config() -> Result<String, Box<dyn std::error::Error>> {
 
 默认情况下，operation error 会被重试，直到配置的 attempt 次数或总耗时限制终止流程。简单错误谓词可以使用 `retry_if_error`：
 
-```rust
+```rust,ignore
 use qubit_retry::{Retry, RetryContext};
 use std::time::Duration;
 
@@ -85,7 +91,7 @@ let retry = Retry::<ServiceError>::builder()
 
 如果决策需要读取 failure 类型、attempt timeout、retry-after hint 或其他 `RetryContext` 信息，可以使用 `on_failure`：
 
-```rust
+```rust,ignore
 use qubit_retry::{Retry, RetryContext, AttemptFailure, AttemptFailureDecision};
 use std::time::Duration;
 
@@ -141,7 +147,8 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
         .run_async(|| async {
             fetch_once().await
         })
-        .await?;
+        .await?
+        .into_value();
 
     Ok(response)
 }
@@ -168,7 +175,7 @@ clock 与等待机制。启用 `tokio` feature 后，`RetryBuilder::async_timer`
 `run_async()` 提供同样能力，并负责异步 attempt timeout。因此固定延迟、指数退避和
 Retry-After 延迟都可以使用手动时钟测试，无需等待真实时间：
 
-```rust
+```rust,ignore
 use std::time::Duration;
 
 use qubit_clock::{ManualMonotonicClock, MonotonicClock};
@@ -207,32 +214,35 @@ Rust 不能安全地强杀运行中的线程，因此如果 operation 不检查 
 use qubit_retry::{AttemptCancelToken, Retry};
 use std::time::Duration;
 
-fn blocking_fetch(token: AttemptCancelToken) -> Result<String, std::io::Error> {
-    for _ in 0..20 {
-        if token.is_cancelled() {
-            return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "cancelled"));
+fn run_blocking_fetch() -> Result<String, Box<dyn std::error::Error>> {
+    fn blocking_fetch(token: AttemptCancelToken) -> Result<String, std::io::Error> {
+        for _ in 0..20 {
+            if token.is_cancelled() {
+                return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "cancelled"));
+            }
+            std::thread::sleep(Duration::from_millis(10));
         }
-        std::thread::sleep(Duration::from_millis(10));
+        std::fs::read_to_string("payload.txt")
     }
-    std::fs::read_to_string("payload.txt")
+
+    let retry = Retry::<std::io::Error>::builder()
+        .max_attempts(3)
+        .fixed_delay(Duration::from_millis(50))
+        .attempt_timeout(Some(Duration::from_secs(2)))
+        .worker_cancel_grace(Duration::from_millis(25))
+        .abort_on_timeout()
+        .build()?;
+
+    let response = retry.run_in_worker(blocking_fetch)?.into_value();
+    Ok(response)
 }
-
-let retry = Retry::<std::io::Error>::builder()
-    .max_attempts(3)
-    .fixed_delay(Duration::from_millis(50))
-    .attempt_timeout(Some(Duration::from_secs(2)))
-    .worker_cancel_grace(Duration::from_millis(25))
-    .abort_on_timeout()
-    .build()?;
-
-let response = retry.run_in_worker(blocking_fetch)?;
 ```
 
 ## Retry-After Hint
 
 如果 attempt failure 中携带 retry-after 信息，可以通过 `retry_after_hint` 注册 hint extractor。extractor 的返回值是 `Option<Duration>`：`Some(delay)` 表示“下一次重试前等待这段时间”，`None` 表示“没有可用 hint”。当所有 failure listener 都返回 `UseDefault` 时，默认策略会优先使用 `Some(delay)`；否则会回退到已配置的 delay 策略。
 
-```rust
+```rust,ignore
 use qubit_retry::{AttemptFailure, Retry, RetryContext};
 use std::time::Duration;
 
@@ -249,7 +259,7 @@ let retry = Retry::<ServiceError>::builder()
 
 如果 hint 只依赖 operation error，可以使用 `retry_after_from_error`，这是 `retry_after_hint` 的简化封装：
 
-```rust
+```rust,ignore
 let retry = Retry::<ServiceError>::builder()
     .max_attempts(3)
     .fixed_delay(Duration::from_millis(100))
@@ -263,7 +273,7 @@ listener 也可以通过 `RetryContext::retry_after_hint()` 读取提取结果�
 服务器 hint 与已配置 delay 中较长者，可使用
 `RetryAfterPolicy::AtLeastConfiguredDelay`：
 
-```rust
+```rust,ignore
 use qubit_retry::RetryAfterPolicy;
 
 let retry = Retry::<ServiceError>::builder()
@@ -287,7 +297,7 @@ listener 是生命周期 hook，而不是另一套策略系统：
 
 `before_attempt` 与 `on_retry` 的直观差别：`before_attempt` 对准「**下一次** attempt **开始前**」；`on_retry` 对准「**某次** attempt **已经失败**、且**已经**为**后续**重试**选好间隔**、但**尚未**开始等待或下一轮 attempt 的那一刻」。
 
-```rust
+```rust,ignore
 use qubit_retry::{
     AttemptFailure, AttemptFailureDecision, Retry, RetryContext, RetryError,
 };
@@ -337,7 +347,7 @@ let retry = Retry::<std::io::Error>::builder()
 
 `RetryOptions` 是不可变配置快照。从 `qubit-config` 读取配置需要开启 `config` feature，并且只发生在构造阶段。
 
-```rust
+```rust,ignore
 use qubit_config::Config;
 use qubit_retry::{Retry, RetryOptions};
 
@@ -352,9 +362,10 @@ config.set("retry.exponential_multiplier", 2.0)?;
 config.set("retry.jitter_factor", 0.2)?;
 config.set("retry.attempt_timeout_millis", 2_000u64)?;
 config.set("retry.attempt_timeout_policy", "retry")?;
+config.set("retry.retry_after_policy", "at_least_configured_delay")?;
 config.set("retry.worker_cancel_grace_millis", 25u64)?;
 
-let options = RetryOptions::from_config(&config.prefix_view("retry"))?;
+let options = RetryOptions::from_config(&config.section("retry")?)?;
 let retry = Retry::<std::io::Error>::from_options(options)?;
 ```
 
@@ -367,6 +378,7 @@ let retry = Retry::<std::io::Error>::from_options(options)?;
 - `max_total_elapsed_unlimited`
 - `attempt_timeout_millis`
 - `attempt_timeout_policy`：`retry` 或 `abort`
+- `retry_after_policy`：`replace` 或 `at_least_configured_delay`
 - `worker_cancel_grace_millis`
 - `delay`：`none`、`fixed`、`random`、`exponential` 或 `exponential_backoff`
 - `fixed_delay_millis`
@@ -382,36 +394,39 @@ let retry = Retry::<std::io::Error>::from_options(options)?;
 通过 `RetryError::reason()`、`RetryError::last_failure()` 和 `RetryError::context()` 可以区分终止原因与最后一次 attempt 失败：
 
 ```rust
-use qubit_retry::{Retry, RetryErrorReason, AttemptFailure};
+use qubit_retry::{AttemptFailure, Retry};
 
-let retry = Retry::<std::io::Error>::builder()
-    .max_attempts(2)
-    .build()?;
+fn inspect_retry_error() -> Result<(), Box<dyn std::error::Error>> {
+    let retry = Retry::<std::io::Error>::builder()
+        .max_attempts(2)
+        .build()?;
 
-match retry.run(|| std::fs::read_to_string("missing.toml")) {
-    Ok(text) => println!("{text}"),
-    Err(error) => {
-        eprintln!("reason: {:?}", error.reason());
-        eprintln!("admitted attempts: {}", error.attempts());
-        eprintln!("operation elapsed: {:?}", error.context().operation_elapsed());
-        eprintln!("total elapsed: {:?}", error.context().total_elapsed());
+    match retry.run(|| std::fs::read_to_string("missing.toml")) {
+        Ok(success) => println!("{}", success.into_value()),
+        Err(error) => {
+            eprintln!("reason: {:?}", error.reason());
+            eprintln!("admitted attempts: {}", error.attempts());
+            eprintln!("operation elapsed: {:?}", error.context().operation_elapsed());
+            eprintln!("total elapsed: {:?}", error.context().total_elapsed());
 
-        match error.last_failure() {
-            Some(AttemptFailure::Error(source)) => {
-                eprintln!("last operation error: {source}");
+            match error.last_failure() {
+                Some(AttemptFailure::Error(source)) => {
+                    eprintln!("last operation error: {source}");
+                }
+                Some(AttemptFailure::Timeout) => {
+                    eprintln!("last attempt timed out");
+                }
+                Some(AttemptFailure::Panic(panic)) => {
+                    eprintln!("last attempt panicked: {}", panic.message());
+                }
+                Some(AttemptFailure::Executor(executor)) => {
+                    eprintln!("retry executor failed: {}", executor.message());
+                }
+                None => {}
             }
-            Some(AttemptFailure::Timeout) => {
-                eprintln!("last attempt timed out");
-            }
-            Some(AttemptFailure::Panic(panic)) => {
-                eprintln!("last attempt panicked: {}", panic.message());
-            }
-            Some(AttemptFailure::Executor(executor)) => {
-                eprintln!("retry executor failed: {}", executor.message());
-            }
-            None => {}
         }
     }
+    Ok(())
 }
 ```
 

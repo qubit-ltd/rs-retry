@@ -69,7 +69,8 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
     /// - `operation`: Factory returning a fresh future for each attempt.
     ///
     /// # Returns
-    /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
+    /// `Ok(RetrySuccess<T>)` with the operation value and final retry context,
+    /// or [`RetryError`] when retrying stops.
     pub(in crate::executor) async fn run<T, F, Fut>(
         &self,
         mut operation: F,

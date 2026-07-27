@@ -65,7 +65,8 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
     ///   receives a cooperative cancellation token for that attempt.
     ///
     /// # Returns
-    /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
+    /// `Ok(RetrySuccess<T>)` with the operation value and final retry context,
+    /// or [`RetryError`] when retrying stops.
     pub(in crate::executor) fn run<T, F>(
         &self,
         operation: F,

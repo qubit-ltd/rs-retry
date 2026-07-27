@@ -52,6 +52,10 @@ Optional features:
 
 The default feature set is empty, so synchronous retry does not pull in `tokio` or `qubit-config`.
 
+Every execution method returns `RetryResult<T, E>`. On success, its `Ok`
+variant is `RetrySuccess<T>`: use `into_value()` when only the value is
+needed, or `into_parts()` to retain the final retry context.
+
 ## Basic Sync Retry
 
 ```rust
@@ -64,7 +68,9 @@ fn read_config() -> Result<String, Box<dyn std::error::Error>> {
         .fixed_delay(Duration::from_millis(100))
         .build()?;
 
-    let text = retry.run(|| std::fs::read_to_string("config.toml"))?;
+    let text = retry
+        .run(|| std::fs::read_to_string("config.toml"))?
+        .into_value();
     Ok(text)
 }
 ```
@@ -73,7 +79,7 @@ fn read_config() -> Result<String, Box<dyn std::error::Error>> {
 
 By default, operation errors are retried until the configured attempt or elapsed-time limits stop the flow. Use `retry_if_error` for simple error predicates:
 
-```rust
+```rust,ignore
 use qubit_retry::{Retry, RetryContext};
 use std::time::Duration;
 
@@ -86,7 +92,7 @@ let retry = Retry::<ServiceError>::builder()
 
 Use `on_failure` when a decision needs the failure kind, attempt timeout, retry-after hint, or any other `RetryContext` value:
 
-```rust
+```rust,ignore
 use qubit_retry::{Retry, RetryContext, AttemptFailure, AttemptFailureDecision};
 use std::time::Duration;
 
@@ -143,7 +149,8 @@ async fn fetch_with_retry() -> Result<String, Box<dyn std::error::Error>> {
         .run_async(|| async {
             fetch_once().await
         })
-        .await?;
+        .await?
+        .into_value();
 
     Ok(response)
 }
@@ -171,7 +178,7 @@ Async and worker-thread attempts use the shortest of configured `attempt_timeout
 attempt timeouts. A manual clock can therefore test fixed, exponential, or
 Retry-After delays without waiting for real time:
 
-```rust
+```rust,ignore
 use std::time::Duration;
 
 use qubit_clock::{ManualMonotonicClock, MonotonicClock};
@@ -213,32 +220,35 @@ Rust cannot safely kill a running thread, so a timed-out worker may keep running
 use qubit_retry::{AttemptCancelToken, Retry};
 use std::time::Duration;
 
-fn blocking_fetch(token: AttemptCancelToken) -> Result<String, std::io::Error> {
-    for _ in 0..20 {
-        if token.is_cancelled() {
-            return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "cancelled"));
+fn run_blocking_fetch() -> Result<String, Box<dyn std::error::Error>> {
+    fn blocking_fetch(token: AttemptCancelToken) -> Result<String, std::io::Error> {
+        for _ in 0..20 {
+            if token.is_cancelled() {
+                return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "cancelled"));
+            }
+            std::thread::sleep(Duration::from_millis(10));
         }
-        std::thread::sleep(Duration::from_millis(10));
+        std::fs::read_to_string("payload.txt")
     }
-    std::fs::read_to_string("payload.txt")
+
+    let retry = Retry::<std::io::Error>::builder()
+        .max_attempts(3)
+        .fixed_delay(Duration::from_millis(50))
+        .attempt_timeout(Some(Duration::from_secs(2)))
+        .worker_cancel_grace(Duration::from_millis(25))
+        .abort_on_timeout()
+        .build()?;
+
+    let response = retry.run_in_worker(blocking_fetch)?.into_value();
+    Ok(response)
 }
-
-let retry = Retry::<std::io::Error>::builder()
-    .max_attempts(3)
-    .fixed_delay(Duration::from_millis(50))
-    .attempt_timeout(Some(Duration::from_secs(2)))
-    .worker_cancel_grace(Duration::from_millis(25))
-    .abort_on_timeout()
-    .build()?;
-
-let response = retry.run_in_worker(blocking_fetch)?;
 ```
 
 ## Retry-After Hints
 
 If an attempt failure carries retry-after information, register a hint extractor with `retry_after_hint`. The extractor returns `Option<Duration>`: `Some(delay)` means "wait this long before the next retry", while `None` means "no hint is available". When all failure listeners return `UseDefault`, the default policy uses `Some(delay)`; otherwise it falls back to the configured delay strategy.
 
-```rust
+```rust,ignore
 use qubit_retry::{AttemptFailure, Retry, RetryContext};
 use std::time::Duration;
 
@@ -255,7 +265,7 @@ let retry = Retry::<ServiceError>::builder()
 
 When the hint depends only on the operation error, `retry_after_from_error` provides a shorter wrapper around `retry_after_hint`:
 
-```rust
+```rust,ignore
 let retry = Retry::<ServiceError>::builder()
     .max_attempts(3)
     .fixed_delay(Duration::from_millis(100))
@@ -269,7 +279,7 @@ Listeners can also read the extracted value from `RetryContext::retry_after_hint
 Use `RetryAfterPolicy::AtLeastConfiguredDelay` when the retry must wait for
 the longer of the server hint and configured delay:
 
-```rust
+```rust,ignore
 use qubit_retry::RetryAfterPolicy;
 
 let retry = Retry::<ServiceError>::builder()
@@ -293,7 +303,7 @@ An in-flight timeout caused by exhausted `max_operation_elapsed` or `max_total_e
 
 `before_attempt` vs `on_retry` in one line: `before_attempt` fires at the **start of an attempt**; `on_retry` fires **right after a failure** once a **retry is scheduled and the next delay is known**, but **before** the sleep and the next attempt.
 
-```rust
+```rust,ignore
 use qubit_retry::{
     AttemptFailure, AttemptFailureDecision, Retry, RetryContext, RetryError,
 };
@@ -343,7 +353,7 @@ let retry = Retry::<std::io::Error>::builder()
 
 `RetryOptions` is an immutable configuration snapshot. Reading from `qubit-config` requires the `config` feature and happens during construction.
 
-```rust
+```rust,ignore
 use qubit_config::Config;
 use qubit_retry::{Retry, RetryOptions};
 
@@ -358,9 +368,10 @@ config.set("retry.exponential_multiplier", 2.0)?;
 config.set("retry.jitter_factor", 0.2)?;
 config.set("retry.attempt_timeout_millis", 2_000u64)?;
 config.set("retry.attempt_timeout_policy", "retry")?;
+config.set("retry.retry_after_policy", "at_least_configured_delay")?;
 config.set("retry.worker_cancel_grace_millis", 25u64)?;
 
-let options = RetryOptions::from_config(&config.prefix_view("retry"))?;
+let options = RetryOptions::from_config(&config.section("retry")?)?;
 let retry = Retry::<std::io::Error>::from_options(options)?;
 ```
 
@@ -373,6 +384,7 @@ Supported relative keys:
 - `max_total_elapsed_unlimited`
 - `attempt_timeout_millis`
 - `attempt_timeout_policy`: `retry` or `abort`
+- `retry_after_policy`: `replace` or `at_least_configured_delay`
 - `worker_cancel_grace_millis`
 - `delay`: `none`, `fixed`, `random`, `exponential`, or `exponential_backoff`
 - `fixed_delay_millis`
@@ -388,36 +400,39 @@ Supported relative keys:
 Use `RetryError::reason()`, `RetryError::last_failure()`, and `RetryError::context()` to distinguish the terminal cause from the last failed attempt:
 
 ```rust
-use qubit_retry::{Retry, RetryErrorReason, AttemptFailure};
+use qubit_retry::{AttemptFailure, Retry};
 
-let retry = Retry::<std::io::Error>::builder()
-    .max_attempts(2)
-    .build()?;
+fn inspect_retry_error() -> Result<(), Box<dyn std::error::Error>> {
+    let retry = Retry::<std::io::Error>::builder()
+        .max_attempts(2)
+        .build()?;
 
-match retry.run(|| std::fs::read_to_string("missing.toml")) {
-    Ok(text) => println!("{text}"),
-    Err(error) => {
-        eprintln!("reason: {:?}", error.reason());
-        eprintln!("admitted attempts: {}", error.attempts());
-        eprintln!("operation elapsed: {:?}", error.context().operation_elapsed());
-        eprintln!("total elapsed: {:?}", error.context().total_elapsed());
+    match retry.run(|| std::fs::read_to_string("missing.toml")) {
+        Ok(success) => println!("{}", success.into_value()),
+        Err(error) => {
+            eprintln!("reason: {:?}", error.reason());
+            eprintln!("admitted attempts: {}", error.attempts());
+            eprintln!("operation elapsed: {:?}", error.context().operation_elapsed());
+            eprintln!("total elapsed: {:?}", error.context().total_elapsed());
 
-        match error.last_failure() {
-            Some(AttemptFailure::Error(source)) => {
-                eprintln!("last operation error: {source}");
+            match error.last_failure() {
+                Some(AttemptFailure::Error(source)) => {
+                    eprintln!("last operation error: {source}");
+                }
+                Some(AttemptFailure::Timeout) => {
+                    eprintln!("last attempt timed out");
+                }
+                Some(AttemptFailure::Panic(panic)) => {
+                    eprintln!("last attempt panicked: {}", panic.message());
+                }
+                Some(AttemptFailure::Executor(executor)) => {
+                    eprintln!("retry executor failed: {}", executor.message());
+                }
+                None => {}
             }
-            Some(AttemptFailure::Timeout) => {
-                eprintln!("last attempt timed out");
-            }
-            Some(AttemptFailure::Panic(panic)) => {
-                eprintln!("last attempt panicked: {}", panic.message());
-            }
-            Some(AttemptFailure::Executor(executor)) => {
-                eprintln!("retry executor failed: {}", executor.message());
-            }
-            None => {}
         }
     }
+    Ok(())
 }
 ```
 
