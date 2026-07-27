@@ -20,6 +20,7 @@ mod retry_failure_policy_tests;
 mod retry_flow_action_tests;
 mod retry_flow_state_tests;
 mod retry_runner_tests;
+mod retry_success_tests;
 mod retry_tests;
 mod value_operation_tests;
 mod worker_attempt_executor_tests;

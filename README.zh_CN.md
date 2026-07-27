@@ -33,14 +33,14 @@ Qubit Retry 适用于需要对易失败任务进行明确、可观测重试控�
 
 ```toml
 [dependencies]
-qubit-retry = "0.16"
+qubit-retry = "0.17"
 ```
 
 按需开启可选集成：
 
 ```toml
 [dependencies]
-qubit-retry = { version = "0.16", features = ["tokio", "config"] }
+qubit-retry = { version = "0.17", features = ["tokio", "config"] }
 ```
 
 可选 feature：
