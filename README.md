@@ -265,6 +265,18 @@ let retry = Retry::<ServiceError>::builder()
 
 Listeners can also read the extracted value from `RetryContext::retry_after_hint()`.
 
+`RetryAfterPolicy::Replace` (the default) uses a Retry-After hint directly.
+Use `RetryAfterPolicy::AtLeastConfiguredDelay` when the retry must wait for
+the longer of the server hint and configured delay:
+
+```rust
+use qubit_retry::RetryAfterPolicy;
+
+let retry = Retry::<ServiceError>::builder()
+    .retry_after_policy(RetryAfterPolicy::AtLeastConfiguredDelay)
+    .build()?;
+```
+
 ## Listeners
 
 Listeners are lifecycle hooks, not a separate policy system:

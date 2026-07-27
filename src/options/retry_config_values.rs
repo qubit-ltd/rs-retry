@@ -16,6 +16,7 @@ use serde::Deserialize;
 
 use super::attempt_timeout_option::AttemptTimeoutOption;
 use super::attempt_timeout_policy::AttemptTimeoutPolicy;
+use super::retry_after_policy::RetryAfterPolicy;
 use super::retry_delay::RetryDelay;
 use super::retry_jitter::RetryJitter;
 use super::retry_options::RetryOptions;
@@ -28,7 +29,7 @@ use crate::constants::{
     KEY_ATTEMPT_TIMEOUT_POLICY, KEY_DELAY, KEY_DELAY_STRATEGY,
     KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
     KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_RANDOM_MAX_DELAY_MILLIS,
-    KEY_RANDOM_MIN_DELAY_MILLIS,
+    KEY_RANDOM_MIN_DELAY_MILLIS, KEY_RETRY_AFTER_POLICY,
 };
 
 /// Raw retry configuration values read from `qubit-config`.
@@ -58,6 +59,8 @@ pub struct RetryConfigValues {
     pub attempt_timeout_millis: Option<u64>,
     /// Optional action selected when one attempt times out.
     pub attempt_timeout_policy: Option<String>,
+    /// Optional Retry-After hint merge policy.
+    pub retry_after_policy: Option<String>,
     /// Optional worker cancellation grace period in milliseconds.
     pub worker_cancel_grace_millis: Option<u64>,
     /// Optional primary delay strategy name.
@@ -130,6 +133,13 @@ impl RetryConfigValues {
             attempt_timeout,
         )?;
         options.worker_cancel_grace = worker_cancel_grace;
+        options.retry_after_policy = self
+            .retry_after_policy
+            .as_deref()
+            .map(RetryAfterPolicy::from_str)
+            .transpose()
+            .map_err(|message| RetryConfigError::invalid_value(KEY_RETRY_AFTER_POLICY, message))?
+            .unwrap_or_else(|| default.retry_after_policy());
         options.validate()?;
         Ok(options)
     }

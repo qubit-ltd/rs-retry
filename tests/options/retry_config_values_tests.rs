@@ -27,6 +27,7 @@ fn sample_retry_config_values_none_delay() -> RetryConfigValues {
         max_total_elapsed_unlimited: None,
         attempt_timeout_millis: None,
         attempt_timeout_policy: None,
+        retry_after_policy: None,
         worker_cancel_grace_millis: None,
         delay: Some("none".to_string()),
         delay_strategy: None,

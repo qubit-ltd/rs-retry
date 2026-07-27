@@ -259,6 +259,18 @@ let retry = Retry::<ServiceError>::builder()
 
 listener 也可以通过 `RetryContext::retry_after_hint()` 读取提取结果。
 
+`RetryAfterPolicy::Replace`（默认）直接采用 Retry-After hint。若必须等待
+服务器 hint 与已配置 delay 中较长者，可使用
+`RetryAfterPolicy::AtLeastConfiguredDelay`：
+
+```rust
+use qubit_retry::RetryAfterPolicy;
+
+let retry = Retry::<ServiceError>::builder()
+    .retry_after_policy(RetryAfterPolicy::AtLeastConfiguredDelay)
+    .build()?;
+```
+
 ## 监听器
 
 listener 是生命周期 hook，而不是另一套策略系统：
