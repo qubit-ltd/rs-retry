@@ -189,8 +189,10 @@ impl<E> Retry<E> {
     ///   the retry flow stops.
     ///
     /// # Returns
-    /// `Ok(T)` with the operation value, or [`crate::RetryError`] when retrying
-    /// stops.
+    /// `Ok(RetrySuccess<T>)` with the operation value and final retry context,
+    /// or [`crate::RetryError`] when retrying stops. Call
+    /// [`crate::RetrySuccess::into_value`] to consume only the value, or
+    /// [`crate::RetrySuccess::into_parts`] to consume both values.
     ///
     /// # Panics
     /// Propagates operation panics and listener panics unless listener panic
@@ -251,8 +253,10 @@ impl<E> Retry<E> {
     /// - `operation`: Factory returning a fresh future for each attempt.
     ///
     /// # Returns
-    /// `Ok(T)` with the operation value, or [`crate::RetryError`] when retrying
-    /// stops.
+    /// `Ok(RetrySuccess<T>)` with the operation value and final retry context,
+    /// or [`crate::RetryError`] when retrying stops. Call
+    /// [`crate::RetrySuccess::into_value`] to consume only the value, or
+    /// [`crate::RetrySuccess::into_parts`] to consume both values.
     ///
     /// # Panics
     /// Propagates operation panics from the current async task. They are not
@@ -326,8 +330,10 @@ impl<E> Retry<E> {
     ///   receives a cooperative cancellation token for that attempt.
     ///
     /// # Returns
-    /// `Ok(T)` with the operation value, or [`crate::RetryError`] when retrying
-    /// stops.
+    /// `Ok(RetrySuccess<T>)` with the operation value and final retry context,
+    /// or [`crate::RetryError`] when retrying stops. Call
+    /// [`crate::RetrySuccess::into_value`] to consume only the value, or
+    /// [`crate::RetrySuccess::into_parts`] to consume both values.
     ///
     /// # Panics
     /// Does not propagate operation panics. Listener panic behavior follows
