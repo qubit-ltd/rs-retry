@@ -6,15 +6,9 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::sync::{
-    Arc,
-    Mutex,
-};
+use std::sync::{Arc, Mutex};
 
-use qubit_retry::{
-    Retry,
-    RetryContext,
-};
+use qubit_retry::{Retry, RetryContext};
 
 use crate::support::TestError;
 
@@ -60,7 +54,7 @@ fn test_attempt_lifecycle_orders_before_attempt_operation_and_success() {
         })
         .expect("the second attempt should succeed");
 
-    assert_eq!(value, "done");
+    assert_eq!(value.into_value(), "done");
     assert_eq!(
         *events.lock().expect("lifecycle events should be lockable"),
         vec![

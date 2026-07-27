@@ -6,10 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_retry::{
-    Retry,
-    RetryErrorReason,
-};
+use qubit_retry::{Retry, RetryErrorReason};
 
 /// Verifies `Retry::run` returns a successful value and exhaustion error.
 #[test]
@@ -31,7 +28,7 @@ fn test_retry_run_returns_value_and_exhaustion_error() {
             }
         })
         .unwrap();
-    assert_eq!("done", value);
+    assert_eq!("done", value.into_value());
 
     let error = retry
         .run(|| -> Result<(), &'static str> { Err("always") })

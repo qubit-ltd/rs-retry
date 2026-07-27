@@ -17,13 +17,8 @@ use std::time::Duration;
 
 use crate::event::RetryEvents;
 use crate::{
-    AttemptFailure,
-    AttemptFailureDecision,
-    RetryContext,
-    RetryError,
-    RetryErrorReason,
-    RetryOptions,
-    RetryRandomSource,
+    AttemptFailure, AttemptFailureDecision, RetryContext, RetryError, RetryErrorReason,
+    RetryOptions, RetryRandomSource,
 };
 
 use super::retry_failure_policy::RetryFailurePolicy;
@@ -86,8 +81,7 @@ impl<'a, E> RetryFailureHandler<'a, E> {
         // Failure listeners may force Retry, RetryAfter, or Abort. If they all
         // choose UseDefault, RetryFailurePolicy applies the library defaults
         // for timeout, panic, executor, and ordinary operation errors.
-        let (hint, listener_decision, context) =
-            self.observe_failure(state, &failure, context);
+        let (hint, listener_decision, context) = self.observe_failure(state, &failure, context);
         let decision = self.policy.resolve(listener_decision, &failure);
         if decision == AttemptFailureDecision::Abort {
             return RetryFlowAction::Finished(RetryError::new(
@@ -101,11 +95,7 @@ impl<'a, E> RetryFailureHandler<'a, E> {
         // For example, worker execution refuses to start another attempt while
         // a timed-out worker is still running.
         if let Some(reason) = retry_block_reason {
-            return RetryFlowAction::Finished(RetryError::new(
-                reason,
-                Some(failure),
-                context,
-            ));
+            return RetryFlowAction::Finished(RetryError::new(reason, Some(failure), context));
         }
 
         // Hard limits are checked after listeners so callers can still observe
@@ -118,26 +108,19 @@ impl<'a, E> RetryFailureHandler<'a, E> {
             ));
         }
 
-        if let Some(reason) = self.options.elapsed_error_reason(
-            context.operation_elapsed(),
-            context.total_elapsed(),
-        ) {
-            return RetryFlowAction::Finished(RetryError::new(
-                reason,
-                Some(failure),
-                context,
-            ));
+        if let Some(reason) = self
+            .options
+            .elapsed_error_reason(context.operation_elapsed(), context.total_elapsed())
+        {
+            return RetryFlowAction::Finished(RetryError::new(reason, Some(failure), context));
         }
 
         // Delay selection order is centralized in RetryOptions. Explicit
         // RetryAfter wins, then retry-after hints when the default policy is
         // used, then the configured delay and jitter strategy.
-        let delay = self.options.retry_delay(
-            decision,
-            state.attempts(),
-            hint,
-            self.random_source,
-        );
+        let delay = self
+            .options
+            .retry_delay(decision, state.attempts(), hint, self.random_source);
         let context = context
             .with_total_elapsed(state.total_elapsed())
             .with_next_delay(delay);
@@ -156,15 +139,11 @@ impl<'a, E> RetryFailureHandler<'a, E> {
         // the executor never sleeps past the total budget.
         self.events.retry_scheduled(&failure, &context);
         let context = context.with_total_elapsed(state.total_elapsed());
-        if let Some(reason) = self.options.elapsed_error_reason(
-            context.operation_elapsed(),
-            context.total_elapsed(),
-        ) {
-            return RetryFlowAction::Finished(RetryError::new(
-                reason,
-                Some(failure),
-                context,
-            ));
+        if let Some(reason) = self
+            .options
+            .elapsed_error_reason(context.operation_elapsed(), context.total_elapsed())
+        {
+            return RetryFlowAction::Finished(RetryError::new(reason, Some(failure), context));
         }
         if self
             .options
@@ -198,8 +177,7 @@ impl<'a, E> RetryFailureHandler<'a, E> {
         context: RetryContext,
         reason: RetryErrorReason,
     ) -> RetryError<E> {
-        let (_hint, _listener_decision, context) =
-            self.observe_failure(state, &failure, context);
+        let (_hint, _listener_decision, context) = self.observe_failure(state, &failure, context);
         RetryError::new(reason, Some(failure), context)
     }
 

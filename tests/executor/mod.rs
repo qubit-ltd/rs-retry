@@ -6,9 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-mod async_attempt_tests;
 mod async_retry_runner_tests;
-mod async_value_operation_tests;
 mod attempt_cancel_token_tests;
 mod attempt_lifecycle_tests;
 mod attempt_tests;

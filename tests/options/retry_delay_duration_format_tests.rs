@@ -32,17 +32,12 @@ fn test_retry_delay_display_variants() {
         "fixed(2ms)"
     );
     assert_eq!(
-        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8))
-            .to_string(),
+        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8)).to_string(),
         "random(5ms..=8ms)"
     );
     assert_eq!(
-        RetryDelay::exponential(
-            Duration::from_millis(100),
-            Duration::from_millis(500),
-            2.0
-        )
-        .to_string(),
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0)
+            .to_string(),
         "exponential(initial=100ms, max=500ms, multiplier=2)"
     );
 }
@@ -63,26 +58,12 @@ fn test_retry_delay_from_str_variants() {
     );
     assert!(RetryDelay::from_str("random(5..=8)").is_err());
     assert_eq!(
-        RetryDelay::from_str(
-            "exponential(initial=100ms, max=500ms, multiplier=2)"
-        )
-        .unwrap(),
-        RetryDelay::exponential(
-            Duration::from_millis(100),
-            Duration::from_millis(500),
-            2.0
-        )
+        RetryDelay::from_str("exponential(initial=100ms, max=500ms, multiplier=2)").unwrap(),
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0)
     );
     assert_eq!(
-        RetryDelay::from_str(
-            "exponential(initial=100ms, max=500ms, multiplier=2.0)"
-        )
-        .unwrap(),
-        RetryDelay::exponential(
-            Duration::from_millis(100),
-            Duration::from_millis(500),
-            2.0
-        )
+        RetryDelay::from_str("exponential(initial=100ms, max=500ms, multiplier=2.0)").unwrap(),
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0)
     );
 }
 
@@ -140,11 +121,7 @@ fn test_retry_delay_display_parse_round_trip_variants() {
         RetryDelay::none(),
         RetryDelay::fixed(Duration::from_millis(12)),
         RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8)),
-        RetryDelay::exponential(
-            Duration::from_millis(100),
-            Duration::from_millis(500),
-            2.0,
-        ),
+        RetryDelay::exponential(Duration::from_millis(100), Duration::from_millis(500), 2.0),
     ];
     for delay in cases {
         let s = delay.to_string();

@@ -12,20 +12,24 @@ mod attempt_timeout_policy;
 mod effective_attempt_timeout;
 mod internal;
 mod parse_retry_jitter_error;
+mod retry_after_policy;
 #[cfg(feature = "config")]
 mod retry_config_values;
 mod retry_delay;
 mod retry_delay_duration_format;
 mod retry_jitter;
 mod retry_options;
+mod retry_options_builder;
 
 pub use attempt_timeout_option::AttemptTimeoutOption;
 pub use attempt_timeout_policy::AttemptTimeoutPolicy;
 pub use parse_retry_jitter_error::ParseRetryJitterError;
+pub use retry_after_policy::RetryAfterPolicy;
 #[cfg(feature = "config")]
 pub use retry_config_values::RetryConfigValues;
 pub use retry_delay::RetryDelay;
 pub use retry_jitter::RetryJitter;
 pub use retry_options::RetryOptions;
+pub use retry_options_builder::RetryOptionsBuilder;
 
 pub(crate) use effective_attempt_timeout::EffectiveAttemptTimeout;

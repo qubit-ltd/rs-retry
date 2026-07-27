@@ -9,18 +9,10 @@
 use std::time::Duration;
 
 use qubit_retry::constants::{
-    DEFAULT_RETRY_MAX_ATTEMPTS,
-    KEY_ATTEMPT_TIMEOUT_MILLIS,
-    KEY_DELAY,
-    KEY_JITTER_FACTOR,
+    DEFAULT_RETRY_MAX_ATTEMPTS, KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_DELAY, KEY_JITTER_FACTOR,
     KEY_MAX_ATTEMPTS,
 };
-use qubit_retry::{
-    AttemptTimeoutOption,
-    RetryDelay,
-    RetryJitter,
-    RetryOptions,
-};
+use qubit_retry::{AttemptTimeoutOption, RetryDelay, RetryJitter, RetryOptions};
 
 use crate::support::FixedRetryRandomSource;
 
@@ -46,24 +38,16 @@ fn test_retry_options_delay_helpers_with_random_source() {
         Duration::from_millis(7)
     );
     assert_eq!(
-        options.next_base_delay_from_current_with_random_source(
-            Duration::from_millis(99),
-            &source,
-        ),
+        options
+            .next_base_delay_from_current_with_random_source(Duration::from_millis(99), &source,),
         Duration::from_millis(6)
     );
     assert_eq!(
-        options.jittered_delay_with_random_source(
-            Duration::from_millis(10),
-            &source,
-        ),
+        options.jittered_delay_with_random_source(Duration::from_millis(10), &source,),
         Duration::from_millis(11)
     );
     assert_eq!(
-        options.next_delay_from_current_with_random_source(
-            Duration::from_millis(99),
-            &source,
-        ),
+        options.next_delay_from_current_with_random_source(Duration::from_millis(99), &source,),
         Duration::from_millis(7)
     );
 }
@@ -81,11 +65,7 @@ fn test_retry_options_default_accessors() {
     assert_eq!(options.jitter(), RetryJitter::none());
     assert_eq!(
         options.delay(),
-        &RetryDelay::exponential(
-            Duration::from_secs(1),
-            Duration::from_secs(60),
-            2.0
-        )
+        &RetryDelay::exponential(Duration::from_secs(1), Duration::from_secs(60), 2.0)
     );
 }
 
@@ -112,14 +92,9 @@ fn test_retry_options_constructors_validate_invalid_values() {
     );
     assert_eq!(options.jitter(), RetryJitter::factor(0.25));
 
-    let invalid_attempts = RetryOptions::new(
-        0,
-        None,
-        None,
-        RetryDelay::none(),
-        RetryJitter::none(),
-    )
-    .expect_err("zero max attempts should be rejected");
+    let invalid_attempts =
+        RetryOptions::new(0, None, None, RetryDelay::none(), RetryJitter::none())
+            .expect_err("zero max attempts should be rejected");
     assert_eq!(invalid_attempts.path(), KEY_MAX_ATTEMPTS);
 
     let invalid_delay = RetryOptions::new(
@@ -161,11 +136,7 @@ fn test_retry_options_delay_helpers() {
         4,
         None,
         None,
-        RetryDelay::exponential(
-            Duration::from_millis(10),
-            Duration::from_millis(80),
-            2.0,
-        ),
+        RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 2.0),
         RetryJitter::none(),
     )
     .expect("valid exponential retry options should be accepted");
@@ -212,14 +183,8 @@ fn test_retry_options_delay_helpers() {
         Duration::from_millis(7)
     );
 
-    let none = RetryOptions::new(
-        3,
-        None,
-        None,
-        RetryDelay::none(),
-        RetryJitter::none(),
-    )
-    .expect("valid no-delay options should be accepted");
+    let none = RetryOptions::new(3, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect("valid no-delay options should be accepted");
     assert_eq!(
         none.next_base_delay_from_current(Duration::from_millis(99)),
         Duration::ZERO
@@ -236,5 +201,23 @@ fn test_retry_options_delay_helpers() {
     assert_eq!(
         random.next_base_delay_from_current(Duration::from_millis(99)),
         Duration::from_millis(4)
+    );
+}
+
+/// Verifies exponential delay advancement saturates instead of overflowing.
+#[test]
+fn test_next_base_delay_from_current_saturates_at_duration_max() {
+    let options = RetryOptions::new(
+        3,
+        None,
+        None,
+        RetryDelay::exponential(Duration::from_secs(1), Duration::MAX, 2.0),
+        RetryJitter::none(),
+    )
+    .expect("retry options should build");
+
+    assert_eq!(
+        Duration::MAX,
+        options.next_base_delay_from_current(Duration::MAX)
     );
 }
