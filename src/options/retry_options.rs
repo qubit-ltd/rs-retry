@@ -179,7 +179,7 @@ impl RetryOptions {
 
     /// Reads a retry option snapshot from a `ConfigReader`.
     ///
-    /// Keys are relative to the reader. Use `config.section("retry")` when
+    /// Keys are relative to the reader. Use `config.section("retry")?` when
     /// the retry settings are nested under a `retry.` prefix.
     ///
     /// # Arguments

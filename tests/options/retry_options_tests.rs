@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use qubit_config::Config;
+use qubit_config::{Config, options::ReadOptions};
 use qubit_retry::constants::{
     DEFAULT_RETRY_MAX_ATTEMPTS,
     KEY_ATTEMPT_TIMEOUT_MILLIS,
@@ -35,6 +35,45 @@ use qubit_retry::{
     RetryJitter,
     RetryOptions,
 };
+
+/// Verifies retry parsing only reads process environment placeholders through
+/// an explicitly environment-friendly reader.
+#[test]
+fn test_from_config_requires_explicit_environment_fallback() {
+    const ENV_NAME: &str = "QUBIT_RETRY_CONFIG_EXPLICIT_ENV_FALLBACK";
+
+    unsafe {
+        std::env::set_var(ENV_NAME, "7");
+    }
+
+    let mut config = Config::new();
+    config
+        .set("retry.max_attempts", format!("${{{ENV_NAME}}}"))
+        .expect("test configuration should accept the placeholder");
+    let section = config
+        .section("retry")
+        .expect("the retry section path should be canonical");
+
+    let default_result = RetryOptions::from_config(&section);
+    let read_options = ReadOptions::env_friendly();
+    let env_view = section.with_read_options_view(&read_options);
+    let explicit_result = RetryOptions::from_config(&env_view);
+
+    unsafe {
+        std::env::remove_var(ENV_NAME);
+    }
+
+    assert!(
+        default_result.is_err(),
+        "default retry configuration must not read process environment"
+    );
+    assert_eq!(
+        explicit_result
+            .expect("explicit environment fallback should resolve the placeholder")
+            .max_attempts(),
+        7
+    );
+}
 
 /// Verifies default options and direct construction.
 #[test]
@@ -136,7 +175,7 @@ fn test_from_config_reads_fixed_delay_from_prefixed_config() {
         .set("retry.worker_cancel_grace_millis", 25u64)
         .expect("test config value should be set");
 
-    let options = RetryOptions::from_config(&config.section("retry"))
+    let options = RetryOptions::from_config(&config.section("retry").unwrap())
         .expect("prefixed retry config should be parsed");
 
     assert_eq!(options.max_attempts(), 5);
