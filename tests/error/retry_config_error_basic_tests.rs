@@ -8,7 +8,10 @@
 
 use std::error::Error;
 
-use qubit_argument::{StringArgument, require_that};
+use qubit_argument::{
+    StringArgument,
+    require_that,
+};
 use qubit_retry::RetryConfigError;
 
 /// Verifies basic configuration error accessors and empty-path formatting.
@@ -22,7 +25,10 @@ fn test_retry_config_error_accessors_and_empty_path_display() {
         "invalid retry configuration: missing value"
     );
 
-    let keyed = RetryConfigError::invalid_value("retry.max_attempts", "must be positive");
+    let keyed = RetryConfigError::invalid_value(
+        "retry.max_attempts",
+        "must be positive",
+    );
     assert_eq!(keyed.path(), "retry.max_attempts");
     assert_eq!(keyed.message(), "must be positive");
     assert_eq!(

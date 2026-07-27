@@ -8,12 +8,16 @@
 
 use std::time::Duration;
 
-use qubit_retry::{RetryDelay, RetryJitter};
+use qubit_retry::{
+    RetryDelay,
+    RetryJitter,
+};
 
 /// Verifies default random delay sampling remains within its inclusive bounds.
 #[test]
 fn test_thread_retry_random_source_samples_delay_within_bounds() {
-    let delay = RetryDelay::random(Duration::from_nanos(5), Duration::from_nanos(9));
+    let delay =
+        RetryDelay::random(Duration::from_nanos(5), Duration::from_nanos(9));
 
     for _ in 0..32 {
         let sample = delay.base_delay(1);

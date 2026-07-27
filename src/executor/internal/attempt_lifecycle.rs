@@ -14,7 +14,11 @@ use qubit_clock::MonotonicInstant;
 use crate::event::RetryEvents;
 use crate::executor::retry_flow_state::RetryFlowState;
 use crate::options::EffectiveAttemptTimeout;
-use crate::{RetryContext, RetryError, RetryOptions};
+use crate::{
+    RetryContext,
+    RetryError,
+    RetryOptions,
+};
 
 /// Prepares an attempt whose running operation cannot be interrupted.
 ///
@@ -64,7 +68,10 @@ pub(in crate::executor) fn prepare_timed_attempt<E>(
     events: &RetryEvents<E>,
 ) -> Result<EffectiveAttemptTimeout, RetryError<E>> {
     prepare_attempt(state, options, events, |state| {
-        options.effective_attempt_timeout(state.operation_elapsed(), state.total_elapsed())
+        options.effective_attempt_timeout(
+            state.operation_elapsed(),
+            state.total_elapsed(),
+        )
     })
 }
 
@@ -124,7 +131,8 @@ where
     }
 
     let attempt_timeout = effective_timeout(state);
-    let context = state.next_attempt_context(options, Duration::ZERO, attempt_timeout);
+    let context =
+        state.next_attempt_context(options, Duration::ZERO, attempt_timeout);
     events.before_attempt(&context);
 
     let attempt_timeout = effective_timeout(state);

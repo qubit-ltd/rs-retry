@@ -6,7 +6,10 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_retry::{Retry, RetryErrorReason};
+use qubit_retry::{
+    Retry,
+    RetryErrorReason,
+};
 
 /// Verifies `Retry::run` returns a successful value and exhaustion error.
 #[test]
