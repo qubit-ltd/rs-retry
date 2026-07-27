@@ -19,7 +19,10 @@ use std::sync::Arc;
 
 #[cfg(feature = "tokio")]
 use qubit_clock::TokioTimer;
-use qubit_clock::{BlockingSleeper, Timer};
+use qubit_clock::{
+    BlockingSleeper,
+    Timer,
+};
 use qubit_error::BoxError;
 
 #[cfg(feature = "tokio")]
@@ -28,8 +31,16 @@ use super::attempt_cancel_token::AttemptCancelToken;
 use super::retry_builder::RetryBuilder;
 use super::retry_runner::RetryRunner;
 use super::worker_retry_runner::WorkerRetryRunner;
-use crate::event::{RetryAfterHint, RetryEvents, RetryListeners};
-use crate::{RetryConfigError, RetryOptions, RetryRandomSource};
+use crate::event::{
+    RetryAfterHint,
+    RetryEvents,
+    RetryListeners,
+};
+use crate::{
+    RetryConfigError,
+    RetryOptions,
+    RetryRandomSource,
+};
 
 /// Retry policy and executor facade bound to an operation error type.
 ///
@@ -62,9 +73,9 @@ use crate::{RetryConfigError, RetryOptions, RetryRandomSource};
 /// caller's operation into an internal attempt object, keep a
 /// `RetryFlowState`, fire lifecycle events, call the operation once per
 /// attempt, and pass failures to `RetryFailureHandler` to decide whether to
-/// sleep and retry or return a terminal [`RetryError`]. The mode-specific
-/// runner owns only the execution mechanics that differ by mode: blocking
-/// sleep, Tokio timeout, worker-thread panic capture, and cooperative
+/// sleep and retry or return a terminal [`crate::RetryError`]. The
+/// mode-specific runner owns only the execution mechanics that differ by mode:
+/// blocking sleep, Tokio timeout, worker-thread panic capture, and cooperative
 /// cancellation. This split keeps the public API small while keeping timeout
 /// and concurrency details out of the `Retry` facade.
 #[derive(Clone)]
@@ -104,7 +115,9 @@ impl<E> Retry<E> {
     /// # Errors
     /// Returns [`RetryConfigError`] if the options are invalid.
     #[inline(always)]
-    pub fn from_options(options: RetryOptions) -> Result<Self, RetryConfigError> {
+    pub fn from_options(
+        options: RetryOptions,
+    ) -> Result<Self, RetryConfigError> {
         Self::builder().options(options).build()
     }
 
@@ -132,7 +145,11 @@ impl<E> Retry<E> {
     ) -> Self {
         Self {
             options,
-            events: RetryEvents::new(retry_after_hint, isolate_listener_panics, listeners),
+            events: RetryEvents::new(
+                retry_after_hint,
+                isolate_listener_panics,
+                listeners,
+            ),
             random_source,
             blocking_sleeper: BlockingSleeper::new(blocking_timer),
             #[cfg(feature = "tokio")]
@@ -165,14 +182,15 @@ impl<E> Retry<E> {
     /// 5. On failure, let `RetryFailureHandler` apply retry limits, error
     ///    predicates, retry-after hints, elapsed budgets, and backoff. If it
     ///    chooses retry, wait through the injected blocking timer and start the
-    ///    next attempt; otherwise return the produced [`RetryError`].
+    ///    next attempt; otherwise return the produced [`crate::RetryError`].
     ///
     /// # Arguments
     /// - `operation`: Operation called once per attempt until it succeeds or
     ///   the retry flow stops.
     ///
     /// # Returns
-    /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
+    /// `Ok(T)` with the operation value, or [`crate::RetryError`] when retrying
+    /// stops.
     ///
     /// # Panics
     /// Propagates operation panics and listener panics unless listener panic
@@ -221,7 +239,7 @@ impl<E> Retry<E> {
     /// 5. Record elapsed operation time, fire success events, or route the
     ///    failure through elapsed-budget classification and
     ///    `RetryFailureHandler`. Retry delays use the same async timer;
-    ///    terminal decisions return [`RetryError`].
+    ///    terminal decisions return [`crate::RetryError`].
     ///
     /// When no async timer was injected, the default Tokio timer is created
     /// when this future is first polled, capturing the runtime that begins
@@ -233,7 +251,8 @@ impl<E> Retry<E> {
     /// - `operation`: Factory returning a fresh future for each attempt.
     ///
     /// # Returns
-    /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
+    /// `Ok(T)` with the operation value, or [`crate::RetryError`] when retrying
+    /// stops.
     ///
     /// # Panics
     /// Propagates operation panics from the current async task. They are not
@@ -250,7 +269,10 @@ impl<E> Retry<E> {
     /// max-operation-elapsed budget, and remaining max-total-elapsed budget as
     /// their effective timeout.
     #[cfg(feature = "tokio")]
-    pub async fn run_async<T, F, Fut>(&self, operation: F) -> crate::RetryResult<T, E>
+    pub async fn run_async<T, F, Fut>(
+        &self,
+        operation: F,
+    ) -> crate::RetryResult<T, E>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -304,7 +326,8 @@ impl<E> Retry<E> {
     ///   receives a cooperative cancellation token for that attempt.
     ///
     /// # Returns
-    /// `Ok(T)` with the operation value, or [`RetryError`] when retrying stops.
+    /// `Ok(T)` with the operation value, or [`crate::RetryError`] when retrying
+    /// stops.
     ///
     /// # Panics
     /// Does not propagate operation panics. Listener panic behavior follows
@@ -335,7 +358,9 @@ impl<E> Retry<E> {
 
     /// Returns the blocking sleeper used by sync and worker runners.
     #[inline(always)]
-    pub(in crate::executor) const fn blocking_sleeper(&self) -> &BlockingSleeper {
+    pub(in crate::executor) const fn blocking_sleeper(
+        &self,
+    ) -> &BlockingSleeper {
         &self.blocking_sleeper
     }
 
