@@ -7,14 +7,20 @@
 // =============================================================================
 
 use qubit_function::BiFunction;
-use qubit_retry::{AttemptFailure, AttemptFailureDecision, RetryContext};
+use qubit_retry::{
+    AttemptFailure,
+    AttemptFailureDecision,
+    RetryContext,
+};
 
 use super::TestError;
 
 /// Test failure listener that aborts on fatal application errors.
 pub(crate) struct AbortFatal;
 
-impl BiFunction<AttemptFailure<TestError>, RetryContext, AttemptFailureDecision> for AbortFatal {
+impl BiFunction<AttemptFailure<TestError>, RetryContext, AttemptFailureDecision>
+    for AbortFatal
+{
     /// Applies the test decider.
     ///
     /// # Parameters
@@ -29,7 +35,9 @@ impl BiFunction<AttemptFailure<TestError>, RetryContext, AttemptFailureDecision>
         _context: &RetryContext,
     ) -> AttemptFailureDecision {
         match failure {
-            AttemptFailure::Error(TestError("fatal")) => AttemptFailureDecision::Abort,
+            AttemptFailure::Error(TestError("fatal")) => {
+                AttemptFailureDecision::Abort
+            }
             _ => AttemptFailureDecision::UseDefault,
         }
     }

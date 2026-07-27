@@ -11,7 +11,10 @@ use std::time::Duration;
 
 use qubit_function::ArcBiFunction;
 
-use crate::{AttemptFailure, RetryContext};
+use crate::{
+    AttemptFailure,
+    RetryContext,
+};
 
 /// Extracts an optional retry-after delay from an attempt failure.
 pub(crate) type RetryAfterHint<E> =

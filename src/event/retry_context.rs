@@ -12,9 +12,15 @@
 
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
-use super::{AttemptTimeoutSource, RetryContextParts};
+use super::{
+    AttemptTimeoutSource,
+    RetryContextParts,
+};
 
 /// Context emitted for retry lifecycle events.
 ///
@@ -261,7 +267,10 @@ impl RetryContext {
     /// # Returns
     /// A context carrying the refreshed total elapsed value.
     #[inline(always)]
-    pub(crate) fn with_total_elapsed(mut self, total_elapsed: Duration) -> Self {
+    pub(crate) fn with_total_elapsed(
+        mut self,
+        total_elapsed: Duration,
+    ) -> Self {
         self.total_elapsed = total_elapsed;
         self
     }
@@ -274,7 +283,10 @@ impl RetryContext {
     /// # Returns
     /// A context carrying the hint.
     #[inline(always)]
-    pub(crate) fn with_retry_after_hint(mut self, hint: Option<Duration>) -> Self {
+    pub(crate) fn with_retry_after_hint(
+        mut self,
+        hint: Option<Duration>,
+    ) -> Self {
         self.retry_after_hint = hint;
         self
     }

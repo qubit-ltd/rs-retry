@@ -8,7 +8,10 @@
 //! Cooperative cancellation token for blocking attempts.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
 
 /// Cooperative cancellation token passed to blocking timeout attempts.
 ///

@@ -13,7 +13,10 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use super::attempt_executor_error::AttemptExecutorError;
 use super::attempt_panic::AttemptPanic;

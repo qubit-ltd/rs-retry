@@ -11,11 +11,19 @@
 //! a successful result. The original application error type is preserved in the
 //! generic parameter `E`.
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::error::Error;
 use std::fmt;
 
-use crate::{AttemptFailure, RetryContext, RetryErrorReason, RetrySuccess};
+use crate::{
+    AttemptFailure,
+    RetryContext,
+    RetryErrorReason,
+    RetrySuccess,
+};
 
 /// Error returned when a retry flow terminates without a successful result.
 ///
@@ -92,7 +100,9 @@ impl<E> RetryError<E> {
     /// The timeout source when present, or `None` when no attempt timeout was
     /// selected for the terminal context.
     #[inline(always)]
-    pub fn attempt_timeout_source(&self) -> Option<crate::event::AttemptTimeoutSource> {
+    pub fn attempt_timeout_source(
+        &self,
+    ) -> Option<crate::event::AttemptTimeoutSource> {
         self.context.attempt_timeout_source()
     }
 
@@ -160,7 +170,9 @@ impl<E> RetryError<E> {
     /// # Returns
     /// A tuple `(reason, last_failure, context)` preserving all terminal data.
     #[inline(always)]
-    pub fn into_parts(self) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
+    pub fn into_parts(
+        self,
+    ) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
         (self.reason, self.last_failure, self.context)
     }
 }
@@ -226,9 +238,15 @@ where
     /// captured panic, or executor failure; otherwise `None`.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self.last_failure() {
-            Some(AttemptFailure::Error(error)) => Some(error as &(dyn Error + 'static)),
-            Some(AttemptFailure::Panic(panic)) => Some(panic as &(dyn Error + 'static)),
-            Some(AttemptFailure::Executor(error)) => Some(error as &(dyn Error + 'static)),
+            Some(AttemptFailure::Error(error)) => {
+                Some(error as &(dyn Error + 'static))
+            }
+            Some(AttemptFailure::Panic(panic)) => {
+                Some(panic as &(dyn Error + 'static))
+            }
+            Some(AttemptFailure::Executor(error)) => {
+                Some(error as &(dyn Error + 'static))
+            }
             Some(AttemptFailure::Timeout) | None => None,
         }
     }

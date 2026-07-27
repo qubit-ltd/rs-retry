@@ -10,7 +10,10 @@
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Action taken when one attempt exceeds its configured per-attempt timeout.
 ///
@@ -76,7 +79,10 @@ impl FromStr for AttemptTimeoutPolicy {
         match s.trim().to_ascii_lowercase().as_str() {
             "retry" => Ok(Self::Retry),
             "abort" => Ok(Self::Abort),
-            _ => Err("attempt timeout policy must be `retry` or `abort`".to_string()),
+            _ => {
+                Err("attempt timeout policy must be `retry` or `abort`"
+                    .to_string())
+            }
         }
     }
 }

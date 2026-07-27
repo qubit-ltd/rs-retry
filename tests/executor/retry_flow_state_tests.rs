@@ -6,9 +6,16 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc,
+    Mutex,
+};
 
-use qubit_retry::{Retry, RetryContext, RetryErrorReason};
+use qubit_retry::{
+    Retry,
+    RetryContext,
+    RetryErrorReason,
+};
 
 /// Verifies retry-flow state attempt counting through public retry contexts.
 #[test]

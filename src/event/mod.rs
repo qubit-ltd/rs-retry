@@ -23,7 +23,10 @@ pub use attempt_failure_decision::AttemptFailureDecision;
 pub use attempt_timeout_source::AttemptTimeoutSource;
 pub use retry_context::RetryContext;
 
-pub(crate) use attempt_failure_listener::{AttemptFailureListener, RetryScheduledListener};
+pub(crate) use attempt_failure_listener::{
+    AttemptFailureListener,
+    RetryScheduledListener,
+};
 pub(crate) use attempt_success_listener::AttemptSuccessListener;
 pub(crate) use before_attempt_listener::BeforeAttemptListener;
 pub(crate) use retry_after_hint::RetryAfterHint;
