@@ -59,6 +59,8 @@ pub const KEY_ATTEMPT_TIMEOUT_MILLIS: &str = "attempt_timeout_millis";
 
 /// Config key for the action selected when one attempt times out.
 pub const KEY_ATTEMPT_TIMEOUT_POLICY: &str = "attempt_timeout_policy";
+/// Configuration key for Retry-After hint merge behavior.
+pub const KEY_RETRY_AFTER_POLICY: &str = "retry_after_policy";
 
 /// Config key for how long the executor waits for a timed-out worker to exit
 /// after requesting cooperative cancellation.
