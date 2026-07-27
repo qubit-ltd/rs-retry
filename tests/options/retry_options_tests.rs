@@ -8,7 +8,10 @@
 
 use std::time::Duration;
 
-use qubit_config::{Config, options::ReadOptions};
+use qubit_config::{
+    Config,
+    options::ReadOptions,
+};
 use qubit_retry::constants::{
     DEFAULT_RETRY_MAX_ATTEMPTS,
     KEY_ATTEMPT_TIMEOUT_MILLIS,
@@ -69,7 +72,9 @@ fn test_from_config_requires_explicit_environment_fallback() {
     );
     assert_eq!(
         explicit_result
-            .expect("explicit environment fallback should resolve the placeholder")
+            .expect(
+                "explicit environment fallback should resolve the placeholder"
+            )
             .max_attempts(),
         7
     );
