@@ -116,7 +116,7 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
             // WorkerAttemptExecutor owns the thread-level details for a single
             // attempt. The runner only turns the resulting attempt outcome into
             // retry-flow state and policy decisions.
-            let attempt_start = sleeper.timer().now();
+            let attempt_start = sleeper.timer().clock().now();
             let outcome = WorkerAttemptExecutor::run(
                 Arc::clone(&operation),
                 attempt_timeout.duration(),

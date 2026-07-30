@@ -261,35 +261,12 @@ checksum = "52917ecf4305b3a354fca78aa569dfbfb2e12fe651a539760f3d66bc6034c96e"
 
 [[package]]
 name = "qubit-clock"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "936d7d12df99b080bccf6999a2e16d5ef44874d897a18b42a85551861e7f393e"
+version = "0.12.0"
 dependencies = [
  "pin-project-lite",
- "qubit-collections 0.1.0",
+ "qubit-collections",
  "thiserror",
  "tokio",
-]
-
-[[package]]
-name = "qubit-clock"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3725afc6c33cda605769dd735d6e2c7b5278f08e071848f1b1bf30519aaefd2e"
-dependencies = [
- "pin-project-lite",
- "qubit-collections 0.2.0",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "qubit-collections"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e52fb7b0bbadb0b5ab1227d527c8ab46922338fbc9cdd71480dbdb83cfd472af"
-dependencies = [
- "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -350,8 +327,7 @@ version = "0.17.0"
 dependencies = [
  "parse-display",
  "qubit-argument",
- "qubit-clock 0.10.0",
- "qubit-clock 0.11.0",
+ "qubit-clock",
  "qubit-config",
  "qubit-datatype",
  "qubit-error",
