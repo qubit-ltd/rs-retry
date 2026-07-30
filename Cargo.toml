@@ -40,10 +40,10 @@ qubit-error = "0.2"
 qubit-datatype = { version = "0.9", default-features = false, features = ["duration"] }
 qubit-config = { version = "0.14", path = "../rs-config", optional = true }
 qubit-function = "0.16"
-qubit-clock = { version = "0.12", path = "../rs-clock" }
+qubit-clock = "0.12"
 
 [dev-dependencies]
-qubit-clock = { version = "0.12", path = "../rs-clock", features = ["test-util"] }
+qubit-clock = { version = "0.12", features = ["test-util"] }
 serde_json = "1.0"
 qubit-value = { version = "0.10.0", path = "../rs-value" }
 tokio = { version = "1.52", features = ["full", "test-util"] }
