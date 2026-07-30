@@ -115,7 +115,7 @@ impl<'a, E> RetryRunner<'a, E> {
             // Only user closure time contributes to max_operation_elapsed.
             // Listener time and retry sleeps are included by total_elapsed
             // through RetryFlowState's monotonic start instant.
-            let attempt_start = sleeper.timer().now();
+            let attempt_start = sleeper.timer().clock().now();
             let result = operation.call();
             let context = complete_attempt(
                 &mut state,

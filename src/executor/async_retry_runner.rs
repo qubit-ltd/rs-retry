@@ -98,7 +98,7 @@ impl<'a, E> AsyncRetryRunner<'a, E> {
             // timer fires. The timeout source is kept in the context so a later
             // timeout failure can be classified as configured timeout vs an
             // elapsed-budget terminal stop.
-            let attempt_start = timer.now();
+            let attempt_start = timer.clock().now();
             let result = if let Some(timeout) = attempt_timeout.duration() {
                 let timeout_future = timer.after(timeout).map_err(|error| {
                     events.error(state.sleeper_error(options, error))
