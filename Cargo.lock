@@ -266,7 +266,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "936d7d12df99b080bccf6999a2e16d5ef44874d897a18b42a85551861e7f393e"
 dependencies = [
  "pin-project-lite",
- "qubit-collections",
+ "qubit-collections 0.1.0",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "qubit-clock"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3725afc6c33cda605769dd735d6e2c7b5278f08e071848f1b1bf30519aaefd2e"
+dependencies = [
+ "pin-project-lite",
+ "qubit-collections 0.2.0",
  "thiserror",
  "tokio",
 ]
@@ -276,6 +288,15 @@ name = "qubit-collections"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e52fb7b0bbadb0b5ab1227d527c8ab46922338fbc9cdd71480dbdb83cfd472af"
+dependencies = [
+ "hashbrown 0.17.1",
+]
+
+[[package]]
+name = "qubit-collections"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcb596d37e055a48800f0381926881152612b9171cad3be8e91dee97daee6f5b"
 dependencies = [
  "hashbrown 0.17.1",
 ]
@@ -319,6 +340,9 @@ checksum = "59f10e916324739b811520fbfb24746f4822ad9ea1adb53c79fc04b7c090e5ed"
 [[package]]
 name = "qubit-redact"
 version = "0.3.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "qubit-retry"
@@ -326,7 +350,8 @@ version = "0.17.0"
 dependencies = [
  "parse-display",
  "qubit-argument",
- "qubit-clock",
+ "qubit-clock 0.10.0",
+ "qubit-clock 0.11.0",
  "qubit-config",
  "qubit-datatype",
  "qubit-error",
@@ -343,6 +368,7 @@ name = "qubit-value"
 version = "0.10.0"
 dependencies = [
  "qubit-datatype",
+ "qubit-redact",
  "serde",
  "serde_json",
  "thiserror",
@@ -555,9 +581,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.52.3"
+version = "1.53.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
+checksum = "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed"
 dependencies = [
  "bytes",
  "libc",
