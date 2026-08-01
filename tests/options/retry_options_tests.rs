@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use qubit_config::{
     Config,
-    options::ReadOptions,
+    options::{InterpolationSources, ReadPolicy},
 };
 use qubit_retry::constants::{
     DEFAULT_RETRY_MAX_ATTEMPTS,
@@ -58,8 +58,9 @@ fn test_from_config_requires_explicit_environment_fallback() {
         .expect("the retry section path should be canonical");
 
     let default_result = RetryOptions::from_config(&section);
-    let read_options = ReadOptions::env_friendly();
-    let env_view = section.with_read_options_view(&read_options);
+    let read_policy = ReadPolicy::env_friendly()
+        .with_interpolation_sources(InterpolationSources::ConfigThenEnv);
+    let env_view = section.read_with(&read_policy);
     let explicit_result = RetryOptions::from_config(&env_view);
 
     unsafe {
