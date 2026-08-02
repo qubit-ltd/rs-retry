@@ -10,7 +10,10 @@ use std::time::Duration;
 
 use qubit_config::{
     Config,
-    options::{InterpolationSources, ReadPolicy},
+    options::{
+        InterpolationSources,
+        ReadPolicy,
+    },
 };
 use qubit_retry::constants::{
     DEFAULT_RETRY_MAX_ATTEMPTS,

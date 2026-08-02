@@ -295,9 +295,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-datatype"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9dd16b80a75460ac639b745af90ef486a7544574c63d0949994678afe05dd83"
+checksum = "91da5d9714623ff8d561d2230a81dc5c6e38b55aa4f2488c3a0ff0c21e3ff693"
 dependencies = [
  "serde",
  "serde_json",
@@ -318,9 +318,7 @@ checksum = "59f10e916324739b811520fbfb24746f4822ad9ea1adb53c79fc04b7c090e5ed"
 
 [[package]]
 name = "qubit-redact"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "201010068486afc7742321fcde406ed82ca33c0312e33e4b9bff49a7627c2833"
+version = "0.6.0"
 dependencies = [
  "serde_json",
 ]
