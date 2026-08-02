@@ -14,7 +14,7 @@ use std::time::Duration;
 use qubit_config::{
     ConfigReader,
     ConfigResult,
-    ConfigSerdeExt,
+    conversion::ConfigSerdeExt,
 };
 use serde::Deserialize;
 
