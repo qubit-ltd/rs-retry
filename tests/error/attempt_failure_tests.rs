@@ -9,6 +9,7 @@
 use qubit_retry::{
     AttemptExecutorError,
     AttemptFailure,
+    AttemptFailureKind,
     AttemptPanic,
 };
 
@@ -80,4 +81,26 @@ fn test_attempt_failure_display_formats_variants() {
         .to_string(),
         "attempt executor failed: worker spawn failed"
     );
+}
+
+/// Verifies failure kinds and timeout classification are stable across variants.
+#[test]
+fn test_attempt_failure_kind_and_timeout_classification() {
+    let error = AttemptFailure::Error(TestError("boom"));
+    assert_eq!(error.kind(), AttemptFailureKind::Error);
+    assert!(!error.is_timeout());
+
+    let timeout = AttemptFailure::<TestError>::Timeout;
+    assert_eq!(timeout.kind(), AttemptFailureKind::Timeout);
+    assert!(timeout.is_timeout());
+
+    let panic = AttemptFailure::<TestError>::Panic(AttemptPanic::new("panic"));
+    assert_eq!(panic.kind(), AttemptFailureKind::Panic);
+    assert!(!panic.is_timeout());
+
+    let executor = AttemptFailure::<TestError>::Executor(
+        AttemptExecutorError::new("executor"),
+    );
+    assert_eq!(executor.kind(), AttemptFailureKind::Executor);
+    assert!(!executor.is_timeout());
 }

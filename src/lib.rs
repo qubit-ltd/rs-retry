@@ -42,6 +42,7 @@ pub mod random;
 pub use error::{
     AttemptExecutorError,
     AttemptFailure,
+    AttemptFailureKind,
     AttemptPanic,
     RetryConfigError,
     RetryError,

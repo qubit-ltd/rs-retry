@@ -266,3 +266,26 @@ fn test_default_retry_delay_string_matches_retry_delay_default() {
         )
     );
 }
+
+/// Verifies delay variants expose their configured upper bound.
+#[test]
+fn test_retry_delay_max_delay() {
+    assert_eq!(RetryDelay::none().max_delay(), None);
+    assert_eq!(
+        RetryDelay::fixed(Duration::from_millis(12)).max_delay(),
+        Some(Duration::from_millis(12))
+    );
+    assert_eq!(
+        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8)).max_delay(),
+        Some(Duration::from_millis(8))
+    );
+    assert_eq!(
+        RetryDelay::exponential(
+            Duration::from_millis(100),
+            Duration::from_millis(500),
+            2.0,
+        )
+        .max_delay(),
+        Some(Duration::from_millis(500))
+    );
+}
