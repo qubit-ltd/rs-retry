@@ -115,6 +115,20 @@ pub enum RetryDelay {
 }
 
 impl RetryDelay {
+    /// Returns the configured upper bound for one base delay.
+    ///
+    /// # Returns
+    /// `Some(duration)` for fixed, random, and exponential strategies. A
+    /// no-delay strategy returns `None` because it has no positive wait bound.
+    #[inline(always)]
+    pub fn max_delay(&self) -> Option<Duration> {
+        match self {
+            Self::None => None,
+            Self::Fixed(delay) => Some(*delay),
+            Self::Random { max, .. } | Self::Exponential { max, .. } => Some(*max),
+        }
+    }
+
     /// Creates a no-delay strategy.
     ///
     /// # Returns

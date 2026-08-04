@@ -19,6 +19,7 @@ use serde::{
 };
 
 use super::attempt_executor_error::AttemptExecutorError;
+use super::attempt_failure_kind::AttemptFailureKind;
 use super::attempt_panic::AttemptPanic;
 
 /// Failure produced by a single operation attempt.
@@ -59,6 +60,29 @@ pub enum AttemptFailure<E> {
 }
 
 impl<E> AttemptFailure<E> {
+    /// Returns the stable semantic kind of this failure.
+    ///
+    /// # Returns
+    /// The variant-independent failure classification.
+    #[inline(always)]
+    pub fn kind(&self) -> AttemptFailureKind {
+        match self {
+            Self::Error(_) => AttemptFailureKind::Error,
+            Self::Timeout => AttemptFailureKind::Timeout,
+            Self::Panic(_) => AttemptFailureKind::Panic,
+            Self::Executor(_) => AttemptFailureKind::Executor,
+        }
+    }
+
+    /// Returns whether this failure represents an effective timeout.
+    ///
+    /// # Returns
+    /// `true` only for [`AttemptFailure::Timeout`].
+    #[inline(always)]
+    pub fn is_timeout(&self) -> bool {
+        matches!(self, Self::Timeout)
+    }
+
     /// Returns the application error when this failure wraps one.
     ///
     /// # Returns

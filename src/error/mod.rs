@@ -9,6 +9,7 @@
 
 mod attempt_executor_error;
 mod attempt_failure;
+mod attempt_failure_kind;
 mod attempt_panic;
 mod retry_config_error;
 mod retry_error;
@@ -16,6 +17,7 @@ mod retry_error_reason;
 
 pub use attempt_executor_error::AttemptExecutorError;
 pub use attempt_failure::AttemptFailure;
+pub use attempt_failure_kind::AttemptFailureKind;
 pub use attempt_panic::AttemptPanic;
 pub use retry_config_error::RetryConfigError;
 pub(crate) use retry_config_error::argument_error_message;

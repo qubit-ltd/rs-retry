@@ -34,3 +34,36 @@ pub enum RetryErrorReason {
     /// period.
     WorkerStillRunning,
 }
+
+impl RetryErrorReason {
+    /// Returns whether an elapsed-time budget stopped the retry flow.
+    ///
+    /// # Returns
+    /// `true` for operation or total elapsed-time exhaustion.
+    #[inline(always)]
+    pub fn is_elapsed_limit(self) -> bool {
+        matches!(
+            self,
+            Self::MaxOperationElapsedExceeded | Self::MaxTotalElapsedExceeded
+        )
+    }
+
+    /// Returns whether the retry runtime failed to provide its execution
+    /// infrastructure.
+    ///
+    /// # Returns
+    /// `true` for sleeper failures and unreaped worker failures.
+    #[inline(always)]
+    pub fn is_infrastructure_failure(self) -> bool {
+        matches!(self, Self::SleeperFailed | Self::WorkerStillRunning)
+    }
+
+    /// Returns whether the selected execution mode cannot perform the request.
+    ///
+    /// # Returns
+    /// `true` only for [`RetryErrorReason::UnsupportedOperation`].
+    #[inline(always)]
+    pub fn is_unsupported_operation(self) -> bool {
+        matches!(self, Self::UnsupportedOperation)
+    }
+}
