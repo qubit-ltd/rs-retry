@@ -125,7 +125,9 @@ impl RetryDelay {
         match self {
             Self::None => None,
             Self::Fixed(delay) => Some(*delay),
-            Self::Random { max, .. } | Self::Exponential { max, .. } => Some(*max),
+            Self::Random { max, .. } | Self::Exponential { max, .. } => {
+                Some(*max)
+            }
         }
     }
 

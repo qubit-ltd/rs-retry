@@ -7,7 +7,12 @@
 // =============================================================================
 //! Benchmarks for the common synchronous retry execution paths.
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{
+    Criterion,
+    black_box,
+    criterion_group,
+    criterion_main,
+};
 use qubit_retry::{
     AttemptFailure,
     AttemptFailureDecision,
@@ -74,7 +79,8 @@ fn benchmark_sync_failure_listener(c: &mut Criterion) {
 
     c.bench_function("sync_failure_listener", |b| {
         b.iter(|| {
-            let result = retry.run(|| Err::<u64, &'static str>(black_box("failure")));
+            let result =
+                retry.run(|| Err::<u64, &'static str>(black_box("failure")));
             let _ = black_box(result);
         });
     });
