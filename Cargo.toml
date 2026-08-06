@@ -51,7 +51,7 @@ qubit-clock = "0.12"
 criterion = "0.5"
 qubit-clock = { version = "0.12", features = ["test-util"] }
 serde_json = "1.0"
-qubit-value = { version = "0.10.0", path = "../rs-value" }
+qubit-value = { version = "0.10" }
 tokio = { version = "1.52", features = ["full", "test-util"] }
 
 [package.metadata.docs.rs]
