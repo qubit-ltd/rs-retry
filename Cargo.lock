@@ -558,10 +558,11 @@ dependencies = [
 
 [[package]]
 name = "qubit-config"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "qubit-datatype",
  "qubit-redact",
+ "qubit-utils",
  "qubit-value",
  "serde",
  "serde_json",
@@ -618,6 +619,10 @@ dependencies = [
  "serde_json",
  "tokio",
 ]
+
+[[package]]
+name = "qubit-utils"
+version = "0.2.0"
 
 [[package]]
 name = "qubit-value"
