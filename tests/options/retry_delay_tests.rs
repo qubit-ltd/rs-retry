@@ -276,7 +276,8 @@ fn test_retry_delay_max_delay() {
         Some(Duration::from_millis(12))
     );
     assert_eq!(
-        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8)).max_delay(),
+        RetryDelay::random(Duration::from_millis(5), Duration::from_millis(8))
+            .max_delay(),
         Some(Duration::from_millis(8))
     );
     assert_eq!(

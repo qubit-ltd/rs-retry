@@ -83,7 +83,8 @@ fn test_attempt_failure_display_formats_variants() {
     );
 }
 
-/// Verifies failure kinds and timeout classification are stable across variants.
+/// Verifies failure kinds and timeout classification are stable across
+/// variants.
 #[test]
 fn test_attempt_failure_kind_and_timeout_classification() {
     let error = AttemptFailure::Error(TestError("boom"));
