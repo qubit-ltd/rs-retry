@@ -16,11 +16,13 @@ use std::fmt;
 
 use serde::Deserialize;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::AttemptFailure;
 use crate::RetryContext;
 use crate::RetryErrorReason;
 use crate::RetrySuccess;
+use crate::event::AttemptTimeoutSource;
 
 /// Error returned when a retry flow terminates without a successful result.
 ///
@@ -30,8 +32,8 @@ use crate::RetrySuccess;
 /// failures are preserved through [`RetryError::last_failure`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(
-    serialize = "E: serde::Serialize",
-    deserialize = "E: serde::de::DeserializeOwned"
+    serialize = "E: Serialize",
+    deserialize = "E: DeserializeOwned"
 ))]
 pub struct RetryError<E> {
     /// Terminal reason selected by the retry flow.
@@ -97,9 +99,7 @@ impl<E> RetryError<E> {
     /// The timeout source when present, or `None` when no attempt timeout was
     /// selected for the terminal context.
     #[inline(always)]
-    pub fn attempt_timeout_source(
-        &self,
-    ) -> Option<crate::event::AttemptTimeoutSource> {
+    pub fn attempt_timeout_source(&self) -> Option<AttemptTimeoutSource> {
         self.context.attempt_timeout_source()
     }
 

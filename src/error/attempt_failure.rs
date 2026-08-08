@@ -15,6 +15,7 @@ use std::fmt;
 
 use serde::Deserialize;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use super::attempt_executor_error::AttemptExecutorError;
 use super::attempt_failure_kind::AttemptFailureKind;
@@ -27,8 +28,8 @@ use super::attempt_panic::AttemptPanic;
 /// by the retry runtime, not returned by the operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(
-    serialize = "E: serde::Serialize",
-    deserialize = "E: serde::de::DeserializeOwned"
+    serialize = "E: Serialize",
+    deserialize = "E: DeserializeOwned"
 ))]
 pub enum AttemptFailure<E> {
     /// The operation returned an application error.

@@ -12,6 +12,11 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde::Serialize;
 
+mod serde_duration_millis {
+    pub use qubit_datatype::serde::duration_millis::deserialize;
+    pub use qubit_datatype::serde::duration_millis::serialize;
+}
+
 /// Decision returned by a retry failure listener after inspecting a failure.
 ///
 /// Explicit retry decisions still obey attempt and cumulative user operation
@@ -36,7 +41,7 @@ pub enum AttemptFailureDecision {
     RetryAfter(
         /// Delay selected by the listener. Serde interchange stores this value
         /// as half-up rounded whole milliseconds.
-        #[serde(with = "qubit_datatype::serde::duration_millis")]
+        #[serde(with = "serde_duration_millis")]
         Duration,
     ),
     /// Abort immediately and return the current failure.

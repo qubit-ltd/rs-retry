@@ -13,8 +13,8 @@ use super::BeforeAttemptListener;
 use super::RetryErrorListener;
 use super::RetryScheduledListener;
 
-#[derive(Clone)]
 /// Retry lifecycle callbacks collected by a builder.
+#[derive(Clone)]
 pub(crate) struct RetryListeners<E> {
     /// Callbacks invoked before every attempt.
     pub(crate) before_attempt: Vec<BeforeAttemptListener>,

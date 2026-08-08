@@ -14,6 +14,11 @@ use qubit_argument::require_that;
 use serde::Deserialize;
 use serde::Serialize;
 
+mod serde_duration_millis {
+    pub use qubit_datatype::serde::duration_millis::deserialize;
+    pub use qubit_datatype::serde::duration_millis::serialize;
+}
+
 use super::attempt_timeout_policy::AttemptTimeoutPolicy;
 use crate::error::argument_error_message;
 
@@ -28,7 +33,7 @@ use crate::error::argument_error_message;
 pub struct AttemptTimeoutOption {
     /// Timeout applied to each eligible attempt. Serde stores this value as
     /// half-up rounded whole milliseconds.
-    #[serde(with = "qubit_datatype::serde::duration_millis")]
+    #[serde(with = "serde_duration_millis")]
     timeout: Duration,
     /// Policy used when the attempt times out.
     policy: AttemptTimeoutPolicy,
