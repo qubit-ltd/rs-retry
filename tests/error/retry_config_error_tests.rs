@@ -50,6 +50,7 @@ fn test_from_config_error_preserves_path_variants() {
 
     let key_conflict =
         qubit_retry::RetryConfigError::from(qubit_config::ConfigError::KeyConflict {
+            source_id: None,
             path: "conflict.path".to_string(),
             existing: "scalar".to_string(),
             incoming: "object".to_string(),
