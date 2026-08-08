@@ -10,7 +10,5 @@
 mod attempt_lifecycle;
 
 pub(in crate::executor) use attempt_lifecycle::{
-    complete_attempt,
-    prepare_same_thread_attempt,
-    prepare_timed_attempt,
+    complete_attempt, prepare_same_thread_attempt, prepare_timed_attempt,
 };

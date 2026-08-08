@@ -18,10 +18,7 @@ use std::sync::Arc;
 use super::attempt_cancel_token::AttemptCancelToken;
 use super::blocking_attempt::BlockingAttempt;
 use super::blocking_value_operation::BlockingValueOperation;
-use super::internal::{
-    complete_attempt,
-    prepare_timed_attempt,
-};
+use super::internal::{complete_attempt, prepare_timed_attempt};
 use super::retry::Retry;
 use super::retry_failure_handler::RetryFailureHandler;
 use super::retry_flow_action::RetryFlowAction;
@@ -30,12 +27,7 @@ use super::retry_runner::sleep_blocking;
 use super::worker_attempt_executor::WorkerAttemptExecutor;
 use crate::options::EffectiveAttemptTimeout;
 use crate::{
-    AttemptFailure,
-    RetryContext,
-    RetryError,
-    RetryErrorReason,
-    RetryResult,
-    RetrySuccess,
+    AttemptFailure, RetryContext, RetryError, RetryErrorReason, RetryResult, RetrySuccess,
 };
 
 /// Runs retry flows using one worker thread per attempt.
@@ -67,10 +59,7 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
     /// # Returns
     /// `Ok(RetrySuccess<T>)` with the operation value and final retry context,
     /// or [`RetryError`] when retrying stops.
-    pub(in crate::executor) fn run<T, F>(
-        &self,
-        operation: F,
-    ) -> RetryResult<T, E>
+    pub(in crate::executor) fn run<T, F>(&self, operation: F) -> RetryResult<T, E>
     where
         T: Send + 'static,
         E: Send + 'static,
@@ -101,17 +90,12 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
         let options = self.retry.options();
         let events = self.retry.events();
         let sleeper = self.retry.blocking_sleeper();
-        let handler = RetryFailureHandler::new(
-            options,
-            events,
-            self.retry.random_source(),
-        );
+        let handler = RetryFailureHandler::new(options, events, self.retry.random_source());
         let mut state = RetryFlowState::new(sleeper.timer().clock());
 
         loop {
-            let attempt_timeout =
-                prepare_timed_attempt(&mut state, options, events)
-                    .map_err(|error| events.error(error))?;
+            let attempt_timeout = prepare_timed_attempt(&mut state, options, events)
+                .map_err(|error| events.error(error))?;
 
             // WorkerAttemptExecutor owns the thread-level details for a single
             // attempt. The runner only turns the resulting attempt outcome into
@@ -122,26 +106,15 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
                 attempt_timeout.duration(),
                 options.worker_cancel_grace(),
             );
-            let context = complete_attempt(
-                &mut state,
-                options,
-                attempt_start,
-                attempt_timeout,
-            )
-            .with_unreaped_worker_count(outcome.unreaped_worker_count);
+            let context = complete_attempt(&mut state, options, attempt_start, attempt_timeout)
+                .with_unreaped_worker_count(outcome.unreaped_worker_count);
             match outcome.result {
                 Ok(()) => {
                     events.attempt_success(&context);
                     return Ok(context);
                 }
                 Err(failure) => {
-                    self.handle_failure(
-                        &mut state,
-                        &handler,
-                        attempt_timeout,
-                        failure,
-                        context,
-                    )?;
+                    self.handle_failure(&mut state, &handler, attempt_timeout, failure, context)?;
                 }
             }
         }
@@ -173,19 +146,17 @@ impl<'a, E> WorkerRetryRunner<'a, E> {
         let events = self.retry.events();
         let sleeper = self.retry.blocking_sleeper();
         if let Some(reason) = attempt_timeout.elapsed_timeout_reason(&failure) {
-            let error =
-                handler.elapsed_timeout_error(state, failure, context, reason);
+            let error = handler.elapsed_timeout_error(state, failure, context, reason);
             return Err(events.error(error));
         }
         // Starting another worker while a timed-out one is still running would
         // allow concurrent attempts for one flow, so it is a hard safety stop.
-        let retry_block_reason = (context.unreaped_worker_count() > 0)
-            .then_some(RetryErrorReason::WorkerStillRunning);
+        let retry_block_reason =
+            (context.unreaped_worker_count() > 0).then_some(RetryErrorReason::WorkerStillRunning);
         match handler.handle(state, failure, context, retry_block_reason) {
             RetryFlowAction::Retry { delay, failure } => {
-                sleep_blocking(sleeper, delay).map_err(|error| {
-                    events.error(state.sleeper_error(options, error))
-                })?;
+                sleep_blocking(sleeper, delay)
+                    .map_err(|error| events.error(state.sleeper_error(options, error)))?;
                 state.record_last_failure(failure);
                 Ok(())
             }
