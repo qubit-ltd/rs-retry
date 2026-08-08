@@ -8,6 +8,7 @@
 //! Default retry random source backed by `rand::rng()`.
 
 use rand::RngExt;
+use rand::rng;
 
 use crate::RetryRandomSource;
 
@@ -28,7 +29,7 @@ impl RetryRandomSource for ThreadRetryRandomSource {
     /// A uniformly distributed integer sample.
     #[inline]
     fn random_u64_inclusive(&self, min: u64, max: u64) -> u64 {
-        rand::rng().random_range(min..=max)
+        rng().random_range(min..=max)
     }
 
     /// Samples a floating-point value from the requested inclusive range.
@@ -43,6 +44,6 @@ impl RetryRandomSource for ThreadRetryRandomSource {
     /// A uniformly distributed floating-point sample.
     #[inline]
     fn random_f64_inclusive(&self, min: f64, max: f64) -> f64 {
-        rand::rng().random_range(min..=max)
+        rng().random_range(min..=max)
     }
 }

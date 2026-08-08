@@ -44,6 +44,11 @@ use qubit_argument::require_that;
 use serde::Deserialize;
 use serde::Serialize;
 
+mod serde_duration_millis {
+    pub use qubit_datatype::serde::duration_millis::deserialize;
+    pub use qubit_datatype::serde::duration_millis::serialize;
+}
+
 use super::retry_delay_duration_format::RetryDelayDurationFormat;
 use crate::RetryRandomSource;
 use crate::constants::DEFAULT_RETRY_DELAY;
@@ -73,7 +78,7 @@ pub enum RetryDelay {
     Fixed(
         /// Constant delay used after each failed attempt.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_datatype::serde::duration_millis")]
+        #[serde(with = "serde_duration_millis")]
         Duration,
     ),
 
@@ -82,11 +87,11 @@ pub enum RetryDelay {
     Random {
         /// Lower bound for the delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_datatype::serde::duration_millis")]
+        #[serde(with = "serde_duration_millis")]
         min: Duration,
         /// Upper bound for the delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_datatype::serde::duration_millis")]
+        #[serde(with = "serde_duration_millis")]
         max: Duration,
     },
 
@@ -97,11 +102,11 @@ pub enum RetryDelay {
     Exponential {
         /// RetryDelay used for the first retry.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_datatype::serde::duration_millis")]
+        #[serde(with = "serde_duration_millis")]
         initial: Duration,
         /// Maximum delay.
         #[display(with = RetryDelayDurationFormat)]
-        #[serde(with = "qubit_datatype::serde::duration_millis")]
+        #[serde(with = "serde_duration_millis")]
         max: Duration,
         /// Multiplicative factor applied per failed attempt.
         multiplier: f64,
