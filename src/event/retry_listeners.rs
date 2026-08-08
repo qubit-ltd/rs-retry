@@ -7,10 +7,11 @@
 // =============================================================================
 //! Internal retry listener collection.
 
-use super::{
-    AttemptFailureListener, AttemptSuccessListener, BeforeAttemptListener, RetryErrorListener,
-    RetryScheduledListener,
-};
+use super::AttemptFailureListener;
+use super::AttemptSuccessListener;
+use super::BeforeAttemptListener;
+use super::RetryErrorListener;
+use super::RetryScheduledListener;
 
 #[derive(Clone)]
 /// Retry lifecycle callbacks collected by a builder.

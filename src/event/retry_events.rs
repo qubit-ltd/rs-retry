@@ -15,10 +15,16 @@
 
 use std::time::Duration;
 
-use qubit_function::{BiConsumer, BiFunction, Consumer};
+use qubit_function::BiConsumer;
+use qubit_function::BiFunction;
+use qubit_function::Consumer;
 
-use super::{RetryAfterHint, RetryContext, RetryListeners};
-use crate::{AttemptFailure, AttemptFailureDecision, RetryError};
+use super::RetryAfterHint;
+use super::RetryContext;
+use super::RetryListeners;
+use crate::AttemptFailure;
+use crate::AttemptFailureDecision;
+use crate::RetryError;
 
 /// Dispatches retry lifecycle events and isolates listener panics when enabled.
 #[derive(Clone)]
@@ -68,9 +74,9 @@ impl<E> RetryEvents<E> {
         failure: &AttemptFailure<E>,
         context: &RetryContext,
     ) -> Option<Duration> {
-        self.retry_after_hint
-            .as_ref()
-            .and_then(|hint| self.invoke_listener(|| hint.apply(failure, context)))
+        self.retry_after_hint.as_ref().and_then(|hint| {
+            self.invoke_listener(|| hint.apply(failure, context))
+        })
     }
 
     /// Resolves all failure listeners into one decision.
@@ -89,7 +95,8 @@ impl<E> RetryEvents<E> {
     ) -> AttemptFailureDecision {
         let mut decision = AttemptFailureDecision::UseDefault;
         for listener in &self.listeners.failure {
-            let current = self.invoke_listener(|| listener.apply(failure, context));
+            let current =
+                self.invoke_listener(|| listener.apply(failure, context));
             if current != AttemptFailureDecision::UseDefault {
                 // All listeners are invoked for observability. The last
                 // concrete decision wins so later registrations can refine or
@@ -129,7 +136,11 @@ impl<E> RetryEvents<E> {
     /// # Arguments
     /// - `failure`: Failure that caused the retry to be scheduled.
     /// - `context`: Context carrying the selected next delay.
-    pub(crate) fn retry_scheduled(&self, failure: &AttemptFailure<E>, context: &RetryContext) {
+    pub(crate) fn retry_scheduled(
+        &self,
+        failure: &AttemptFailure<E>,
+        context: &RetryContext,
+    ) {
         for listener in &self.listeners.retry_scheduled {
             self.invoke_listener(|| {
                 listener.accept(failure, context);
@@ -169,7 +180,8 @@ impl<E> RetryEvents<E> {
         R: Default,
     {
         if self.isolate_listener_panics {
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)).unwrap_or_default()
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(call))
+                .unwrap_or_default()
         } else {
             call()
         }

@@ -39,16 +39,29 @@ pub mod executor;
 pub mod options;
 pub mod random;
 
-pub use error::{
-    AttemptExecutorError, AttemptFailure, AttemptFailureKind, AttemptPanic, RetryConfigError,
-    RetryError, RetryErrorReason, RetryResult,
-};
-pub use event::{AttemptFailureDecision, AttemptTimeoutSource, RetryContext};
-pub use executor::{AttemptCancelToken, Retry, RetryBuilder, RetrySuccess};
+pub use error::AttemptExecutorError;
+pub use error::AttemptFailure;
+pub use error::AttemptFailureKind;
+pub use error::AttemptPanic;
+pub use error::RetryConfigError;
+pub use error::RetryError;
+pub use error::RetryErrorReason;
+pub use error::RetryResult;
+pub use event::AttemptFailureDecision;
+pub use event::AttemptTimeoutSource;
+pub use event::RetryContext;
+pub use executor::AttemptCancelToken;
+pub use executor::Retry;
+pub use executor::RetryBuilder;
+pub use executor::RetrySuccess;
+pub use options::AttemptTimeoutOption;
+pub use options::AttemptTimeoutPolicy;
+pub use options::ParseRetryJitterError;
+pub use options::RetryAfterPolicy;
 #[cfg(feature = "config")]
 pub use options::RetryConfigValues;
-pub use options::{
-    AttemptTimeoutOption, AttemptTimeoutPolicy, ParseRetryJitterError, RetryAfterPolicy,
-    RetryDelay, RetryJitter, RetryOptions, RetryOptionsBuilder,
-};
+pub use options::RetryDelay;
+pub use options::RetryJitter;
+pub use options::RetryOptions;
+pub use options::RetryOptionsBuilder;
 pub use random::RetryRandomSource;

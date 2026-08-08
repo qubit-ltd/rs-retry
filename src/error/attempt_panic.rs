@@ -11,7 +11,8 @@ use std::any::Any;
 use std::error::Error;
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 /// Panic payload captured from an isolated attempt.
 ///
@@ -63,7 +64,9 @@ impl AttemptPanic {
             Ok(message) => Self::from_string(*message),
             Err(payload) => match payload.downcast::<&'static str>() {
                 Ok(message) => Self::new(*message),
-                Err(_) => Self::new("attempt panicked with a non-string payload"),
+                Err(_) => {
+                    Self::new("attempt panicked with a non-string payload")
+                }
             },
         }
     }

@@ -15,20 +15,34 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use qubit_clock::{StdTimer, Timer};
+use qubit_clock::StdTimer;
+use qubit_clock::Timer;
 use qubit_error::BoxError;
-use qubit_function::{
-    ArcBiConsumer, ArcBiFunction, ArcConsumer, BiConsumer, BiFunction, BiPredicate, Consumer,
-};
+use qubit_function::ArcBiConsumer;
+use qubit_function::ArcBiFunction;
+use qubit_function::ArcConsumer;
+use qubit_function::BiConsumer;
+use qubit_function::BiFunction;
+use qubit_function::BiPredicate;
+use qubit_function::Consumer;
 
+use crate::AttemptFailure;
+use crate::AttemptFailureDecision;
+use crate::AttemptTimeoutOption;
+use crate::AttemptTimeoutPolicy;
+use crate::Retry;
+use crate::RetryAfterPolicy;
+use crate::RetryConfigError;
+use crate::RetryContext;
+use crate::RetryDelay;
+use crate::RetryError;
+use crate::RetryJitter;
+use crate::RetryOptions;
+use crate::RetryRandomSource;
 use crate::constants::KEY_MAX_ATTEMPTS;
-use crate::event::{RetryAfterHint, RetryListeners};
+use crate::event::RetryAfterHint;
+use crate::event::RetryListeners;
 use crate::random::ThreadRetryRandomSource;
-use crate::{
-    AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption, AttemptTimeoutPolicy, Retry,
-    RetryAfterPolicy, RetryConfigError, RetryContext, RetryDelay, RetryError, RetryJitter,
-    RetryOptions, RetryRandomSource,
-};
 
 /// Builder for [`Retry`].
 ///
@@ -107,7 +121,10 @@ impl<E> RetryBuilder<E> {
     ///
     /// The updated builder.
     #[inline(always)]
-    pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
+    pub fn random_source(
+        mut self,
+        random_source: Arc<dyn RetryRandomSource>,
+    ) -> Self {
         self.random_source = random_source;
         self
     }
@@ -210,7 +227,10 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline(always)]
-    pub fn max_operation_elapsed(mut self, max_operation_elapsed: Option<Duration>) -> Self {
+    pub fn max_operation_elapsed(
+        mut self,
+        max_operation_elapsed: Option<Duration>,
+    ) -> Self {
         self.options.max_operation_elapsed = max_operation_elapsed;
         self
     }
@@ -225,7 +245,10 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline(always)]
-    pub fn max_total_elapsed(mut self, max_total_elapsed: Option<Duration>) -> Self {
+    pub fn max_total_elapsed(
+        mut self,
+        max_total_elapsed: Option<Duration>,
+    ) -> Self {
         self.options.max_total_elapsed = max_total_elapsed;
         self
     }
@@ -343,14 +366,18 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn attempt_timeout(mut self, attempt_timeout: Option<Duration>) -> Self {
+    pub fn attempt_timeout(
+        mut self,
+        attempt_timeout: Option<Duration>,
+    ) -> Self {
         if let Some(timeout) = attempt_timeout {
             self.options.attempt_timeout = Some(AttemptTimeoutOption::new(
                 timeout,
                 self.pending_attempt_timeout_policy,
             ));
         } else {
-            self.pending_attempt_timeout_policy = AttemptTimeoutPolicy::default();
+            self.pending_attempt_timeout_policy =
+                AttemptTimeoutPolicy::default();
             self.options.attempt_timeout = None;
         }
         self
@@ -365,11 +392,15 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn attempt_timeout_option(mut self, attempt_timeout: Option<AttemptTimeoutOption>) -> Self {
+    pub fn attempt_timeout_option(
+        mut self,
+        attempt_timeout: Option<AttemptTimeoutOption>,
+    ) -> Self {
         if let Some(attempt_timeout) = attempt_timeout {
             self.pending_attempt_timeout_policy = attempt_timeout.policy();
         } else {
-            self.pending_attempt_timeout_policy = AttemptTimeoutPolicy::default();
+            self.pending_attempt_timeout_policy =
+                AttemptTimeoutPolicy::default();
         }
         self.options.attempt_timeout = attempt_timeout;
         self
@@ -387,7 +418,10 @@ impl<E> RetryBuilder<E> {
     /// # Returns
     /// The updated builder.
     #[inline]
-    pub fn attempt_timeout_policy(mut self, policy: AttemptTimeoutPolicy) -> Self {
+    pub fn attempt_timeout_policy(
+        mut self,
+        policy: AttemptTimeoutPolicy,
+    ) -> Self {
         self.pending_attempt_timeout_policy = policy;
         self.options.attempt_timeout = self
             .options
@@ -429,7 +463,10 @@ impl<E> RetryBuilder<E> {
     #[inline(always)]
     pub fn retry_after_hint<H>(mut self, hint: H) -> Self
     where
-        H: BiFunction<AttemptFailure<E>, RetryContext, Option<Duration>> + Send + Sync + 'static,
+        H: BiFunction<AttemptFailure<E>, RetryContext, Option<Duration>>
+            + Send
+            + Sync
+            + 'static,
     {
         self.retry_after_hint = Some(ArcBiFunction::new(hint));
         self
@@ -557,17 +594,21 @@ impl<E> RetryBuilder<E> {
         P: BiPredicate<E, RetryContext> + Send + Sync + 'static,
     {
         self.on_failure(
-            move |failure: &AttemptFailure<E>, context: &RetryContext| match failure {
-                AttemptFailure::Error(error) => {
-                    if predicate.test(error, context) {
-                        AttemptFailureDecision::Retry
-                    } else {
-                        AttemptFailureDecision::Abort
+            move |failure: &AttemptFailure<E>, context: &RetryContext| {
+                match failure {
+                    AttemptFailure::Error(error) => {
+                        if predicate.test(error, context) {
+                            AttemptFailureDecision::Retry
+                        } else {
+                            AttemptFailureDecision::Abort
+                        }
+                    }
+                    AttemptFailure::Timeout
+                    | AttemptFailure::Panic(_)
+                    | AttemptFailure::Executor(_) => {
+                        AttemptFailureDecision::UseDefault
                     }
                 }
-                AttemptFailure::Timeout
-                | AttemptFailure::Panic(_)
-                | AttemptFailure::Executor(_) => AttemptFailureDecision::UseDefault,
             },
         )
     }

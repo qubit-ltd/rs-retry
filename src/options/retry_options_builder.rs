@@ -11,10 +11,14 @@ use std::time::Duration;
 
 use qubit_error::BoxError;
 
-use crate::{
-    AttemptTimeoutOption, AttemptTimeoutPolicy, RetryAfterPolicy, RetryBuilder, RetryConfigError,
-    RetryDelay, RetryJitter, RetryOptions,
-};
+use crate::AttemptTimeoutOption;
+use crate::AttemptTimeoutPolicy;
+use crate::RetryAfterPolicy;
+use crate::RetryBuilder;
+use crate::RetryConfigError;
+use crate::RetryDelay;
+use crate::RetryJitter;
+use crate::RetryOptions;
 
 /// Builds a validated [`RetryOptions`] snapshot without selecting an error
 /// type.
@@ -72,7 +76,11 @@ impl RetryOptionsBuilder {
         self
     }
     /// Sets exponential backoff with the default multiplier.
-    pub fn exponential_backoff(mut self, initial: Duration, max: Duration) -> Self {
+    pub fn exponential_backoff(
+        mut self,
+        initial: Duration,
+        max: Duration,
+    ) -> Self {
         self.inner = self.inner.exponential_backoff(initial, max);
         self
     }
@@ -104,12 +112,18 @@ impl RetryOptionsBuilder {
         self
     }
     /// Sets the complete per-attempt timeout option.
-    pub fn attempt_timeout_option(mut self, value: Option<AttemptTimeoutOption>) -> Self {
+    pub fn attempt_timeout_option(
+        mut self,
+        value: Option<AttemptTimeoutOption>,
+    ) -> Self {
         self.inner = self.inner.attempt_timeout_option(value);
         self
     }
     /// Sets the action taken when a configured attempt timeout expires.
-    pub fn attempt_timeout_policy(mut self, value: AttemptTimeoutPolicy) -> Self {
+    pub fn attempt_timeout_policy(
+        mut self,
+        value: AttemptTimeoutPolicy,
+    ) -> Self {
         self.inner = self.inner.attempt_timeout_policy(value);
         self
     }

@@ -11,7 +11,10 @@
 //! event dispatcher decides what listeners requested; this policy only fills in
 //! the answer when listeners return [`AttemptFailureDecision::UseDefault`].
 
-use crate::{AttemptFailure, AttemptFailureDecision, AttemptTimeoutPolicy, RetryOptions};
+use crate::AttemptFailure;
+use crate::AttemptFailureDecision;
+use crate::AttemptTimeoutPolicy;
+use crate::RetryOptions;
 
 /// Resolves listener decisions into concrete retry failure decisions.
 pub(in crate::executor) struct RetryFailurePolicy<'a> {

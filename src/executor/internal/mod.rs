@@ -9,6 +9,6 @@
 
 mod attempt_lifecycle;
 
-pub(in crate::executor) use attempt_lifecycle::{
-    complete_attempt, prepare_same_thread_attempt, prepare_timed_attempt,
-};
+pub(in crate::executor) use attempt_lifecycle::complete_attempt;
+pub(in crate::executor) use attempt_lifecycle::prepare_same_thread_attempt;
+pub(in crate::executor) use attempt_lifecycle::prepare_timed_attempt;

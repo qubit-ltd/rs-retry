@@ -37,9 +37,12 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use parse_display::{Display, FromStr};
-use qubit_argument::{ArgumentResult, require_that};
-use serde::{Deserialize, Serialize};
+use parse_display::Display;
+use parse_display::FromStr;
+use qubit_argument::ArgumentResult;
+use qubit_argument::require_that;
+use serde::Deserialize;
+use serde::Serialize;
 
 use super::retry_delay_duration_format::RetryDelayDurationFormat;
 use crate::RetryRandomSource;
@@ -88,7 +91,9 @@ pub enum RetryDelay {
     },
 
     /// Exponential backoff capped by `max`.
-    #[display("exponential(initial={initial}, max={max}, multiplier={multiplier})")]
+    #[display(
+        "exponential(initial={initial}, max={max}, multiplier={multiplier})"
+    )]
     Exponential {
         /// RetryDelay used for the first retry.
         #[display(with = RetryDelayDurationFormat)]
@@ -114,7 +119,9 @@ impl RetryDelay {
         match self {
             Self::None => None,
             Self::Fixed(delay) => Some(*delay),
-            Self::Random { max, .. } | Self::Exponential { max, .. } => Some(*max),
+            Self::Random { max, .. } | Self::Exponential { max, .. } => {
+                Some(*max)
+            }
         }
     }
 
@@ -171,7 +178,11 @@ impl RetryDelay {
     /// # Returns
     /// A [`RetryDelay::Exponential`] strategy.
     #[inline(always)]
-    pub fn exponential(initial: Duration, max: Duration, multiplier: f64) -> Self {
+    pub fn exponential(
+        initial: Duration,
+        max: Duration,
+        multiplier: f64,
+    ) -> Self {
         Self::Exponential {
             initial,
             max,
@@ -229,7 +240,9 @@ impl RetryDelay {
                 }
                 let min_nanos = Self::duration_to_nanos_u64(*min);
                 let max_nanos = Self::duration_to_nanos_u64(*max);
-                Duration::from_nanos(random_source.random_u64_inclusive(min_nanos, max_nanos))
+                Duration::from_nanos(
+                    random_source.random_u64_inclusive(min_nanos, max_nanos),
+                )
             }
             Self::Exponential {
                 initial,
@@ -300,7 +313,8 @@ impl RetryDelay {
                     (*min, *max),
                     path,
                     |(min, max)| {
-                        Self::duration_fits_nanos_u64(*min) && Self::duration_fits_nanos_u64(*max)
+                        Self::duration_fits_nanos_u64(*min)
+                            && Self::duration_fits_nanos_u64(*max)
                     },
                     "random_delay_nanos_range",
                     "random delay bounds must fit into u64 nanoseconds",
