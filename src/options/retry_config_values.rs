@@ -102,7 +102,9 @@ impl RetryConfigValues {
     where
         R: ConfigReader + ?Sized,
     {
-        config.deserialize_interpolated("")
+        // The helper reads a closed set of retry fields while callers may
+        // keep interpolation-only helper properties alongside them.
+        config.deserialize_interpolated_lenient("")
     }
 
     /// Converts the raw configuration snapshot into validated retry options.
