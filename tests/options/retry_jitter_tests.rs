@@ -9,8 +9,9 @@
 use std::str::FromStr;
 use std::time::Duration;
 
+use qubit_retry::RetryDelay;
+use qubit_retry::RetryJitter;
 use qubit_retry::constants::DEFAULT_RETRY_JITTER;
-use qubit_retry::{RetryDelay, RetryJitter};
 
 use crate::support::FixedRetryRandomSource;
 
@@ -20,7 +21,8 @@ fn test_apply_with_random_source_returns_injected_sample() {
     let source = FixedRetryRandomSource::new(0, 10_000_000.0);
 
     assert_eq!(
-        RetryJitter::factor(0.2).apply_with_random_source(Duration::from_millis(100), &source),
+        RetryJitter::factor(0.2)
+            .apply_with_random_source(Duration::from_millis(100), &source),
         Duration::from_millis(110)
     );
 }
@@ -76,8 +78,11 @@ fn test_delay_for_attempt_combines_delay_strategy_and_jitter() {
         Duration::from_millis(50)
     );
 
-    let exponential =
-        RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 2.0);
+    let exponential = RetryDelay::exponential(
+        Duration::from_millis(10),
+        Duration::from_millis(80),
+        2.0,
+    );
     assert_eq!(
         RetryJitter::none().delay_for_attempt(&exponential, 1),
         Duration::from_millis(10)

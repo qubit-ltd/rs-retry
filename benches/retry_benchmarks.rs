@@ -7,8 +7,14 @@
 // =============================================================================
 //! Benchmarks for the common synchronous retry execution paths.
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use qubit_retry::{AttemptFailure, AttemptFailureDecision, Retry, RetryContext};
+use criterion::Criterion;
+use criterion::black_box;
+use criterion::criterion_group;
+use criterion::criterion_main;
+use qubit_retry::AttemptFailure;
+use qubit_retry::AttemptFailureDecision;
+use qubit_retry::Retry;
+use qubit_retry::RetryContext;
 
 /// No-op failure listener used to measure listener dispatch overhead.
 fn observe_failure(
@@ -69,7 +75,8 @@ fn benchmark_sync_failure_listener(c: &mut Criterion) {
 
     c.bench_function("sync_failure_listener", |b| {
         b.iter(|| {
-            let result = retry.run(|| Err::<u64, &'static str>(black_box("failure")));
+            let result =
+                retry.run(|| Err::<u64, &'static str>(black_box("failure")));
             let _ = black_box(result);
         });
     });

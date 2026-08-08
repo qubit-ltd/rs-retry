@@ -10,7 +10,8 @@
 #[cfg(feature = "tokio")]
 mod readme_doctest {
     use std::io;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
+    use std::path::PathBuf;
     use std::process::Command;
 
     /// Finds the newest compiled rlib for one crate in Cargo's dependency
@@ -23,9 +24,9 @@ mod readme_doctest {
             .filter(|path| {
                 path.extension()
                     .is_some_and(|extension| extension == "rlib")
-                    && path
-                        .file_name()
-                        .is_some_and(|name| name.to_string_lossy().starts_with(&prefix))
+                    && path.file_name().is_some_and(|name| {
+                        name.to_string_lossy().starts_with(&prefix)
+                    })
             })
             .max_by_key(|path| {
                 path.metadata()
@@ -42,14 +43,16 @@ mod readme_doctest {
 
     /// Compiles every non-ignored Rust code fence in the English README.
     #[test]
-    fn test_readme_rust_examples_compile() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_readme_rust_examples_compile()
+    -> Result<(), Box<dyn std::error::Error>> {
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let readme = manifest_dir.join("README.md");
         let executable = std::env::current_exe()?;
-        let deps_dir = executable
-            .parent()
-            .ok_or_else(|| io::Error::other("test executable has no parent directory"))?;
-        let rustdoc = std::env::var_os("RUSTDOC").unwrap_or_else(|| "rustdoc".into());
+        let deps_dir = executable.parent().ok_or_else(|| {
+            io::Error::other("test executable has no parent directory")
+        })?;
+        let rustdoc =
+            std::env::var_os("RUSTDOC").unwrap_or_else(|| "rustdoc".into());
         let crate_name = "qubit_retry";
         let mut command = Command::new(rustdoc);
         command

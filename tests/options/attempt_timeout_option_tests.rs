@@ -8,7 +8,8 @@
 
 use std::time::Duration;
 
-use qubit_retry::{AttemptTimeoutOption, AttemptTimeoutPolicy};
+use qubit_retry::AttemptTimeoutOption;
+use qubit_retry::AttemptTimeoutPolicy;
 
 /// Verifies timeout option constructors and accessors.
 #[test]
@@ -42,7 +43,8 @@ fn test_attempt_timeout_option_validate_rejects_zero_duration() {
 #[test]
 fn test_attempt_timeout_option_serde_uses_milliseconds() {
     let option = AttemptTimeoutOption::abort(Duration::from_millis(25));
-    let json = serde_json::to_string(&option).expect("timeout option should serialize");
+    let json = serde_json::to_string(&option)
+        .expect("timeout option should serialize");
     assert!(json.contains("\"timeout\":25"));
     assert!(json.contains("\"policy\":\"Abort\""));
 
@@ -62,9 +64,10 @@ fn test_attempt_timeout_option_serde_quantizes_sub_millisecond_values() {
 
     for (timeout, expected_millis) in cases {
         let original = AttemptTimeoutOption::abort(timeout);
-        let json = serde_json::to_string(&original).expect("timeout option should serialize");
-        let decoded: AttemptTimeoutOption =
-            serde_json::from_str(&json).expect("timeout option should deserialize");
+        let json = serde_json::to_string(&original)
+            .expect("timeout option should serialize");
+        let decoded: AttemptTimeoutOption = serde_json::from_str(&json)
+            .expect("timeout option should deserialize");
         assert_eq!(decoded.timeout(), Duration::from_millis(expected_millis));
         if expected_millis == 0 {
             assert!(decoded.validate().is_err());

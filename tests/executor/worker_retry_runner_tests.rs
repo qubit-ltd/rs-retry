@@ -6,16 +6,26 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use qubit_clock::{ManualMonotonicClock, MonotonicClock};
-use qubit_retry::{
-    AttemptCancelToken, AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption,
-    AttemptTimeoutPolicy, AttemptTimeoutSource, Retry, RetryContext, RetryErrorReason,
-};
+use qubit_clock::ManualMonotonicClock;
+use qubit_clock::MonotonicClock;
+use qubit_retry::AttemptCancelToken;
+use qubit_retry::AttemptFailure;
+use qubit_retry::AttemptFailureDecision;
+use qubit_retry::AttemptTimeoutOption;
+use qubit_retry::AttemptTimeoutPolicy;
+use qubit_retry::AttemptTimeoutSource;
+use qubit_retry::Retry;
+use qubit_retry::RetryContext;
+use qubit_retry::RetryErrorReason;
 
 use crate::support::TestError;
 
@@ -31,7 +41,9 @@ static WORKER_THREAD_ID_LOCK: Mutex<()> = Mutex::new(());
 ///
 /// # Returns
 /// The current worker thread id.
-fn record_worker_thread_id(token: AttemptCancelToken) -> Result<thread::ThreadId, TestError> {
+fn record_worker_thread_id(
+    token: AttemptCancelToken,
+) -> Result<thread::ThreadId, TestError> {
     assert!(!token.is_cancelled());
     WORKER_THREAD_ID_CALLS.fetch_add(1, Ordering::SeqCst);
     Ok(thread::current().id())
@@ -70,7 +82,9 @@ fn test_run_in_worker_with_timeout_allows_fast_success() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .no_delay()
-        .attempt_timeout_option(Some(AttemptTimeoutOption::retry(Duration::from_millis(50))))
+        .attempt_timeout_option(Some(AttemptTimeoutOption::retry(
+            Duration::from_millis(50),
+        )))
         .build()
         .expect("retry should build");
 
@@ -98,7 +112,9 @@ fn test_run_in_worker_reports_injected_sleeper_failure() {
         .expect("retry should build");
 
     let error = retry
-        .run_in_worker(|_token: AttemptCancelToken| Err::<(), _>(TestError("temporary")))
+        .run_in_worker(|_token: AttemptCancelToken| {
+            Err::<(), _>(TestError("temporary"))
+        })
         .expect_err("deadline overflow should terminate worker retry");
 
     assert_eq!(error.reason(), RetryErrorReason::SleeperFailed);
@@ -112,7 +128,8 @@ fn test_run_in_worker_reports_injected_sleeper_failure() {
 /// Verifies max elapsed caps an in-flight worker attempt without a configured
 /// timeout.
 #[test]
-fn test_run_in_worker_max_operation_elapsed_caps_in_flight_attempt_without_configured_timeout() {
+fn test_run_in_worker_max_operation_elapsed_caps_in_flight_attempt_without_configured_timeout()
+ {
     let (release_tx, release_rx) = mpsc::channel();
     let release_rx = Arc::new(Mutex::new(release_rx));
     let worker_release = Arc::clone(&release_rx);
@@ -180,7 +197,8 @@ fn test_run_in_worker_elapsed_timeout_notifies_failure_without_retrying() {
         .worker_cancel_grace(Duration::from_secs(1))
         .no_delay()
         .on_failure(
-            move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            move |failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
                 assert!(matches!(failure, AttemptFailure::Timeout));
                 listener_failures.fetch_add(1, Ordering::SeqCst);
                 listener_sources
@@ -191,7 +209,8 @@ fn test_run_in_worker_elapsed_timeout_notifies_failure_without_retrying() {
             },
         )
         .on_retry(
-            move |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>,
+                  _context: &RetryContext| {
                 retry_events.fetch_add(1, Ordering::SeqCst);
             },
         )
@@ -205,7 +224,9 @@ fn test_run_in_worker_elapsed_timeout_notifies_failure_without_retrying() {
             }
             Ok::<(), TestError>(())
         })
-        .expect_err("max-operation elapsed should terminate the worker attempt");
+        .expect_err(
+            "max-operation elapsed should terminate the worker attempt",
+        );
 
     assert_eq!(
         error.reason(),
@@ -223,7 +244,8 @@ fn test_run_in_worker_elapsed_timeout_notifies_failure_without_retrying() {
 /// Verifies max total elapsed caps an in-flight worker attempt without a
 /// configured timeout.
 #[test]
-fn test_run_in_worker_max_total_elapsed_caps_in_flight_attempt_without_configured_timeout() {
+fn test_run_in_worker_max_total_elapsed_caps_in_flight_attempt_without_configured_timeout()
+ {
     let (release_tx, release_rx) = mpsc::channel();
     let release_rx = Arc::new(Mutex::new(release_rx));
     let worker_release = Arc::clone(&release_rx);
@@ -248,7 +270,9 @@ fn test_run_in_worker_max_total_elapsed_caps_in_flight_attempt_without_configure
                 .expect("worker completion should be observable");
             Ok::<_, TestError>("late")
         })
-        .expect_err("max total elapsed should stop the in-flight worker attempt");
+        .expect_err(
+            "max total elapsed should stop the in-flight worker attempt",
+        );
     release_tx
         .send(())
         .expect("timed-out worker should be releasable");
@@ -276,7 +300,8 @@ fn test_run_in_worker_max_total_elapsed_caps_in_flight_attempt_without_configure
 /// Verifies a configured timeout policy wins when it equals remaining max
 /// elapsed.
 #[test]
-fn test_run_in_worker_configured_timeout_policy_wins_when_equal_to_remaining_elapsed() {
+fn test_run_in_worker_configured_timeout_policy_wins_when_equal_to_remaining_elapsed()
+ {
     let retry = Retry::<TestError>::builder()
         .max_attempts(2)
         .max_operation_elapsed(Some(Duration::from_millis(20)))
@@ -392,11 +417,15 @@ fn test_run_in_worker_panic_can_be_retried_by_listener() {
         .max_attempts(2)
         .no_delay()
         .on_failure(
-            |failure: &AttemptFailure<TestError>, _context: &RetryContext| match failure {
-                AttemptFailure::Panic(panic) if panic.message() == "transient panic" => {
-                    AttemptFailureDecision::Retry
+            |failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+                match failure {
+                    AttemptFailure::Panic(panic)
+                        if panic.message() == "transient panic" =>
+                    {
+                        AttemptFailureDecision::Retry
+                    }
+                    _ => AttemptFailureDecision::UseDefault,
                 }
-                _ => AttemptFailureDecision::UseDefault,
             },
         )
         .build()
@@ -426,7 +455,9 @@ fn test_run_in_worker_can_abort_and_cancel_token() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(3)
         .no_delay()
-        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(Duration::from_millis(5))))
+        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(
+            Duration::from_millis(5),
+        )))
         .build()
         .expect("retry should build");
 
@@ -549,7 +580,8 @@ fn test_run_in_worker_unreaped_timeout_worker_stops_retrying() {
 /// Verifies an unreaped worker timeout reports the worker-specific terminal
 /// reason.
 #[test]
-fn test_run_in_worker_unreaped_timeout_worker_reason_wins_over_attempts_exceeded() {
+fn test_run_in_worker_unreaped_timeout_worker_reason_wins_over_attempts_exceeded()
+ {
     let attempts = Arc::new(AtomicUsize::new(0));
     let (release_tx, release_rx) = mpsc::channel();
     let release_rx = Arc::new(Mutex::new(release_rx));
@@ -582,7 +614,9 @@ fn test_run_in_worker_unreaped_timeout_worker_reason_wins_over_attempts_exceeded
                 Ok::<_, TestError>("late")
             }
         })
-        .expect_err("unreaped timeout worker should report worker still running");
+        .expect_err(
+            "unreaped timeout worker should report worker still running",
+        );
     release_tx
         .send(())
         .expect("timed-out worker should be releasable");
@@ -606,7 +640,9 @@ fn test_run_in_worker_timeout_reaps_cooperative_worker_during_grace() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .no_delay()
-        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(Duration::from_millis(5))))
+        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(
+            Duration::from_millis(5),
+        )))
         .worker_cancel_grace(Duration::from_millis(100))
         .build()
         .expect("retry should build");
@@ -679,9 +715,9 @@ fn test_run_in_worker_max_total_elapsed_can_stop_before_first_attempt() {
         .build()
         .expect("retry should build");
 
-    let error = retry
-        .run_in_worker(record_worker_thread_id)
-        .expect_err("zero total elapsed budget should stop before first attempt");
+    let error = retry.run_in_worker(record_worker_thread_id).expect_err(
+        "zero total elapsed budget should stop before first attempt",
+    );
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.context().attempt_timeout(), Some(Duration::ZERO));
@@ -695,7 +731,8 @@ fn test_run_in_worker_max_total_elapsed_can_stop_before_first_attempt() {
 /// Verifies worker mode includes before-attempt listener time in max total
 /// elapsed.
 #[test]
-fn test_run_in_worker_max_total_elapsed_includes_before_attempt_listener_time() {
+fn test_run_in_worker_max_total_elapsed_includes_before_attempt_listener_time()
+{
     let _guard = WORKER_THREAD_ID_LOCK
         .lock()
         .expect("worker probe lock should be available");
@@ -722,9 +759,9 @@ fn test_run_in_worker_max_total_elapsed_includes_before_attempt_listener_time() 
         .build()
         .expect("retry should build");
 
-    let error = retry
-        .run_in_worker(record_worker_thread_id)
-        .expect_err("before-attempt listener time should exhaust total elapsed");
+    let error = retry.run_in_worker(record_worker_thread_id).expect_err(
+        "before-attempt listener time should exhaust total elapsed",
+    );
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 0);

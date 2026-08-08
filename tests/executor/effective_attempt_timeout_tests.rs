@@ -8,18 +8,23 @@
 
 use std::time::Duration;
 
-use qubit_retry::{
-    AttemptCancelToken, AttemptTimeoutOption, AttemptTimeoutSource, Retry, RetryErrorReason,
-};
+use qubit_retry::AttemptCancelToken;
+use qubit_retry::AttemptTimeoutOption;
+use qubit_retry::AttemptTimeoutSource;
+use qubit_retry::Retry;
+use qubit_retry::RetryErrorReason;
 
 /// Verifies effective attempt timeout source selection through public retry
 /// behavior.
 #[test]
-fn test_effective_attempt_timeout_configured_source_wins_equal_elapsed_budget() {
+fn test_effective_attempt_timeout_configured_source_wins_equal_elapsed_budget()
+{
     let retry = Retry::<&'static str>::builder()
         .max_attempts(2)
         .max_operation_elapsed(Some(Duration::from_millis(20)))
-        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(Duration::from_millis(20))))
+        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(
+            Duration::from_millis(20),
+        )))
         .worker_cancel_grace(Duration::from_millis(100))
         .no_delay()
         .build()

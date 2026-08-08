@@ -6,9 +6,11 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 
-use qubit_retry::{Retry, RetryContext};
+use qubit_retry::Retry;
+use qubit_retry::RetryContext;
 
 use crate::support::TestError;
 
