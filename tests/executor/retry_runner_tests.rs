@@ -7,30 +7,16 @@
 // =============================================================================
 
 use std::panic;
-use std::sync::{
-    Arc,
-    Mutex,
-};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use qubit_clock::{
-    ManualMonotonicClock,
-    MonotonicClock,
-};
+use qubit_clock::{ManualMonotonicClock, MonotonicClock};
 use qubit_error::BoxError;
 use qubit_retry::{
-    AttemptFailure,
-    AttemptTimeoutSource,
-    Retry,
-    RetryContext,
-    RetryError,
-    RetryErrorReason,
+    AttemptFailure, AttemptTimeoutSource, Retry, RetryContext, RetryError, RetryErrorReason,
 };
 
-use crate::support::{
-    NonCloneValue,
-    TestError,
-};
+use crate::support::{NonCloneValue, TestError};
 
 /// Verifies exponential backoff is driven entirely by injected manual time.
 #[test]
@@ -313,8 +299,7 @@ fn test_hook_and_retry_sleep_time_do_not_count_against_elapsed_budget() {
                 .expect("manual time should advance");
         })
         .on_retry(
-            move |_failure: &AttemptFailure<TestError>,
-                  _context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
                 retry_clock
                     .advance(Duration::from_secs(25))
                     .expect("manual time should advance");
@@ -323,8 +308,7 @@ fn test_hook_and_retry_sleep_time_do_not_count_against_elapsed_budget() {
         .on_success(move |context: &RetryContext| {
             *success_elapsed_events
                 .lock()
-                .expect("success elapsed should be lockable") =
-                Some(context.operation_elapsed());
+                .expect("success elapsed should be lockable") = Some(context.operation_elapsed());
         })
         .build()
         .expect("retry should build");
@@ -355,8 +339,7 @@ fn test_hook_and_retry_sleep_time_do_not_count_against_elapsed_budget() {
         .advance(Duration::from_secs(25))
         .expect("manual time should advance");
     let (value, attempts) = worker.join().expect("retry thread should join");
-    let value = value
-        .expect("hook and retry sleep time should not exhaust elapsed budget");
+    let value = value.expect("hook and retry sleep time should not exhaust elapsed budget");
 
     assert_eq!(value.into_value(), "done");
     assert_eq!(attempts, 2);
@@ -383,8 +366,7 @@ fn test_max_total_elapsed_rejects_retry_sleep_before_sleeping() {
         .fixed_delay(Duration::from_secs(200))
         .blocking_timer(sleeper)
         .on_retry(
-            move |_failure: &AttemptFailure<TestError>,
-                  context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>, context: &RetryContext| {
                 scheduled_events
                     .lock()
                     .expect("retry events should be lockable")
@@ -426,9 +408,7 @@ fn test_max_total_elapsed_rejects_retry_after_sleep_before_sleeping() {
         .max_attempts(2)
         .max_total_elapsed(Some(Duration::from_millis(50)))
         .no_delay()
-        .retry_after_from_error(|_error: &TestError| {
-            Some(Duration::from_millis(200))
-        })
+        .retry_after_from_error(|_error: &TestError| Some(Duration::from_millis(200)))
         .build()
         .expect("retry should build");
 
@@ -485,9 +465,7 @@ fn test_max_total_elapsed_includes_before_attempt_listener_time() {
 
     let error = retry
         .run(|| -> Result<(), TestError> { panic!("operation must not run") })
-        .expect_err(
-            "before-attempt listener time should exhaust total elapsed",
-        );
+        .expect_err("before-attempt listener time should exhaust total elapsed");
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 0);

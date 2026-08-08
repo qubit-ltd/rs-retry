@@ -37,8 +37,8 @@ fn test_retry_after_policy_display_and_parse() {
 /// Verifies unsupported policy text returns a useful validation error.
 #[test]
 fn test_retry_after_policy_rejects_invalid_text() {
-    let error = RetryAfterPolicy::from_str("shorter")
-        .expect_err("unsupported policy should be rejected");
+    let error =
+        RetryAfterPolicy::from_str("shorter").expect_err("unsupported policy should be rejected");
 
     assert!(error.contains("replace"));
     assert!(error.contains("at_least_configured_delay"));

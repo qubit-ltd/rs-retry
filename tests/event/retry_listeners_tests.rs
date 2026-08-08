@@ -6,18 +6,9 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::sync::{
-    Arc,
-    Mutex,
-};
+use std::sync::{Arc, Mutex};
 
-use qubit_retry::{
-    AttemptFailure,
-    AttemptFailureDecision,
-    Retry,
-    RetryContext,
-    RetryError,
-};
+use qubit_retry::{AttemptFailure, AttemptFailureDecision, Retry, RetryContext, RetryError};
 
 #[test]
 fn test_retry_listeners_default_collection_is_populated_by_builder_callbacks() {
@@ -37,8 +28,7 @@ fn test_retry_listeners_default_collection_is_populated_by_builder_callbacks() {
                 .push(format!("before:{}", context.attempt()));
         })
         .on_failure(
-            move |_failure: &AttemptFailure<&'static str>,
-                  context: &RetryContext| {
+            move |_failure: &AttemptFailure<&'static str>, context: &RetryContext| {
                 failure
                     .lock()
                     .expect("failure events should be lockable")
@@ -47,8 +37,7 @@ fn test_retry_listeners_default_collection_is_populated_by_builder_callbacks() {
             },
         )
         .on_retry(
-            move |_failure: &AttemptFailure<&'static str>,
-                  context: &RetryContext| {
+            move |_failure: &AttemptFailure<&'static str>, context: &RetryContext| {
                 scheduled
                     .lock()
                     .expect("retry events should be lockable")

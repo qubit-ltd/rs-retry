@@ -6,12 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_retry::{
-    AttemptExecutorError,
-    AttemptFailure,
-    AttemptFailureKind,
-    AttemptPanic,
-};
+use qubit_retry::{AttemptExecutorError, AttemptFailure, AttemptFailureKind, AttemptPanic};
 
 use crate::support::TestError;
 
@@ -30,8 +25,7 @@ fn test_attempt_failure_error_accessors_distinguish_timeout() {
     assert_eq!(timeout.as_panic(), None);
     assert_eq!(timeout.into_error(), None);
 
-    let panic =
-        AttemptFailure::<TestError>::Panic(AttemptPanic::new("worker failed"));
+    let panic = AttemptFailure::<TestError>::Panic(AttemptPanic::new("worker failed"));
     assert_eq!(panic.as_error(), None);
     assert_eq!(panic.as_executor_error(), None);
     assert_eq!(
@@ -43,9 +37,8 @@ fn test_attempt_failure_error_accessors_distinguish_timeout() {
     );
     assert_eq!(panic.into_error(), None);
 
-    let executor = AttemptFailure::<TestError>::Executor(
-        AttemptExecutorError::new("worker spawn failed"),
-    );
+    let executor =
+        AttemptFailure::<TestError>::Executor(AttemptExecutorError::new("worker spawn failed"));
     assert_eq!(executor.as_error(), None);
     assert_eq!(
         executor
@@ -70,15 +63,12 @@ fn test_attempt_failure_display_formats_variants() {
         "attempt timed out"
     );
     assert_eq!(
-        AttemptFailure::<TestError>::Panic(AttemptPanic::new("worker failed"))
-            .to_string(),
+        AttemptFailure::<TestError>::Panic(AttemptPanic::new("worker failed")).to_string(),
         "attempt panicked: worker failed"
     );
     assert_eq!(
-        AttemptFailure::<TestError>::Executor(AttemptExecutorError::new(
-            "worker spawn failed"
-        ))
-        .to_string(),
+        AttemptFailure::<TestError>::Executor(AttemptExecutorError::new("worker spawn failed"))
+            .to_string(),
         "attempt executor failed: worker spawn failed"
     );
 }
@@ -99,9 +89,7 @@ fn test_attempt_failure_kind_and_timeout_classification() {
     assert_eq!(panic.kind(), AttemptFailureKind::Panic);
     assert!(!panic.is_timeout());
 
-    let executor = AttemptFailure::<TestError>::Executor(
-        AttemptExecutorError::new("executor"),
-    );
+    let executor = AttemptFailure::<TestError>::Executor(AttemptExecutorError::new("executor"));
     assert_eq!(executor.kind(), AttemptFailureKind::Executor);
     assert!(!executor.is_timeout());
 }
