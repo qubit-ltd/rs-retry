@@ -10,6 +10,5 @@
 mod internal;
 mod retry_random_source;
 
-pub use retry_random_source::RetryRandomSource;
-
 pub(crate) use internal::ThreadRetryRandomSource;
+pub use retry_random_source::RetryRandomSource;

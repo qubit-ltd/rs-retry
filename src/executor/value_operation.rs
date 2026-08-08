@@ -7,9 +7,8 @@
 // =============================================================================
 //! Adapter that stores the successful value outside the type-erased retry loop.
 
-use crate::error::AttemptFailure;
-
 use super::attempt::Attempt;
+use crate::error::AttemptFailure;
 
 /// Adapter that stores the successful value outside the type-erased retry loop.
 pub(in crate::executor) struct ValueOperation<T, F> {

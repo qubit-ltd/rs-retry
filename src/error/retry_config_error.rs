@@ -14,8 +14,8 @@
 use std::error::Error;
 use std::fmt;
 
-use qubit_argument::{ArgumentError, ArgumentErrorKind};
-
+use qubit_argument::ArgumentError;
+use qubit_argument::ArgumentErrorKind;
 #[cfg(feature = "config")]
 use qubit_config::ConfigError;
 
@@ -42,7 +42,10 @@ impl RetryConfigError {
     /// # Returns
     /// A new [`RetryConfigError`].
     #[inline]
-    pub fn invalid_value(path: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn invalid_value(
+        path: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             path: path.into(),
             message: message.into(),

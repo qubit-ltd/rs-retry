@@ -7,7 +7,9 @@
 // =============================================================================
 //! Text formatting and validated parsing for retry jitter factors.
 
-use parse_display::{DisplayFormat, FromStrFormat, ParseError};
+use parse_display::DisplayFormat;
+use parse_display::FromStrFormat;
+use parse_display::ParseError;
 
 /// Formats jitter factors as `f64` text and parses them with range validation.
 pub(in crate::options) struct RetryJitterFactorFormat;
@@ -24,7 +26,11 @@ impl DisplayFormat<f64> for RetryJitterFactorFormat {
     ///
     /// # Errors
     /// Returns [`std::fmt::Error`] if the formatter rejects output.
-    fn write(&self, f: &mut std::fmt::Formatter<'_>, value: &f64) -> std::fmt::Result {
+    fn write(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        value: &f64,
+    ) -> std::fmt::Result {
         write!(f, "{value}")
     }
 }
@@ -45,9 +51,9 @@ impl FromStrFormat<f64> for RetryJitterFactorFormat {
     /// Returns [`ParseError`] when the input is not a valid `f64` or lies
     /// outside `[0.0, 1.0]`, including non-finite values.
     fn parse(&self, s: &str) -> Result<f64, Self::Err> {
-        let value = s
-            .parse::<f64>()
-            .map_err(|_| ParseError::with_message("invalid retry jitter factor"))?;
+        let value = s.parse::<f64>().map_err(|_| {
+            ParseError::with_message("invalid retry jitter factor")
+        })?;
         if !(0.0..=1.0).contains(&value) {
             return Err(ParseError::with_message(
                 "retry jitter factor must be in range [0.0, 1.0]",

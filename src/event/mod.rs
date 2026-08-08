@@ -20,13 +20,13 @@ mod retry_events;
 mod retry_listeners;
 
 pub use attempt_failure_decision::AttemptFailureDecision;
-pub use attempt_timeout_source::AttemptTimeoutSource;
-pub use retry_context::RetryContext;
-
-pub(crate) use attempt_failure_listener::{AttemptFailureListener, RetryScheduledListener};
+pub(crate) use attempt_failure_listener::AttemptFailureListener;
+pub(crate) use attempt_failure_listener::RetryScheduledListener;
 pub(crate) use attempt_success_listener::AttemptSuccessListener;
+pub use attempt_timeout_source::AttemptTimeoutSource;
 pub(crate) use before_attempt_listener::BeforeAttemptListener;
 pub(crate) use retry_after_hint::RetryAfterHint;
+pub use retry_context::RetryContext;
 pub(crate) use retry_context_parts::RetryContextParts;
 pub(crate) use retry_error_listener::RetryErrorListener;
 pub(crate) use retry_events::RetryEvents;

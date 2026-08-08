@@ -13,7 +13,8 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 use super::attempt_executor_error::AttemptExecutorError;
 use super::attempt_failure_kind::AttemptFailureKind;

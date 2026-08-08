@@ -7,7 +7,8 @@
 // =============================================================================
 //! Successful retry execution result.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::RetryContext;
 
