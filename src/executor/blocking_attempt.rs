@@ -11,9 +11,7 @@ use super::attempt_cancel_token::AttemptCancelToken;
 use crate::AttemptFailure;
 
 /// Type-erased blocking worker attempt used by the retry loop.
-pub(in crate::executor) trait BlockingAttempt<E>:
-    Send + Sync
-{
+pub(in crate::executor) trait BlockingAttempt<E>: Send + Sync {
     /// Calls the wrapped operation once.
     ///
     /// # Arguments

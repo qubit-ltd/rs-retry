@@ -9,13 +9,9 @@
 
 use qubit_function::ArcBiConsumer;
 
-use crate::{
-    RetryContext,
-    RetryError,
-};
+use crate::{RetryContext, RetryError};
 
 /// Listener invoked when the whole retry flow returns an error.
 ///
 /// This listener is observational only and cannot resume a stopped retry flow.
-pub(crate) type RetryErrorListener<E> =
-    ArcBiConsumer<RetryError<E>, RetryContext>;
+pub(crate) type RetryErrorListener<E> = ArcBiConsumer<RetryError<E>, RetryContext>;

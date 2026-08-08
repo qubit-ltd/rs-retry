@@ -7,10 +7,7 @@
 // =============================================================================
 //! Stable semantic classification for attempt failures.
 
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 
 /// Semantic kind of a single attempt failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

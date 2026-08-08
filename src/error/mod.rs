@@ -21,8 +21,5 @@ pub use attempt_failure_kind::AttemptFailureKind;
 pub use attempt_panic::AttemptPanic;
 pub use retry_config_error::RetryConfigError;
 pub(crate) use retry_config_error::argument_error_message;
-pub use retry_error::{
-    RetryError,
-    RetryResult,
-};
+pub use retry_error::{RetryError, RetryResult};
 pub use retry_error_reason::RetryErrorReason;
