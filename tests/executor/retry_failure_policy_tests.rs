@@ -7,9 +7,13 @@
 // =============================================================================
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
-use qubit_retry::{AttemptCancelToken, AttemptFailure, Retry, RetryErrorReason};
+use qubit_retry::AttemptCancelToken;
+use qubit_retry::AttemptFailure;
+use qubit_retry::Retry;
+use qubit_retry::RetryErrorReason;
 
 use crate::support::TestError;
 

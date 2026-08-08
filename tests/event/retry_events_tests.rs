@@ -6,9 +6,14 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 
-use qubit_retry::{AttemptFailure, AttemptFailureDecision, Retry, RetryContext, RetryErrorReason};
+use qubit_retry::AttemptFailure;
+use qubit_retry::AttemptFailureDecision;
+use qubit_retry::Retry;
+use qubit_retry::RetryContext;
+use qubit_retry::RetryErrorReason;
 
 use crate::support::TestError;
 
@@ -24,7 +29,8 @@ fn test_retry_events_resolve_all_failure_listener_decisions_in_order() {
         .max_attempts(2)
         .no_delay()
         .on_failure(
-            move |_failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
                 first_events
                     .lock()
                     .expect("event order should be lockable")
@@ -33,7 +39,8 @@ fn test_retry_events_resolve_all_failure_listener_decisions_in_order() {
             },
         )
         .on_failure(
-            move |_failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
                 second_events
                     .lock()
                     .expect("event order should be lockable")
@@ -42,7 +49,8 @@ fn test_retry_events_resolve_all_failure_listener_decisions_in_order() {
             },
         )
         .on_failure(
-            move |_failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
                 third_events
                     .lock()
                     .expect("event order should be lockable")

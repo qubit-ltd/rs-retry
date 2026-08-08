@@ -9,15 +9,20 @@
 use std::error::Error;
 use std::fmt;
 use std::fmt::Write;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use qubit_clock::{ManualMonotonicClock, MonotonicClock};
-use qubit_retry::{
-    AttemptFailure, AttemptFailureDecision, AttemptTimeoutOption, Retry, RetryContext,
-    RetryErrorReason,
-};
+use qubit_clock::ManualMonotonicClock;
+use qubit_clock::MonotonicClock;
+use qubit_retry::AttemptFailure;
+use qubit_retry::AttemptFailureDecision;
+use qubit_retry::AttemptTimeoutOption;
+use qubit_retry::Retry;
+use qubit_retry::RetryContext;
+use qubit_retry::RetryErrorReason;
 
 use crate::support::TestError;
 
@@ -196,7 +201,9 @@ fn test_retry_error_display_formats_terminal_reasons() {
         .build()
         .expect("retry should build")
         .run(|| -> Result<(), TestError> { panic!("operation must not run") })
-        .expect_err("zero total elapsed budget should stop before first attempt");
+        .expect_err(
+            "zero total elapsed budget should stop before first attempt",
+        );
     assert_eq!(
         total_elapsed_without_failure.to_string(),
         "retry max total elapsed exceeded after 0 attempt(s)"
@@ -225,7 +232,9 @@ fn test_retry_error_display_formats_terminal_reasons() {
     let worker_still_running = Retry::<TestError>::builder()
         .max_attempts(2)
         .no_delay()
-        .attempt_timeout_option(Some(AttemptTimeoutOption::retry(Duration::from_millis(5))))
+        .attempt_timeout_option(Some(AttemptTimeoutOption::retry(
+            Duration::from_millis(5),
+        )))
         .worker_cancel_grace(Duration::from_millis(5))
         .build()
         .expect("retry should build")
@@ -277,7 +286,9 @@ fn test_retry_error_source_returns_terminal_failure() {
         .no_delay()
         .build()
         .expect("retry should build")
-        .run_in_worker(|_token| -> Result<(), TestError> { panic!("panic source") })
+        .run_in_worker(|_token| -> Result<(), TestError> {
+            panic!("panic source")
+        })
         .expect_err("worker panic should abort");
     assert_eq!(
         panic_source
@@ -299,7 +310,9 @@ fn test_retry_error_source_returns_terminal_failure() {
     let timeout_error = Retry::<TestError>::builder()
         .max_attempts(1)
         .no_delay()
-        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(Duration::from_millis(5))))
+        .attempt_timeout_option(Some(AttemptTimeoutOption::abort(
+            Duration::from_millis(5),
+        )))
         .build()
         .expect("retry should build")
         .run_in_worker(|token| {
@@ -357,6 +370,7 @@ fn test_retry_error_display_propagates_formatter_errors() {
     let mut elapsed_writer = FailingWriter::fail_immediately();
     assert!(write!(&mut elapsed_writer, "{max_operation_elapsed}").is_err());
 
-    let mut last_failure_writer = FailingWriter::fail_when_fragment_seen("; last failure:");
+    let mut last_failure_writer =
+        FailingWriter::fail_when_fragment_seen("; last failure:");
     assert!(write!(&mut last_failure_writer, "{attempts_exceeded}").is_err());
 }

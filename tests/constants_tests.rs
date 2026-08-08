@@ -8,12 +8,15 @@
 
 use std::time::Duration;
 
-use qubit_retry::constants::{
-    DEFAULT_RETRY_DELAY, DEFAULT_RETRY_JITTER, DEFAULT_RETRY_MAX_ATTEMPTS,
-    DEFAULT_RETRY_MAX_OPERATION_ELAPSED, DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS, KEY_DELAY,
-    KEY_MAX_ATTEMPTS,
-};
-use qubit_retry::{RetryDelay, RetryJitter};
+use qubit_retry::RetryDelay;
+use qubit_retry::RetryJitter;
+use qubit_retry::constants::DEFAULT_RETRY_DELAY;
+use qubit_retry::constants::DEFAULT_RETRY_JITTER;
+use qubit_retry::constants::DEFAULT_RETRY_MAX_ATTEMPTS;
+use qubit_retry::constants::DEFAULT_RETRY_MAX_OPERATION_ELAPSED;
+use qubit_retry::constants::DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS;
+use qubit_retry::constants::KEY_DELAY;
+use qubit_retry::constants::KEY_MAX_ATTEMPTS;
 
 #[test]
 fn test_retry_constants_match_parseable_defaults_and_config_keys() {

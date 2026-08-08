@@ -7,14 +7,19 @@
 // =============================================================================
 
 use std::panic;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
-use qubit_clock::{ManualMonotonicClock, MonotonicClock};
+use qubit_clock::ManualMonotonicClock;
+use qubit_clock::MonotonicClock;
 use qubit_error::BoxError;
-use qubit_retry::{
-    AttemptFailure, AttemptFailureDecision, Retry, RetryContext, RetryError, RetryErrorReason,
-};
+use qubit_retry::AttemptFailure;
+use qubit_retry::AttemptFailureDecision;
+use qubit_retry::Retry;
+use qubit_retry::RetryContext;
+use qubit_retry::RetryError;
+use qubit_retry::RetryErrorReason;
 
 use crate::support::TestError;
 
@@ -56,7 +61,8 @@ fn test_run_default_boxed_error_type_observes_listeners_and_hints() {
                 .push(context.attempt());
         })
         .on_failure(
-            move |failure: &AttemptFailure<BoxError>, context: &RetryContext| {
+            move |failure: &AttemptFailure<BoxError>,
+                  context: &RetryContext| {
                 let message = failure
                     .as_error()
                     .map(ToString::to_string)
@@ -64,12 +70,17 @@ fn test_run_default_boxed_error_type_observes_listeners_and_hints() {
                 failure_events
                     .lock()
                     .expect("failure events should be lockable")
-                    .push((context.attempt(), context.retry_after_hint(), message));
+                    .push((
+                        context.attempt(),
+                        context.retry_after_hint(),
+                        message,
+                    ));
                 AttemptFailureDecision::UseDefault
             },
         )
         .on_retry(
-            move |failure: &AttemptFailure<BoxError>, context: &RetryContext| {
+            move |failure: &AttemptFailure<BoxError>,
+                  context: &RetryContext| {
                 retry_events
                     .lock()
                     .expect("retry events should be lockable")
@@ -171,9 +182,13 @@ fn test_on_failure_can_abort_retry_flow() {
         .max_attempts(3)
         .no_delay()
         .on_failure(
-            |failure: &AttemptFailure<TestError>, _context: &RetryContext| match failure {
-                AttemptFailure::Error(TestError("fatal")) => AttemptFailureDecision::Abort,
-                _ => AttemptFailureDecision::UseDefault,
+            |failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+                match failure {
+                    AttemptFailure::Error(TestError("fatal")) => {
+                        AttemptFailureDecision::Abort
+                    }
+                    _ => AttemptFailureDecision::UseDefault,
+                }
             },
         )
         .build()
@@ -204,7 +219,8 @@ fn test_retry_after_decision_selects_next_delay() {
             },
         )
         .on_retry(
-            move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            move |failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
                 scheduled_events
                     .lock()
                     .expect("retry scheduled events should be lockable")
@@ -258,7 +274,8 @@ fn test_retry_after_hint_is_available_to_failure_listener() {
             }
         })
         .on_failure(
-            move |_failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
                 hint_events
                     .lock()
                     .expect("hint events should be lockable")
@@ -269,7 +286,8 @@ fn test_retry_after_hint_is_available_to_failure_listener() {
         .build()
         .expect("retry should build");
 
-    let _ = retry.run(|| -> Result<(), TestError> { Err(TestError("limited")) });
+    let _ =
+        retry.run(|| -> Result<(), TestError> { Err(TestError("limited")) });
 
     assert_eq!(
         *hints.lock().expect("hint events should be lockable"),
@@ -287,13 +305,16 @@ fn test_retry_after_hint_panic_propagates_by_default() {
         .max_attempts(1)
         .no_delay()
         .retry_after_hint(
-            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| panic!("hint panic"),
+            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+                panic!("hint panic")
+            },
         )
         .build()
         .expect("retry should build");
 
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        let _ = retry.run(|| -> Result<(), TestError> { Err(TestError("failed")) });
+        let _ =
+            retry.run(|| -> Result<(), TestError> { Err(TestError("failed")) });
     }));
 
     assert!(result.is_err());
@@ -306,7 +327,9 @@ fn test_retry_after_hint_panic_is_isolated_when_enabled() {
         .max_attempts(1)
         .no_delay()
         .retry_after_hint(
-            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| panic!("hint panic"),
+            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+                panic!("hint panic")
+            },
         )
         .isolate_listener_panics()
         .build()
@@ -314,7 +337,9 @@ fn test_retry_after_hint_panic_is_isolated_when_enabled() {
 
     let error = retry
         .run(|| -> Result<(), TestError> { Err(TestError("failed")) })
-        .expect_err("isolated hint panic should fall back to retry failure handling");
+        .expect_err(
+            "isolated hint panic should fall back to retry failure handling",
+        );
 
     assert_eq!(error.reason(), RetryErrorReason::AttemptsExceeded);
     assert_eq!(error.last_error(), Some(&TestError("failed")));
@@ -335,7 +360,8 @@ fn test_on_retry_listener_time_does_not_count_against_elapsed_budget() {
         .fixed_delay(Duration::from_secs(25))
         .blocking_timer(sleeper)
         .on_retry(
-            move |failure: &AttemptFailure<TestError>, context: &RetryContext| {
+            move |failure: &AttemptFailure<TestError>,
+                  context: &RetryContext| {
                 scheduled_events
                     .lock()
                     .expect("retry events should be lockable")
@@ -402,7 +428,8 @@ fn test_max_total_elapsed_includes_failure_listener_time() {
         .no_delay()
         .blocking_timer(sleeper)
         .on_failure(
-            move |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>,
+                  _context: &RetryContext| {
                 listener_clock
                     .advance(Duration::from_secs(20))
                     .expect("manual time should advance");
@@ -418,7 +445,9 @@ fn test_max_total_elapsed_includes_failure_listener_time() {
             attempts += 1;
             Err(TestError("slow-listener"))
         })
-        .expect_err("failure listener time should exhaust the total elapsed budget");
+        .expect_err(
+            "failure listener time should exhaust the total elapsed budget",
+        );
 
     assert_eq!(error.reason(), RetryErrorReason::MaxTotalElapsedExceeded);
     assert_eq!(error.attempts(), 1);
@@ -439,7 +468,8 @@ fn test_max_total_elapsed_includes_on_retry_listener_time() {
         .no_delay()
         .blocking_timer(sleeper)
         .on_retry(
-            move |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>,
+                  _context: &RetryContext| {
                 listener_clock
                     .advance(Duration::from_secs(20))
                     .expect("manual time should advance");
@@ -476,7 +506,8 @@ fn test_max_total_elapsed_rechecks_retry_sleep_after_on_retry_listener() {
         .fixed_delay(Duration::from_secs(50))
         .blocking_timer(sleeper)
         .on_retry(
-            move |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
+            move |_failure: &AttemptFailure<TestError>,
+                  _context: &RetryContext| {
                 listener_clock
                     .advance(Duration::from_secs(40))
                     .expect("manual time should advance");

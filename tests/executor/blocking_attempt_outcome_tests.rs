@@ -6,10 +6,14 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::mpsc;
 use std::time::Duration;
 
-use qubit_retry::{AttemptCancelToken, Retry, RetryErrorReason};
+use qubit_retry::AttemptCancelToken;
+use qubit_retry::Retry;
+use qubit_retry::RetryErrorReason;
 
 /// Verifies blocking attempt outcome cleanup counts through public retry
 /// errors.

@@ -6,7 +6,10 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_retry::{AttemptFailure, AttemptFailureDecision, Retry, RetryContext};
+use qubit_retry::AttemptFailure;
+use qubit_retry::AttemptFailureDecision;
+use qubit_retry::Retry;
+use qubit_retry::RetryContext;
 
 /// Verifies sync attempt failures are observable through the public listener
 /// API.
