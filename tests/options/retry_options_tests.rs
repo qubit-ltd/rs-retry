@@ -10,37 +10,17 @@ use std::time::Duration;
 
 use qubit_config::{
     Config,
-    options::{
-        InterpolationSources,
-        ReadPolicy,
-    },
+    options::{InterpolationSources, ReadPolicy},
 };
 use qubit_retry::constants::{
-    DEFAULT_RETRY_MAX_ATTEMPTS,
-    KEY_ATTEMPT_TIMEOUT_MILLIS,
-    KEY_ATTEMPT_TIMEOUT_POLICY,
-    KEY_DELAY,
-    KEY_DELAY_STRATEGY,
-    KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS,
-    KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
-    KEY_EXPONENTIAL_MULTIPLIER,
-    KEY_FIXED_DELAY_MILLIS,
-    KEY_JITTER_FACTOR,
-    KEY_MAX_ATTEMPTS,
-    KEY_MAX_OPERATION_ELAPSED_MILLIS,
-    KEY_MAX_OPERATION_ELAPSED_UNLIMITED,
-    KEY_MAX_TOTAL_ELAPSED_MILLIS,
-    KEY_MAX_TOTAL_ELAPSED_UNLIMITED,
-    KEY_RANDOM_MAX_DELAY_MILLIS,
-    KEY_RANDOM_MIN_DELAY_MILLIS,
-    KEY_WORKER_CANCEL_GRACE_MILLIS,
+    DEFAULT_RETRY_MAX_ATTEMPTS, KEY_ATTEMPT_TIMEOUT_MILLIS, KEY_ATTEMPT_TIMEOUT_POLICY, KEY_DELAY,
+    KEY_DELAY_STRATEGY, KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS, KEY_EXPONENTIAL_MAX_DELAY_MILLIS,
+    KEY_EXPONENTIAL_MULTIPLIER, KEY_FIXED_DELAY_MILLIS, KEY_JITTER_FACTOR, KEY_MAX_ATTEMPTS,
+    KEY_MAX_OPERATION_ELAPSED_MILLIS, KEY_MAX_OPERATION_ELAPSED_UNLIMITED,
+    KEY_MAX_TOTAL_ELAPSED_MILLIS, KEY_MAX_TOTAL_ELAPSED_UNLIMITED, KEY_RANDOM_MAX_DELAY_MILLIS,
+    KEY_RANDOM_MIN_DELAY_MILLIS, KEY_WORKER_CANCEL_GRACE_MILLIS,
 };
-use qubit_retry::{
-    AttemptTimeoutOption,
-    RetryDelay,
-    RetryJitter,
-    RetryOptions,
-};
+use qubit_retry::{AttemptTimeoutOption, RetryDelay, RetryJitter, RetryOptions};
 
 /// Verifies retry parsing only reads process environment placeholders through
 /// an explicitly environment-friendly reader.
@@ -61,8 +41,8 @@ fn test_from_config_requires_explicit_environment_fallback() {
         .expect("the retry section path should be canonical");
 
     let default_result = RetryOptions::from_config(&section);
-    let read_policy = ReadPolicy::env_friendly()
-        .with_interpolation_sources(InterpolationSources::ConfigThenEnv);
+    let read_policy =
+        ReadPolicy::env_friendly().with_interpolation_sources(InterpolationSources::ConfigThenEnv);
     let env_view = section.read_with(&read_policy);
     let explicit_result = RetryOptions::from_config(&env_view);
 
@@ -76,9 +56,7 @@ fn test_from_config_requires_explicit_environment_fallback() {
     );
     assert_eq!(
         explicit_result
-            .expect(
-                "explicit environment fallback should resolve the placeholder"
-            )
+            .expect("explicit environment fallback should resolve the placeholder")
             .max_attempts(),
         7
     );
@@ -95,24 +73,12 @@ fn test_validate_default_and_new() {
     assert_eq!(options.worker_cancel_grace(), Duration::from_millis(100));
     assert!(matches!(options.jitter(), RetryJitter::None));
 
-    let options = RetryOptions::new(
-        2,
-        None,
-        None,
-        RetryDelay::none(),
-        RetryJitter::none(),
-    )
-    .expect("valid retry options should be created");
+    let options = RetryOptions::new(2, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect("valid retry options should be created");
     assert_eq!(options.max_attempts(), 2);
 
-    let zero = RetryOptions::new(
-        0,
-        None,
-        None,
-        RetryDelay::none(),
-        RetryJitter::none(),
-    )
-    .expect_err("zero attempts should be rejected");
+    let zero = RetryOptions::new(0, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect_err("zero attempts should be rejected");
     assert_eq!(zero.path(), KEY_MAX_ATTEMPTS);
 
     let invalid_jitter = RetryOptions::new(
@@ -303,11 +269,7 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
         RetryOptions::from_config(&exponential_config)
             .expect("exponential delay config should be parsed")
             .delay(),
-        &RetryDelay::exponential(
-            Duration::from_millis(10),
-            Duration::from_millis(80),
-            3.0
-        )
+        &RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 3.0)
     );
 
     let mut implicit_config = Config::new();
@@ -404,9 +366,8 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
     encoded_strategy
         .set("delay", "fixed(12ms)")
         .expect("test config value should be set");
-    let error = RetryOptions::from_config(&encoded_strategy).expect_err(
-        "encoded delay form should not be accepted as a strategy name",
-    );
+    let error = RetryOptions::from_config(&encoded_strategy)
+        .expect_err("encoded delay form should not be accepted as a strategy name");
     assert_eq!(error.path(), KEY_DELAY);
     assert!(error.message().contains("unsupported"));
 
@@ -414,8 +375,8 @@ fn test_from_config_reads_other_delay_forms_and_reports_config_errors() {
     bad_type
         .set("max_attempts", "not-a-number")
         .expect("test config value should be set");
-    let error = RetryOptions::from_config(&bad_type)
-        .expect_err("wrong max_attempts type should fail");
+    let error =
+        RetryOptions::from_config(&bad_type).expect_err("wrong max_attempts type should fail");
     assert_eq!(error.path(), KEY_MAX_ATTEMPTS);
 
     let mut unlimited_bad_type = Config::new();
@@ -446,10 +407,7 @@ fn test_from_config_reads_implicit_delay_defaults() {
         RetryOptions::from_config(&implicit_random)
             .expect("implicit random delay should be parsed")
             .delay(),
-        &RetryDelay::random(
-            Duration::from_millis(1000),
-            Duration::from_millis(12000)
-        )
+        &RetryDelay::random(Duration::from_millis(1000), Duration::from_millis(12000))
     );
 
     let mut implicit_exponential = Config::new();
@@ -662,11 +620,7 @@ fn test_retry_options_delay_calculation_helpers() {
         4,
         None,
         None,
-        RetryDelay::exponential(
-            Duration::from_millis(10),
-            Duration::from_millis(80),
-            2.0,
-        ),
+        RetryDelay::exponential(Duration::from_millis(10), Duration::from_millis(80), 2.0),
         RetryJitter::none(),
     )
     .expect("retry options should be valid");
@@ -708,14 +662,8 @@ fn test_retry_options_delay_calculation_helpers() {
         Duration::from_millis(7)
     );
 
-    let none = RetryOptions::new(
-        3,
-        None,
-        None,
-        RetryDelay::none(),
-        RetryJitter::none(),
-    )
-    .expect("none retry options should be valid");
+    let none = RetryOptions::new(3, None, None, RetryDelay::none(), RetryJitter::none())
+        .expect("none retry options should be valid");
     assert_eq!(
         none.next_base_delay_from_current(Duration::from_millis(99)),
         Duration::ZERO

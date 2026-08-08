@@ -8,12 +8,7 @@
 
 use std::time::Duration;
 
-use qubit_retry::{
-    AttemptTimeoutPolicy,
-    RetryAfterPolicy,
-    RetryDelay,
-    RetryOptions,
-};
+use qubit_retry::{AttemptTimeoutPolicy, RetryAfterPolicy, RetryDelay, RetryOptions};
 
 /// Verifies the standalone builder creates a complete validated snapshot.
 #[test]

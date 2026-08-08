@@ -8,10 +8,7 @@
 
 use std::thread;
 
-use qubit_retry::{
-    AttemptCancelToken,
-    Retry,
-};
+use qubit_retry::{AttemptCancelToken, Retry};
 
 use crate::support::TestError;
 
