@@ -14,7 +14,10 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::AttemptTimeoutOption;
 use qubit_retry::AttemptTimeoutPolicy;
 use qubit_retry::Retry;
+use qubit_retry::RetryBuilder;
+use qubit_retry::RetryContext;
 use qubit_retry::RetryDelay;
+use qubit_retry::RetryError;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryJitter;
 use qubit_retry::RetryOptions;
@@ -35,7 +38,7 @@ fn test_random_source_controls_retry_delay_selection() {
         .on_retry({
             let observed_delay = Arc::clone(&observed_delay);
             move |_failure: &AttemptFailure<TestError>,
-                  context: &qubit_retry::RetryContext| {
+                  context: &RetryContext| {
                 *observed_delay
                     .lock()
                     .expect("observed delay should be lockable") =
@@ -164,8 +167,7 @@ fn test_builder_options_random_exponential_and_default_work() {
         Some(AttemptTimeoutOption::abort(Duration::from_millis(7)))
     );
 
-    let default_builder: qubit_retry::RetryBuilder<TestError> =
-        Default::default();
+    let default_builder: RetryBuilder<TestError> = Default::default();
     assert_eq!(
         default_builder
             .build()
@@ -256,11 +258,9 @@ fn test_retry_if_error_retries_true_and_aborts_false() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(3)
         .no_delay()
-        .retry_if_error(
-            |error: &TestError, context: &qubit_retry::RetryContext| {
-                error.0 == "retry" && context.attempt() == 1
-            },
-        )
+        .retry_if_error(|error: &TestError, context: &RetryContext| {
+            error.0 == "retry" && context.attempt() == 1
+        })
         .build()
         .expect("retry should build");
     let mut attempts = 0;
@@ -288,9 +288,7 @@ async fn test_retry_if_error_uses_default_for_timeout() {
     let retry = Retry::<TestError>::builder()
         .max_attempts(1)
         .attempt_timeout(Some(Duration::from_millis(1)))
-        .retry_if_error(
-            |_error: &TestError, _context: &qubit_retry::RetryContext| false,
-        )
+        .retry_if_error(|_error: &TestError, _context: &RetryContext| false)
         .no_delay()
         .build()
         .expect("retry should build");
@@ -346,27 +344,20 @@ fn test_isolate_listener_panics_suppresses_listener_panics() {
         .max_attempts(2)
         .no_delay()
         .isolate_listener_panics()
-        .before_attempt(|_context: &qubit_retry::RetryContext| {
-            panic!("before panic")
-        })
+        .before_attempt(|_context: &RetryContext| panic!("before panic"))
         .on_failure(
-            |_failure: &AttemptFailure<TestError>,
-             _context: &qubit_retry::RetryContext| {
+            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
                 panic!("failure panic")
             },
         )
         .on_retry(
-            |_failure: &AttemptFailure<TestError>,
-             _context: &qubit_retry::RetryContext| {
+            |_failure: &AttemptFailure<TestError>, _context: &RetryContext| {
                 panic!("retry panic")
             },
         )
-        .on_error(
-            |_error: &qubit_retry::RetryError<TestError>,
-             _context: &qubit_retry::RetryContext| {
-                panic!("error panic")
-            },
-        )
+        .on_error(|_error: &RetryError<TestError>, _context: &RetryContext| {
+            panic!("error panic")
+        })
         .build()
         .expect("retry should build");
 

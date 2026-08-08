@@ -20,6 +20,7 @@ use qubit_clock::MonotonicClock;
 use qubit_retry::AttemptFailure;
 use qubit_retry::AttemptFailureDecision;
 use qubit_retry::AttemptTimeoutOption;
+use qubit_retry::AttemptTimeoutSource;
 use qubit_retry::Retry;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryErrorReason;
@@ -223,7 +224,7 @@ fn test_retry_error_display_formats_terminal_reasons() {
     );
     assert_eq!(
         unsupported.attempt_timeout_source(),
-        Some(qubit_retry::AttemptTimeoutSource::Configured)
+        Some(AttemptTimeoutSource::Configured)
     );
 
     let (release_tx, release_rx) = mpsc::channel();
