@@ -26,6 +26,9 @@ use crate::RetrySuccess;
 use crate::event::RetryContextParts;
 use crate::observer::RetryOutcomeKind;
 use crate::random::ThreadRetryRandomSource;
+use crate::retry_budget::ClockRef;
+use crate::retry_budget::RetryBudget;
+use crate::retry_budget::RetryBudgetExceeded;
 use crate::rule::RetryDecision;
 
 /// Same-thread retry execution. It intentionally exposes no timeout method.
@@ -70,6 +73,8 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
         let limits = policy.limits();
         let clock = self.sleeper.timer().clock();
         let started_at = clock.now();
+        let mut budget = RetryBudget::new(ClockRef(clock), *limits)
+            .expect("validated retry limits must fit the monotonic clock");
         let mut attempts = 0_u32;
         let mut operation_elapsed = Duration::ZERO;
         let mut backoff = policy
@@ -78,6 +83,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
 
         loop {
             let total_elapsed = elapsed_since(clock, started_at);
+            let budget_exceeded = budget.check_before_attempt().err();
             if attempts >= limits.max_attempts().get()
                 || limits
                     .max_operation_elapsed()
@@ -85,6 +91,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                 || limits
                     .max_total_elapsed()
                     .is_some_and(|limit| total_elapsed >= limit)
+                || budget_exceeded.is_some()
             {
                 let reason =
                     budget_reason(limits, operation_elapsed, total_elapsed);
@@ -113,6 +120,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
             );
             self.retry.observers().attempt_started(&upcoming);
             let total_elapsed = elapsed_since(clock, started_at);
+            let budget_exceeded = budget.check_before_attempt().err();
             if attempts >= limits.max_attempts().get()
                 || limits
                     .max_operation_elapsed()
@@ -120,6 +128,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                 || limits
                     .max_total_elapsed()
                     .is_some_and(|limit| total_elapsed >= limit)
+                || budget_exceeded.is_some()
             {
                 let context = context(
                     policy,
@@ -138,10 +147,29 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                 return Err(error);
             }
 
+            if let Err(exceeded) = budget.try_begin_attempt() {
+                let error = RetryError::new(
+                    exceeded_reason(&exceeded),
+                    None,
+                    context(
+                        policy,
+                        attempts,
+                        operation_elapsed,
+                        total_elapsed,
+                        Duration::ZERO,
+                        None,
+                    ),
+                );
+                self.retry
+                    .observers()
+                    .finished(RetryOutcomeKind::Failed, error.context());
+                return Err(error);
+            }
             attempts = attempts.saturating_add(1);
             let attempt_started = clock.now();
             let result = operation();
             let attempt_elapsed = elapsed_since(clock, attempt_started);
+            let budget_finish = budget.finish_attempt(attempt_elapsed).err();
             operation_elapsed =
                 operation_elapsed.saturating_add(attempt_elapsed);
             let total_elapsed = elapsed_since(clock, started_at);
@@ -205,10 +233,11 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                         );
                         return Err(error);
                     }
-                    if operation_elapsed
-                        >= limits
-                            .max_operation_elapsed()
-                            .unwrap_or(Duration::MAX)
+                    if budget_finish.is_some()
+                        || operation_elapsed
+                            >= limits
+                                .max_operation_elapsed()
+                                .unwrap_or(Duration::MAX)
                     {
                         let error = RetryError::new(
                             RetryErrorReason::OperationBudgetExhausted,
@@ -254,10 +283,12 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                         .observers()
                         .retry_scheduled(&step, &scheduled_context);
                     let total_elapsed = elapsed_since(clock, started_at);
-                    if limits.max_total_elapsed().is_some_and(|limit| {
-                        total_elapsed.saturating_add(step.effective_delay())
-                            >= limit
-                    }) {
+                    if budget.check_after(step.effective_delay()).is_err()
+                        || limits.max_total_elapsed().is_some_and(|limit| {
+                            total_elapsed.saturating_add(step.effective_delay())
+                                >= limit
+                        })
+                    {
                         let error = RetryError::new(
                             RetryErrorReason::TotalBudgetExhausted,
                             Some(failure),
@@ -336,6 +367,16 @@ fn budget_reason(
         RetryErrorReason::TotalBudgetExhausted
     } else {
         RetryErrorReason::AttemptsExhausted
+    }
+}
+
+fn exceeded_reason(exceeded: &RetryBudgetExceeded) -> RetryErrorReason {
+    match exceeded {
+        RetryBudgetExceeded::Attempts(_) => RetryErrorReason::AttemptsExhausted,
+        RetryBudgetExceeded::Operation(_) => {
+            RetryErrorReason::OperationBudgetExhausted
+        }
+        RetryBudgetExceeded::Total(_) => RetryErrorReason::TotalBudgetExhausted,
     }
 }
 

@@ -35,7 +35,7 @@ tokio = ["dep:tokio", "qubit-clock/tokio"]
 config = ["dep:qubit-config"]
 
 [dependencies]
-qubit-budget = "0.4"
+qubit-budget = { version = "0.4", path = "../rs-budget", features = ["time"] }
 serde = { version = "1.0", features = ["derive"] }
 parse-display = "0.11"
 tokio = { version = "1.52", features = ["time", "rt", "macros"], optional = true }

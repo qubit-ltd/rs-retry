@@ -1,0 +1,3 @@
+# Reviewed exception: the private retry budget module keeps its tightly coupled
+# resource, clock adapter, error, and aggregate types together.
+multiple-public-types | src/retry_budget.rs | Coupled private retry budget implementation

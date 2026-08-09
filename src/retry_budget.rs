@@ -1,63 +1,100 @@
-//! Shared attempt, active-duration, and end-to-end retry accounting.
+//! Internal composition of the finite budgets used by retry executors.
+// qubit-style: allow multiple-public-types
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use qubit_budget::BudgetError;
+use qubit_budget::DurationBudget;
+use qubit_budget::DurationBudgetError;
 use qubit_budget::ResourceBudget;
+use qubit_budget::ResourceBudgetError;
 use qubit_budget::ResourceLimit;
-use qubit_clock::DurationBudget;
-use qubit_clock::DurationBudgetError;
+use qubit_budget::TimeBudget;
+use qubit_budget::TimeBudgetError;
+use qubit_clock::ClockDomain;
 use qubit_clock::MonotonicClock;
 use qubit_clock::MonotonicInstant;
-use qubit_clock::TimeBudget;
-use qubit_clock::TimeBudgetError;
+use qubit_clock::Timer;
 
 use crate::RetryLimits;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RetryResource {
+pub(crate) enum RetryResource {
     Attempts,
+    OperationDuration,
+    TotalElapsed,
 }
 
-/// Structured retry budget failures. Failed attempt admission does not charge
-/// an attempt; a successfully admitted attempt remains charged forever.
+pub(crate) struct ClockRef<'a>(pub(crate) &'a dyn MonotonicClock);
+
+impl MonotonicClock for ClockRef<'_> {
+    fn domain(&self) -> ClockDomain {
+        self.0.domain()
+    }
+
+    fn now(&self) -> MonotonicInstant {
+        self.0.now()
+    }
+
+    fn new_timer(&self) -> Arc<dyn Timer> {
+        self.0.new_timer()
+    }
+}
+
 #[derive(Debug)]
-pub enum RetryBudgetExceeded {
-    /// The attempt count is exhausted.
-    Attempts(BudgetError<RetryResource, u32>),
-    /// Active operation duration is exhausted; observed duration is retained.
-    Operation(DurationBudgetError),
-    /// End-to-end deadline or clock operation failed.
-    Total(TimeBudgetError),
+pub(crate) enum RetryBudgetExceeded {
+    Attempts(ResourceBudgetError<RetryResource>),
+    Operation(DurationBudgetError<RetryResource>),
+    Total(TimeBudgetError<RetryResource>),
 }
 
-/// Combines monotonic attempt, active-operation, and total-flow budgets.
-///
-/// State transitions are admission `Open -> Open` with a charged attempt and
-/// terminal caller-controlled stop when any component rejects. Backoff and
-/// waiting affect only the total [`TimeBudget`]; callers explicitly charge the
-/// measured operation interval in [`Self::finish_attempt`].
-pub struct RetryBudget<C> {
-    attempts: ResourceBudget<RetryResource, u32>,
-    operation: DurationBudget,
-    total: TimeBudget<C>,
+impl RetryBudgetExceeded {
+    pub(crate) fn reason(&self) -> crate::RetryErrorReason {
+        match self {
+            Self::Attempts(error) => {
+                let _ = error.requested();
+                crate::RetryErrorReason::AttemptsExhausted
+            }
+            Self::Operation(error) => {
+                let _ = error.requested();
+                crate::RetryErrorReason::OperationBudgetExhausted
+            }
+            Self::Total(error) => {
+                let _ = error.resource();
+                crate::RetryErrorReason::TotalBudgetExhausted
+            }
+        }
+    }
+}
+
+pub(crate) struct RetryBudget<C> {
+    attempts: ResourceBudget<RetryResource>,
+    operation: Option<DurationBudget<RetryResource>>,
+    total: Option<TimeBudget<RetryResource, C>>,
 }
 
 impl<C: MonotonicClock> RetryBudget<C> {
-    /// Creates a budget from validated retry limits.
-    pub fn new(clock: C, limits: RetryLimits) -> Result<Self, TimeBudgetError> {
-        let total = match limits.max_total_elapsed() {
-            Some(duration) => TimeBudget::for_duration(clock, duration)?,
-            None => TimeBudget::unlimited(clock),
-        };
-        let attempts = ResourceBudget::new(ResourceLimit::bounded(
+    pub(crate) fn new(
+        clock: C,
+        limits: RetryLimits,
+    ) -> Result<Self, TimeBudgetError<RetryResource>> {
+        let total = limits
+            .max_total_elapsed()
+            .map(|duration| {
+                TimeBudget::for_duration(
+                    RetryResource::TotalElapsed,
+                    clock,
+                    duration,
+                )
+            })
+            .transpose()?;
+        let attempts = ResourceBudget::new(
             RetryResource::Attempts,
-            limits.max_attempts().get(),
-        ));
-        let operation = limits
-            .max_operation_elapsed()
-            .map(DurationBudget::bounded)
-            .unwrap_or_else(DurationBudget::unlimited);
+            ResourceLimit::new(u64::from(limits.max_attempts().get())),
+        );
+        let operation = limits.max_operation_elapsed().map(|duration| {
+            DurationBudget::new(RetryResource::OperationDuration, duration)
+        });
         Ok(Self {
             attempts,
             operation,
@@ -65,46 +102,61 @@ impl<C: MonotonicClock> RetryBudget<C> {
         })
     }
 
-    /// Admits and charges one attempt, returning its start instant.
-    pub fn try_begin_attempt(
+    pub(crate) fn check_before_attempt(&self) -> Result<(), RetryBudgetExceeded>
+    where
+        C: MonotonicClock,
+    {
+        if let Some(total) = &self.total {
+            total.check().map_err(RetryBudgetExceeded::Total)?;
+        }
+        if let Some(operation) = &self.operation
+            && operation.remaining() == Duration::ZERO
+        {
+            return Err(RetryBudgetExceeded::Operation(
+                operation
+                    .check_available(Duration::from_nanos(1))
+                    .expect_err(
+                        "zero remaining duration must reject a request",
+                    ),
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn try_begin_attempt(
         &mut self,
-    ) -> Result<MonotonicInstant, RetryBudgetExceeded> {
-        self.total.check().map_err(RetryBudgetExceeded::Total)?;
+    ) -> Result<(), RetryBudgetExceeded> {
+        self.check_before_attempt()?;
         self.attempts
-            .try_charge(1)
+            .try_consume(1)
             .map_err(RetryBudgetExceeded::Attempts)?;
-        Ok(self.total.sample())
+        Ok(())
     }
 
-    /// Measures and charges one admitted attempt's active duration.
-    pub fn finish_attempt(
+    pub(crate) fn finish_attempt(
         &mut self,
-        started_at: MonotonicInstant,
-    ) -> Result<Duration, RetryBudgetExceeded> {
-        let elapsed = self
-            .total
-            .measure_since(started_at)
-            .map_err(RetryBudgetExceeded::Total)?;
-        self.operation
-            .try_charge(elapsed)
-            .map_err(RetryBudgetExceeded::Operation)?;
-        Ok(elapsed)
+        elapsed: Duration,
+    ) -> Result<(), RetryBudgetExceeded> {
+        if let Some(operation) = &mut self.operation {
+            operation
+                .try_consume(elapsed)
+                .map_err(RetryBudgetExceeded::Operation)?;
+        }
+        if let Some(total) = &self.total {
+            total.check().map_err(RetryBudgetExceeded::Total)?;
+        }
+        Ok(())
     }
 
-    /// Returns admitted attempts.
-    pub fn attempts(&self) -> u32 {
-        self.attempts.charged()
-    }
-    /// Returns accepted active operation duration.
-    pub fn operation_elapsed(&self) -> Duration {
-        self.operation.charged()
-    }
-    /// Returns end-to-end elapsed duration.
-    pub fn total_elapsed(&self) -> Result<Duration, TimeBudgetError> {
-        self.total.elapsed()
-    }
-    /// Returns the underlying total deadline budget.
-    pub fn total(&self) -> &TimeBudget<C> {
-        &self.total
+    pub(crate) fn check_after(
+        &self,
+        delay: Duration,
+    ) -> Result<(), RetryBudgetExceeded> {
+        if let Some(total) = &self.total {
+            total
+                .check_after(delay)
+                .map_err(RetryBudgetExceeded::Total)?;
+        }
+        Ok(())
     }
 }
