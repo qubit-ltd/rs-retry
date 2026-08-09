@@ -9,8 +9,6 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use qubit_clock::MonotonicClock;
-use qubit_clock::MonotonicInstant;
 use qubit_clock::TimeError;
 use qubit_clock::Timer;
 use qubit_clock::TokioTimer;
@@ -19,6 +17,9 @@ use super::retry::Retry;
 use crate::AttemptFailure;
 use crate::AttemptTimeoutKind;
 use crate::BackoffRequest;
+use crate::RetryBudget;
+use crate::RetryBudgetExhausted;
+use crate::RetryBudgetSnapshot;
 use crate::RetryContext;
 use crate::RetryError;
 use crate::RetryErrorReason;
@@ -28,8 +29,6 @@ use crate::RetrySuccess;
 use crate::event::RetryContextParts;
 use crate::observer::RetryOutcomeKind;
 use crate::random::ThreadRetryRandomSource;
-use crate::retry_budget::ClockRef;
-use crate::retry_budget::RetryBudget;
 use crate::rule::RetryDecision;
 
 /// Tokio retry execution with explicit attempt and flow timeout controls.
@@ -93,12 +92,8 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
             .clone()
             .unwrap_or_else(|| Arc::new(TokioTimer::current()));
         let clock = timer.clock();
-        let started_at = clock.now();
-        let mut budget =
-            RetryBudget::new(ClockRef(clock), *self.retry.policy().limits())
-                .expect("validated retry limits must fit the monotonic clock");
-        let mut attempts = 0_u32;
-        let mut operation_elapsed = Duration::ZERO;
+        let mut budget = RetryBudget::new(clock, *self.retry.policy().limits())
+            .expect("validated retry limits must fit the monotonic clock");
         let mut last_failure = None;
         let mut backoff = self
             .retry
@@ -107,15 +102,14 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
             .start_with_random_source(Arc::clone(&self.random_source));
 
         loop {
-            let total_elapsed = elapsed_since(clock, started_at);
+            let snapshot = budget.snapshot();
             if let Some(reason) = self
-                .budget_reason(attempts, operation_elapsed, total_elapsed)
-                .or_else(|| self.flow_timeout_reason(total_elapsed))
+                .flow_timeout_reason(snapshot.total_elapsed())
                 .or_else(|| {
                     budget
-                        .check_before_attempt()
+                        .check_retry_after(Duration::ZERO)
                         .err()
-                        .map(|error| error.reason())
+                        .map(retry_budget_reason)
                 })
             {
                 return Err(self.finish(
@@ -123,10 +117,8 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                     last_failure,
                     context(
                         self.retry.policy(),
-                        attempts,
-                        operation_elapsed,
-                        total_elapsed,
-                        Duration::ZERO,
+                        snapshot,
+                        snapshot.attempts(),
                         None,
                     ),
                 ));
@@ -134,22 +126,19 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
 
             let before = context(
                 self.retry.policy(),
-                attempts.saturating_add(1),
-                operation_elapsed,
-                total_elapsed,
-                Duration::ZERO,
+                snapshot,
+                snapshot.attempts().saturating_add(1),
                 None,
             );
             self.retry.observers().attempt_started(&before);
-            let total_elapsed = elapsed_since(clock, started_at);
+            let snapshot = budget.snapshot();
             if let Some(reason) = self
-                .budget_reason(attempts, operation_elapsed, total_elapsed)
-                .or_else(|| self.flow_timeout_reason(total_elapsed))
+                .flow_timeout_reason(snapshot.total_elapsed())
                 .or_else(|| {
                     budget
-                        .check_before_attempt()
+                        .check_retry_after(Duration::ZERO)
                         .err()
-                        .map(|error| error.reason())
+                        .map(retry_budget_reason)
                 })
             {
                 return Err(self.finish(
@@ -157,32 +146,30 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                     last_failure,
                     context(
                         self.retry.policy(),
-                        attempts,
-                        operation_elapsed,
-                        total_elapsed,
-                        Duration::ZERO,
+                        snapshot,
+                        snapshot.attempts(),
                         None,
                     ),
                 ));
             }
 
-            if let Err(error) = budget.try_begin_attempt() {
-                return Err(self.finish(
-                    error.reason(),
-                    last_failure,
-                    context(
-                        self.retry.policy(),
-                        attempts,
-                        operation_elapsed,
-                        total_elapsed,
-                        Duration::ZERO,
-                        None,
-                    ),
-                ));
-            }
-            attempts = attempts.saturating_add(1);
-            let attempt_started = clock.now();
-            let timeout = self.effective_timeout(total_elapsed);
+            let attempt = match budget.begin_attempt() {
+                Ok(attempt) => attempt,
+                Err(exhausted) => {
+                    let snapshot = budget.snapshot();
+                    return Err(self.finish(
+                        retry_budget_reason(exhausted),
+                        last_failure,
+                        context(
+                            self.retry.policy(),
+                            snapshot,
+                            snapshot.attempts(),
+                            None,
+                        ),
+                    ));
+                }
+            };
+            let timeout = self.effective_timeout(snapshot.total_elapsed());
             let outcome = execute_attempt(
                 &timer,
                 timeout,
@@ -190,18 +177,11 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                 operation(),
             )
             .await;
-            let attempt_elapsed = elapsed_since(clock, attempt_started);
-            let budget_finish_failed =
-                budget.finish_attempt(attempt_elapsed).is_err();
-            operation_elapsed =
-                operation_elapsed.saturating_add(attempt_elapsed);
-            let total_elapsed = elapsed_since(clock, started_at);
+            let snapshot = budget.finish_attempt(attempt);
             let attempt_context = context(
                 self.retry.policy(),
-                attempts,
-                operation_elapsed,
-                total_elapsed,
-                attempt_elapsed,
+                snapshot,
+                snapshot.attempts(),
                 None,
             )
             .with_attempt_timeout(timeout);
@@ -263,12 +243,13 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                         ));
                     }
                     if let Some(reason) = self
-                        .budget_reason(
-                            attempts,
-                            operation_elapsed,
-                            total_elapsed,
-                        )
-                        .or_else(|| self.flow_timeout_reason(total_elapsed))
+                        .flow_timeout_reason(snapshot.total_elapsed())
+                        .or_else(|| {
+                            budget
+                                .check_retry_after(Duration::ZERO)
+                                .err()
+                                .map(retry_budget_reason)
+                        })
                     {
                         return Err(self.finish(
                             reason,
@@ -276,14 +257,6 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                             attempt_context,
                         ));
                     }
-                    if budget_finish_failed {
-                        return Err(self.finish(
-                            RetryErrorReason::OperationBudgetExhausted,
-                            Some(failure),
-                            attempt_context,
-                        ));
-                    }
-
                     let request = match decision {
                         RetryDecision::RetryAfter(delay) => {
                             BackoffRequest::explicit(delay)
@@ -297,21 +270,14 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                     let scheduled =
                         attempt_context.with_next_delay(step.effective_delay());
                     self.retry.observers().retry_scheduled(&step, &scheduled);
-                    let after_observer = elapsed_since(clock, started_at);
-                    if budget.check_after(step.effective_delay()).is_err() {
-                        return Err(self.finish(
-                            RetryErrorReason::TotalBudgetExhausted,
-                            Some(failure),
-                            scheduled,
-                        ));
-                    }
                     if let Some(reason) = self
-                        .budget_reason(
-                            attempts,
-                            operation_elapsed,
-                            after_observer,
-                        )
-                        .or_else(|| self.flow_timeout_reason(after_observer))
+                        .flow_timeout_reason(budget.snapshot().total_elapsed())
+                        .or_else(|| {
+                            budget
+                                .check_retry_after(step.effective_delay())
+                                .err()
+                                .map(retry_budget_reason)
+                        })
                     {
                         return Err(self.finish(
                             reason,
@@ -343,30 +309,6 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
             (Some(attempt), None) => Some(attempt),
             (None, Some(flow)) => Some(flow),
             (None, None) => None,
-        }
-    }
-
-    fn budget_reason(
-        &self,
-        attempts: u32,
-        operation_elapsed: Duration,
-        total_elapsed: Duration,
-    ) -> Option<RetryErrorReason> {
-        let limits = self.retry.policy().limits();
-        if attempts >= limits.max_attempts().get() {
-            Some(RetryErrorReason::AttemptsExhausted)
-        } else if limits
-            .max_operation_elapsed()
-            .is_some_and(|limit| operation_elapsed >= limit)
-        {
-            Some(RetryErrorReason::OperationBudgetExhausted)
-        } else if limits
-            .max_total_elapsed()
-            .is_some_and(|limit| total_elapsed >= limit)
-        {
-            Some(RetryErrorReason::TotalBudgetExhausted)
-        } else {
-            None
         }
     }
 
@@ -499,22 +441,23 @@ fn terminal_reason<E>(failure: &AttemptFailure<E>) -> RetryErrorReason {
     }
 }
 
-fn elapsed_since(
-    clock: &dyn MonotonicClock,
-    started: MonotonicInstant,
-) -> Duration {
-    clock
-        .now()
-        .duration_since(started)
-        .expect("retry clock must be monotonic")
+/// Maps public continuation exhaustion to the retry error vocabulary.
+fn retry_budget_reason(exhausted: RetryBudgetExhausted) -> RetryErrorReason {
+    match exhausted {
+        RetryBudgetExhausted::Attempts => RetryErrorReason::AttemptsExhausted,
+        RetryBudgetExhausted::OperationElapsed => {
+            RetryErrorReason::OperationBudgetExhausted
+        }
+        RetryBudgetExhausted::TotalElapsed => {
+            RetryErrorReason::TotalBudgetExhausted
+        }
+    }
 }
 
 fn context(
     policy: &RetryPolicy,
+    snapshot: RetryBudgetSnapshot,
     attempt: u32,
-    operation_elapsed: Duration,
-    total_elapsed: Duration,
-    attempt_elapsed: Duration,
     next_delay: Option<Duration>,
 ) -> RetryContext {
     let mut context = RetryContext::from_parts(RetryContextParts {
@@ -522,9 +465,9 @@ fn context(
         max_attempts: policy.limits().max_attempts().get(),
         max_operation_elapsed: policy.limits().max_operation_elapsed(),
         max_total_elapsed: policy.limits().max_total_elapsed(),
-        operation_elapsed,
-        total_elapsed,
-        attempt_elapsed,
+        operation_elapsed: snapshot.operation_elapsed(),
+        total_elapsed: snapshot.total_elapsed(),
+        attempt_elapsed: snapshot.attempt_elapsed(),
         attempt_timeout: None,
     });
     if let Some(delay) = next_delay {
