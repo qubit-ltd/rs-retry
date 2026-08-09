@@ -9,7 +9,6 @@ use std::time::Duration;
 
 use qubit_budget::DurationBudget;
 use qubit_budget::ResourceBudget;
-use qubit_budget::ResourceLimit;
 use qubit_clock::MonotonicClock;
 use qubit_clock::MonotonicInstant;
 
@@ -43,7 +42,7 @@ pub struct RetryBudget<'a> {
     started_at: MonotonicInstant,
 
     /// Admitted attempts budget.
-    attempts: ResourceBudget<RetryResource>,
+    attempts: ResourceBudget<RetryResource, u32>,
 
     /// Explicitly measured operation time budget.
     operation: Option<DurationBudget<RetryResource>>,
@@ -78,7 +77,7 @@ impl<'a> RetryBudget<'a> {
             started_at,
             attempts: ResourceBudget::new(
                 RetryResource::Attempts,
-                ResourceLimit::new(u64::from(limits.max_attempts().get())),
+                limits.max_attempts().get(),
             ),
             operation: limits.max_operation_elapsed().map(|duration| {
                 DurationBudget::new(RetryResource::OperationElapsed, duration)
@@ -93,7 +92,7 @@ impl<'a> RetryBudget<'a> {
     /// Samples and returns the current retry budget state.
     pub fn snapshot(&self) -> RetryBudgetSnapshot {
         RetryBudgetSnapshot::new(
-            self.attempts.used() as u32,
+            self.attempts.used(),
             self.operation_elapsed,
             self.elapsed_since_started(),
             self.last_attempt_elapsed,
@@ -109,7 +108,7 @@ impl<'a> RetryBudget<'a> {
         &mut self,
     ) -> Result<RetryAttempt, RetryBudgetExhausted> {
         self.check_continuation()?;
-        let number = self.attempts.used() as u32 + 1;
+        let number = self.attempts.used() + 1;
         let consumed = self.attempts.consume_available(1);
         debug_assert_eq!(consumed, 1, "checked budget must admit one attempt");
         Ok(RetryAttempt {
@@ -129,7 +128,7 @@ impl<'a> RetryBudget<'a> {
     ) -> RetryBudgetSnapshot {
         debug_assert_eq!(
             attempt.number,
-            self.attempts.used() as u32,
+            self.attempts.used(),
             "attempt must be finished in admission order",
         );
         let elapsed = self
