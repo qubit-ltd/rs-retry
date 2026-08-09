@@ -15,7 +15,6 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde::Serialize;
 
-use super::AttemptTimeoutSource;
 use super::RetryContextParts;
 
 /// Context emitted for retry lifecycle events.
@@ -50,7 +49,6 @@ pub struct RetryContext {
     /// Optional retry-after hint extracted before failure policy runs.
     retry_after_hint: Option<Duration>,
     /// Source used for the last selected per-attempt timeout.
-    attempt_timeout_source: Option<AttemptTimeoutSource>,
     /// Worker attempts that timed out and were not observed to exit before the
     /// cancellation grace period ended.
     unreaped_worker_count: u32,
@@ -99,7 +97,6 @@ impl RetryContext {
             attempt_timeout: parts.attempt_timeout,
             next_delay: None,
             retry_after_hint: None,
-            attempt_timeout_source: None,
             unreaped_worker_count: 0,
         }
     }
@@ -197,20 +194,6 @@ impl RetryContext {
         self.attempt_timeout
     }
 
-    /// Returns the effective source of the current attempt timeout.
-    ///
-    /// # Returns
-    /// `Some(AttemptTimeoutSource::Configured)` when the current attempt
-    /// timeout came from configured attempt timeout options,
-    /// `Some(AttemptTimeoutSource::MaxOperationElapsed)` when it came from
-    /// remaining max-operation-elapsed budget,
-    /// `Some(AttemptTimeoutSource::MaxTotalElapsed)` when it came from
-    /// remaining max-total-elapsed budget, otherwise `None`.
-    #[inline(always)]
-    pub fn attempt_timeout_source(&self) -> Option<AttemptTimeoutSource> {
-        self.attempt_timeout_source
-    }
-
     /// Returns the number of worker attempts not observed to exit after
     /// cancellation.
     ///
@@ -255,53 +238,13 @@ impl RetryContext {
         self
     }
 
-    /// Returns a copy of this context with refreshed total elapsed time.
-    ///
-    /// # Arguments
-    /// - `total_elapsed`: Total monotonic time consumed by the retry flow.
-    ///
-    /// # Returns
-    /// A context carrying the refreshed total elapsed value.
+    /// Returns a copy carrying the effective timeout for the current attempt.
     #[inline(always)]
-    pub(crate) fn with_total_elapsed(
+    pub(crate) fn with_attempt_timeout(
         mut self,
-        total_elapsed: Duration,
+        timeout: Option<Duration>,
     ) -> Self {
-        self.total_elapsed = total_elapsed;
-        self
-    }
-
-    /// Returns a copy of this context with a retry-after hint.
-    ///
-    /// # Arguments
-    /// - `hint`: Optional retry-after hint.
-    ///
-    /// # Returns
-    /// A context carrying the hint.
-    #[inline(always)]
-    pub(crate) fn with_retry_after_hint(
-        mut self,
-        hint: Option<Duration>,
-    ) -> Self {
-        self.retry_after_hint = hint;
-        self
-    }
-
-    /// Returns a copy of this context with a timeout source.
-    ///
-    /// # Arguments
-    /// - `source`: Source of the current attempt timeout, if any.
-    ///
-    /// # Returns
-    /// A context carrying the timeout source when available.
-    #[inline]
-    pub(crate) fn with_attempt_timeout_source(
-        mut self,
-        source: Option<AttemptTimeoutSource>,
-    ) -> Self {
-        if let Some(source) = source {
-            self.attempt_timeout_source = Some(source);
-        }
+        self.attempt_timeout = timeout;
         self
     }
 

@@ -8,13 +8,12 @@
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
+use super::RetryDecision;
+use super::RetryRule;
 use crate::AttemptFailure;
 use crate::RetryContext;
 use crate::observer::RetryDiagnostic;
 use crate::observer::RetryDiagnosticKind;
-
-use super::RetryDecision;
-use super::RetryRule;
 
 /// Ordered rules. The first concrete decision wins.
 #[derive(Clone)]
@@ -46,15 +45,16 @@ impl<E: 'static> RetryRules<E> {
         diagnostics: &mut Vec<RetryDiagnostic>,
     ) -> RetryDecision {
         for (index, rule) in self.rules.iter().enumerate() {
-            let decision =
-                std::panic::catch_unwind(AssertUnwindSafe(|| rule.decide(failure, context)))
-                    .unwrap_or_else(|_| {
-                        diagnostics.push(RetryDiagnostic::new(
-                            RetryDiagnosticKind::RulePanicked,
-                            index,
-                        ));
-                        RetryDecision::UseDefault
-                    });
+            let decision = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                rule.decide(failure, context)
+            }))
+            .unwrap_or_else(|_| {
+                diagnostics.push(RetryDiagnostic::new(
+                    RetryDiagnosticKind::RulePanicked,
+                    index,
+                ));
+                RetryDecision::UseDefault
+            });
             if !matches!(decision, RetryDecision::UseDefault) {
                 return decision;
             }

@@ -17,8 +17,8 @@ use serde::Serialize;
 ///
 /// The policy is used as the default decision for configured attempt-timeout
 /// failures. Elapsed-budget effective timeouts stop the retry flow with
-/// [`crate::RetryErrorReason::MaxOperationElapsedExceeded`] or
-/// [`crate::RetryErrorReason::MaxTotalElapsedExceeded`] instead. Explicit
+/// [`crate::RetryErrorReason::OperationBudgetExhausted`] or
+/// [`crate::RetryErrorReason::TotalBudgetExhausted`] instead. Explicit
 /// failure listeners can still return their own decision for configured
 /// timeouts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -2,147 +2,190 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
-//
-//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Builder for error-type-independent retry options.
+//! Builder for the legacy configuration snapshot.
 
+use std::num::NonZeroU32;
 use std::time::Duration;
 
-use qubit_error::BoxError;
-
-use crate::AttemptTimeoutOption;
-use crate::AttemptTimeoutPolicy;
-use crate::RetryAfterPolicy;
-use crate::RetryBuilder;
+use super::AttemptTimeoutOption;
+use super::AttemptTimeoutPolicy;
+use super::RetryAfterPolicy;
+use super::RetryDelay;
+use super::RetryJitter;
+use super::RetryOptions;
 use crate::RetryConfigError;
-use crate::RetryDelay;
-use crate::RetryJitter;
-use crate::RetryOptions;
 
-/// Builds a validated [`RetryOptions`] snapshot without selecting an error
-/// type.
+/// Builds a validated [`RetryOptions`] snapshot.
 #[must_use]
 pub struct RetryOptionsBuilder {
-    inner: RetryBuilder<BoxError>,
+    options: RetryOptions,
+    max_attempts_error: Option<RetryConfigError>,
 }
 
 impl RetryOptionsBuilder {
-    /// Creates a builder with default retry options.
-    #[inline]
+    /// Creates a builder with default values.
     pub fn new() -> Self {
         Self {
-            inner: RetryBuilder::new(),
+            options: RetryOptions::default(),
+            max_attempts_error: None,
         }
     }
-    /// Sets the maximum number of attempts, including the initial attempt.
+
+    /// Starts from an existing validated snapshot.
+    pub fn options(mut self, options: RetryOptions) -> Self {
+        self.options = options;
+        self.max_attempts_error = None;
+        self
+    }
+
+    /// Sets the maximum attempts, including the initial attempt.
     pub fn max_attempts(mut self, value: u32) -> Self {
-        self.inner = self.inner.max_attempts(value);
+        match NonZeroU32::new(value) {
+            Some(value) => {
+                self.options.max_attempts = value;
+                self.max_attempts_error = None;
+            }
+            None => {
+                self.max_attempts_error =
+                    Some(RetryConfigError::invalid_value(
+                        "max_attempts",
+                        "max_attempts must be greater than zero",
+                    ));
+            }
+        }
         self
     }
-    /// Sets the maximum retry count after the initial attempt.
-    pub fn max_retries(mut self, value: u32) -> Self {
-        self.inner = self.inner.max_retries(value);
-        self
+
+    /// Sets the maximum retries after the first attempt.
+    pub fn max_retries(self, value: u32) -> Self {
+        self.max_attempts(value.saturating_add(1))
     }
-    /// Sets the cumulative operation-time budget, or removes it with `None`.
+
+    /// Sets the cumulative operation budget.
     pub fn max_operation_elapsed(mut self, value: Option<Duration>) -> Self {
-        self.inner = self.inner.max_operation_elapsed(value);
+        self.options.max_operation_elapsed = value;
         self
     }
-    /// Sets the total retry-flow time budget, or removes it with `None`.
+
+    /// Sets the total flow budget.
     pub fn max_total_elapsed(mut self, value: Option<Duration>) -> Self {
-        self.inner = self.inner.max_total_elapsed(value);
+        self.options.max_total_elapsed = value;
         self
     }
-    /// Sets the delay strategy used between attempts.
+
+    /// Sets the delay strategy.
     pub fn delay(mut self, value: RetryDelay) -> Self {
-        self.inner = self.inner.delay(value);
+        self.options.delay = value;
         self
     }
-    /// Disables delay between retry attempts.
-    pub fn no_delay(mut self) -> Self {
-        self.inner = self.inner.no_delay();
-        self
+
+    /// Disables delay.
+    pub fn no_delay(self) -> Self {
+        self.delay(RetryDelay::none())
     }
-    /// Sets a fixed delay between retry attempts.
-    pub fn fixed_delay(mut self, value: Duration) -> Self {
-        self.inner = self.inner.fixed_delay(value);
-        self
+
+    /// Sets a fixed delay.
+    pub fn fixed_delay(self, value: Duration) -> Self {
+        self.delay(RetryDelay::fixed(value))
     }
-    /// Sets a uniformly random delay range between retry attempts.
-    pub fn random_delay(mut self, min: Duration, max: Duration) -> Self {
-        self.inner = self.inner.random_delay(min, max);
-        self
+
+    /// Sets a random delay range.
+    pub fn random_delay(self, min: Duration, max: Duration) -> Self {
+        self.delay(RetryDelay::random(min, max))
     }
-    /// Sets exponential backoff with the default multiplier.
-    pub fn exponential_backoff(
-        mut self,
-        initial: Duration,
-        max: Duration,
-    ) -> Self {
-        self.inner = self.inner.exponential_backoff(initial, max);
-        self
+
+    /// Sets exponential backoff.
+    pub fn exponential_backoff(self, initial: Duration, max: Duration) -> Self {
+        self.exponential_backoff_with_multiplier(initial, max, 2.0)
     }
-    /// Sets exponential backoff with an explicit multiplier.
+
+    /// Sets exponential backoff with a multiplier.
     pub fn exponential_backoff_with_multiplier(
-        mut self,
+        self,
         initial: Duration,
         max: Duration,
         multiplier: f64,
     ) -> Self {
-        self.inner = self
-            .inner
-            .exponential_backoff_with_multiplier(initial, max, multiplier);
-        self
+        self.delay(RetryDelay::exponential(initial, max, multiplier))
     }
-    /// Sets the jitter strategy applied to retry delays.
+
+    /// Sets jitter.
     pub fn jitter(mut self, value: RetryJitter) -> Self {
-        self.inner = self.inner.jitter(value);
+        self.options.jitter = value;
         self
     }
-    /// Sets proportional jitter around each base delay.
-    pub fn jitter_factor(mut self, value: f64) -> Self {
-        self.inner = self.inner.jitter_factor(value);
-        self
+
+    /// Sets proportional jitter.
+    pub fn jitter_factor(self, value: f64) -> Self {
+        self.jitter(RetryJitter::factor(value))
     }
-    /// Sets the per-attempt timeout while retaining the pending timeout policy.
+
+    /// Sets an attempt timeout.
     pub fn attempt_timeout(mut self, value: Option<Duration>) -> Self {
-        self.inner = self.inner.attempt_timeout(value);
+        self.options.attempt_timeout = value.map(|timeout| {
+            AttemptTimeoutOption::new(
+                timeout,
+                self.options
+                    .attempt_timeout
+                    .map_or(AttemptTimeoutPolicy::Retry, |option| {
+                        option.policy()
+                    }),
+            )
+        });
         self
     }
-    /// Sets the complete per-attempt timeout option.
+
+    /// Sets a complete attempt timeout option.
     pub fn attempt_timeout_option(
         mut self,
         value: Option<AttemptTimeoutOption>,
     ) -> Self {
-        self.inner = self.inner.attempt_timeout_option(value);
+        self.options.attempt_timeout = value;
         self
     }
-    /// Sets the action taken when a configured attempt timeout expires.
+
+    /// Sets the attempt timeout policy.
     pub fn attempt_timeout_policy(
         mut self,
         value: AttemptTimeoutPolicy,
     ) -> Self {
-        self.inner = self.inner.attempt_timeout_policy(value);
+        self.options.attempt_timeout = self
+            .options
+            .attempt_timeout
+            .map(|option| option.with_policy(value));
         self
     }
-    /// Sets the grace period for cooperative worker cancellation.
+
+    /// Retries configured attempt timeouts.
+    pub fn retry_on_timeout(self) -> Self {
+        self.attempt_timeout_policy(AttemptTimeoutPolicy::Retry)
+    }
+
+    /// Aborts on configured attempt timeouts.
+    pub fn abort_on_timeout(self) -> Self {
+        self.attempt_timeout_policy(AttemptTimeoutPolicy::Abort)
+    }
+
+    /// Sets worker cancellation grace.
     pub fn worker_cancel_grace(mut self, value: Duration) -> Self {
-        self.inner = self.inner.worker_cancel_grace(value);
+        self.options.worker_cancel_grace = value;
         self
     }
-    /// Sets how Retry-After hints combine with configured delays.
+
+    /// Sets retry-after handling.
     pub fn retry_after_policy(mut self, value: RetryAfterPolicy) -> Self {
-        self.inner = self.inner.retry_after_policy(value);
+        self.options.retry_after_policy = value;
         self
     }
-    /// Validates and returns the immutable option snapshot.
-    ///
-    /// # Errors
-    /// Returns [`RetryConfigError`] when any configured option is invalid.
+
+    /// Validates and returns the snapshot.
     pub fn build(self) -> Result<RetryOptions, RetryConfigError> {
-        Ok(self.inner.build()?.options().clone())
+        if let Some(error) = self.max_attempts_error {
+            return Err(error);
+        }
+        self.options.validate()?;
+        Ok(self.options)
     }
 }
 

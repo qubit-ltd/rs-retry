@@ -2,32 +2,15 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
-//
-//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Retry event types and internal listener aliases.
+//! Internal location for the retry context value.
 
 mod attempt_failure_decision;
-mod attempt_failure_listener;
-mod attempt_success_listener;
 mod attempt_timeout_source;
-mod before_attempt_listener;
-mod retry_after_hint;
 mod retry_context;
 mod retry_context_parts;
-mod retry_error_listener;
-mod retry_events;
-mod retry_listeners;
 
 pub use attempt_failure_decision::AttemptFailureDecision;
-pub(crate) use attempt_failure_listener::AttemptFailureListener;
-pub(crate) use attempt_failure_listener::RetryScheduledListener;
-pub(crate) use attempt_success_listener::AttemptSuccessListener;
 pub use attempt_timeout_source::AttemptTimeoutSource;
-pub(crate) use before_attempt_listener::BeforeAttemptListener;
-pub(crate) use retry_after_hint::RetryAfterHint;
 pub use retry_context::RetryContext;
 pub(crate) use retry_context_parts::RetryContextParts;
-pub(crate) use retry_error_listener::RetryErrorListener;
-pub(crate) use retry_events::RetryEvents;
-pub(crate) use retry_listeners::RetryListeners;

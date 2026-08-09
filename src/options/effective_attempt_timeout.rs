@@ -6,6 +6,8 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Effective timeout selected from retry options for a single attempt.
+
+#![allow(dead_code)]
 //!
 //! Executors need both the duration to enforce and the reason that duration was
 //! selected. A fired configured attempt timeout can be retried or aborted by
@@ -85,7 +87,7 @@ impl EffectiveAttemptTimeout {
         self,
         failure: &AttemptFailure<E>,
     ) -> Option<RetryErrorReason> {
-        if !matches!(failure, AttemptFailure::Timeout) {
+        if !matches!(failure, AttemptFailure::Timeout { .. }) {
             return None;
         }
         // Only elapsed-budget timeout sources are terminal here. Configured
@@ -93,10 +95,10 @@ impl EffectiveAttemptTimeout {
         // RetryFailureHandler and AttemptTimeoutPolicy.
         match self.source {
             Some(AttemptTimeoutSource::MaxOperationElapsed) => {
-                Some(RetryErrorReason::MaxOperationElapsedExceeded)
+                Some(RetryErrorReason::OperationBudgetExhausted)
             }
             Some(AttemptTimeoutSource::MaxTotalElapsed) => {
-                Some(RetryErrorReason::MaxTotalElapsedExceeded)
+                Some(RetryErrorReason::TotalBudgetExhausted)
             }
             Some(AttemptTimeoutSource::Configured) | None => None,
         }
