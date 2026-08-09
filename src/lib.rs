@@ -23,6 +23,7 @@ pub mod observer;
 pub mod options;
 pub mod policy;
 pub mod random;
+mod retry_budget;
 pub mod rule;
 
 pub use backoff::BackoffDelaySource;
@@ -69,5 +70,7 @@ pub use policy::RetryLimits;
 pub use policy::RetryPolicy;
 pub use policy::RetryPolicyBuilder;
 pub use random::RetryRandomSource;
+pub use retry_budget::RetryBudget;
+pub use retry_budget::RetryBudgetExceeded;
 pub use rule::RetryDecision;
 pub use rule::RetryRule;
