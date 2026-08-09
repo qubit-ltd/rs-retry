@@ -14,11 +14,11 @@ use serde::Serialize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AttemptFailureKind {
     /// The operation returned its application error.
-    Error,
+    Application,
     /// The attempt exceeded its effective timeout.
-    Timeout,
+    TimedOut,
     /// The isolated attempt panicked.
-    Panic,
+    Panicked,
     /// The retry executor failed to run the attempt normally.
-    Executor,
+    Infrastructure,
 }

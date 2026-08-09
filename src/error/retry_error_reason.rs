@@ -10,8 +10,11 @@
 use serde::Deserialize;
 use serde::Serialize;
 
+use super::retry_error_kind::RetryErrorKind;
+
 /// Reason why the whole retry flow stopped with an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum RetryErrorReason {
     /// A listener or retry policy aborted the retry flow.
     Aborted,
@@ -31,9 +34,39 @@ pub enum RetryErrorReason {
     /// A timed-out blocking worker did not exit within the cancellation grace
     /// period.
     WorkerStillRunning,
+    /// No attempt could continue because an explicit attempt timeout fired.
+    AttemptTimedOut,
+    /// The execution flow timeout fired outside a retry budget check.
+    FlowTimedOut,
+    /// A caller-visible retry timer failed.
+    TimerFailed,
+    /// Canonical replacement for an exhausted attempt budget.
+    AttemptsExhausted,
+    /// Canonical replacement for the operation elapsed budget.
+    OperationBudgetExhausted,
+    /// Canonical replacement for the total elapsed budget.
+    TotalBudgetExhausted,
 }
 
 impl RetryErrorReason {
+    /// Returns the stable terminal error category.
+    pub fn kind(self) -> RetryErrorKind {
+        match self {
+            Self::Aborted => RetryErrorKind::Aborted,
+            Self::AttemptsExceeded
+            | Self::MaxOperationElapsedExceeded
+            | Self::MaxTotalElapsedExceeded
+            | Self::AttemptsExhausted
+            | Self::OperationBudgetExhausted
+            | Self::TotalBudgetExhausted => RetryErrorKind::Exhausted,
+            Self::AttemptTimedOut | Self::FlowTimedOut => RetryErrorKind::TimedOut,
+            Self::UnsupportedOperation
+            | Self::SleeperFailed
+            | Self::WorkerStillRunning
+            | Self::TimerFailed => RetryErrorKind::Infrastructure,
+        }
+    }
+
     /// Returns whether an elapsed-time budget stopped the retry flow.
     ///
     /// # Returns
@@ -42,7 +75,10 @@ impl RetryErrorReason {
     pub fn is_elapsed_limit(self) -> bool {
         matches!(
             self,
-            Self::MaxOperationElapsedExceeded | Self::MaxTotalElapsedExceeded
+            Self::MaxOperationElapsedExceeded
+                | Self::MaxTotalElapsedExceeded
+                | Self::OperationBudgetExhausted
+                | Self::TotalBudgetExhausted
         )
     }
 
@@ -53,7 +89,10 @@ impl RetryErrorReason {
     /// `true` for sleeper failures and unreaped worker failures.
     #[inline(always)]
     pub fn is_infrastructure_failure(self) -> bool {
-        matches!(self, Self::SleeperFailed | Self::WorkerStillRunning)
+        matches!(
+            self,
+            Self::SleeperFailed | Self::WorkerStillRunning | Self::TimerFailed
+        )
     }
 
     /// Returns whether the selected execution mode cannot perform the request.

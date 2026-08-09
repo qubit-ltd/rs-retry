@@ -17,6 +17,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use super::attempt_execution_error::AttemptExecutionError;
 use super::attempt_executor_error::AttemptExecutorError;
 use super::attempt_failure_kind::AttemptFailureKind;
 use super::attempt_panic::AttemptPanic;
@@ -27,10 +28,8 @@ use super::attempt_panic::AttemptPanic;
 /// panic, and executor failures do not contain `E` because they are generated
 /// by the retry runtime, not returned by the operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(
-    serialize = "E: Serialize",
-    deserialize = "E: DeserializeOwned"
-))]
+#[non_exhaustive]
+#[serde(bound(serialize = "E: Serialize", deserialize = "E: DeserializeOwned"))]
 pub enum AttemptFailure<E> {
     /// The operation returned an application error.
     Error(
@@ -56,6 +55,9 @@ pub enum AttemptFailure<E> {
         /// Retry executor failure details.
         AttemptExecutorError,
     ),
+
+    /// The retry executor failed before the attempt produced a result.
+    Infrastructure(AttemptExecutionError),
 }
 
 impl<E> AttemptFailure<E> {
@@ -66,10 +68,10 @@ impl<E> AttemptFailure<E> {
     #[inline(always)]
     pub fn kind(&self) -> AttemptFailureKind {
         match self {
-            Self::Error(_) => AttemptFailureKind::Error,
-            Self::Timeout => AttemptFailureKind::Timeout,
-            Self::Panic(_) => AttemptFailureKind::Panic,
-            Self::Executor(_) => AttemptFailureKind::Executor,
+            Self::Error(_) => AttemptFailureKind::Application,
+            Self::Timeout => AttemptFailureKind::TimedOut,
+            Self::Panic(_) => AttemptFailureKind::Panicked,
+            Self::Executor(_) | Self::Infrastructure(_) => AttemptFailureKind::Infrastructure,
         }
     }
 
@@ -91,7 +93,7 @@ impl<E> AttemptFailure<E> {
     pub fn as_error(&self) -> Option<&E> {
         match self {
             Self::Error(error) => Some(error),
-            Self::Timeout | Self::Panic(_) | Self::Executor(_) => None,
+            Self::Timeout | Self::Panic(_) | Self::Executor(_) | Self::Infrastructure(_) => None,
         }
     }
 
@@ -104,7 +106,7 @@ impl<E> AttemptFailure<E> {
     pub fn into_error(self) -> Option<E> {
         match self {
             Self::Error(error) => Some(error),
-            Self::Timeout | Self::Panic(_) | Self::Executor(_) => None,
+            Self::Timeout | Self::Panic(_) | Self::Executor(_) | Self::Infrastructure(_) => None,
         }
     }
 
@@ -117,7 +119,7 @@ impl<E> AttemptFailure<E> {
     pub fn as_panic(&self) -> Option<&AttemptPanic> {
         match self {
             Self::Panic(panic) => Some(panic),
-            Self::Error(_) | Self::Timeout | Self::Executor(_) => None,
+            Self::Error(_) | Self::Timeout | Self::Executor(_) | Self::Infrastructure(_) => None,
         }
     }
 
@@ -130,7 +132,7 @@ impl<E> AttemptFailure<E> {
     pub fn as_executor_error(&self) -> Option<&AttemptExecutorError> {
         match self {
             Self::Executor(error) => Some(error),
-            Self::Error(_) | Self::Timeout | Self::Panic(_) => None,
+            Self::Error(_) | Self::Timeout | Self::Panic(_) | Self::Infrastructure(_) => None,
         }
     }
 }
@@ -152,6 +154,9 @@ impl<E: fmt::Display> fmt::Display for AttemptFailure<E> {
             Self::Timeout => write!(f, "attempt timed out"),
             Self::Panic(panic) => write!(f, "attempt panicked: {panic}"),
             Self::Executor(error) => {
+                write!(f, "attempt executor failed: {error}")
+            }
+            Self::Infrastructure(error) => {
                 write!(f, "attempt executor failed: {error}")
             }
         }
