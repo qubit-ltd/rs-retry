@@ -32,13 +32,20 @@
 //! failure policy, and execution loops live in separate objects so each piece
 //! owns one retry concern.
 
+pub mod backoff;
 pub mod constants;
 pub mod error;
 pub mod event;
 pub mod executor;
 pub mod options;
+pub mod policy;
 pub mod random;
 
+pub use backoff::BackoffDelaySource;
+pub use backoff::BackoffPolicy;
+pub use backoff::BackoffRequest;
+pub use backoff::BackoffState;
+pub use backoff::BackoffStep;
 pub use error::AttemptExecutorError;
 pub use error::AttemptFailure;
 pub use error::AttemptFailureKind;
@@ -46,6 +53,7 @@ pub use error::AttemptPanic;
 pub use error::RetryConfigError;
 pub use error::RetryError;
 pub use error::RetryErrorReason;
+pub use error::RetryPolicyError;
 pub use error::RetryResult;
 pub use event::AttemptFailureDecision;
 pub use event::AttemptTimeoutSource;
@@ -64,4 +72,7 @@ pub use options::RetryDelay;
 pub use options::RetryJitter;
 pub use options::RetryOptions;
 pub use options::RetryOptionsBuilder;
+pub use policy::RetryLimits;
+pub use policy::RetryPolicy;
+pub use policy::RetryPolicyBuilder;
 pub use random::RetryRandomSource;

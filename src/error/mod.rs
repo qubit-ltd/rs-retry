@@ -14,6 +14,7 @@ mod attempt_panic;
 mod retry_config_error;
 mod retry_error;
 mod retry_error_reason;
+mod retry_policy_error;
 
 pub use attempt_executor_error::AttemptExecutorError;
 pub use attempt_failure::AttemptFailure;
@@ -24,3 +25,4 @@ pub(crate) use retry_config_error::argument_error_message;
 pub use retry_error::RetryError;
 pub use retry_error::RetryResult;
 pub use retry_error_reason::RetryErrorReason;
+pub use retry_policy_error::RetryPolicyError;
