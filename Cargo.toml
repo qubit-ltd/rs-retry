@@ -40,6 +40,7 @@ serde = { version = "1.0", features = ["derive"] }
 parse-display = "0.11"
 tokio = { version = "1.52", features = ["time", "rt", "macros"], optional = true }
 rand = "0.10"
+thiserror = "2"
 
 qubit-argument = "0.4"
 qubit-error = "0.2"

@@ -15,6 +15,7 @@
 //! completes after a budget boundary.
 
 pub mod backoff;
+pub mod budget;
 pub mod constants;
 pub mod error;
 mod event;
@@ -23,7 +24,6 @@ pub mod observer;
 pub mod options;
 pub mod policy;
 pub mod random;
-mod retry_budget;
 pub mod rule;
 
 pub use backoff::BackoffDelaySource;
@@ -31,6 +31,11 @@ pub use backoff::BackoffPolicy;
 pub use backoff::BackoffRequest;
 pub use backoff::BackoffState;
 pub use backoff::BackoffStep;
+pub use budget::RetryAttempt;
+pub use budget::RetryBudget;
+pub use budget::RetryBudgetError;
+pub use budget::RetryBudgetExhausted;
+pub use budget::RetryBudgetSnapshot;
 pub(crate) use error::AttemptExecutionError;
 pub use error::AttemptFailure;
 pub use error::AttemptFailureKind;
