@@ -32,6 +32,8 @@ use crate::RetrySuccess;
 use crate::event::RetryContextParts;
 use crate::observer::RetryOutcomeKind;
 use crate::random::ThreadRetryRandomSource;
+use crate::retry_budget::ClockRef;
+use crate::retry_budget::RetryBudget;
 use crate::rule::RetryDecision;
 
 /// Worker retry execution with cooperative cancellation.
@@ -104,6 +106,9 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         let timer = self.sleeper.timer();
         let clock = timer.clock();
         let started_at = clock.now();
+        let mut budget =
+            RetryBudget::new(ClockRef(clock), *self.retry.policy().limits())
+                .expect("validated retry limits must fit the monotonic clock");
         let mut attempts = 0_u32;
         let mut operation_elapsed = Duration::ZERO;
         let mut last_failure = None;
@@ -118,6 +123,12 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             if let Some(reason) = self
                 .budget_reason(attempts, operation_elapsed, total_elapsed)
                 .or_else(|| self.flow_timeout_reason(total_elapsed))
+                .or_else(|| {
+                    budget
+                        .check_before_attempt()
+                        .err()
+                        .map(|error| error.reason())
+                })
             {
                 let context = context(
                     self.retry.policy(),
@@ -142,6 +153,12 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             if let Some(reason) = self
                 .budget_reason(attempts, operation_elapsed, total_elapsed)
                 .or_else(|| self.flow_timeout_reason(total_elapsed))
+                .or_else(|| {
+                    budget
+                        .check_before_attempt()
+                        .err()
+                        .map(|error| error.reason())
+                })
             {
                 let context = context(
                     self.retry.policy(),
@@ -154,6 +171,20 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                 return Err(self.finish(reason, last_failure, context));
             }
 
+            if let Err(error) = budget.try_begin_attempt() {
+                return Err(self.finish(
+                    error.reason(),
+                    last_failure,
+                    context(
+                        self.retry.policy(),
+                        attempts,
+                        operation_elapsed,
+                        total_elapsed,
+                        Duration::ZERO,
+                        None,
+                    ),
+                ));
+            }
             attempts = attempts.saturating_add(1);
             let attempt_started = clock.now();
             let effective_timeout = self.effective_timeout(total_elapsed);
@@ -163,6 +194,8 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                 self.cancellation_grace,
             );
             let attempt_elapsed = elapsed_since(clock, attempt_started);
+            let budget_finish_failed =
+                budget.finish_attempt(attempt_elapsed).is_err();
             operation_elapsed =
                 operation_elapsed.saturating_add(attempt_elapsed);
             let total_elapsed = elapsed_since(clock, started_at);
@@ -263,6 +296,13 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                             attempt_context,
                         ));
                     }
+                    if budget_finish_failed {
+                        return Err(self.finish(
+                            RetryErrorReason::OperationBudgetExhausted,
+                            Some(failure),
+                            attempt_context,
+                        ));
+                    }
                     let request = match decision {
                         RetryDecision::RetryAfter(delay) => {
                             BackoffRequest::explicit(delay)
@@ -279,6 +319,13 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                         .observers()
                         .retry_scheduled(&step, &attempt_context);
                     let after_observer = elapsed_since(clock, started_at);
+                    if budget.check_after(step.effective_delay()).is_err() {
+                        return Err(self.finish(
+                            RetryErrorReason::TotalBudgetExhausted,
+                            Some(failure),
+                            attempt_context,
+                        ));
+                    }
                     if let Some(reason) = self
                         .budget_reason(
                             attempts,
