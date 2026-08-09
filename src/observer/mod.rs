@@ -6,14 +6,14 @@
 //! Retry lifecycle observation.
 
 mod retry_diagnostic;
+mod retry_diagnostic_kind;
 mod retry_observer;
 mod retry_observers;
 mod retry_outcome_kind;
 
 pub use retry_diagnostic::RetryDiagnostic;
-pub use retry_diagnostic::RetryDiagnosticKind;
+pub use retry_diagnostic_kind::RetryDiagnosticKind;
 pub use retry_observer::RetryObserver;
-#[allow(unused_imports)]
 pub(crate) use retry_observers::RetryObservers;
 pub use retry_outcome_kind::RetryOutcomeKind;
 

@@ -11,5 +11,4 @@ mod retry_rules;
 
 pub use retry_decision::RetryDecision;
 pub use retry_rule::RetryRule;
-#[allow(unused_imports)]
 pub(crate) use retry_rules::RetryRules;

@@ -7,18 +7,7 @@
 
 use std::time::Duration;
 
-/// Stable source classification for a selected delay.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BackoffDelaySource {
-    /// Delay selected solely from the configured policy.
-    Policy,
-    /// Delay explicitly selected by a retry rule.
-    Explicit,
-    /// Delay selected from a hint.
-    Hint,
-    /// Delay formed by merging a hint and policy delay.
-    Merged,
-}
+use super::backoff_delay_source::BackoffDelaySource;
 
 /// One immutable result from [`crate::BackoffState::next`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

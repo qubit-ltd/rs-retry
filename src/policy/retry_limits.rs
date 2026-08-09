@@ -8,8 +8,11 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
+use serde::Deserialize;
+use serde::Serialize;
+
 /// Limits that decide whether a retry flow may continue.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetryLimits {
     max_attempts: NonZeroU32,
     max_operation_elapsed: Option<Duration>,

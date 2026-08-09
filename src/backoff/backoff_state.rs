@@ -7,11 +7,10 @@
 
 use std::sync::Arc;
 
-use crate::RetryRandomSource;
-
 use super::BackoffPolicy;
 use super::BackoffRequest;
 use super::BackoffStep;
+use crate::RetryRandomSource;
 
 /// Backoff state whose retry index advances once for every selected step.
 #[derive(Clone)]
@@ -23,7 +22,10 @@ pub struct BackoffState {
 
 impl BackoffState {
     /// Creates an empty state.
-    pub(crate) fn new(policy: BackoffPolicy, random: Arc<dyn RetryRandomSource>) -> Self {
+    pub(crate) fn new(
+        policy: BackoffPolicy,
+        random: Arc<dyn RetryRandomSource>,
+    ) -> Self {
         Self {
             policy,
             random,
@@ -37,8 +39,12 @@ impl BackoffState {
         let base_delay = self
             .policy
             .base_delay(self.retry_index, self.random.as_ref());
-        self.policy
-            .resolve(base_delay, request, self.retry_index, self.random.as_ref())
+        self.policy.resolve(
+            base_delay,
+            request,
+            self.retry_index,
+            self.random.as_ref(),
+        )
     }
 
     /// Resets the retry index after a stable connection or completed flow.

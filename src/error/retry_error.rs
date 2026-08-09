@@ -22,9 +22,8 @@ use crate::AttemptFailure;
 use crate::RetryContext;
 use crate::RetryErrorKind;
 use crate::RetryErrorReason;
-use crate::RetryExecutionError;
 use crate::RetrySuccess;
-use crate::event::AttemptTimeoutSource;
+use crate::error::RetryExecutionError;
 
 /// Error returned when a retry flow terminates without a successful result.
 ///
@@ -33,7 +32,10 @@ use crate::event::AttemptTimeoutSource;
 /// the user operation. Runtime failures such as timeout, panic, and executor
 /// failures are preserved through [`RetryError::last_failure`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(serialize = "E: Serialize", deserialize = "E: DeserializeOwned"))]
+#[serde(bound(
+    serialize = "E: Serialize",
+    deserialize = "E: DeserializeOwned"
+))]
 pub struct RetryError<E> {
     /// Terminal reason selected by the retry flow.
     reason: RetryErrorReason,
@@ -63,7 +65,7 @@ impl<E> RetryError<E> {
     /// # Returns
     /// A retry error preserving the terminal reason and context.
     #[inline]
-    pub(crate) fn new(
+    pub fn new(
         reason: RetryErrorReason,
         last_failure: Option<AttemptFailure<E>>,
         context: RetryContext,
@@ -78,7 +80,7 @@ impl<E> RetryError<E> {
 
     /// Creates a retry error while preserving a control-path failure.
     #[allow(dead_code)]
-    pub(crate) fn new_with_execution_error(
+    pub fn new_with_execution_error(
         reason: RetryErrorReason,
         last_failure: Option<AttemptFailure<E>>,
         execution_error: RetryExecutionError,
@@ -118,28 +120,6 @@ impl<E> RetryError<E> {
     #[inline(always)]
     pub fn context(&self) -> &RetryContext {
         &self.context
-    }
-
-    /// Returns the timeout source that produced the final attempt timeout, if
-    /// any.
-    ///
-    /// # Returns
-    /// The timeout source when present, or `None` when no attempt timeout was
-    /// selected for the terminal context.
-    #[inline(always)]
-    pub fn attempt_timeout_source(&self) -> Option<AttemptTimeoutSource> {
-        self.context.attempt_timeout_source()
-    }
-
-    /// Returns the number of worker threads not observed to exit after
-    /// cancellation.
-    ///
-    /// # Returns
-    /// Count of timed-out worker attempts that did not finish within the worker
-    /// cancellation grace period.
-    #[inline(always)]
-    pub fn unreaped_worker_count(&self) -> u32 {
-        self.context.unreaped_worker_count()
     }
 
     /// Returns the number of attempts admitted into execution.
@@ -195,7 +175,9 @@ impl<E> RetryError<E> {
     /// # Returns
     /// A tuple `(reason, last_failure, context)` preserving all terminal data.
     #[inline(always)]
-    pub fn into_parts(self) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
+    pub fn into_parts(
+        self,
+    ) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
         (self.reason, self.last_failure, self.context)
     }
 
@@ -235,29 +217,26 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let attempts = self.attempts();
         let message = match self.reason {
-            RetryErrorReason::Aborted => format!("retry aborted after {attempts} attempt(s)"),
-            RetryErrorReason::AttemptsExceeded => format!(
+            RetryErrorReason::Aborted => {
+                format!("retry aborted after {attempts} attempt(s)")
+            }
+            RetryErrorReason::AttemptsExhausted => format!(
                 "retry attempts exceeded after {attempts} attempt(s), max {}",
                 self.context.max_attempts()
             ),
-            RetryErrorReason::MaxOperationElapsedExceeded => {
-                format!("retry max operation elapsed exceeded after {attempts} attempt(s)")
+            RetryErrorReason::OperationBudgetExhausted => {
+                format!(
+                    "retry max operation elapsed exceeded after {attempts} attempt(s)"
+                )
             }
-            RetryErrorReason::MaxTotalElapsedExceeded => {
-                format!("retry max total elapsed exceeded after {attempts} attempt(s)")
-            }
-            RetryErrorReason::UnsupportedOperation => {
-                "run() does not support attempt timeout; use run_async() or run_in_worker()"
-                    .to_string()
-            }
-            RetryErrorReason::SleeperFailed => {
-                format!("retry sleeper failed after {attempts} attempt(s)")
+            RetryErrorReason::TotalBudgetExhausted => {
+                format!(
+                    "retry max total elapsed exceeded after {attempts} attempt(s)"
+                )
             }
             RetryErrorReason::WorkerStillRunning => {
-                format!(
-                    "retry worker still running after timeout cancellation grace, unreaped {}",
-                    self.context.unreaped_worker_count()
-                )
+                "retry worker still running after timeout cancellation grace"
+                    .to_string()
             }
             RetryErrorReason::AttemptTimedOut => {
                 format!("retry attempt timed out after {attempts} attempt(s)")
@@ -267,16 +246,6 @@ where
             }
             RetryErrorReason::TimerFailed => {
                 format!("retry timer failed after {attempts} attempt(s)")
-            }
-            RetryErrorReason::AttemptsExhausted => format!(
-                "retry attempts exhausted after {attempts} attempt(s), max {}",
-                self.context.max_attempts()
-            ),
-            RetryErrorReason::OperationBudgetExhausted => {
-                format!("retry operation budget exhausted after {attempts} attempt(s)")
-            }
-            RetryErrorReason::TotalBudgetExhausted => {
-                format!("retry total budget exhausted after {attempts} attempt(s)")
             }
         };
         f.write_str(&message)?;
@@ -298,11 +267,14 @@ where
     /// captured panic, or executor failure; otherwise `None`.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self.last_failure() {
-            Some(AttemptFailure::Error(error)) => Some(error as &(dyn Error + 'static)),
-            Some(AttemptFailure::Panic(panic)) => Some(panic as &(dyn Error + 'static)),
-            Some(AttemptFailure::Executor(error)) => Some(error as &(dyn Error + 'static)),
-            Some(AttemptFailure::Infrastructure(error)) => Some(error as &(dyn Error + 'static)),
-            Some(AttemptFailure::Timeout) | None => self
+            Some(AttemptFailure::Error(error)) => {
+                Some(error as &(dyn Error + 'static))
+            }
+            Some(AttemptFailure::Panic) => None,
+            Some(AttemptFailure::Infrastructure(error)) => {
+                Some(error as &(dyn Error + 'static))
+            }
+            Some(AttemptFailure::Timeout { .. }) | None => self
                 .execution_error
                 .as_ref()
                 .map(|error| error as &(dyn Error + 'static)),

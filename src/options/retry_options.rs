@@ -15,6 +15,8 @@
 //! and [`RetryOptions::retry_delay`] encode the library's precedence rules in
 //! one place.
 
+#![allow(dead_code)]
+
 use std::num::NonZeroU32;
 use std::time::Duration;
 
@@ -30,10 +32,13 @@ use super::RetryAfterPolicy;
 use super::retry_config_values::RetryConfigValues;
 use crate::AttemptFailureDecision;
 use crate::AttemptTimeoutSource;
+use crate::BackoffPolicy;
 use crate::RetryConfigError;
 use crate::RetryDelay;
 use crate::RetryErrorReason;
 use crate::RetryJitter;
+use crate::RetryPolicy;
+use crate::RetryPolicyError;
 use crate::RetryRandomSource;
 use crate::constants::DEFAULT_RETRY_MAX_ATTEMPTS;
 use crate::constants::DEFAULT_RETRY_MAX_OPERATION_ELAPSED;
@@ -72,6 +77,45 @@ pub struct RetryOptions {
 }
 
 impl RetryOptions {
+    /// Converts this configuration snapshot into the pure policy model.
+    ///
+    /// This is the migration boundary for applications that still load the
+    /// legacy config shape. Execution itself is performed only by the policy
+    /// facades.
+    pub fn to_policy(&self) -> Result<RetryPolicy, RetryPolicyError> {
+        let backoff = match &self.delay {
+            RetryDelay::None => BackoffPolicy::immediate(),
+            RetryDelay::Fixed(delay) => BackoffPolicy::fixed(*delay),
+            RetryDelay::Random { min, max } => {
+                BackoffPolicy::uniform(*min, *max)?
+            }
+            RetryDelay::Exponential {
+                initial,
+                max,
+                multiplier,
+            } => BackoffPolicy::exponential(*initial, *multiplier, *max)?,
+        };
+        let backoff = match self.jitter {
+            RetryJitter::None => backoff.without_jitter(),
+            RetryJitter::Factor(0.0) => backoff.without_jitter(),
+            RetryJitter::Factor(factor) => {
+                backoff.with_bounded_jitter(factor)?
+            }
+        };
+        let backoff = match self.retry_after_policy {
+            RetryAfterPolicy::Replace => backoff.prefer_retry_after(),
+            RetryAfterPolicy::AtLeastConfiguredDelay => {
+                backoff.use_retry_after_as_minimum()
+            }
+        };
+        RetryPolicy::builder()
+            .max_attempts(self.max_attempts())
+            .max_operation_elapsed_opt(self.max_operation_elapsed)
+            .max_total_elapsed_opt(self.max_total_elapsed)
+            .backoff(backoff)
+            .build()
+    }
+
     /// Creates an options builder.
     #[inline]
     pub fn builder() -> super::RetryOptionsBuilder {
@@ -575,12 +619,12 @@ impl RetryOptions {
                 operation_elapsed >= max_operation_elapsed
             })
         {
-            Some(RetryErrorReason::MaxOperationElapsedExceeded)
+            Some(RetryErrorReason::OperationBudgetExhausted)
         } else if self
             .max_total_elapsed
             .is_some_and(|max_total_elapsed| total_elapsed >= max_total_elapsed)
         {
-            Some(RetryErrorReason::MaxTotalElapsedExceeded)
+            Some(RetryErrorReason::TotalBudgetExhausted)
         } else {
             None
         }

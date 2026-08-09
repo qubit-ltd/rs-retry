@@ -5,14 +5,7 @@
 // =============================================================================
 //! Diagnostics produced while invoking retry callbacks.
 
-/// Callback category that panicked.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RetryDiagnosticKind {
-    /// A retry rule panicked.
-    RulePanicked,
-    /// An observer panicked.
-    ObserverPanicked,
-}
+use super::retry_diagnostic_kind::RetryDiagnosticKind;
 
 /// Structured callback diagnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,7 +17,10 @@ pub struct RetryDiagnostic {
 impl RetryDiagnostic {
     /// Creates a callback diagnostic.
     #[allow(dead_code)]
-    pub(crate) fn new(kind: RetryDiagnosticKind, callback_index: usize) -> Self {
+    pub(crate) fn new(
+        kind: RetryDiagnosticKind,
+        callback_index: usize,
+    ) -> Self {
         Self {
             kind,
             callback_index,

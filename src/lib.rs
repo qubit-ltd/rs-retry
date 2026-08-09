@@ -5,37 +5,19 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Type-preserving retry policy for synchronous and asynchronous operations.
+//! Type-preserving retry policy for synchronous, asynchronous, and worker
+//! thread operations.
 //!
-//! `Retry<E>` binds only the operation error type. The success type `T` is
-//! introduced on `run` / `run_async`, so normal error retry does not require
-//! `T: Clone + Eq + Hash`.
-//!
-//! The default error type is `BoxError` from the `qubit-error` crate. It is not
-//! re-exported by this crate; callers that need the boxed error alias should
-//! import it from `qubit-error` directly.
-//!
-//! The public workflow is intentionally small:
-//!
-//! 1. Build a [`Retry`] policy with [`Retry::builder`] or
-//!    [`Retry::from_options`].
-//! 2. Choose the execution mode:
-//!    - [`Retry::run`] for low-overhead same-thread synchronous work.
-//!    - `Retry::run_async` for Tokio futures and async timeouts when the
-//!      `tokio` feature is enabled.
-//!    - [`Retry::run_in_worker`] for blocking work that needs panic capture,
-//!      timeout waiting, or cooperative cancellation.
-//! 3. Inspect [`RetryError`] when the flow stops. It keeps the terminal reason,
-//!    the last observed [`AttemptFailure`], and the final [`RetryContext`].
-//!
-//! Internally, `Retry` stays a facade. Options, event dispatch, flow state,
-//! failure policy, and execution loops live in separate objects so each piece
-//! owns one retry concern.
+//! Build a [`RetryPolicy`] once, attach ordered [`RetryRule`] values and
+//! [`RetryObserver`] values through [`Retry::builder`], then select the
+//! execution facade that matches the operation. A policy only decides whether
+//! another attempt may be admitted; success always wins, even when an attempt
+//! completes after a budget boundary.
 
 pub mod backoff;
 pub mod constants;
 pub mod error;
-pub mod event;
+mod event;
 pub mod executor;
 pub mod observer;
 pub mod options;
@@ -48,27 +30,27 @@ pub use backoff::BackoffPolicy;
 pub use backoff::BackoffRequest;
 pub use backoff::BackoffState;
 pub use backoff::BackoffStep;
-pub use error::AttemptExecutionError;
-pub use error::AttemptExecutorError;
+pub(crate) use error::AttemptExecutionError;
 pub use error::AttemptFailure;
 pub use error::AttemptFailureKind;
-pub use error::AttemptPanic;
 pub use error::AttemptTimeoutKind;
 pub use error::RetryConfigError;
 pub use error::RetryError;
 pub use error::RetryErrorKind;
 pub use error::RetryErrorReason;
-pub use error::RetryExecutionError;
-pub use error::RetryExecutionErrorKind;
+pub(crate) use error::RetryExecutionError;
 pub use error::RetryPolicyError;
 pub use error::RetryResult;
 pub use event::AttemptFailureDecision;
 pub use event::AttemptTimeoutSource;
-pub use event::RetryContext;
+#[cfg(feature = "tokio")]
+pub use executor::AsyncRetry;
 pub use executor::AttemptCancelToken;
 pub use executor::Retry;
 pub use executor::RetryBuilder;
 pub use executor::RetrySuccess;
+pub use executor::WorkerRetry;
+pub use observer::RetryContext;
 pub use observer::RetryDiagnostic;
 pub use observer::RetryDiagnosticKind;
 pub use observer::RetryObserver;

@@ -8,26 +8,23 @@
 //! Retry executor and builder modules and public re-exports.
 
 #[cfg(feature = "tokio")]
-mod async_retry_runner;
-mod attempt;
+mod async_retry;
 mod attempt_cancel_token;
 mod blocking_attempt;
 mod blocking_attempt_outcome;
 mod blocking_value_operation;
-mod internal;
 mod retry;
 mod retry_builder;
-mod retry_failure_handler;
-mod retry_failure_policy;
-mod retry_flow_action;
-mod retry_flow_state;
-mod retry_runner;
 mod retry_success;
-mod value_operation;
+mod sync_retry;
 mod worker_attempt_executor;
-mod worker_retry_runner;
+mod worker_retry;
 
+#[cfg(feature = "tokio")]
+pub use async_retry::AsyncRetry;
 pub use attempt_cancel_token::AttemptCancelToken;
 pub use retry::Retry;
 pub use retry_builder::RetryBuilder;
 pub use retry_success::RetrySuccess;
+pub use sync_retry::SyncRetry;
+pub use worker_retry::WorkerRetry;

@@ -1,17 +1,3 @@
-// =============================================================================
-//    Copyright (c) 2025 - 2026 Haixing Hu.
-//
-//    SPDX-License-Identifier: Apache-2.0
-//
-//    Licensed under the Apache License, Version 2.0.
-// =============================================================================
-//! Integration tests for `qubit-retry`.
-
-mod backoff;
-mod error;
-mod event;
-mod executor;
-mod options;
-mod policy;
-mod random;
-mod support;
+mod new_api_tests;
+mod observer;
+mod rule;

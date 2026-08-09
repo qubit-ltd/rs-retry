@@ -11,14 +11,7 @@ use std::fmt;
 use serde::Deserialize;
 use serde::Serialize;
 
-/// Infrastructure component that failed after or around an attempt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RetryExecutionErrorKind {
-    /// The configured timer or sleeper failed.
-    Timer,
-    /// A worker could not be safely reaped.
-    Worker,
-}
+use super::retry_execution_error_kind::RetryExecutionErrorKind;
 
 /// Diagnostic information for a retry execution infrastructure failure.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,16 +53,6 @@ impl RetryExecutionError {
 impl fmt::Display for RetryExecutionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{}: {}", self.kind, self.message)
-    }
-}
-
-impl fmt::Display for RetryExecutionErrorKind {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match self {
-            Self::Timer => "timer",
-            Self::Worker => "worker",
-        };
-        formatter.write_str(name)
     }
 }
 

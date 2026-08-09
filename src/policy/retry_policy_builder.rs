@@ -45,6 +45,15 @@ impl RetryPolicyBuilder {
         self
     }
 
+    /// Sets or removes the cumulative operation-time budget.
+    pub fn max_operation_elapsed_opt(
+        mut self,
+        elapsed: Option<Duration>,
+    ) -> Self {
+        self.max_operation_elapsed = elapsed;
+        self
+    }
+
     /// Removes the cumulative operation-time budget.
     pub fn without_operation_elapsed(mut self) -> Self {
         self.max_operation_elapsed = None;
@@ -54,6 +63,12 @@ impl RetryPolicyBuilder {
     /// Sets the whole-flow wall-clock budget.
     pub fn max_total_elapsed(mut self, elapsed: Duration) -> Self {
         self.max_total_elapsed = Some(elapsed);
+        self
+    }
+
+    /// Sets or removes the whole-flow budget.
+    pub fn max_total_elapsed_opt(mut self, elapsed: Option<Duration>) -> Self {
+        self.max_total_elapsed = elapsed;
         self
     }
 
@@ -71,9 +86,13 @@ impl RetryPolicyBuilder {
 
     /// Validates and creates the retry policy.
     pub fn build(self) -> Result<RetryPolicy, RetryPolicyError> {
-        let max_attempts = NonZeroU32::new(self.max_attempts).ok_or_else(|| {
-            RetryPolicyError::new("max_attempts", "maximum attempts must be greater than zero")
-        })?;
+        let max_attempts =
+            NonZeroU32::new(self.max_attempts).ok_or_else(|| {
+                RetryPolicyError::new(
+                    "max_attempts",
+                    "maximum attempts must be greater than zero",
+                )
+            })?;
         Ok(RetryPolicy::new(
             RetryLimits::new(
                 max_attempts,

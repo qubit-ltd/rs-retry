@@ -22,9 +22,8 @@ use std::time::Duration;
 use super::attempt_cancel_token::AttemptCancelToken;
 use super::blocking_attempt::BlockingAttempt;
 use super::blocking_attempt_outcome::BlockingAttemptOutcome;
-use crate::AttemptExecutorError;
+use crate::AttemptExecutionError;
 use crate::AttemptFailure;
-use crate::AttemptPanic;
 
 const WORKER_DISCONNECTED_MESSAGE: &str =
     "retry worker thread stopped without sending a result";
@@ -34,12 +33,9 @@ const WORKER_SPAWN_FAILED_MESSAGE: &str = "failed to spawn retry worker thread";
 macro_rules! worker_spawn_failure {
     ($error:expr) => {
         BlockingAttemptOutcome::new(
-            Err(AttemptFailure::Executor(
-                AttemptExecutorError::with_context(
-                    WORKER_SPAWN_FAILED_MESSAGE,
-                    &$error.to_string(),
-                ),
-            )),
+            Err(AttemptFailure::Infrastructure(AttemptExecutionError::new(
+                WORKER_SPAWN_FAILED_MESSAGE,
+            ))),
             0,
         )
     };
@@ -48,10 +44,10 @@ macro_rules! worker_spawn_failure {
 /// Builds an executor failure for a worker that exited without a result.
 ///
 /// # Returns
-/// An attempt result containing [`AttemptFailure::Executor`].
+/// An attempt result containing [`AttemptFailure::Infrastructure`].
 #[inline]
 fn worker_disconnected_result<E>() -> Result<(), AttemptFailure<E>> {
-    Err(AttemptFailure::Executor(AttemptExecutorError::new(
+    Err(AttemptFailure::Infrastructure(AttemptExecutionError::new(
         WORKER_DISCONNECTED_MESSAGE,
     )))
 }
@@ -75,7 +71,7 @@ impl WorkerAttemptExecutor {
     /// # Worker Behavior
     /// Operation panics are converted into [`AttemptFailure::Panic`].
     /// Worker-spawn failures are converted into
-    /// [`AttemptFailure::Executor`].
+    /// [`AttemptFailure::Infrastructure`].
     pub(in crate::executor) fn run<E>(
         operation: Arc<dyn BlockingAttempt<E>>,
         attempt_timeout: Option<Duration>,
@@ -102,14 +98,12 @@ impl WorkerAttemptExecutor {
                     }));
                 let attempt_result = match result {
                     Ok(result) => result,
-                    Err(payload) => Err(AttemptFailure::Panic(
-                        AttemptPanic::from_payload(payload),
-                    )),
+                    Err(_payload) => Err(AttemptFailure::Panic),
                 };
                 let _ = sender.send(attempt_result);
             }) {
             Ok(worker) => worker,
-            Err(error) => return worker_spawn_failure!(error),
+            Err(_error) => return worker_spawn_failure!(_error),
         };
 
         match attempt_timeout {
@@ -176,7 +170,9 @@ where
             wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
         let unreaped_worker_count = if worker_exited { 0 } else { 1 };
         BlockingAttemptOutcome::new(
-            Err(AttemptFailure::Timeout),
+            Err(AttemptFailure::Timeout {
+                kind: crate::AttemptTimeoutKind::Attempt,
+            }),
             unreaped_worker_count,
         )
     } else {
