@@ -46,21 +46,33 @@ impl<E: 'static> RetryObservers<E> {
     }
 
     /// Notifies observers of an attempt failure.
-    pub(crate) fn attempt_failed(&self, failure: &AttemptFailure<E>, context: &RetryContext) {
+    pub(crate) fn attempt_failed(
+        &self,
+        failure: &AttemptFailure<E>,
+        context: &RetryContext,
+    ) {
         self.each(context, |observer| {
             observer.on_attempt_failed(failure, context)
         });
     }
 
     /// Notifies observers of a selected retry.
-    pub(crate) fn retry_scheduled(&self, backoff: &BackoffStep, context: &RetryContext) {
+    pub(crate) fn retry_scheduled(
+        &self,
+        backoff: &BackoffStep,
+        context: &RetryContext,
+    ) {
         self.each(context, |observer| {
             observer.on_retry_scheduled(backoff, context)
         });
     }
 
     /// Notifies observers of the terminal outcome.
-    pub(crate) fn finished(&self, outcome: RetryOutcomeKind, context: &RetryContext) {
+    pub(crate) fn finished(
+        &self,
+        outcome: RetryOutcomeKind,
+        context: &RetryContext,
+    ) {
         self.each(context, |observer| observer.on_finished(outcome, context));
     }
 
@@ -86,8 +98,15 @@ impl<E: 'static> RetryObservers<E> {
         F: FnMut(&dyn RetryObserver<E>),
     {
         for (index, observer) in self.observers.iter().enumerate() {
-            if std::panic::catch_unwind(AssertUnwindSafe(|| callback(observer.as_ref()))).is_err() {
-                let diagnostic = RetryDiagnostic::new(RetryDiagnosticKind::ObserverPanicked, index);
+            if std::panic::catch_unwind(AssertUnwindSafe(|| {
+                callback(observer.as_ref())
+            }))
+            .is_err()
+            {
+                let diagnostic = RetryDiagnostic::new(
+                    RetryDiagnosticKind::ObserverPanicked,
+                    index,
+                );
                 self.diagnostic(&diagnostic, context, Some(index));
             }
         }
