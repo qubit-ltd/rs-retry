@@ -40,12 +40,8 @@ impl RetryErrorReason {
             Self::AttemptsExhausted
             | Self::OperationBudgetExhausted
             | Self::TotalBudgetExhausted => RetryErrorKind::Exhausted,
-            Self::AttemptTimedOut | Self::FlowTimedOut => {
-                RetryErrorKind::TimedOut
-            }
-            Self::TimerFailed | Self::WorkerStillRunning => {
-                RetryErrorKind::Infrastructure
-            }
+            Self::AttemptTimedOut | Self::FlowTimedOut => RetryErrorKind::TimedOut,
+            Self::TimerFailed | Self::WorkerStillRunning => RetryErrorKind::Infrastructure,
         }
     }
 

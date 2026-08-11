@@ -240,10 +240,7 @@ impl RetryContext {
 
     /// Returns a copy carrying the effective timeout for the current attempt.
     #[inline(always)]
-    pub(crate) fn with_attempt_timeout(
-        mut self,
-        timeout: Option<Duration>,
-    ) -> Self {
+    pub(crate) fn with_attempt_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.attempt_timeout = timeout;
         self
     }
