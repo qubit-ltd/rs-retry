@@ -82,20 +82,14 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     }
 
     /// Injects the random source used by backoff jitter.
-    pub fn random_source(
-        mut self,
-        random_source: Arc<dyn RetryRandomSource>,
-    ) -> Self {
+    pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
         self.random_source = random_source;
         self
     }
 
     /// Runs one cancellable worker operation per attempt.
     #[allow(clippy::result_large_err)]
-    pub fn run<T, F>(
-        &self,
-        operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         T: Send + 'static,
         F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
@@ -124,12 +118,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                         .map(retry_budget_reason)
                 })
             {
-                let context = context(
-                    self.retry.policy(),
-                    snapshot,
-                    snapshot.attempts(),
-                    None,
-                );
+                let context = context(self.retry.policy(), snapshot, snapshot.attempts(), None);
                 return Err(self.finish(reason, last_failure, context));
             }
             let before = context(
@@ -149,12 +138,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                         .map(retry_budget_reason)
                 })
             {
-                let context = context(
-                    self.retry.policy(),
-                    snapshot,
-                    snapshot.attempts(),
-                    None,
-                );
+                let context = context(self.retry.policy(), snapshot, snapshot.attempts(), None);
                 return Err(self.finish(reason, last_failure, context));
             }
 
@@ -165,40 +149,31 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                     return Err(self.finish(
                         retry_budget_reason(exhausted),
                         last_failure,
-                        context(
-                            self.retry.policy(),
-                            snapshot,
-                            snapshot.attempts(),
-                            None,
-                        ),
+                        context(self.retry.policy(), snapshot, snapshot.attempts(), None),
                     ));
                 }
             };
-            let effective_timeout =
-                self.effective_timeout(snapshot.total_elapsed());
+            let effective_timeout = self.effective_timeout(snapshot.total_elapsed());
             let outcome = WorkerAttemptExecutor::run(
                 Arc::clone(&worker_operation),
                 effective_timeout,
                 self.cancellation_grace,
             );
             let snapshot = budget.finish_attempt(attempt);
-            let mut attempt_context = context(
-                self.retry.policy(),
-                snapshot,
-                snapshot.attempts(),
-                None,
-            )
-            .with_attempt_timeout(effective_timeout)
-            .with_unreaped_worker_count(outcome.unreaped_worker_count);
+            let mut attempt_context =
+                context(self.retry.policy(), snapshot, snapshot.attempts(), None)
+                    .with_attempt_timeout(effective_timeout)
+                    .with_unreaped_worker_count(outcome.unreaped_worker_count);
             let result = match outcome.result {
                 Ok(()) => Ok(()),
                 Err(AttemptFailure::Timeout { .. }) => {
                     let kind = if self
                         .flow_timeout
                         .is_some_and(|limit| snapshot.total_elapsed() >= limit)
-                        && self.attempt_timeout.is_none_or(|limit| {
-                            snapshot.total_elapsed() >= limit
-                        }) {
+                        && self
+                            .attempt_timeout
+                            .is_none_or(|limit| snapshot.total_elapsed() >= limit)
+                    {
                         AttemptTimeoutKind::Flow
                     } else {
                         AttemptTimeoutKind::Attempt
@@ -209,14 +184,10 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             };
             match result {
                 Ok(()) => {
-                    self.retry.observers().finished(
-                        RetryOutcomeKind::Succeeded,
-                        &attempt_context,
-                    );
-                    return Ok(RetrySuccess::new(
-                        operation.take_value(),
-                        attempt_context,
-                    ));
+                    self.retry
+                        .observers()
+                        .finished(RetryOutcomeKind::Succeeded, &attempt_context);
+                    return Ok(RetrySuccess::new(operation.take_value(), attempt_context));
                 }
                 Err(failure) => {
                     self.retry
@@ -230,17 +201,14 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                         ));
                     }
                     let mut diagnostics = Vec::new();
-                    let decision = self.retry.rules().decide(
-                        &failure,
-                        &attempt_context,
-                        &mut diagnostics,
-                    );
+                    let decision =
+                        self.retry
+                            .rules()
+                            .decide(&failure, &attempt_context, &mut diagnostics);
                     for diagnostic in &diagnostics {
-                        self.retry.observers().diagnostic(
-                            diagnostic,
-                            &attempt_context,
-                            None,
-                        );
+                        self.retry
+                            .observers()
+                            .diagnostic(diagnostic, &attempt_context, None);
                     }
                     let decision = default_decision(decision, &failure);
                     if matches!(
@@ -271,24 +239,17 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                                 .map(retry_budget_reason)
                         })
                     {
-                        return Err(self.finish(
-                            reason,
-                            Some(failure),
-                            attempt_context,
-                        ));
+                        return Err(self.finish(reason, Some(failure), attempt_context));
                     }
                     let request = match decision {
-                        RetryDecision::RetryAfter(delay) => {
-                            BackoffRequest::explicit(delay)
-                        }
+                        RetryDecision::RetryAfter(delay) => BackoffRequest::explicit(delay),
                         RetryDecision::Retry | RetryDecision::UseDefault => {
                             BackoffRequest::policy()
                         }
                         RetryDecision::Abort => BackoffRequest::policy(),
                     };
                     let step = backoff.next(request);
-                    attempt_context =
-                        attempt_context.with_next_delay(step.effective_delay());
+                    attempt_context = attempt_context.with_next_delay(step.effective_delay());
                     self.retry
                         .observers()
                         .retry_scheduled(&step, &attempt_context);
@@ -301,15 +262,9 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                                 .map(retry_budget_reason)
                         })
                     {
-                        return Err(self.finish(
-                            reason,
-                            Some(failure),
-                            attempt_context,
-                        ));
+                        return Err(self.finish(reason, Some(failure), attempt_context));
                     }
-                    if let Err(error) =
-                        self.sleeper.sleep_for(step.effective_delay())
-                    {
+                    if let Err(error) = self.sleeper.sleep_for(step.effective_delay()) {
                         return Err(self.finish_with_timer_error(
                             Some(failure),
                             attempt_context,
@@ -334,10 +289,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         }
     }
 
-    fn flow_timeout_reason(
-        &self,
-        total_elapsed: Duration,
-    ) -> Option<RetryErrorReason> {
+    fn flow_timeout_reason(&self, total_elapsed: Duration) -> Option<RetryErrorReason> {
         self.flow_timeout
             .is_some_and(|limit| total_elapsed >= limit)
             .then_some(RetryErrorReason::FlowTimedOut)
@@ -375,10 +327,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     }
 }
 
-fn default_decision<E>(
-    decision: RetryDecision,
-    failure: &AttemptFailure<E>,
-) -> RetryDecision {
+fn default_decision<E>(decision: RetryDecision, failure: &AttemptFailure<E>) -> RetryDecision {
     if !matches!(decision, RetryDecision::UseDefault) {
         return decision;
     }
@@ -408,12 +357,8 @@ fn terminal_reason<E>(failure: &AttemptFailure<E>) -> RetryErrorReason {
 fn retry_budget_reason(exhausted: RetryBudgetExhausted) -> RetryErrorReason {
     match exhausted {
         RetryBudgetExhausted::Attempts => RetryErrorReason::AttemptsExhausted,
-        RetryBudgetExhausted::OperationElapsed => {
-            RetryErrorReason::OperationBudgetExhausted
-        }
-        RetryBudgetExhausted::TotalElapsed => {
-            RetryErrorReason::TotalBudgetExhausted
-        }
+        RetryBudgetExhausted::OperationElapsed => RetryErrorReason::OperationBudgetExhausted,
+        RetryBudgetExhausted::TotalElapsed => RetryErrorReason::TotalBudgetExhausted,
     }
 }
 
