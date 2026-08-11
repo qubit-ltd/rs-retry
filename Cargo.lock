@@ -495,7 +495,7 @@ name = "qubit-config"
 version = "0.16.0"
 dependencies = [
  "qubit-budget",
- "qubit-datatype",
+ "qubit-datatype 0.10.0",
  "qubit-redact",
  "qubit-utils",
  "qubit-value 0.10.0",
@@ -508,11 +508,20 @@ dependencies = [
 [[package]]
 name = "qubit-datatype"
 version = "0.10.0"
+dependencies = [
+ "qubit-budget",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "qubit-datatype"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91da5d9714623ff8d561d2230a81dc5c6e38b55aa4f2488c3a0ff0c21e3ff693"
 dependencies = [
  "serde",
- "serde_json",
  "thiserror",
 ]
 
@@ -547,7 +556,7 @@ dependencies = [
  "qubit-budget",
  "qubit-clock",
  "qubit-config",
- "qubit-datatype",
+ "qubit-datatype 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "qubit-error",
  "qubit-function",
  "qubit-value 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -569,7 +578,7 @@ name = "qubit-value"
 version = "0.10.0"
 dependencies = [
  "qubit-budget",
- "qubit-datatype",
+ "qubit-datatype 0.10.0",
  "qubit-redact",
  "serde",
  "serde_json",
@@ -582,7 +591,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1dc86a41cacde7871d4ce22fd1c7eec20c86100baa997febbd46e5fbad05709f"
 dependencies = [
- "qubit-datatype",
+ "qubit-datatype 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "thiserror",
 ]
