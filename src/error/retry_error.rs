@@ -32,10 +32,7 @@ use crate::error::RetryExecutionError;
 /// the user operation. Runtime failures such as timeout, panic, and executor
 /// failures are preserved through [`RetryError::last_failure`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(
-    serialize = "E: Serialize",
-    deserialize = "E: DeserializeOwned"
-))]
+#[serde(bound(serialize = "E: Serialize", deserialize = "E: DeserializeOwned"))]
 pub struct RetryError<E> {
     /// Terminal reason selected by the retry flow.
     reason: RetryErrorReason,
@@ -175,9 +172,7 @@ impl<E> RetryError<E> {
     /// # Returns
     /// A tuple `(reason, last_failure, context)` preserving all terminal data.
     #[inline(always)]
-    pub fn into_parts(
-        self,
-    ) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
+    pub fn into_parts(self) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
         (self.reason, self.last_failure, self.context)
     }
 
@@ -225,18 +220,13 @@ where
                 self.context.max_attempts()
             ),
             RetryErrorReason::OperationBudgetExhausted => {
-                format!(
-                    "retry max operation elapsed exceeded after {attempts} attempt(s)"
-                )
+                format!("retry max operation elapsed exceeded after {attempts} attempt(s)")
             }
             RetryErrorReason::TotalBudgetExhausted => {
-                format!(
-                    "retry max total elapsed exceeded after {attempts} attempt(s)"
-                )
+                format!("retry max total elapsed exceeded after {attempts} attempt(s)")
             }
             RetryErrorReason::WorkerStillRunning => {
-                "retry worker still running after timeout cancellation grace"
-                    .to_string()
+                "retry worker still running after timeout cancellation grace".to_string()
             }
             RetryErrorReason::AttemptTimedOut => {
                 format!("retry attempt timed out after {attempts} attempt(s)")
@@ -267,13 +257,9 @@ where
     /// captured panic, or executor failure; otherwise `None`.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self.last_failure() {
-            Some(AttemptFailure::Error(error)) => {
-                Some(error as &(dyn Error + 'static))
-            }
+            Some(AttemptFailure::Error(error)) => Some(error as &(dyn Error + 'static)),
             Some(AttemptFailure::Panic) => None,
-            Some(AttemptFailure::Infrastructure(error)) => {
-                Some(error as &(dyn Error + 'static))
-            }
+            Some(AttemptFailure::Infrastructure(error)) => Some(error as &(dyn Error + 'static)),
             Some(AttemptFailure::Timeout { .. }) | None => self
                 .execution_error
                 .as_ref()
