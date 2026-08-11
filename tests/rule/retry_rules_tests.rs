@@ -8,7 +8,11 @@ use qubit_retry::RetryRule;
 struct NoopRule;
 
 impl RetryRule<()> for NoopRule {
-    fn decide(&self, _failure: &AttemptFailure<()>, _context: &RetryContext) -> RetryDecision {
+    fn decide(
+        &self,
+        _failure: &AttemptFailure<()>,
+        _context: &RetryContext,
+    ) -> RetryDecision {
         RetryDecision::UseDefault
     }
 }

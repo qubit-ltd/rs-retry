@@ -77,7 +77,10 @@ impl FromStr for AttemptTimeoutPolicy {
         match s.trim().to_ascii_lowercase().as_str() {
             "retry" => Ok(Self::Retry),
             "abort" => Ok(Self::Abort),
-            _ => Err("attempt timeout policy must be `retry` or `abort`".to_string()),
+            _ => {
+                Err("attempt timeout policy must be `retry` or `abort`"
+                    .to_string())
+            }
         }
     }
 }

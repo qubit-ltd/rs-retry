@@ -25,7 +25,8 @@ use super::blocking_attempt_outcome::BlockingAttemptOutcome;
 use crate::AttemptExecutionError;
 use crate::AttemptFailure;
 
-const WORKER_DISCONNECTED_MESSAGE: &str = "retry worker thread stopped without sending a result";
+const WORKER_DISCONNECTED_MESSAGE: &str =
+    "retry worker thread stopped without sending a result";
 const WORKER_SPAWN_FAILED_MESSAGE: &str = "failed to spawn retry worker thread";
 
 /// Builds a spawn-failure attempt outcome at the cold spawn error site.
@@ -92,7 +93,9 @@ impl WorkerAttemptExecutor {
                 // isolation boundary. Convert panic payloads into retry
                 // failures so policy and listeners can handle them normally.
                 let result =
-                    panic::catch_unwind(panic::AssertUnwindSafe(|| operation.call(worker_token)));
+                    panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        operation.call(worker_token)
+                    }));
                 let attempt_result = match result {
                     Ok(result) => result,
                     Err(_payload) => Err(AttemptFailure::Panic),
@@ -111,7 +114,9 @@ impl WorkerAttemptExecutor {
                 &token,
                 worker_cancel_grace,
             ),
-            None => worker_recv_result_to_attempt_outcome(receiver.recv(), worker),
+            None => {
+                worker_recv_result_to_attempt_outcome(receiver.recv(), worker)
+            }
         }
     }
 }
@@ -161,7 +166,8 @@ where
         // token first, then waits briefly so well-behaved operations can return
         // and be joined before retry policy decides what to do next.
         token.cancel();
-        let worker_exited = wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
+        let worker_exited =
+            wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
         let unreaped_worker_count = if worker_exited { 0 } else { 1 };
         BlockingAttemptOutcome::new(
             Err(AttemptFailure::Timeout {
