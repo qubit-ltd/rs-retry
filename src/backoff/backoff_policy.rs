@@ -77,10 +77,7 @@ impl BackoffPolicy {
     }
 
     /// Creates a uniformly distributed base-delay policy.
-    pub fn uniform(
-        min: Duration,
-        max: Duration,
-    ) -> Result<Self, RetryPolicyError> {
+    pub fn uniform(min: Duration, max: Duration) -> Result<Self, RetryPolicyError> {
         if min > max {
             return Err(RetryPolicyError::new(
                 "backoff.uniform",
@@ -134,10 +131,7 @@ impl BackoffPolicy {
     }
 
     /// Applies symmetric bounded jitter.
-    pub fn with_bounded_jitter(
-        mut self,
-        ratio: f64,
-    ) -> Result<Self, RetryPolicyError> {
+    pub fn with_bounded_jitter(mut self, ratio: f64) -> Result<Self, RetryPolicyError> {
         if !ratio.is_finite() || !(0.0..=1.0).contains(&ratio) {
             return Err(RetryPolicyError::new(
                 "backoff.jitter.ratio",
@@ -171,8 +165,9 @@ impl BackoffPolicy {
         match &self.strategy {
             BackoffStrategy::Immediate => Some(Duration::ZERO),
             BackoffStrategy::Fixed { delay } => Some(*delay),
-            BackoffStrategy::Uniform { max, .. }
-            | BackoffStrategy::Exponential { max, .. } => Some(*max),
+            BackoffStrategy::Uniform { max, .. } | BackoffStrategy::Exponential { max, .. } => {
+                Some(*max)
+            }
         }
     }
 
@@ -182,18 +177,11 @@ impl BackoffPolicy {
     }
 
     /// Starts a state with a deterministic or custom random source.
-    pub fn start_with_random_source(
-        &self,
-        random: Arc<dyn RetryRandomSource>,
-    ) -> BackoffState {
+    pub fn start_with_random_source(&self, random: Arc<dyn RetryRandomSource>) -> BackoffState {
         BackoffState::new(self.clone(), random)
     }
 
-    pub(crate) fn base_delay(
-        &self,
-        retry_index: u32,
-        random: &dyn RetryRandomSource,
-    ) -> Duration {
+    pub(crate) fn base_delay(&self, retry_index: u32, random: &dyn RetryRandomSource) -> Duration {
         match &self.strategy {
             BackoffStrategy::Immediate => Duration::ZERO,
             BackoffStrategy::Fixed { delay } => *delay,
@@ -247,9 +235,7 @@ impl BackoffPolicy {
         };
         let effective_delay = match self.retry_after {
             RetryAfterStrategy::PreferHint => hinted_delay,
-            RetryAfterStrategy::AtLeastBackoff => {
-                policy_delay.max(hinted_delay)
-            }
+            RetryAfterStrategy::AtLeastBackoff => policy_delay.max(hinted_delay),
             RetryAfterStrategy::IgnoreHint => policy_delay,
         };
         let source = match self.retry_after {
@@ -260,18 +246,12 @@ impl BackoffPolicy {
         BackoffStep::new(retry_index, base_delay, effective_delay, source)
     }
 
-    fn apply_jitter(
-        &self,
-        base: Duration,
-        random: &dyn RetryRandomSource,
-    ) -> Duration {
+    fn apply_jitter(&self, base: Duration, random: &dyn RetryRandomSource) -> Duration {
         match self.jitter {
             JitterStrategy::None => base,
-            JitterStrategy::Full => interpolate(
-                Duration::ZERO,
-                base,
-                random.random_f64_inclusive(0.0, 1.0),
-            ),
+            JitterStrategy::Full => {
+                interpolate(Duration::ZERO, base, random.random_f64_inclusive(0.0, 1.0))
+            }
             JitterStrategy::Bounded { ratio } => {
                 let low = (1.0 - ratio).max(0.0);
                 let high = 1.0 + ratio;
