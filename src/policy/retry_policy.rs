@@ -56,6 +56,8 @@ impl RetryPolicy {
     {
         RetryOptions::from_config(config)?
             .to_policy()
-            .map_err(|error| RetryConfigError::invalid_value(error.field(), error.message()))
+            .map_err(|error| {
+                RetryConfigError::invalid_value(error.field(), error.message())
+            })
     }
 }
