@@ -70,13 +70,19 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     }
 
     /// Injects the random source used by backoff jitter.
-    pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
+    pub fn random_source(
+        mut self,
+        random_source: Arc<dyn RetryRandomSource>,
+    ) -> Self {
         self.random_source = random_source;
         self
     }
 
     /// Executes one future per attempt.
-    pub async fn run<T, F, Fut>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub async fn run<T, F, Fut>(
+        &self,
+        mut operation: F,
+    ) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -109,7 +115,12 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                 return Err(self.finish(
                     reason,
                     last_failure,
-                    context(self.retry.policy(), snapshot, snapshot.attempts(), None),
+                    context(
+                        self.retry.policy(),
+                        snapshot,
+                        snapshot.attempts(),
+                        None,
+                    ),
                 ));
             }
 
@@ -133,7 +144,12 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                 return Err(self.finish(
                     reason,
                     last_failure,
-                    context(self.retry.policy(), snapshot, snapshot.attempts(), None),
+                    context(
+                        self.retry.policy(),
+                        snapshot,
+                        snapshot.attempts(),
+                        None,
+                    ),
                 ));
             }
 
@@ -144,21 +160,38 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                     return Err(self.finish(
                         retry_budget_reason(exhausted),
                         last_failure,
-                        context(self.retry.policy(), snapshot, snapshot.attempts(), None),
+                        context(
+                            self.retry.policy(),
+                            snapshot,
+                            snapshot.attempts(),
+                            None,
+                        ),
                     ));
                 }
             };
             let timeout = self.effective_timeout(snapshot.total_elapsed());
-            let outcome = execute_attempt(&timer, timeout, self.attempt_timeout, operation()).await;
+            let outcome = execute_attempt(
+                &timer,
+                timeout,
+                self.attempt_timeout,
+                operation(),
+            )
+            .await;
             let snapshot = budget.finish_attempt(attempt);
-            let attempt_context = context(self.retry.policy(), snapshot, snapshot.attempts(), None)
-                .with_attempt_timeout(timeout);
+            let attempt_context = context(
+                self.retry.policy(),
+                snapshot,
+                snapshot.attempts(),
+                None,
+            )
+            .with_attempt_timeout(timeout);
 
             match outcome {
                 Ok(value) => {
-                    self.retry
-                        .observers()
-                        .finished(RetryOutcomeKind::Succeeded, &attempt_context);
+                    self.retry.observers().finished(
+                        RetryOutcomeKind::Succeeded,
+                        &attempt_context,
+                    );
                     return Ok(RetrySuccess::new(value, attempt_context));
                 }
                 Err(failure) => {
@@ -177,14 +210,17 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                         ));
                     }
                     let mut diagnostics = Vec::new();
-                    let decision =
-                        self.retry
-                            .rules()
-                            .decide(&failure, &attempt_context, &mut diagnostics);
+                    let decision = self.retry.rules().decide(
+                        &failure,
+                        &attempt_context,
+                        &mut diagnostics,
+                    );
                     for diagnostic in &diagnostics {
-                        self.retry
-                            .observers()
-                            .diagnostic(diagnostic, &attempt_context, None);
+                        self.retry.observers().diagnostic(
+                            diagnostic,
+                            &attempt_context,
+                            None,
+                        );
                     }
                     let decision = default_decision(decision, &failure);
                     if matches!(
@@ -215,17 +251,24 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                                 .map(retry_budget_reason)
                         })
                     {
-                        return Err(self.finish(reason, Some(failure), attempt_context));
+                        return Err(self.finish(
+                            reason,
+                            Some(failure),
+                            attempt_context,
+                        ));
                     }
                     let request = match decision {
-                        RetryDecision::RetryAfter(delay) => BackoffRequest::explicit(delay),
+                        RetryDecision::RetryAfter(delay) => {
+                            BackoffRequest::explicit(delay)
+                        }
                         RetryDecision::Retry | RetryDecision::UseDefault => {
                             BackoffRequest::policy()
                         }
                         RetryDecision::Abort => BackoffRequest::policy(),
                     };
                     let step = backoff.next(request);
-                    let scheduled = attempt_context.with_next_delay(step.effective_delay());
+                    let scheduled =
+                        attempt_context.with_next_delay(step.effective_delay());
                     self.retry.observers().retry_scheduled(&step, &scheduled);
                     if let Some(reason) = self
                         .flow_timeout_reason(budget.snapshot().total_elapsed())
@@ -236,10 +279,20 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                                 .map(retry_budget_reason)
                         })
                     {
-                        return Err(self.finish(reason, Some(failure), scheduled));
+                        return Err(self.finish(
+                            reason,
+                            Some(failure),
+                            scheduled,
+                        ));
                     }
-                    if let Err(error) = sleep(&timer, step.effective_delay()).await {
-                        return Err(self.finish_with_timer_error(Some(failure), scheduled, error));
+                    if let Err(error) =
+                        sleep(&timer, step.effective_delay()).await
+                    {
+                        return Err(self.finish_with_timer_error(
+                            Some(failure),
+                            scheduled,
+                            error,
+                        ));
                     }
                     last_failure = Some(failure);
                 }
@@ -259,7 +312,10 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         }
     }
 
-    fn flow_timeout_reason(&self, total_elapsed: Duration) -> Option<RetryErrorReason> {
+    fn flow_timeout_reason(
+        &self,
+        total_elapsed: Duration,
+    ) -> Option<RetryErrorReason> {
         self.flow_timeout
             .is_some_and(|limit| total_elapsed >= limit)
             .then_some(RetryErrorReason::FlowTimedOut)
@@ -348,12 +404,18 @@ where
     }
 }
 
-async fn sleep(timer: &Arc<dyn Timer>, delay: Duration) -> Result<(), TimeError> {
+async fn sleep(
+    timer: &Arc<dyn Timer>,
+    delay: Duration,
+) -> Result<(), TimeError> {
     let future = timer.after(delay)?;
     future.await
 }
 
-fn default_decision<E>(decision: RetryDecision, failure: &AttemptFailure<E>) -> RetryDecision {
+fn default_decision<E>(
+    decision: RetryDecision,
+    failure: &AttemptFailure<E>,
+) -> RetryDecision {
     if !matches!(decision, RetryDecision::UseDefault) {
         return decision;
     }
@@ -383,8 +445,12 @@ fn terminal_reason<E>(failure: &AttemptFailure<E>) -> RetryErrorReason {
 fn retry_budget_reason(exhausted: RetryBudgetExhausted) -> RetryErrorReason {
     match exhausted {
         RetryBudgetExhausted::Attempts => RetryErrorReason::AttemptsExhausted,
-        RetryBudgetExhausted::OperationElapsed => RetryErrorReason::OperationBudgetExhausted,
-        RetryBudgetExhausted::TotalElapsed => RetryErrorReason::TotalBudgetExhausted,
+        RetryBudgetExhausted::OperationElapsed => {
+            RetryErrorReason::OperationBudgetExhausted
+        }
+        RetryBudgetExhausted::TotalElapsed => {
+            RetryErrorReason::TotalBudgetExhausted
+        }
     }
 }
 
