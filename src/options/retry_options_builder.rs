@@ -47,11 +47,10 @@ impl RetryOptionsBuilder {
                 self.max_attempts_error = None;
             }
             None => {
-                self.max_attempts_error =
-                    Some(RetryConfigError::invalid_value(
-                        "max_attempts",
-                        "max_attempts must be greater than zero",
-                    ));
+                self.max_attempts_error = Some(RetryConfigError::invalid_value(
+                    "max_attempts",
+                    "max_attempts must be greater than zero",
+                ));
             }
         }
         self
@@ -128,28 +127,20 @@ impl RetryOptionsBuilder {
                 timeout,
                 self.options
                     .attempt_timeout
-                    .map_or(AttemptTimeoutPolicy::Retry, |option| {
-                        option.policy()
-                    }),
+                    .map_or(AttemptTimeoutPolicy::Retry, |option| option.policy()),
             )
         });
         self
     }
 
     /// Sets a complete attempt timeout option.
-    pub fn attempt_timeout_option(
-        mut self,
-        value: Option<AttemptTimeoutOption>,
-    ) -> Self {
+    pub fn attempt_timeout_option(mut self, value: Option<AttemptTimeoutOption>) -> Self {
         self.options.attempt_timeout = value;
         self
     }
 
     /// Sets the attempt timeout policy.
-    pub fn attempt_timeout_policy(
-        mut self,
-        value: AttemptTimeoutPolicy,
-    ) -> Self {
+    pub fn attempt_timeout_policy(mut self, value: AttemptTimeoutPolicy) -> Self {
         self.options.attempt_timeout = self
             .options
             .attempt_timeout

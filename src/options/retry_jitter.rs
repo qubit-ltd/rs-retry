@@ -131,11 +131,7 @@ impl RetryJitter {
     ) -> Duration {
         match self {
             Self::None => base,
-            Self::Factor(factor)
-                if !factor.is_finite() || *factor <= 0.0 || base.is_zero() =>
-            {
-                base
-            }
+            Self::Factor(factor) if !factor.is_finite() || *factor <= 0.0 || base.is_zero() => base,
             Self::Factor(factor) => {
                 let base_nanos_u128 = base.as_nanos();
                 if base_nanos_u128 > u64::MAX as u128 {
@@ -144,8 +140,7 @@ impl RetryJitter {
                 let base_nanos = base_nanos_u128 as f64;
                 let span = base_nanos * factor;
                 let jitter = random_source.random_f64_inclusive(-span, span);
-                let nanos =
-                    (base_nanos + jitter).clamp(0.0, u64::MAX as f64) as u64;
+                let nanos = (base_nanos + jitter).clamp(0.0, u64::MAX as f64) as u64;
                 Duration::from_nanos(nanos)
             }
         }
@@ -164,16 +159,8 @@ impl RetryJitter {
     /// # Returns
     /// The delay for the attempt after jitter is applied.
     #[inline(always)]
-    pub fn delay_for_attempt(
-        &self,
-        delay_strategy: &RetryDelay,
-        attempt: u32,
-    ) -> Duration {
-        self.delay_for_attempt_with_random_source(
-            delay_strategy,
-            attempt,
-            &ThreadRetryRandomSource,
-        )
+    pub fn delay_for_attempt(&self, delay_strategy: &RetryDelay, attempt: u32) -> Duration {
+        self.delay_for_attempt_with_random_source(delay_strategy, attempt, &ThreadRetryRandomSource)
     }
 
     /// Calculates and jitters one attempt delay with an explicit source.
@@ -195,8 +182,7 @@ impl RetryJitter {
         attempt: u32,
         random_source: &dyn RetryRandomSource,
     ) -> Duration {
-        let base_delay = delay_strategy
-            .base_delay_with_random_source(attempt, random_source);
+        let base_delay = delay_strategy.base_delay_with_random_source(attempt, random_source);
         self.apply_with_random_source(base_delay, random_source)
     }
 

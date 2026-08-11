@@ -17,8 +17,7 @@ fn test_number_returns_admitted_attempt_ordinal() {
         .max_attempts(2)
         .build()
         .expect("policy must be valid");
-    let mut budget = RetryBudget::new(&clock, *policy.limits())
-        .expect("budget must construct");
+    let mut budget = RetryBudget::new(&clock, *policy.limits()).expect("budget must construct");
 
     let attempt = budget.begin_attempt().expect("attempt must start");
 
