@@ -60,10 +60,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
 
     /// Runs a same-thread operation until success or a terminal retry error.
     #[allow(clippy::result_large_err)]
-    pub fn run<T, F>(
-        &self,
-        mut operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub fn run<T, F>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,
     {
@@ -79,13 +76,8 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
         loop {
             let snapshot = budget.snapshot();
             if let Err(exhausted) = budget.check_retry_after(Duration::ZERO) {
-                let context =
-                    context(policy, snapshot, snapshot.attempts(), None);
-                let error = RetryError::new(
-                    retry_budget_reason(exhausted),
-                    None,
-                    context,
-                );
+                let context = context(policy, snapshot, snapshot.attempts(), None);
+                let error = RetryError::new(retry_budget_reason(exhausted), None, context);
                 self.retry
                     .observers()
                     .finished(RetryOutcomeKind::Failed, &error_context(&error));
@@ -101,8 +93,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
             self.retry.observers().attempt_started(&upcoming);
             if let Err(exhausted) = budget.check_retry_after(Duration::ZERO) {
                 let snapshot = budget.snapshot();
-                let context =
-                    context(policy, snapshot, snapshot.attempts(), None);
+                let context = context(policy, snapshot, snapshot.attempts(), None);
                 let reason = retry_budget_reason(exhausted);
                 let error = RetryError::new(reason, None, context);
                 self.retry
@@ -128,15 +119,13 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
             };
             let result = operation();
             let snapshot = budget.finish_attempt(attempt);
-            let attempt_context =
-                context(policy, snapshot, snapshot.attempts(), None);
+            let attempt_context = context(policy, snapshot, snapshot.attempts(), None);
 
             match result {
                 Ok(value) => {
-                    self.retry.observers().finished(
-                        RetryOutcomeKind::Succeeded,
-                        &attempt_context,
-                    );
+                    self.retry
+                        .observers()
+                        .finished(RetryOutcomeKind::Succeeded, &attempt_context);
                     return Ok(RetrySuccess::new(value, attempt_context));
                 }
                 Err(error) => {
@@ -145,17 +134,14 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                         .observers()
                         .attempt_failed(&failure, &attempt_context);
                     let mut diagnostics = Vec::new();
-                    let decision = self.retry.rules().decide(
-                        &failure,
-                        &attempt_context,
-                        &mut diagnostics,
-                    );
+                    let decision =
+                        self.retry
+                            .rules()
+                            .decide(&failure, &attempt_context, &mut diagnostics);
                     for diagnostic in &diagnostics {
-                        self.retry.observers().diagnostic(
-                            diagnostic,
-                            &attempt_context,
-                            None,
-                        );
+                        self.retry
+                            .observers()
+                            .diagnostic(diagnostic, &attempt_context, None);
                     }
                     let decision = default_decision(decision, &failure);
                     if matches!(decision, RetryDecision::Abort) {
@@ -164,31 +150,25 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                             Some(failure),
                             attempt_context,
                         );
-                        self.retry.observers().finished(
-                            RetryOutcomeKind::Failed,
-                            error.context(),
-                        );
+                        self.retry
+                            .observers()
+                            .finished(RetryOutcomeKind::Failed, error.context());
                         return Err(error);
                     }
-                    if let Err(exhausted) =
-                        budget.check_retry_after(Duration::ZERO)
-                    {
+                    if let Err(exhausted) = budget.check_retry_after(Duration::ZERO) {
                         let error = RetryError::new(
                             retry_budget_reason(exhausted),
                             Some(failure),
                             attempt_context,
                         );
-                        self.retry.observers().finished(
-                            RetryOutcomeKind::Failed,
-                            error.context(),
-                        );
+                        self.retry
+                            .observers()
+                            .finished(RetryOutcomeKind::Failed, error.context());
                         return Err(error);
                     }
 
                     let request = match decision {
-                        RetryDecision::RetryAfter(delay) => {
-                            BackoffRequest::explicit(delay)
-                        }
+                        RetryDecision::RetryAfter(delay) => BackoffRequest::explicit(delay),
                         RetryDecision::Retry | RetryDecision::UseDefault => {
                             BackoffRequest::policy()
                         }
@@ -204,35 +184,27 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                     self.retry
                         .observers()
                         .retry_scheduled(&step, &scheduled_context);
-                    if let Err(exhausted) =
-                        budget.check_retry_after(step.effective_delay())
-                    {
+                    if let Err(exhausted) = budget.check_retry_after(step.effective_delay()) {
                         let error = RetryError::new(
                             retry_budget_reason(exhausted),
                             Some(failure),
                             scheduled_context,
                         );
-                        self.retry.observers().finished(
-                            RetryOutcomeKind::Failed,
-                            error.context(),
-                        );
+                        self.retry
+                            .observers()
+                            .finished(RetryOutcomeKind::Failed, error.context());
                         return Err(error);
                     }
-                    if let Err(timer_error) =
-                        self.sleeper.sleep_for(step.effective_delay())
-                    {
+                    if let Err(timer_error) = self.sleeper.sleep_for(step.effective_delay()) {
                         let error = RetryError::new_with_execution_error(
                             RetryErrorReason::TimerFailed,
                             Some(failure),
-                            crate::RetryExecutionError::timer(
-                                &timer_error.to_string(),
-                            ),
+                            crate::RetryExecutionError::timer(&timer_error.to_string()),
                             scheduled_context,
                         );
-                        self.retry.observers().finished(
-                            RetryOutcomeKind::Failed,
-                            error.context(),
-                        );
+                        self.retry
+                            .observers()
+                            .finished(RetryOutcomeKind::Failed, error.context());
                         return Err(error);
                     }
                 }
@@ -241,10 +213,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
     }
 }
 
-fn default_decision<E>(
-    decision: RetryDecision,
-    failure: &AttemptFailure<E>,
-) -> RetryDecision {
+fn default_decision<E>(decision: RetryDecision, failure: &AttemptFailure<E>) -> RetryDecision {
     if !matches!(decision, RetryDecision::UseDefault) {
         return decision;
     }
@@ -260,12 +229,8 @@ fn default_decision<E>(
 fn retry_budget_reason(exhausted: RetryBudgetExhausted) -> RetryErrorReason {
     match exhausted {
         RetryBudgetExhausted::Attempts => RetryErrorReason::AttemptsExhausted,
-        RetryBudgetExhausted::OperationElapsed => {
-            RetryErrorReason::OperationBudgetExhausted
-        }
-        RetryBudgetExhausted::TotalElapsed => {
-            RetryErrorReason::TotalBudgetExhausted
-        }
+        RetryBudgetExhausted::OperationElapsed => RetryErrorReason::OperationBudgetExhausted,
+        RetryBudgetExhausted::TotalElapsed => RetryErrorReason::TotalBudgetExhausted,
     }
 }
 

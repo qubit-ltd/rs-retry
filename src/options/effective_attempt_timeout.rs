@@ -39,10 +39,7 @@ impl EffectiveAttemptTimeout {
     /// # Returns
     /// A timeout descriptor for one attempt.
     #[inline(always)]
-    pub(crate) fn new(
-        duration: Option<Duration>,
-        source: Option<AttemptTimeoutSource>,
-    ) -> Self {
+    pub(crate) fn new(duration: Option<Duration>, source: Option<AttemptTimeoutSource>) -> Self {
         Self { duration, source }
     }
 
