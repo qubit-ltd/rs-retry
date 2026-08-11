@@ -18,7 +18,10 @@ use super::AttemptTimeoutKind;
 /// Failure produced by one admitted attempt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
-#[serde(bound(serialize = "E: Serialize", deserialize = "E: DeserializeOwned"))]
+#[serde(bound(
+    serialize = "E: Serialize",
+    deserialize = "E: DeserializeOwned"
+))]
 pub enum AttemptFailure<E> {
     /// The operation returned an application error.
     Error(E),
@@ -53,7 +56,9 @@ impl<E> AttemptFailure<E> {
     pub fn as_error(&self) -> Option<&E> {
         match self {
             Self::Error(error) => Some(error),
-            Self::Timeout { .. } | Self::Panic | Self::Infrastructure(_) => None,
+            Self::Timeout { .. } | Self::Panic | Self::Infrastructure(_) => {
+                None
+            }
         }
     }
 
@@ -61,7 +66,9 @@ impl<E> AttemptFailure<E> {
     pub fn into_error(self) -> Option<E> {
         match self {
             Self::Error(error) => Some(error),
-            Self::Timeout { .. } | Self::Panic | Self::Infrastructure(_) => None,
+            Self::Timeout { .. } | Self::Panic | Self::Infrastructure(_) => {
+                None
+            }
         }
     }
 
