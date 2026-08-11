@@ -28,8 +28,7 @@ fn test_finish_attempt_preserves_actual_overrun() {
         .max_total_elapsed(Duration::from_secs(10))
         .build()
         .expect("policy must be valid");
-    let mut budget = RetryBudget::new(&clock, *policy.limits())
-        .expect("budget must construct");
+    let mut budget = RetryBudget::new(&clock, *policy.limits()).expect("budget must construct");
 
     let attempt = budget.begin_attempt().expect("first attempt must start");
     clock
@@ -56,8 +55,7 @@ fn test_begin_attempt_prioritizes_attempts_over_elapsed_limits() {
         .max_total_elapsed(Duration::from_secs(1))
         .build()
         .expect("policy must be valid");
-    let mut budget = RetryBudget::new(&clock, *policy.limits())
-        .expect("budget must construct");
+    let mut budget = RetryBudget::new(&clock, *policy.limits()).expect("budget must construct");
 
     let attempt = budget.begin_attempt().expect("first attempt must start");
     clock
@@ -80,8 +78,7 @@ fn test_check_retry_after_rejects_delay_at_deadline() {
         .max_total_elapsed(Duration::from_secs(1))
         .build()
         .expect("policy must be valid");
-    let budget = RetryBudget::new(&clock, *policy.limits())
-        .expect("budget must construct");
+    let budget = RetryBudget::new(&clock, *policy.limits()).expect("budget must construct");
 
     assert_eq!(
         budget.check_retry_after(Duration::from_secs(1)),

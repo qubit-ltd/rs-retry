@@ -37,14 +37,12 @@ pub const KEY_MAX_ATTEMPTS: &str = "max_attempts";
 /// in milliseconds. When absent, the merge uses
 /// `default.max_operation_elapsed`. A stored value of `0` means a
 /// zero-millisecond operation elapsed budget.
-pub const KEY_MAX_OPERATION_ELAPSED_MILLIS: &str =
-    "max_operation_elapsed_millis";
+pub const KEY_MAX_OPERATION_ELAPSED_MILLIS: &str = "max_operation_elapsed_millis";
 
 /// Config key for explicitly forcing an unlimited user operation elapsed
 /// budget. When `true`, merge logic ignores
 /// [`KEY_MAX_OPERATION_ELAPSED_MILLIS`] and uses unlimited (`None`).
-pub const KEY_MAX_OPERATION_ELAPSED_UNLIMITED: &str =
-    "max_operation_elapsed_unlimited";
+pub const KEY_MAX_OPERATION_ELAPSED_UNLIMITED: &str = "max_operation_elapsed_unlimited";
 
 /// Config key for the total retry-flow elapsed budget option value, in
 /// milliseconds. The measured value is monotonic retry control-flow time, not
@@ -90,13 +88,11 @@ pub const KEY_RANDOM_MAX_DELAY_MILLIS: &str = "random_max_delay_millis";
 
 /// Config key for the exponential backoff initial delay option value, in
 /// milliseconds.
-pub const KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS: &str =
-    "exponential_initial_delay_millis";
+pub const KEY_EXPONENTIAL_INITIAL_DELAY_MILLIS: &str = "exponential_initial_delay_millis";
 
 /// Config key for the exponential backoff maximum delay option value, in
 /// milliseconds.
-pub const KEY_EXPONENTIAL_MAX_DELAY_MILLIS: &str =
-    "exponential_max_delay_millis";
+pub const KEY_EXPONENTIAL_MAX_DELAY_MILLIS: &str = "exponential_max_delay_millis";
 
 /// Config key for the exponential backoff multiplier option value.
 pub const KEY_EXPONENTIAL_MULTIPLIER: &str = "exponential_multiplier";
@@ -162,8 +158,7 @@ pub const DEFAULT_RETRY_WORKER_CANCEL_GRACE_MILLIS: u64 = 100;
 /// Invalid text makes [`crate::RetryDelay::default`] panic at runtime; keep
 /// this constant in sync with [`crate::RetryDelay`] parsing rules when you
 /// change it.
-pub const DEFAULT_RETRY_DELAY: &str =
-    "exponential(initial=1000ms, max=60000ms, multiplier=2.0)";
+pub const DEFAULT_RETRY_DELAY: &str = "exponential(initial=1000ms, max=60000ms, multiplier=2.0)";
 
 /// Default jitter text for [`crate::RetryJitter::default`] and any code that
 /// should match the library's built-in jitter default.
