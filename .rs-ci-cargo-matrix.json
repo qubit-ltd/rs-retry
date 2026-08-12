@@ -23,18 +23,6 @@
       ]
     },
     {
-      "name": "config",
-      "defaultFeatures": false,
-      "features": [
-        "config"
-      ],
-      "commands": [
-        "check",
-        "test",
-        "doc"
-      ]
-    },
-    {
       "name": "all-features-clippy",
       "allFeatures": true,
       "commands": [
