@@ -25,11 +25,13 @@ use qubit_config::ConfigError;
 /// available. `message` stores the human-readable reason. Structured argument
 /// failures are retained so their diagnostic can be rendered without
 /// duplicating the path.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct RetryConfigError {
     path: String,
     message: String,
     argument_source: Option<ArgumentError>,
+    #[cfg(feature = "config")]
+    config_source: Option<Box<ConfigError>>,
 }
 
 impl RetryConfigError {
@@ -50,6 +52,8 @@ impl RetryConfigError {
             path: path.into(),
             message: message.into(),
             argument_source: None,
+            #[cfg(feature = "config")]
+            config_source: None,
         }
     }
 
@@ -68,6 +72,7 @@ impl RetryConfigError {
             path: path.into(),
             message: source.to_string(),
             argument_source: None,
+            config_source: Some(Box::new(source)),
         }
     }
 
@@ -124,9 +129,14 @@ impl Error for RetryConfigError {
     /// `Some` with the underlying validation error, or `None` when this error
     /// only carries a compatibility message.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.argument_source
-            .as_ref()
-            .map(|source| source as &(dyn Error + 'static))
+        if let Some(source) = self.argument_source.as_ref() {
+            return Some(source as &(dyn Error + 'static));
+        }
+        #[cfg(feature = "config")]
+        if let Some(source) = self.config_source.as_ref() {
+            return Some(source.as_ref() as &(dyn Error + 'static));
+        }
+        None
     }
 }
 
@@ -169,6 +179,8 @@ impl From<ArgumentError> for RetryConfigError {
                 path,
                 message,
                 argument_source: Some(source),
+                #[cfg(feature = "config")]
+                config_source: None,
             }
         }
     }
