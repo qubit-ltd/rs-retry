@@ -48,7 +48,6 @@ pub struct RetryContext {
     next_delay: Option<Duration>,
     /// Optional retry-after hint extracted before failure policy runs.
     retry_after_hint: Option<Duration>,
-    /// Source used for the last selected per-attempt timeout.
     /// Worker attempts that timed out and were not observed to exit before the
     /// cancellation grace period ended.
     unreaped_worker_count: u32,

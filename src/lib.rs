@@ -16,12 +16,10 @@
 
 pub mod backoff;
 pub mod budget;
-pub mod constants;
 pub mod error;
 mod event;
 pub mod executor;
 pub mod observer;
-pub mod options;
 pub mod policy;
 pub mod random;
 pub mod rule;
@@ -40,7 +38,6 @@ pub(crate) use error::AttemptExecutionError;
 pub use error::AttemptFailure;
 pub use error::AttemptFailureKind;
 pub use error::AttemptTimeoutKind;
-pub use error::RetryConfigError;
 pub use error::RetryError;
 pub use error::RetryErrorKind;
 pub use error::RetryErrorReason;
@@ -48,7 +45,6 @@ pub(crate) use error::RetryExecutionError;
 pub use error::RetryPolicyError;
 pub use error::RetryResult;
 pub use event::AttemptFailureDecision;
-pub use event::AttemptTimeoutSource;
 #[cfg(feature = "tokio")]
 pub use executor::AsyncRetry;
 pub use executor::AttemptCancelToken;
@@ -61,16 +57,6 @@ pub use observer::RetryDiagnostic;
 pub use observer::RetryDiagnosticKind;
 pub use observer::RetryObserver;
 pub use observer::RetryOutcomeKind;
-pub use options::AttemptTimeoutOption;
-pub use options::AttemptTimeoutPolicy;
-pub use options::ParseRetryJitterError;
-pub use options::RetryAfterPolicy;
-#[cfg(feature = "config")]
-pub use options::RetryConfigValues;
-pub use options::RetryDelay;
-pub use options::RetryJitter;
-pub use options::RetryOptions;
-pub use options::RetryOptionsBuilder;
 pub use policy::RetryLimits;
 pub use policy::RetryPolicy;
 pub use policy::RetryPolicyBuilder;

@@ -13,20 +13,16 @@ use qubit_clock::TimeError;
 use qubit_clock::Timer;
 use qubit_clock::TokioTimer;
 
+use super::internal::EffectiveTimeout;
+use super::internal::RetryFlowState;
 use super::retry::Retry;
 use crate::AttemptFailure;
 use crate::AttemptTimeoutKind;
-use crate::BackoffRequest;
-use crate::RetryBudget;
-use crate::RetryBudgetExhausted;
-use crate::RetryBudgetSnapshot;
 use crate::RetryContext;
 use crate::RetryError;
 use crate::RetryErrorReason;
-use crate::RetryPolicy;
 use crate::RetryRandomSource;
 use crate::RetrySuccess;
-use crate::event::RetryContextParts;
 use crate::observer::RetryOutcomeKind;
 use crate::random::ThreadRetryRandomSource;
 use crate::rule::RetryDecision;
@@ -92,99 +88,44 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
             .clone()
             .unwrap_or_else(|| Arc::new(TokioTimer::current()));
         let clock = timer.clock();
-        let mut budget = RetryBudget::new(clock, *self.retry.policy().limits())
-            .expect("validated retry limits must fit the monotonic clock");
+        let mut flow = RetryFlowState::new(
+            clock,
+            self.retry.policy(),
+            Arc::clone(&self.random_source),
+            self.flow_timeout,
+        )
+        .expect("validated retry limits must fit the monotonic clock");
         let mut last_failure = None;
-        let mut backoff = self
-            .retry
-            .policy()
-            .backoff()
-            .start_with_random_source(Arc::clone(&self.random_source));
 
         loop {
-            let snapshot = budget.snapshot();
-            if let Some(reason) = self
-                .flow_timeout_reason(snapshot.total_elapsed())
-                .or_else(|| {
-                    budget
-                        .check_retry_after(Duration::ZERO)
-                        .err()
-                        .map(retry_budget_reason)
-                })
-            {
+            let snapshot = flow.snapshot();
+            if let Some(reason) = flow.continuation_reason() {
                 return Err(self.finish(
                     reason,
                     last_failure,
-                    context(
-                        self.retry.policy(),
-                        snapshot,
-                        snapshot.attempts(),
-                        None,
-                    ),
+                    flow.context(snapshot, snapshot.attempts()),
                 ));
             }
 
-            let before = context(
-                self.retry.policy(),
-                snapshot,
-                snapshot.attempts().saturating_add(1),
-                None,
-            );
+            let before = flow.upcoming_context();
             self.retry.observers().attempt_started(&before);
-            let snapshot = budget.snapshot();
-            if let Some(reason) = self
-                .flow_timeout_reason(snapshot.total_elapsed())
-                .or_else(|| {
-                    budget
-                        .check_retry_after(Duration::ZERO)
-                        .err()
-                        .map(retry_budget_reason)
-                })
-            {
-                return Err(self.finish(
-                    reason,
-                    last_failure,
-                    context(
-                        self.retry.policy(),
-                        snapshot,
-                        snapshot.attempts(),
-                        None,
-                    ),
-                ));
-            }
 
-            let attempt = match budget.begin_attempt() {
+            let attempt = match flow.begin_attempt() {
                 Ok(attempt) => attempt,
-                Err(exhausted) => {
-                    let snapshot = budget.snapshot();
+                Err(reason) => {
                     return Err(self.finish(
-                        retry_budget_reason(exhausted),
+                        reason,
                         last_failure,
-                        context(
-                            self.retry.policy(),
-                            snapshot,
-                            snapshot.attempts(),
-                            None,
-                        ),
+                        flow.current_context(),
                     ));
                 }
             };
-            let timeout = self.effective_timeout(snapshot.total_elapsed());
-            let outcome = execute_attempt(
-                &timer,
-                timeout,
-                self.attempt_timeout,
-                operation(),
-            )
-            .await;
-            let snapshot = budget.finish_attempt(attempt);
-            let attempt_context = context(
-                self.retry.policy(),
-                snapshot,
-                snapshot.attempts(),
-                None,
-            )
-            .with_attempt_timeout(timeout);
+            let timeout = flow.effective_timeout(self.attempt_timeout);
+            let outcome = execute_attempt(&timer, timeout, operation()).await;
+            let snapshot = flow.finish_attempt(attempt);
+            let attempt_context = flow
+                .context(snapshot, snapshot.attempts())
+                .with_attempt_timeout(timeout.map(EffectiveTimeout::duration));
 
             match outcome {
                 Ok(value) => {
@@ -242,45 +183,38 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                             attempt_context,
                         ));
                     }
-                    if let Some(reason) = self
-                        .flow_timeout_reason(snapshot.total_elapsed())
-                        .or_else(|| {
-                            budget
-                                .check_retry_after(Duration::ZERO)
-                                .err()
-                                .map(retry_budget_reason)
-                        })
-                    {
+                    if let Some(reason) = flow.continuation_reason() {
                         return Err(self.finish(
                             reason,
                             Some(failure),
                             attempt_context,
                         ));
                     }
-                    let request = match decision {
-                        RetryDecision::RetryAfter(delay) => {
-                            BackoffRequest::explicit(delay)
-                        }
-                        RetryDecision::Retry | RetryDecision::UseDefault => {
-                            BackoffRequest::policy()
-                        }
-                        RetryDecision::Abort => BackoffRequest::policy(),
-                    };
-                    let step = backoff.next(request);
+                    let step = flow.next_backoff(decision);
                     let scheduled =
                         attempt_context.with_next_delay(step.effective_delay());
                     self.retry.observers().retry_scheduled(&step, &scheduled);
-                    if let Some(reason) = self
-                        .flow_timeout_reason(budget.snapshot().total_elapsed())
-                        .or_else(|| {
-                            budget
-                                .check_retry_after(step.effective_delay())
-                                .err()
-                                .map(retry_budget_reason)
-                        })
+                    if let Some(reason) =
+                        flow.retry_reason(step.effective_delay())
                     {
                         return Err(self.finish(
                             reason,
+                            Some(failure),
+                            scheduled,
+                        ));
+                    }
+                    if let Some(remaining) =
+                        flow.flow_sleep_cap(step.effective_delay())
+                    {
+                        if let Err(error) = sleep(&timer, remaining).await {
+                            return Err(self.finish_with_timer_error(
+                                Some(failure),
+                                scheduled,
+                                error,
+                            ));
+                        }
+                        return Err(self.finish(
+                            RetryErrorReason::FlowTimedOut,
                             Some(failure),
                             scheduled,
                         ));
@@ -298,27 +232,6 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                 }
             }
         }
-    }
-
-    fn effective_timeout(&self, total_elapsed: Duration) -> Option<Duration> {
-        let flow_remaining = self
-            .flow_timeout
-            .map(|limit| limit.saturating_sub(total_elapsed));
-        match (self.attempt_timeout, flow_remaining) {
-            (Some(attempt), Some(flow)) => Some(attempt.min(flow)),
-            (Some(attempt), None) => Some(attempt),
-            (None, Some(flow)) => Some(flow),
-            (None, None) => None,
-        }
-    }
-
-    fn flow_timeout_reason(
-        &self,
-        total_elapsed: Duration,
-    ) -> Option<RetryErrorReason> {
-        self.flow_timeout
-            .is_some_and(|limit| total_elapsed >= limit)
-            .then_some(RetryErrorReason::FlowTimedOut)
     }
 
     fn finish(
@@ -364,8 +277,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
 
 async fn execute_attempt<T, E, F>(
     timer: &Arc<dyn Timer>,
-    timeout: Option<Duration>,
-    attempt_timeout: Option<Duration>,
+    timeout: Option<EffectiveTimeout>,
     operation: F,
 ) -> Result<T, AttemptFailure<E>>
 where
@@ -374,7 +286,7 @@ where
     let Some(timeout) = timeout else {
         return operation.await.map_err(AttemptFailure::Error);
     };
-    let mut timer_future = match timer.after(timeout) {
+    let mut timer_future = match timer.after(timeout.duration()) {
         Ok(timer_future) => timer_future,
         Err(error) => {
             return Err(AttemptFailure::Infrastructure(
@@ -389,13 +301,10 @@ where
             Err(error) => Err(AttemptFailure::Error(error)),
         },
         result = &mut timer_future => {
-            let kind = if attempt_timeout.is_some_and(|limit| timeout <= limit) {
-                AttemptTimeoutKind::Attempt
-            } else {
-                AttemptTimeoutKind::Flow
-            };
             match result {
-                Ok(()) => Err(AttemptFailure::Timeout { kind }),
+                Ok(()) => Err(AttemptFailure::Timeout {
+                    kind: timeout.kind(),
+                }),
                 Err(error) => Err(AttemptFailure::Infrastructure(
                     crate::AttemptExecutionError::new(&error.to_string()),
                 )),
@@ -439,39 +348,4 @@ fn terminal_reason<E>(failure: &AttemptFailure<E>) -> RetryErrorReason {
         | AttemptFailure::Panic
         | AttemptFailure::Infrastructure(_) => RetryErrorReason::Aborted,
     }
-}
-
-/// Maps public continuation exhaustion to the retry error vocabulary.
-fn retry_budget_reason(exhausted: RetryBudgetExhausted) -> RetryErrorReason {
-    match exhausted {
-        RetryBudgetExhausted::Attempts => RetryErrorReason::AttemptsExhausted,
-        RetryBudgetExhausted::OperationElapsed => {
-            RetryErrorReason::OperationBudgetExhausted
-        }
-        RetryBudgetExhausted::TotalElapsed => {
-            RetryErrorReason::TotalBudgetExhausted
-        }
-    }
-}
-
-fn context(
-    policy: &RetryPolicy,
-    snapshot: RetryBudgetSnapshot,
-    attempt: u32,
-    next_delay: Option<Duration>,
-) -> RetryContext {
-    let mut context = RetryContext::from_parts(RetryContextParts {
-        attempt,
-        max_attempts: policy.limits().max_attempts().get(),
-        max_operation_elapsed: policy.limits().max_operation_elapsed(),
-        max_total_elapsed: policy.limits().max_total_elapsed(),
-        operation_elapsed: snapshot.operation_elapsed(),
-        total_elapsed: snapshot.total_elapsed(),
-        attempt_elapsed: snapshot.attempt_elapsed(),
-        attempt_timeout: None,
-    });
-    if let Some(delay) = next_delay {
-        context = context.with_next_delay(delay);
-    }
-    context
 }

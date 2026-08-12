@@ -17,21 +17,6 @@ use crate::RetryRandomSource;
 pub(crate) struct ThreadRetryRandomSource;
 
 impl RetryRandomSource for ThreadRetryRandomSource {
-    /// Samples an integer from the requested inclusive range.
-    ///
-    /// # Parameters
-    ///
-    /// * `min` - Inclusive lower bound.
-    /// * `max` - Inclusive upper bound.
-    ///
-    /// # Returns
-    ///
-    /// A uniformly distributed integer sample.
-    #[inline]
-    fn random_u64_inclusive(&self, min: u64, max: u64) -> u64 {
-        rng().random_range(min..=max)
-    }
-
     /// Samples a floating-point value from the requested inclusive range.
     ///
     /// # Parameters

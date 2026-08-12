@@ -25,8 +25,6 @@ use super::blocking_attempt_outcome::BlockingAttemptOutcome;
 use crate::AttemptExecutionError;
 use crate::AttemptFailure;
 
-const WORKER_DISCONNECTED_MESSAGE: &str =
-    "retry worker thread stopped without sending a result";
 const WORKER_SPAWN_FAILED_MESSAGE: &str = "failed to spawn retry worker thread";
 
 /// Builds a spawn-failure attempt outcome at the cold spawn error site.
@@ -39,17 +37,6 @@ macro_rules! worker_spawn_failure {
             0,
         )
     };
-}
-
-/// Builds an executor failure for a worker that exited without a result.
-///
-/// # Returns
-/// An attempt result containing [`AttemptFailure::Infrastructure`].
-#[inline]
-fn worker_disconnected_result<E>() -> Result<(), AttemptFailure<E>> {
-    Err(AttemptFailure::Infrastructure(AttemptExecutionError::new(
-        WORKER_DISCONNECTED_MESSAGE,
-    )))
 }
 
 /// Runs one blocking attempt on a worker thread.
@@ -135,7 +122,7 @@ fn worker_recv_result_to_attempt_outcome<E>(
     worker: JoinHandle<()>,
 ) -> BlockingAttemptOutcome<(), E> {
     join_finished_worker(worker);
-    let result = result.unwrap_or_else(|_| worker_disconnected_result());
+    let result = result.expect("worker thread must send exactly one result");
     BlockingAttemptOutcome::new(result, 0)
 }
 
@@ -177,7 +164,8 @@ where
         )
     } else {
         join_finished_worker(worker);
-        let result = result.unwrap_or_else(|_| worker_disconnected_result());
+        let result =
+            result.expect("worker thread must send exactly one result");
         BlockingAttemptOutcome::new(result, 0)
     }
 }

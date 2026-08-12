@@ -13,18 +13,6 @@
 /// can be shared across threads. Every returned sample must lie within the
 /// inclusive bounds supplied to the corresponding method.
 pub trait RetryRandomSource: Send + Sync {
-    /// Samples an integer from an inclusive range.
-    ///
-    /// # Parameters
-    ///
-    /// * `min` - Inclusive lower bound.
-    /// * `max` - Inclusive upper bound. Callers guarantee `min <= max`.
-    ///
-    /// # Returns
-    ///
-    /// A value in the inclusive range `min..=max`.
-    fn random_u64_inclusive(&self, min: u64, max: u64) -> u64;
-
     /// Samples a floating-point value from an inclusive range.
     ///
     /// # Parameters

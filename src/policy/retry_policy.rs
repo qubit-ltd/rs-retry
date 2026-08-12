@@ -5,17 +5,11 @@
 // =============================================================================
 //! Immutable retry policy.
 
-#[cfg(feature = "config")]
-use qubit_config::ConfigReader;
 use serde::Deserialize;
 use serde::Serialize;
 
 use super::RetryLimits;
 use super::RetryPolicyBuilder;
-#[cfg(feature = "config")]
-use crate::RetryConfigError;
-#[cfg(feature = "config")]
-use crate::RetryOptions;
 use crate::backoff::BackoffPolicy;
 
 /// Pure retry limits and backoff configuration.
@@ -44,20 +38,5 @@ impl RetryPolicy {
     /// Returns the immutable backoff configuration.
     pub fn backoff(&self) -> &BackoffPolicy {
         &self.backoff
-    }
-
-    /// Loads the legacy configuration shape and converts it into a pure
-    /// policy. This keeps configuration parsing at the boundary; executors
-    /// never read config keys during execution.
-    #[cfg(feature = "config")]
-    pub fn from_config<R>(config: &R) -> Result<Self, RetryConfigError>
-    where
-        R: ConfigReader + ?Sized,
-    {
-        RetryOptions::from_config(config)?
-            .to_policy()
-            .map_err(|error| {
-                RetryConfigError::invalid_value(error.field(), error.message())
-            })
     }
 }
