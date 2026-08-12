@@ -245,18 +245,16 @@ impl BackoffPolicy {
         } else {
             hint
         };
-        let effective_delay = match self.retry_after {
-            RetryAfterStrategy::PreferHint => hinted_delay,
-            RetryAfterStrategy::AtLeastBackoff => {
-                policy_delay.max(hinted_delay)
-            }
-            RetryAfterStrategy::IgnoreHint => policy_delay,
-        };
-        let source = match self.retry_after {
-            RetryAfterStrategy::PreferHint => BackoffDelaySource::Hint,
-            RetryAfterStrategy::AtLeastBackoff => BackoffDelaySource::Merged,
-            RetryAfterStrategy::IgnoreHint => BackoffDelaySource::Policy,
-        };
+        let (effective_delay, source) =
+            if self.retry_after == RetryAfterStrategy::PreferHint {
+                (hinted_delay, BackoffDelaySource::Hint)
+            } else {
+                debug_assert_eq!(
+                    self.retry_after,
+                    RetryAfterStrategy::AtLeastBackoff
+                );
+                (policy_delay.max(hinted_delay), BackoffDelaySource::Merged)
+            };
         BackoffStep::new(retry_index, base_delay, effective_delay, source)
     }
 

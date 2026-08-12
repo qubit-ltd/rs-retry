@@ -387,31 +387,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "parse-display"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e78deb158fb1d73b29efb4b7e9b9860b78059c670de06bd28df8d0b458ded0eb"
-dependencies = [
- "parse-display-derive",
- "regex",
- "regex-syntax",
-]
-
-[[package]]
-name = "parse-display-derive"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e95a50d1084dab562913062c4c34bb204b68fc6ec38a1395909ff5aaaf4f10a"
-dependencies = [
- "proc-macro2",
- "quote",
- "regex",
- "regex-syntax",
- "structmeta",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -455,23 +430,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "qubit-argument"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caf9edf4c37fcd532e92ef1cea6611f36cdbe4b08ec8f8ed72b2f01425563858"
-
-[[package]]
 name = "qubit-budget"
 version = "0.4.0"
 dependencies = [
+ "qubit-clock",
  "thiserror",
 ]
 
 [[package]]
 name = "qubit-clock"
 version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11d57ead76f106a1c5b2eac4e859bacd2ed8f1e13024fe8c03c9f829fc30fa65"
 dependencies = [
  "pin-project-lite",
  "qubit-collections",
@@ -489,29 +457,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "qubit-config"
-version = "0.16.0"
-dependencies = [
- "qubit-budget",
- "qubit-datatype",
- "qubit-json",
- "qubit-redact",
- "qubit-utils",
- "qubit-value",
- "serde",
- "serde_ignored",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
 name = "qubit-datatype"
 version = "0.10.0"
 dependencies = [
- "qubit-budget",
- "qubit-json",
  "serde",
- "serde_json",
  "thiserror",
 ]
 
@@ -528,62 +477,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59f10e916324739b811520fbfb24746f4822ad9ea1adb53c79fc04b7c090e5ed"
 
 [[package]]
-name = "qubit-json"
-version = "0.7.0"
-dependencies = [
- "qubit-budget",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "qubit-redact"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a80d4179cd319d8a85e6d6271efdbb596c59bfe6862d9adfc5373e28cac93e61"
-dependencies = [
- "serde_json",
-]
-
-[[package]]
 name = "qubit-retry"
 version = "0.18.0"
 dependencies = [
  "criterion",
- "parse-display",
- "qubit-argument",
  "qubit-budget",
  "qubit-clock",
- "qubit-config",
  "qubit-datatype",
  "qubit-error",
  "qubit-function",
- "qubit-value",
  "rand",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
-]
-
-[[package]]
-name = "qubit-utils"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a4e2a99ede9d46a1cccb7631957f553c1f91e6dfde5a0d628058b92d6566b55"
-
-[[package]]
-name = "qubit-value"
-version = "0.10.0"
-dependencies = [
- "qubit-budget",
- "qubit-datatype",
- "qubit-json",
- "qubit-redact",
- "serde",
- "serde_json",
- "thiserror",
 ]
 
 [[package]]
@@ -728,16 +635,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_ignored"
-version = "0.1.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "115dffd5f3853e06e746965a20dcbae6ee747ae30b543d91b0e089668bb07798"
-dependencies = [
- "serde",
- "serde_core",
-]
-
-[[package]]
 name = "serde_json"
 version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -780,29 +677,6 @@ checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
  "windows-sys",
-]
-
-[[package]]
-name = "structmeta"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e1575d8d40908d70f6fd05537266b90ae71b15dbbe7a8b7dffa2b759306d329"
-dependencies = [
- "proc-macro2",
- "quote",
- "structmeta-derive",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "structmeta-derive"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "152a0b65a590ff6c3da95cabe2353ee04e6167c896b28e3b14478c2636c922fc"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]

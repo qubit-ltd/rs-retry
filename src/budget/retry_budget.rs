@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use qubit_budget::DurationBudget;
 use qubit_budget::ResourceBudget;
+use qubit_budget::TimeBudget;
+use qubit_budget::TimeBudgetError;
 use qubit_clock::MonotonicClock;
 use qubit_clock::MonotonicInstant;
 
@@ -25,6 +27,8 @@ enum RetryResource {
     Attempts,
     /// The finite sum of operation durations.
     OperationElapsed,
+    /// The continuous whole-flow elapsed duration.
+    TotalElapsed,
 }
 
 /// The single source of truth for retry continuation limits.
@@ -50,8 +54,8 @@ pub struct RetryBudget<'a> {
     /// Actual operation time, which can exceed the continuation allowance.
     operation_elapsed: Duration,
 
-    /// Continuous end-to-end deadline.
-    total_deadline: Option<MonotonicInstant>,
+    /// Continuous end-to-end deadline budget.
+    total: Option<TimeBudget<RetryResource, &'a dyn MonotonicClock>>,
 
     /// Actual duration of the latest completed attempt.
     last_attempt_elapsed: Duration,
@@ -67,12 +71,30 @@ impl<'a> RetryBudget<'a> {
         clock: &'a dyn MonotonicClock,
         limits: RetryLimits,
     ) -> Result<Self, RetryBudgetError> {
-        let started_at = clock.now();
-        let total_deadline = limits
+        let total = limits
             .max_total_elapsed()
-            .map(|duration| started_at.checked_add(duration))
+            .map(|duration| {
+                TimeBudget::for_duration(
+                    RetryResource::TotalElapsed,
+                    clock,
+                    duration,
+                )
+            })
             .transpose()
-            .map_err(RetryBudgetError::Clock)?;
+            .map_err(|error| match error {
+                TimeBudgetError::Clock { source, .. } => {
+                    RetryBudgetError::Clock(source)
+                }
+                TimeBudgetError::Expired { .. }
+                | TimeBudgetError::WouldExpire { .. } => {
+                    unreachable!(
+                        "constructing a time budget only adds a deadline"
+                    )
+                }
+            })?;
+        let started_at = total
+            .as_ref()
+            .map_or_else(|| clock.now(), TimeBudget::started_at);
         Ok(Self {
             started_at,
             attempts: ResourceBudget::new(
@@ -83,7 +105,7 @@ impl<'a> RetryBudget<'a> {
                 DurationBudget::new(RetryResource::OperationElapsed, duration)
             }),
             operation_elapsed: Duration::ZERO,
-            total_deadline,
+            total,
             last_attempt_elapsed: Duration::ZERO,
             clock,
         })
@@ -154,13 +176,11 @@ impl<'a> RetryBudget<'a> {
         delay: Duration,
     ) -> Result<(), RetryBudgetExhausted> {
         self.check_continuation()?;
-        let now = self.clock.now();
-        if self.total_deadline.is_some_and(|deadline| {
-            match now.checked_add(delay) {
-                Ok(end) => end >= deadline,
-                Err(_) => true,
-            }
-        }) {
+        if self
+            .total
+            .as_ref()
+            .is_some_and(|budget| budget.check_after(delay).is_err())
+        {
             return Err(RetryBudgetExhausted::TotalElapsed);
         }
         Ok(())
@@ -178,10 +198,7 @@ impl<'a> RetryBudget<'a> {
         {
             return Err(RetryBudgetExhausted::OperationElapsed);
         }
-        if self
-            .total_deadline
-            .is_some_and(|deadline| self.clock.now() >= deadline)
-        {
+        if self.total.as_ref().is_some_and(TimeBudget::is_expired) {
             return Err(RetryBudgetExhausted::TotalElapsed);
         }
         Ok(())

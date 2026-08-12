@@ -5,8 +5,10 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Internal retry-option helpers.
+//! Shared implementation state for retry executors.
 
-mod retry_jitter_factor_format;
+mod effective_timeout;
+mod retry_flow_state;
 
-pub(in crate::options) use retry_jitter_factor_format::RetryJitterFactorFormat;
+pub(crate) use effective_timeout::EffectiveTimeout;
+pub(crate) use retry_flow_state::RetryFlowState;
