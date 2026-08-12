@@ -6,8 +6,4 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-/// Non-cloneable value used by retry tests.
-#[derive(Debug)]
-pub(crate) struct NonCloneValue {
-    pub(crate) value: String,
-}
+//! Effective timeout selection is covered by source-classification regressions.

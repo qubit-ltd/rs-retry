@@ -9,3 +9,4 @@ mod retry_attempt_tests;
 mod retry_budget_error_tests;
 mod retry_budget_exhausted_tests;
 mod retry_budget_snapshot_tests;
+mod retry_budget_tests;

@@ -5,6 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+//! Random source coverage mirrors.
 
 mod internal;
 mod retry_random_source_tests;

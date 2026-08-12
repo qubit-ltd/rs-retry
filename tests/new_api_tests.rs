@@ -1,10 +1,23 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+#[cfg(feature = "tokio")]
+use qubit_clock::ManualMonotonicClock;
+#[cfg(feature = "tokio")]
+use qubit_clock::MonotonicClock;
 use qubit_retry::AttemptFailure;
 use qubit_retry::AttemptFailureKind;
+use qubit_retry::AttemptTimeoutKind;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffRequest;
 use qubit_retry::Retry;
@@ -147,6 +160,81 @@ async fn async_attempt_timeout_has_a_distinct_terminal_reason() {
     assert_eq!(error.kind(), RetryErrorKind::TimedOut);
 }
 
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn async_shorter_flow_timeout_reports_flow_source() {
+    let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
+    let retry = Retry::<TestError>::builder(policy).build();
+    let clock = ManualMonotonicClock::new_shared();
+    let executor = retry
+        .asynchronous()
+        .attempt_timeout(Duration::from_secs(30))
+        .flow_timeout(Duration::from_secs(1))
+        .timer(clock.new_timer());
+    let future = executor.run(std::future::pending::<Result<(), TestError>>);
+    tokio::pin!(future);
+
+    let reached = tokio::select! {
+        result = &mut future => {
+            panic!("retry completed before manual time advanced: {result:?}");
+        }
+        reached = clock.advance_to_next_deadline_async() => reached,
+    };
+    assert_eq!(reached.elapsed_since_origin(), Duration::from_secs(1));
+
+    let error = future
+        .await
+        .expect_err("flow timeout should terminate retry");
+    assert_eq!(error.reason(), RetryErrorReason::FlowTimedOut);
+    assert_eq!(
+        error.last_failure().and_then(AttemptFailure::timeout_kind),
+        Some(AttemptTimeoutKind::Flow)
+    );
+}
+
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn async_flow_timeout_caps_retry_sleep() {
+    let policy = RetryPolicy::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::from_secs(30)))
+        .build()
+        .unwrap();
+    let retry = Retry::<TestError>::builder(policy).build();
+    let clock = ManualMonotonicClock::new_shared();
+    let attempts = Arc::new(AtomicU32::new(0));
+    let executor = retry
+        .asynchronous()
+        .flow_timeout(Duration::from_secs(1))
+        .timer(clock.new_timer());
+    let future = executor.run({
+        let attempts = Arc::clone(&attempts);
+        move || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(Err::<(), _>(TestError))
+        }
+    });
+    tokio::pin!(future);
+
+    let reached = tokio::select! {
+        result = &mut future => {
+            panic!("retry completed before manual time advanced: {result:?}");
+        }
+        reached = clock.advance_to_next_deadline_async() => reached,
+    };
+    assert_eq!(
+        reached.elapsed_since_origin(),
+        Duration::from_secs(1),
+        "the flow deadline, not the full backoff, must drive the timer"
+    );
+
+    let error = future
+        .await
+        .expect_err("flow timeout should terminate retry");
+    assert_eq!(error.reason(), RetryErrorReason::FlowTimedOut);
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+}
+
 #[test]
 fn worker_facade_retries_with_cooperative_token() {
     let policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
@@ -186,4 +274,56 @@ fn worker_attempt_timeout_has_a_distinct_terminal_reason() {
 
     assert_eq!(error.reason(), RetryErrorReason::AttemptTimedOut);
     assert_eq!(error.kind(), RetryErrorKind::TimedOut);
+}
+
+#[test]
+fn worker_shorter_flow_timeout_reports_flow_source() {
+    let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
+    let retry = Retry::<TestError>::builder(policy).build();
+    let error = retry
+        .worker()
+        .attempt_timeout(Duration::from_secs(1))
+        .flow_timeout(Duration::from_millis(10))
+        .cancellation_grace(Duration::from_millis(50))
+        .run(|token| {
+            while !token.is_cancelled() {
+                std::thread::yield_now();
+            }
+            Err::<(), _>(TestError)
+        })
+        .expect_err("flow timeout should terminate retry");
+
+    assert_eq!(error.reason(), RetryErrorReason::FlowTimedOut);
+    assert_eq!(
+        error.last_failure().and_then(AttemptFailure::timeout_kind),
+        Some(AttemptTimeoutKind::Flow)
+    );
+}
+
+#[test]
+fn worker_flow_timeout_caps_retry_sleep() {
+    let policy = RetryPolicy::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::from_millis(500)))
+        .build()
+        .unwrap();
+    let retry = Retry::<TestError>::builder(policy).build();
+    let attempts = Arc::new(AtomicU32::new(0));
+    let operation_attempts = Arc::clone(&attempts);
+    let error = retry
+        .worker()
+        .flow_timeout(Duration::from_millis(10))
+        .run(move |_| {
+            operation_attempts.fetch_add(1, Ordering::SeqCst);
+            Err::<(), _>(TestError)
+        })
+        .expect_err("flow timeout should terminate retry");
+
+    assert_eq!(error.reason(), RetryErrorReason::FlowTimedOut);
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    assert!(
+        error.context().total_elapsed() < Duration::from_millis(100),
+        "flow timeout should cap the blocking sleep: {:?}",
+        error.context().total_elapsed()
+    );
 }
