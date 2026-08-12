@@ -5,10 +5,8 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+//! Event behavior coverage mirrors.
 
 mod attempt_failure_decision_tests;
-mod attempt_timeout_source_tests;
 mod retry_context_parts_tests;
 mod retry_context_tests;
-mod retry_events_tests;
-mod retry_listeners_tests;

@@ -6,4 +6,4 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-//! Worker attempt execution is covered through current worker regressions.
+//! Shared flow state is covered by all three public executor facades.

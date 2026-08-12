@@ -7,7 +7,9 @@
 // =============================================================================
 
 use qubit_retry::AttemptCancelToken;
+use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
+use qubit_retry::RetryPolicy;
 
 use crate::support::TestError;
 
@@ -22,14 +24,16 @@ struct NonCloneValue {
 #[test]
 fn test_blocking_value_operation_is_observable_through_non_clone_success_value()
 {
-    let retry = Retry::<TestError>::builder()
+    let policy = RetryPolicy::builder()
         .max_attempts(1)
-        .no_delay()
+        .backoff(BackoffPolicy::immediate())
         .build()
         .expect("retry should build");
+    let retry = Retry::<TestError>::builder(policy).build();
 
     let value = retry
-        .run_in_worker(|_token: AttemptCancelToken| {
+        .worker()
+        .run(|_token: AttemptCancelToken| {
             Ok::<_, TestError>(NonCloneValue { text: "ok" })
         })
         .expect("worker operation should succeed");

@@ -10,11 +10,10 @@ use qubit_retry::RetryRandomSource;
 
 use crate::support::FixedRetryRandomSource;
 
-/// Verifies custom random sources can supply both supported sample types.
+/// Verifies custom random sources can supply bounded floating-point samples.
 #[test]
-fn test_retry_random_source_exposes_integer_and_float_samples() {
-    let source = FixedRetryRandomSource::new(7, 0.25);
+fn test_retry_random_source_exposes_float_samples() {
+    let source = FixedRetryRandomSource::new(0.25);
 
-    assert_eq!(source.random_u64_inclusive(5, 9), 7);
     assert_eq!(source.random_f64_inclusive(0.0, 1.0), 0.25);
 }

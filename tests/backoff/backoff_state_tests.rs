@@ -8,10 +8,6 @@ use qubit_retry::RetryRandomSource;
 struct FixedRandom;
 
 impl RetryRandomSource for FixedRandom {
-    fn random_u64_inclusive(&self, min: u64, _max: u64) -> u64 {
-        min
-    }
-
     fn random_f64_inclusive(&self, min: f64, _max: f64) -> f64 {
         min
     }
@@ -19,9 +15,12 @@ impl RetryRandomSource for FixedRandom {
 
 #[test]
 fn test_backoff_state_advances_and_resets() {
-    let policy =
-        BackoffPolicy::exponential(Duration::from_millis(10), 2.0, Duration::from_millis(25))
-            .expect("valid exponential policy");
+    let policy = BackoffPolicy::exponential(
+        Duration::from_millis(10),
+        2.0,
+        Duration::from_millis(25),
+    )
+    .expect("valid exponential policy");
     let mut state = policy.start_with_random_source(Arc::new(FixedRandom));
     assert_eq!(
         state.next(BackoffRequest::policy()).effective_delay(),
