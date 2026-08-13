@@ -31,6 +31,34 @@ enum RetryResource {
     TotalElapsed,
 }
 
+/// Borrows a clock without requiring a blanket implementation for references.
+struct BorrowedMonotonicClock<'a>(&'a dyn MonotonicClock);
+
+impl MonotonicClock for BorrowedMonotonicClock<'_> {
+    /// Returns the borrowed clock's domain.
+    fn domain(&self) -> qubit_clock::ClockDomain {
+        self.0.domain()
+    }
+
+    /// Returns the borrowed clock's current instant.
+    fn now(&self) -> MonotonicInstant {
+        self.0.now()
+    }
+
+    /// Calculates a deadline using the borrowed clock.
+    fn deadline_after(
+        &self,
+        duration: Duration,
+    ) -> Result<MonotonicInstant, qubit_clock::TimeError> {
+        self.0.deadline_after(duration)
+    }
+
+    /// Creates a timer using the borrowed clock.
+    fn new_timer(&self) -> std::sync::Arc<dyn qubit_clock::Timer> {
+        self.0.new_timer()
+    }
+}
+
 /// The single source of truth for retry continuation limits.
 ///
 /// `max_attempts`, `max_operation_elapsed`, and `max_total_elapsed` prevent
@@ -55,7 +83,7 @@ pub struct RetryBudget<'a> {
     operation_elapsed: Duration,
 
     /// Continuous end-to-end deadline budget.
-    total: Option<TimeBudget<RetryResource, &'a dyn MonotonicClock>>,
+    total: Option<TimeBudget<RetryResource, BorrowedMonotonicClock<'a>>>,
 
     /// Actual duration of the latest completed attempt.
     last_attempt_elapsed: Duration,
@@ -73,7 +101,13 @@ impl<'a> RetryBudget<'a> {
     ) -> Result<Self, RetryBudgetError> {
         let total = limits
             .max_total_elapsed()
-            .map(|duration| TimeBudget::for_duration(RetryResource::TotalElapsed, clock, duration))
+            .map(|duration| {
+                TimeBudget::for_duration(
+                    RetryResource::TotalElapsed,
+                    BorrowedMonotonicClock(clock),
+                    duration,
+                )
+            })
             .transpose()
             .map_err(|error| match error {
                 TimeBudgetError::Clock { source, .. } => RetryBudgetError::Clock(source),
