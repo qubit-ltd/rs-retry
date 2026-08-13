@@ -18,11 +18,7 @@ use qubit_retry::RetryContext;
 use qubit_retry::RetryPolicy;
 
 /// No-op failure listener used to measure listener dispatch overhead.
-fn observe_failure(
-    _failure: &AttemptFailure<&'static str>,
-    _context: &RetryContext,
-) {
-}
+fn observe_failure(_failure: &AttemptFailure<&'static str>, _context: &RetryContext) {}
 
 /// Measures the lowest-overhead successful synchronous execution path.
 fn benchmark_sync_success(c: &mut Criterion) {
@@ -35,8 +31,7 @@ fn benchmark_sync_success(c: &mut Criterion) {
 
     c.bench_function("sync_success", |b| {
         b.iter(|| {
-            let result =
-                retry.sync().run(|| Ok::<u64, &'static str>(black_box(42)));
+            let result = retry.sync().run(|| Ok::<u64, &'static str>(black_box(42)));
             let _ = black_box(result);
         });
     });

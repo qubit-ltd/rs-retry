@@ -17,10 +17,7 @@ pub struct RetryDiagnostic {
 impl RetryDiagnostic {
     /// Creates a callback diagnostic.
     #[allow(dead_code)]
-    pub(crate) fn new(
-        kind: RetryDiagnosticKind,
-        callback_index: usize,
-    ) -> Self {
+    pub(crate) fn new(kind: RetryDiagnosticKind, callback_index: usize) -> Self {
         Self {
             kind,
             callback_index,

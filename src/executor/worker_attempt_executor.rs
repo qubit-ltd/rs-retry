@@ -80,9 +80,7 @@ impl WorkerAttemptExecutor {
                 // isolation boundary. Convert panic payloads into retry
                 // failures so policy and listeners can handle them normally.
                 let result =
-                    panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                        operation.call(worker_token)
-                    }));
+                    panic::catch_unwind(panic::AssertUnwindSafe(|| operation.call(worker_token)));
                 let attempt_result = match result {
                     Ok(result) => result,
                     Err(_payload) => Err(AttemptFailure::Panic),
@@ -101,9 +99,7 @@ impl WorkerAttemptExecutor {
                 &token,
                 worker_cancel_grace,
             ),
-            None => {
-                worker_recv_result_to_attempt_outcome(receiver.recv(), worker)
-            }
+            None => worker_recv_result_to_attempt_outcome(receiver.recv(), worker),
         }
     }
 }
@@ -153,8 +149,7 @@ where
         // token first, then waits briefly so well-behaved operations can return
         // and be joined before retry policy decides what to do next.
         token.cancel();
-        let worker_exited =
-            wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
+        let worker_exited = wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
         let unreaped_worker_count = if worker_exited { 0 } else { 1 };
         BlockingAttemptOutcome::new(
             Err(AttemptFailure::Timeout {
@@ -164,8 +159,7 @@ where
         )
     } else {
         join_finished_worker(worker);
-        let result =
-            result.expect("worker thread must send exactly one result");
+        let result = result.expect("worker thread must send exactly one result");
         BlockingAttemptOutcome::new(result, 0)
     }
 }

@@ -15,12 +15,9 @@ impl RetryRandomSource for FixedRandom {
 
 #[test]
 fn test_backoff_state_advances_and_resets() {
-    let policy = BackoffPolicy::exponential(
-        Duration::from_millis(10),
-        2.0,
-        Duration::from_millis(25),
-    )
-    .expect("valid exponential policy");
+    let policy =
+        BackoffPolicy::exponential(Duration::from_millis(10), 2.0, Duration::from_millis(25))
+            .expect("valid exponential policy");
     let mut state = policy.start_with_random_source(Arc::new(FixedRandom));
     assert_eq!(
         state.next(BackoffRequest::policy()).effective_delay(),
