@@ -46,7 +46,7 @@ rand = "0.10"
 thiserror = "2"
 
 qubit-error = "0.2"
-qubit-datatype = { version = "0.10", path = "../rs-datatype", default-features = false, features = ["duration"] }
+qubit-datatype = { version = "0.11", path = "../rs-datatype", default-features = false, features = ["duration"] }
 qubit-function = "0.16"
 qubit-clock = { version = "0.12", path = "../rs-clock" }
 
