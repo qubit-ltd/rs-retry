@@ -53,10 +53,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
 
     /// Runs a same-thread operation until success or a terminal retry error.
     #[allow(clippy::result_large_err)]
-    pub fn run<T, F>(
-        &self,
-        mut operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub fn run<T, F>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,
     {
@@ -71,8 +68,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
 
         loop {
             if let Some(reason) = flow.continuation_reason() {
-                let error =
-                    RetryError::new(reason, None, flow.current_context());
+                let error = RetryError::new(reason, None, flow.current_context());
                 self.retry
                     .observers()
                     .finished(RetryOutcomeKind::Failed, error.context());
@@ -85,8 +81,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
             let attempt = match flow.begin_attempt() {
                 Ok(attempt) => attempt,
                 Err(reason) => {
-                    let error =
-                        RetryError::new(reason, None, flow.current_context());
+                    let error = RetryError::new(reason, None, flow.current_context());
                     self.retry
                         .observers()
                         .finished(RetryOutcomeKind::Failed, error.context());
@@ -99,10 +94,9 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
 
             match result {
                 Ok(value) => {
-                    self.retry.observers().finished(
-                        RetryOutcomeKind::Succeeded,
-                        &attempt_context,
-                    );
+                    self.retry
+                        .observers()
+                        .finished(RetryOutcomeKind::Succeeded, &attempt_context);
                     return Ok(RetrySuccess::new(value, attempt_context));
                 }
                 Err(error) => {
@@ -111,17 +105,14 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                         .observers()
                         .attempt_failed(&failure, &attempt_context);
                     let mut diagnostics = Vec::new();
-                    let decision = self.retry.rules().decide(
-                        &failure,
-                        &attempt_context,
-                        &mut diagnostics,
-                    );
+                    let decision =
+                        self.retry
+                            .rules()
+                            .decide(&failure, &attempt_context, &mut diagnostics);
                     for diagnostic in &diagnostics {
-                        self.retry.observers().diagnostic(
-                            diagnostic,
-                            &attempt_context,
-                            None,
-                        );
+                        self.retry
+                            .observers()
+                            .diagnostic(diagnostic, &attempt_context, None);
                     }
                     let decision = default_decision(decision);
                     if matches!(decision, RetryDecision::Abort) {
@@ -130,22 +121,16 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                             Some(failure),
                             attempt_context,
                         );
-                        self.retry.observers().finished(
-                            RetryOutcomeKind::Failed,
-                            error.context(),
-                        );
+                        self.retry
+                            .observers()
+                            .finished(RetryOutcomeKind::Failed, error.context());
                         return Err(error);
                     }
                     if let Some(reason) = flow.continuation_reason() {
-                        let error = RetryError::new(
-                            reason,
-                            Some(failure),
-                            attempt_context,
-                        );
-                        self.retry.observers().finished(
-                            RetryOutcomeKind::Failed,
-                            error.context(),
-                        );
+                        let error = RetryError::new(reason, Some(failure), attempt_context);
+                        self.retry
+                            .observers()
+                            .finished(RetryOutcomeKind::Failed, error.context());
                         return Err(error);
                     }
 
@@ -156,35 +141,23 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                     self.retry
                         .observers()
                         .retry_scheduled(&step, &scheduled_context);
-                    if let Some(reason) =
-                        flow.retry_reason(step.effective_delay())
-                    {
-                        let error = RetryError::new(
-                            reason,
-                            Some(failure),
-                            scheduled_context,
-                        );
-                        self.retry.observers().finished(
-                            RetryOutcomeKind::Failed,
-                            error.context(),
-                        );
+                    if let Some(reason) = flow.retry_reason(step.effective_delay()) {
+                        let error = RetryError::new(reason, Some(failure), scheduled_context);
+                        self.retry
+                            .observers()
+                            .finished(RetryOutcomeKind::Failed, error.context());
                         return Err(error);
                     }
-                    if let Err(timer_error) =
-                        self.sleeper.sleep_for(step.effective_delay())
-                    {
+                    if let Err(timer_error) = self.sleeper.sleep_for(step.effective_delay()) {
                         let error = RetryError::new_with_execution_error(
                             RetryErrorReason::TimerFailed,
                             Some(failure),
-                            crate::RetryExecutionError::timer(
-                                &timer_error.to_string(),
-                            ),
+                            crate::RetryExecutionError::timer(&timer_error.to_string()),
                             scheduled_context,
                         );
-                        self.retry.observers().finished(
-                            RetryOutcomeKind::Failed,
-                            error.context(),
-                        );
+                        self.retry
+                            .observers()
+                            .finished(RetryOutcomeKind::Failed, error.context());
                         return Err(error);
                     }
                 }

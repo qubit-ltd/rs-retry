@@ -77,10 +77,7 @@ impl<'a> RetryFlowState<'a> {
     }
 
     /// Checks policy budgets for a prospective retry delay.
-    pub(crate) fn retry_reason(
-        &self,
-        delay: Duration,
-    ) -> Option<RetryErrorReason> {
+    pub(crate) fn retry_reason(&self, delay: Duration) -> Option<RetryErrorReason> {
         self.budget
             .check_retry_after(delay)
             .err()
@@ -88,9 +85,7 @@ impl<'a> RetryFlowState<'a> {
     }
 
     /// Admits one attempt and returns its linear completion token.
-    pub(crate) fn begin_attempt(
-        &mut self,
-    ) -> Result<RetryAttempt, RetryErrorReason> {
+    pub(crate) fn begin_attempt(&mut self) -> Result<RetryAttempt, RetryErrorReason> {
         if self
             .flow_remaining()
             .is_some_and(|remaining| remaining.is_zero())
@@ -101,33 +96,23 @@ impl<'a> RetryFlowState<'a> {
     }
 
     /// Finishes one admitted attempt and returns the updated snapshot.
-    pub(crate) fn finish_attempt(
-        &mut self,
-        attempt: RetryAttempt,
-    ) -> RetryBudgetSnapshot {
+    pub(crate) fn finish_attempt(&mut self, attempt: RetryAttempt) -> RetryBudgetSnapshot {
         self.budget.finish_attempt(attempt)
     }
 
     /// Selects and advances the next backoff step.
-    pub(crate) fn next_backoff(
-        &mut self,
-        decision: RetryDecision,
-    ) -> BackoffStep {
+    pub(crate) fn next_backoff(&mut self, decision: RetryDecision) -> BackoffStep {
         let request = match decision {
             RetryDecision::RetryAfter(delay) => BackoffRequest::explicit(delay),
-            RetryDecision::Retry
-            | RetryDecision::UseDefault
-            | RetryDecision::Abort => BackoffRequest::policy(),
+            RetryDecision::Retry | RetryDecision::UseDefault | RetryDecision::Abort => {
+                BackoffRequest::policy()
+            }
         };
         self.backoff.next(request)
     }
 
     /// Builds a context from a supplied budget snapshot and attempt ordinal.
-    pub(crate) fn context(
-        &self,
-        snapshot: RetryBudgetSnapshot,
-        attempt: u32,
-    ) -> RetryContext {
+    pub(crate) fn context(&self, snapshot: RetryBudgetSnapshot, attempt: u32) -> RetryContext {
         RetryContext::from_parts(RetryContextParts {
             attempt,
             max_attempts: self.policy.limits().max_attempts().get(),
@@ -175,15 +160,9 @@ impl<'a> RetryFlowState<'a> {
     /// Maps continuation budget exhaustion into the public error vocabulary.
     fn budget_reason(exhausted: RetryBudgetExhausted) -> RetryErrorReason {
         match exhausted {
-            RetryBudgetExhausted::Attempts => {
-                RetryErrorReason::AttemptsExhausted
-            }
-            RetryBudgetExhausted::OperationElapsed => {
-                RetryErrorReason::OperationBudgetExhausted
-            }
-            RetryBudgetExhausted::TotalElapsed => {
-                RetryErrorReason::TotalBudgetExhausted
-            }
+            RetryBudgetExhausted::Attempts => RetryErrorReason::AttemptsExhausted,
+            RetryBudgetExhausted::OperationElapsed => RetryErrorReason::OperationBudgetExhausted,
+            RetryBudgetExhausted::TotalElapsed => RetryErrorReason::TotalBudgetExhausted,
         }
     }
 }

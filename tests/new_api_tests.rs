@@ -42,12 +42,9 @@ impl std::error::Error for TestError {}
 #[test]
 fn policy_validates_limits_and_backoff_state() {
     assert!(RetryPolicy::builder().max_attempts(0).build().is_err());
-    let policy = BackoffPolicy::exponential(
-        Duration::from_millis(10),
-        2.0,
-        Duration::from_millis(25),
-    )
-    .unwrap();
+    let policy =
+        BackoffPolicy::exponential(Duration::from_millis(10), 2.0, Duration::from_millis(25))
+            .unwrap();
     let mut state = policy.start();
     assert_eq!(state.next(BackoffRequest::policy()).retry_index(), 1);
     assert_eq!(
@@ -83,21 +80,13 @@ fn sync_facade_retries_application_failure() {
 fn first_rule_wins_and_failure_kind_is_stable() {
     struct RetryOnly;
     impl RetryRule<TestError> for RetryOnly {
-        fn decide(
-            &self,
-            _: &AttemptFailure<TestError>,
-            _: &RetryContext,
-        ) -> RetryDecision {
+        fn decide(&self, _: &AttemptFailure<TestError>, _: &RetryContext) -> RetryDecision {
             RetryDecision::Retry
         }
     }
     struct AbortRule;
     impl RetryRule<TestError> for AbortRule {
-        fn decide(
-            &self,
-            _: &AttemptFailure<TestError>,
-            _: &RetryContext,
-        ) -> RetryDecision {
+        fn decide(&self, _: &AttemptFailure<TestError>, _: &RetryContext) -> RetryDecision {
             RetryDecision::Abort
         }
     }
