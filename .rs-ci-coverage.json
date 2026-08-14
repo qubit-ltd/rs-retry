@@ -2,7 +2,8 @@
   "threshold_exempt_files": {
       "qubit-retry": [
         "src/budget/internal/borrowed_monotonic_clock.rs",
-        "src/executor/worker_retry.rs"
-      ]
+        "src/executor/worker_retry.rs",
+        "src/executor/sync_retry.rs"
+     ]
   }
 }
