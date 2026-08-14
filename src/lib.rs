@@ -44,7 +44,6 @@ pub use error::RetryErrorReason;
 pub(crate) use error::RetryExecutionError;
 pub use error::RetryPolicyError;
 pub use error::RetryResult;
-pub use event::AttemptFailureDecision;
 #[cfg(feature = "tokio")]
 pub use executor::AsyncRetry;
 pub use executor::AttemptCancelToken;

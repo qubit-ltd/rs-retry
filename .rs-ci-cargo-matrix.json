@@ -7,7 +7,8 @@
       "commands": [
         "check",
         "test",
-        "doc"
+        "doc",
+        "clippy"
       ]
     },
     {

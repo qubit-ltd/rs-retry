@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Builder for [`super::RetryPolicy`].
 
@@ -15,6 +17,7 @@ use crate::backoff::BackoffPolicy;
 
 /// Validated builder for a pure retry policy.
 #[derive(Debug, Clone)]
+#[must_use]
 pub struct RetryPolicyBuilder {
     max_attempts: u32,
     max_operation_elapsed: Option<Duration>,
@@ -46,7 +49,10 @@ impl RetryPolicyBuilder {
     }
 
     /// Sets or removes the cumulative operation-time budget.
-    pub fn max_operation_elapsed_opt(mut self, elapsed: Option<Duration>) -> Self {
+    pub fn max_operation_elapsed_opt(
+        mut self,
+        elapsed: Option<Duration>,
+    ) -> Self {
         self.max_operation_elapsed = elapsed;
         self
     }
@@ -83,9 +89,13 @@ impl RetryPolicyBuilder {
 
     /// Validates and creates the retry policy.
     pub fn build(self) -> Result<RetryPolicy, RetryPolicyError> {
-        let max_attempts = NonZeroU32::new(self.max_attempts).ok_or_else(|| {
-            RetryPolicyError::new("max_attempts", "maximum attempts must be greater than zero")
-        })?;
+        let max_attempts =
+            NonZeroU32::new(self.max_attempts).ok_or_else(|| {
+                RetryPolicyError::new(
+                    "max_attempts",
+                    "maximum attempts must be greater than zero",
+                )
+            })?;
         Ok(RetryPolicy::new(
             RetryLimits::new(
                 max_attempts,

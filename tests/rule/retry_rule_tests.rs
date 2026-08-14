@@ -1,3 +1,11 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use qubit_retry::AttemptFailure;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
@@ -6,7 +14,11 @@ use qubit_retry::RetryRule;
 struct NoopRule;
 
 impl RetryRule<()> for NoopRule {
-    fn decide(&self, _failure: &AttemptFailure<()>, _context: &RetryContext) -> RetryDecision {
+    fn decide(
+        &self,
+        _failure: &AttemptFailure<()>,
+        _context: &RetryContext,
+    ) -> RetryDecision {
         RetryDecision::UseDefault
     }
 }
