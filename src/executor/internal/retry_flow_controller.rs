@@ -497,7 +497,6 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// If the completion clock sample is invalid, the clock infrastructure
     /// failure takes precedence because no coherent cancellation context can
     /// be constructed.
-    #[cfg(feature = "tokio")]
     pub(crate) fn record_attempt_cancellation(
         &mut self,
         clock: &dyn MonotonicClock,
@@ -516,7 +515,6 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// The terminal context retains the last attempt failure and scheduling
     /// metadata. If the clock cannot be refreshed coherently, a clock
     /// infrastructure failure is returned instead.
-    #[cfg(feature = "tokio")]
     pub(crate) fn record_backoff_cancellation(
         &mut self,
         clock: &dyn MonotonicClock,

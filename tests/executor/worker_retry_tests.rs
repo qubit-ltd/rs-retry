@@ -16,7 +16,7 @@ use qubit_clock::ManualMonotonicClock;
 use qubit_clock::MonotonicClock;
 use qubit_clock::test_util::FaultInjectingTimer;
 use qubit_clock::test_util::TimerFailurePoint;
-use qubit_retry::AttemptCancelToken;
+use qubit_retry::AttemptCancellationToken;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
@@ -59,7 +59,7 @@ fn worker_spawn_failure_preserves_infrastructure_diagnostic() {
         .worker_stack_size(usize::MAX)
         .run({
             let operation_calls = std::sync::Arc::clone(&operation_calls);
-            move |_: AttemptCancelToken| {
+            move |_: AttemptCancellationToken| {
                 operation_calls.fetch_add(1, Ordering::SeqCst);
                 Err::<(), _>(TestError("operation should not run"))
             }

@@ -8,7 +8,7 @@
 
 use std::thread;
 
-use qubit_retry::AttemptCancelToken;
+use qubit_retry::AttemptCancellationToken;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
 use qubit_retry::RetryPolicy;
@@ -29,7 +29,7 @@ fn test_blocking_attempt_runs_with_uncancelled_token_on_worker_thread() {
 
     let worker_thread = retry
         .worker()
-        .run(|token: AttemptCancelToken| {
+        .run(|token: AttemptCancellationToken| {
             assert!(!token.is_cancelled());
             Ok(thread::current().id())
         })

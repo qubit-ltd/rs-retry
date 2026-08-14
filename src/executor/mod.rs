@@ -9,7 +9,7 @@
 
 #[cfg(feature = "tokio")]
 mod async_retry;
-mod attempt_cancel_token;
+mod attempt_cancellation_token;
 mod blocking_attempt;
 mod blocking_attempt_outcome;
 mod blocking_value_operation;
@@ -24,7 +24,7 @@ mod worker_retry;
 
 #[cfg(feature = "tokio")]
 pub use async_retry::AsyncRetry;
-pub use attempt_cancel_token::AttemptCancelToken;
+pub use attempt_cancellation_token::AttemptCancellationToken;
 pub use retry::Retry;
 pub use retry_builder::RetryBuilder;
 pub use retry_cancellation_token::RetryCancellationToken;

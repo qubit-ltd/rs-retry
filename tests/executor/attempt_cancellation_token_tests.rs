@@ -6,20 +6,20 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_retry::AttemptCancelToken;
+use qubit_retry::AttemptCancellationToken;
 
 /// Verifies a new cancellation token starts in the non-cancelled state.
 #[test]
-fn test_attempt_cancel_token_new_starts_not_cancelled() {
-    let token = AttemptCancelToken::new();
+fn test_attempt_cancellation_token_new_starts_not_cancelled() {
+    let token = AttemptCancellationToken::new();
 
     assert!(!token.is_cancelled());
 }
 
 /// Verifies cancellation is visible through cloned tokens.
 #[test]
-fn test_attempt_cancel_token_cancel_is_shared_by_clones() {
-    let token = AttemptCancelToken::new();
+fn test_attempt_cancellation_token_cancel_is_shared_by_clones() {
+    let token = AttemptCancellationToken::new();
     let clone = token.clone();
 
     token.cancel();

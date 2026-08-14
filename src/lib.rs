@@ -64,7 +64,7 @@ pub use error::RetryTimeoutScope;
 pub use error::WorkerStopTrigger;
 #[cfg(feature = "tokio")]
 pub use executor::AsyncRetry;
-pub use executor::AttemptCancelToken;
+pub use executor::AttemptCancellationToken;
 pub use executor::Retry;
 pub use executor::RetryBuilder;
 pub use executor::RetryCancellationToken;
