@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Attempt-level executor failures.
 
@@ -12,6 +14,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 /// Failure before an attempt could produce an application result.
+#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttemptExecutionError {
     message: Box<str>,
@@ -26,6 +29,7 @@ impl AttemptExecutionError {
     }
 
     /// Returns the execution diagnostic message.
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }

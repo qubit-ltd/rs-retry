@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Opaque backoff policy and validated constructors.
 
@@ -9,49 +11,25 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
+use serde::de::Error;
 
 use super::BackoffRequest;
 use super::BackoffState;
 use super::BackoffStep;
 use super::backoff_delay_source::BackoffDelaySource;
+use super::internal::BackoffPolicyData;
+use super::internal::BackoffStrategy;
+use super::internal::JitterStrategy;
+use super::internal::RetryAfterStrategy;
 use crate::RetryPolicyError;
 use crate::RetryRandomSource;
 use crate::random::ThreadRetryRandomSource;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-enum BackoffStrategy {
-    Immediate,
-    Fixed {
-        delay: Duration,
-    },
-    Uniform {
-        min: Duration,
-        max: Duration,
-    },
-    Exponential {
-        initial: Duration,
-        multiplier: f64,
-        max: Duration,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-enum JitterStrategy {
-    None,
-    Full,
-    Bounded { ratio: f64 },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-enum RetryAfterStrategy {
-    PreferHint,
-    AtLeastBackoff,
-    IgnoreHint,
-}
-
 /// Immutable delay strategy shared by retry and reconnect flows.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[must_use]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct BackoffPolicy {
     strategy: BackoffStrategy,
     jitter: JitterStrategy,
@@ -77,17 +55,16 @@ impl BackoffPolicy {
     }
 
     /// Creates a uniformly distributed base-delay policy.
-    pub fn uniform(min: Duration, max: Duration) -> Result<Self, RetryPolicyError> {
-        if min > max {
-            return Err(RetryPolicyError::new(
-                "backoff.uniform",
-                "minimum delay must not exceed maximum delay",
-            ));
-        }
-        Ok(Self {
+    pub fn uniform(
+        min: Duration,
+        max: Duration,
+    ) -> Result<Self, RetryPolicyError> {
+        let policy = Self {
             strategy: BackoffStrategy::Uniform { min, max },
             ..Self::immediate()
-        })
+        };
+        policy.validate()?;
+        Ok(policy)
     }
 
     /// Creates an exponential policy with a finite multiplier at least one.
@@ -96,26 +73,16 @@ impl BackoffPolicy {
         multiplier: f64,
         max: Duration,
     ) -> Result<Self, RetryPolicyError> {
-        if initial > max {
-            return Err(RetryPolicyError::new(
-                "backoff.exponential",
-                "initial delay must not exceed maximum delay",
-            ));
-        }
-        if !multiplier.is_finite() || multiplier < 1.0 {
-            return Err(RetryPolicyError::new(
-                "backoff.exponential.multiplier",
-                "multiplier must be finite and at least 1.0",
-            ));
-        }
-        Ok(Self {
+        let policy = Self {
             strategy: BackoffStrategy::Exponential {
                 initial,
                 multiplier,
                 max,
             },
             ..Self::immediate()
-        })
+        };
+        policy.validate()?;
+        Ok(policy)
     }
 
     /// Disables jitter.
@@ -131,14 +98,12 @@ impl BackoffPolicy {
     }
 
     /// Applies symmetric bounded jitter.
-    pub fn with_bounded_jitter(mut self, ratio: f64) -> Result<Self, RetryPolicyError> {
-        if !ratio.is_finite() || !(0.0..=1.0).contains(&ratio) {
-            return Err(RetryPolicyError::new(
-                "backoff.jitter.ratio",
-                "jitter ratio must be finite and within 0.0..=1.0",
-            ));
-        }
+    pub fn with_bounded_jitter(
+        mut self,
+        ratio: f64,
+    ) -> Result<Self, RetryPolicyError> {
         self.jitter = JitterStrategy::Bounded { ratio };
+        self.validate()?;
         Ok(self)
     }
 
@@ -161,27 +126,36 @@ impl BackoffPolicy {
     }
 
     /// Returns the configured maximum policy delay, when one exists.
+    #[must_use]
     pub fn maximum_delay(&self) -> Option<Duration> {
         match &self.strategy {
             BackoffStrategy::Immediate => Some(Duration::ZERO),
             BackoffStrategy::Fixed { delay } => Some(*delay),
-            BackoffStrategy::Uniform { max, .. } | BackoffStrategy::Exponential { max, .. } => {
-                Some(*max)
-            }
+            BackoffStrategy::Uniform { max, .. }
+            | BackoffStrategy::Exponential { max, .. } => Some(*max),
         }
     }
 
     /// Starts a state with the default thread-local random source.
+    #[must_use]
     pub fn start(&self) -> BackoffState {
         self.start_with_random_source(Arc::new(ThreadRetryRandomSource))
     }
 
     /// Starts a state with a deterministic or custom random source.
-    pub fn start_with_random_source(&self, random: Arc<dyn RetryRandomSource>) -> BackoffState {
+    #[must_use]
+    pub fn start_with_random_source(
+        &self,
+        random: Arc<dyn RetryRandomSource>,
+    ) -> BackoffState {
         BackoffState::new(self.clone(), random)
     }
 
-    pub(crate) fn base_delay(&self, retry_index: u32, random: &dyn RetryRandomSource) -> Duration {
+    pub(crate) fn base_delay(
+        &self,
+        retry_index: u32,
+        random: &dyn RetryRandomSource,
+    ) -> Duration {
         match &self.strategy {
             BackoffStrategy::Immediate => Duration::ZERO,
             BackoffStrategy::Fixed { delay } => *delay,
@@ -203,14 +177,6 @@ impl BackoffPolicy {
         retry_index: u32,
         random: &dyn RetryRandomSource,
     ) -> BackoffStep {
-        if let Some(explicit) = request.explicit_delay {
-            return BackoffStep::new(
-                retry_index,
-                base_delay,
-                explicit,
-                BackoffDelaySource::Explicit,
-            );
-        }
         let Some(hint) = request.hint else {
             return BackoffStep::new(
                 retry_index,
@@ -233,21 +199,31 @@ impl BackoffPolicy {
         } else {
             hint
         };
-        let (effective_delay, source) = if self.retry_after == RetryAfterStrategy::PreferHint {
-            (hinted_delay, BackoffDelaySource::Hint)
-        } else {
-            debug_assert_eq!(self.retry_after, RetryAfterStrategy::AtLeastBackoff);
-            (policy_delay.max(hinted_delay), BackoffDelaySource::Merged)
-        };
+        let (effective_delay, source) =
+            if self.retry_after == RetryAfterStrategy::PreferHint {
+                (hinted_delay, BackoffDelaySource::Hint)
+            } else {
+                debug_assert_eq!(
+                    self.retry_after,
+                    RetryAfterStrategy::AtLeastBackoff
+                );
+                (policy_delay.max(hinted_delay), BackoffDelaySource::Merged)
+            };
         BackoffStep::new(retry_index, base_delay, effective_delay, source)
     }
 
-    fn apply_jitter(&self, base: Duration, random: &dyn RetryRandomSource) -> Duration {
+    fn apply_jitter(
+        &self,
+        base: Duration,
+        random: &dyn RetryRandomSource,
+    ) -> Duration {
         match self.jitter {
             JitterStrategy::None => base,
-            JitterStrategy::Full => {
-                interpolate(Duration::ZERO, base, random.random_f64_inclusive(0.0, 1.0))
-            }
+            JitterStrategy::Full => interpolate(
+                Duration::ZERO,
+                base,
+                random.random_f64_inclusive(0.0, 1.0),
+            ),
             JitterStrategy::Bounded { ratio } => {
                 let low = (1.0 - ratio).max(0.0);
                 let high = 1.0 + ratio;
@@ -258,6 +234,64 @@ impl BackoffPolicy {
                 )
             }
         }
+    }
+
+    /// Validates all invariants required by a backoff policy.
+    fn validate(&self) -> Result<(), RetryPolicyError> {
+        match &self.strategy {
+            BackoffStrategy::Immediate | BackoffStrategy::Fixed { .. } => {}
+            BackoffStrategy::Uniform { min, max } if min <= max => {}
+            BackoffStrategy::Uniform { .. } => {
+                return Err(RetryPolicyError::new(
+                    "backoff.uniform",
+                    "minimum delay must not exceed maximum delay",
+                ));
+            }
+            BackoffStrategy::Exponential {
+                initial,
+                multiplier,
+                max,
+            } => {
+                if initial > max {
+                    return Err(RetryPolicyError::new(
+                        "backoff.exponential",
+                        "initial delay must not exceed maximum delay",
+                    ));
+                }
+                if !multiplier.is_finite() || *multiplier < 1.0 {
+                    return Err(RetryPolicyError::new(
+                        "backoff.exponential.multiplier",
+                        "multiplier must be finite and at least 1.0",
+                    ));
+                }
+            }
+        }
+        if let JitterStrategy::Bounded { ratio } = self.jitter
+            && (!ratio.is_finite() || !(0.0..=1.0).contains(&ratio))
+        {
+            return Err(RetryPolicyError::new(
+                "backoff.jitter.ratio",
+                "jitter ratio must be finite and within 0.0..=1.0",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for BackoffPolicy {
+    /// Deserializes and validates one backoff policy.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let data = BackoffPolicyData::deserialize(deserializer)?;
+        let policy = Self {
+            strategy: data.strategy,
+            jitter: data.jitter,
+            retry_after: data.retry_after,
+        };
+        policy.validate().map_err(Error::custom)?;
+        Ok(policy)
     }
 }
 

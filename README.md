@@ -13,8 +13,8 @@ the original application error or hiding why execution stopped.
 
 ## A real use case
 
-An HTTP client can retry a transient response while preserving a server
-`Retry-After` hint, then report a stable terminal category to its caller:
+An HTTP client can retry a transient response and return a server `Retry-After`
+value as `RetryWithHint`, then report a stable terminal category to its caller:
 
 ```rust
 use std::time::Duration;
@@ -61,6 +61,10 @@ let response = retry.sync().run(|| std::fs::read("Cargo.toml"))?.into_value();
 The same policy can be used by an async client through `retry.asynchronous()`
 or by blocking code through `retry.worker()`.
 
+When a domain error carries a server delay, the rule can return
+`RetryDecision::RetryWithHint(delay)`. The configured backoff policy then decides
+whether that hint is preferred, used as a minimum, or ignored.
+
 ## Installation
 
 ```toml
@@ -84,13 +88,14 @@ qubit-retry = { version = "0.18", features = ["tokio"] }
   the `tokio` feature is enabled.
 - `Retry::worker()` isolates blocking attempts, captures panics, and waits for
   cooperative cancellation before allowing another worker to start.
-- Ordered `RetryRule` values choose `Retry`, `RetryAfter`, `Abort`, or
+- Ordered `RetryRule` values choose `Retry`, `RetryWithHint`,
+  `RetryWithJitteredHint`, `Abort`, or
   `UseDefault`; `RetryObserver` values receive isolated lifecycle callbacks.
 - `AttemptFailureKind` and `RetryErrorKind` are stable categories. Detailed
   `AttemptFailure` and `RetryErrorReason` values are marked non-exhaustive so
   new runtime details can be added without changing category handling.
 - `BackoffState` is reusable for reconnect loops such as SSE and supports
-  explicit delays, server hints, jitter, and overflow-safe exponential growth.
+  server hints, jitter, and overflow-safe exponential growth.
 
 Budgets only control whether another attempt may start. If an admitted
 operation succeeds after crossing a budget, the success is returned. A retry

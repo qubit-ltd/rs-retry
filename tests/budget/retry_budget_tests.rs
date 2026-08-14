@@ -64,7 +64,7 @@ fn test_attempt_budget_is_the_only_attempt_counter() {
     let mut budget = RetryBudget::new(&clock, *policy.limits())
         .expect("manual clock should represent the policy");
     let attempt = budget.begin_attempt().expect("first attempt is admitted");
-    budget.finish_attempt(attempt);
+    let _ = budget.finish_attempt(attempt);
 
     assert!(matches!(
         budget.begin_attempt(),

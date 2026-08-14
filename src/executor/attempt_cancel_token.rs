@@ -49,6 +49,7 @@ impl AttemptCancelToken {
     /// `true` after the executor or another holder calls
     /// [`AttemptCancelToken::cancel`].
     #[inline(always)]
+    #[must_use]
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
     }

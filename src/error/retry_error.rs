@@ -31,8 +31,12 @@ use crate::error::RetryExecutionError;
 /// preserved in [`AttemptFailure::Error`] when the terminal failure came from
 /// the user operation. Runtime failures such as timeout, panic, and executor
 /// failures are preserved through [`RetryError::last_failure`].
+#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(serialize = "E: Serialize", deserialize = "E: DeserializeOwned"))]
+#[serde(bound(
+    serialize = "E: Serialize",
+    deserialize = "E: DeserializeOwned"
+))]
 pub struct RetryError<E> {
     /// Terminal reason selected by the retry flow.
     reason: RetryErrorReason,
@@ -96,16 +100,19 @@ impl<E> RetryError<E> {
     /// # Returns
     /// The reason the retry flow stopped.
     #[inline(always)]
+    #[must_use]
     pub fn reason(&self) -> RetryErrorReason {
         self.reason
     }
 
     /// Returns the stable terminal error category.
+    #[must_use]
     pub fn kind(&self) -> RetryErrorKind {
         self.reason.kind()
     }
 
     /// Returns a control-path execution failure, if one exists.
+    #[must_use]
     pub fn execution_error(&self) -> Option<&RetryExecutionError> {
         self.execution_error.as_ref()
     }
@@ -115,6 +122,7 @@ impl<E> RetryError<E> {
     /// # Returns
     /// A context snapshot with attempt counts and timing metadata.
     #[inline(always)]
+    #[must_use = "inspect the terminal retry context"]
     pub fn context(&self) -> &RetryContext {
         &self.context
     }
@@ -130,6 +138,7 @@ impl<E> RetryError<E> {
     /// # Returns
     /// The committed operation-attempt count at termination.
     #[inline(always)]
+    #[must_use]
     pub fn attempts(&self) -> u32 {
         self.context.attempt()
     }
@@ -140,6 +149,7 @@ impl<E> RetryError<E> {
     /// `Some(&AttemptFailure<E>)` when at least one attempt failure was
     /// observed; `None` when the retry flow stopped before any attempt ran.
     #[inline(always)]
+    #[must_use]
     pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
         self.last_failure.as_ref()
     }
@@ -151,6 +161,7 @@ impl<E> RetryError<E> {
     /// `None` for timeout, panic, executor failures, or elapsed-budget failures
     /// with no attempt.
     #[inline(always)]
+    #[must_use]
     pub fn last_error(&self) -> Option<&E> {
         self.last_failure().and_then(AttemptFailure::as_error)
     }
@@ -163,6 +174,7 @@ impl<E> RetryError<E> {
     /// when the terminal failure was a timeout, panic, executor failure, or
     /// when no attempt ran.
     #[inline(always)]
+    #[must_use]
     pub fn into_last_error(self) -> Option<E> {
         self.last_failure.and_then(AttemptFailure::into_error)
     }
@@ -172,7 +184,9 @@ impl<E> RetryError<E> {
     /// # Returns
     /// A tuple `(reason, last_failure, context)` preserving all terminal data.
     #[inline(always)]
-    pub fn into_parts(self) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
+    pub fn into_parts(
+        self,
+    ) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
         (self.reason, self.last_failure, self.context)
     }
 
@@ -220,13 +234,18 @@ where
                 self.context.max_attempts()
             ),
             RetryErrorReason::OperationBudgetExhausted => {
-                format!("retry max operation elapsed exceeded after {attempts} attempt(s)")
+                format!(
+                    "retry max operation elapsed exceeded after {attempts} attempt(s)"
+                )
             }
             RetryErrorReason::TotalBudgetExhausted => {
-                format!("retry max total elapsed exceeded after {attempts} attempt(s)")
+                format!(
+                    "retry max total elapsed exceeded after {attempts} attempt(s)"
+                )
             }
             RetryErrorReason::WorkerStillRunning => {
-                "retry worker still running after timeout cancellation grace".to_string()
+                "retry worker still running after timeout cancellation grace"
+                    .to_string()
             }
             RetryErrorReason::AttemptTimedOut => {
                 format!("retry attempt timed out after {attempts} attempt(s)")
@@ -236,6 +255,11 @@ where
             }
             RetryErrorReason::TimerFailed => {
                 format!("retry timer failed after {attempts} attempt(s)")
+            }
+            RetryErrorReason::WorkerFailed => {
+                format!(
+                    "retry worker failed to start after {attempts} attempt(s)"
+                )
             }
         };
         f.write_str(&message)?;
@@ -257,9 +281,13 @@ where
     /// captured panic, or executor failure; otherwise `None`.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self.last_failure() {
-            Some(AttemptFailure::Error(error)) => Some(error as &(dyn Error + 'static)),
+            Some(AttemptFailure::Error(error)) => {
+                Some(error as &(dyn Error + 'static))
+            }
             Some(AttemptFailure::Panic) => None,
-            Some(AttemptFailure::Infrastructure(error)) => Some(error as &(dyn Error + 'static)),
+            Some(AttemptFailure::Infrastructure(error)) => {
+                Some(error as &(dyn Error + 'static))
+            }
             Some(AttemptFailure::Timeout { .. }) | None => self
                 .execution_error
                 .as_ref()

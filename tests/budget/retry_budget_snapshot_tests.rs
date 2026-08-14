@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Tests for retry budget snapshots.
 
@@ -19,7 +21,8 @@ fn test_snapshot_samples_total_elapsed_without_mutation() {
         .max_attempts(2)
         .build()
         .expect("policy must be valid");
-    let budget = RetryBudget::new(&clock, *policy.limits()).expect("budget must construct");
+    let budget = RetryBudget::new(&clock, *policy.limits())
+        .expect("budget must construct");
 
     clock
         .advance(Duration::from_secs(2))

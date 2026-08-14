@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Tokio execution facade for the policy-based retry API.
 
@@ -66,13 +68,19 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     }
 
     /// Injects the random source used by backoff jitter.
-    pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
+    pub fn random_source(
+        mut self,
+        random_source: Arc<dyn RetryRandomSource>,
+    ) -> Self {
         self.random_source = random_source;
         self
     }
 
     /// Executes one future per attempt.
-    pub async fn run<T, F, Fut>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub async fn run<T, F, Fut>(
+        &self,
+        mut operation: F,
+    ) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -107,7 +115,11 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
             let attempt = match flow.begin_attempt() {
                 Ok(attempt) => attempt,
                 Err(reason) => {
-                    return Err(self.finish(reason, last_failure, flow.current_context()));
+                    return Err(self.finish(
+                        reason,
+                        last_failure,
+                        flow.current_context(),
+                    ));
                 }
             };
             let timeout = flow.effective_timeout(self.attempt_timeout);
@@ -119,9 +131,10 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
 
             match outcome {
                 Ok(value) => {
-                    self.retry
-                        .observers()
-                        .finished(RetryOutcomeKind::Succeeded, &attempt_context);
+                    self.retry.observers().finished(
+                        RetryOutcomeKind::Succeeded,
+                        &attempt_context,
+                    );
                     return Ok(RetrySuccess::new(value, attempt_context));
                 }
                 Err(failure) => {
@@ -140,16 +153,20 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                         ));
                     }
                     let mut diagnostics = Vec::new();
-                    let decision =
-                        self.retry
-                            .rules()
-                            .decide(&failure, &attempt_context, &mut diagnostics);
+                    let decision = self.retry.rules().decide(
+                        &failure,
+                        &attempt_context,
+                        &mut diagnostics,
+                    );
                     for diagnostic in &diagnostics {
-                        self.retry
-                            .observers()
-                            .diagnostic(diagnostic, &attempt_context, None);
+                        self.retry.observers().diagnostic(
+                            diagnostic,
+                            &attempt_context,
+                            None,
+                        );
                     }
                     let decision = default_decision(decision, &failure);
+                    let hint = decision.retry_after_hint();
                     if matches!(
                         failure,
                         AttemptFailure::Timeout {
@@ -170,15 +187,29 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                         ));
                     }
                     if let Some(reason) = flow.continuation_reason() {
-                        return Err(self.finish(reason, Some(failure), attempt_context));
+                        return Err(self.finish(
+                            reason,
+                            Some(failure),
+                            attempt_context,
+                        ));
                     }
                     let step = flow.next_backoff(decision);
-                    let scheduled = attempt_context.with_next_delay(step.effective_delay());
+                    let scheduled =
+                        attempt_context.with_next_delay(step.effective_delay());
+                    let scheduled = scheduled.with_retry_after_hint(hint);
                     self.retry.observers().retry_scheduled(&step, &scheduled);
-                    if let Some(reason) = flow.retry_reason(step.effective_delay()) {
-                        return Err(self.finish(reason, Some(failure), scheduled));
+                    if let Some(reason) =
+                        flow.retry_reason(step.effective_delay())
+                    {
+                        return Err(self.finish(
+                            reason,
+                            Some(failure),
+                            scheduled,
+                        ));
                     }
-                    if let Some(remaining) = flow.flow_sleep_cap(step.effective_delay()) {
+                    if let Some(remaining) =
+                        flow.flow_sleep_cap(step.effective_delay())
+                    {
                         if let Err(error) = sleep(&timer, remaining).await {
                             return Err(self.finish_with_timer_error(
                                 Some(failure),
@@ -192,8 +223,14 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                             scheduled,
                         ));
                     }
-                    if let Err(error) = sleep(&timer, step.effective_delay()).await {
-                        return Err(self.finish_with_timer_error(Some(failure), scheduled, error));
+                    if let Err(error) =
+                        sleep(&timer, step.effective_delay()).await
+                    {
+                        return Err(self.finish_with_timer_error(
+                            Some(failure),
+                            scheduled,
+                            error,
+                        ));
                     }
                     last_failure = Some(failure);
                 }
@@ -280,12 +317,18 @@ where
     }
 }
 
-async fn sleep(timer: &Arc<dyn Timer>, delay: Duration) -> Result<(), TimeError> {
+async fn sleep(
+    timer: &Arc<dyn Timer>,
+    delay: Duration,
+) -> Result<(), TimeError> {
     let future = timer.after(delay)?;
     future.await
 }
 
-fn default_decision<E>(decision: RetryDecision, failure: &AttemptFailure<E>) -> RetryDecision {
+fn default_decision<E>(
+    decision: RetryDecision,
+    failure: &AttemptFailure<E>,
+) -> RetryDecision {
     if !matches!(decision, RetryDecision::UseDefault) {
         return decision;
     }

@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Worker-thread execution facade for blocking operations.
 
@@ -34,6 +36,8 @@ use crate::rule::RetryDecision;
 /// Worker retry execution with cooperative cancellation.
 pub struct WorkerRetry<'a, E> {
     retry: &'a Retry<E>,
+    thread_name: Box<str>,
+    stack_size: Option<usize>,
     attempt_timeout: Option<Duration>,
     flow_timeout: Option<Duration>,
     cancellation_grace: Duration,
@@ -45,6 +49,8 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     pub(crate) fn new(retry: &'a Retry<E>) -> Self {
         Self {
             retry,
+            thread_name: "qubit-retry-worker".into(),
+            stack_size: None,
             attempt_timeout: None,
             flow_timeout: None,
             cancellation_grace: Duration::from_millis(100),
@@ -71,6 +77,30 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         self
     }
 
+    /// Sets the OS-visible name assigned to each worker thread.
+    ///
+    /// # Parameters
+    /// - `name`: Name passed to [`std::thread::Builder`].
+    ///
+    /// # Returns
+    /// A worker facade using the supplied thread name.
+    pub fn thread_name(mut self, name: &str) -> Self {
+        self.thread_name = name.into();
+        self
+    }
+
+    /// Sets the stack size requested for each worker thread.
+    ///
+    /// # Parameters
+    /// - `stack_size`: Requested worker stack size in bytes.
+    ///
+    /// # Returns
+    /// A worker facade using the supplied stack size.
+    pub fn worker_stack_size(mut self, stack_size: usize) -> Self {
+        self.stack_size = Some(stack_size);
+        self
+    }
+
     /// Injects the blocking timer and clock.
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
         self.sleeper = BlockingSleeper::new(timer);
@@ -78,14 +108,20 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     }
 
     /// Injects the random source used by backoff jitter.
-    pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
+    pub fn random_source(
+        mut self,
+        random_source: Arc<dyn RetryRandomSource>,
+    ) -> Self {
         self.random_source = random_source;
         self
     }
 
     /// Runs one cancellable worker operation per attempt.
     #[allow(clippy::result_large_err)]
-    pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub fn run<T, F>(
+        &self,
+        operation: F,
+    ) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         T: Send + 'static,
         F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
@@ -115,19 +151,28 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             let attempt = match flow.begin_attempt() {
                 Ok(attempt) => attempt,
                 Err(reason) => {
-                    return Err(self.finish(reason, last_failure, flow.current_context()));
+                    return Err(self.finish(
+                        reason,
+                        last_failure,
+                        flow.current_context(),
+                    ));
                 }
             };
-            let effective_timeout = flow.effective_timeout(self.attempt_timeout);
+            let effective_timeout =
+                flow.effective_timeout(self.attempt_timeout);
             let outcome = WorkerAttemptExecutor::run(
                 Arc::clone(&worker_operation),
+                &self.thread_name,
+                self.stack_size,
                 effective_timeout.map(EffectiveTimeout::duration),
                 self.cancellation_grace,
             );
             let snapshot = flow.finish_attempt(attempt);
             let mut attempt_context = flow
                 .context(snapshot, snapshot.attempts())
-                .with_attempt_timeout(effective_timeout.map(EffectiveTimeout::duration))
+                .with_attempt_timeout(
+                    effective_timeout.map(EffectiveTimeout::duration),
+                )
                 .with_unreaped_worker_count(outcome.unreaped_worker_count);
             let result = match outcome.result {
                 Ok(()) => Ok(()),
@@ -141,10 +186,14 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             };
             match result {
                 Ok(()) => {
-                    self.retry
-                        .observers()
-                        .finished(RetryOutcomeKind::Succeeded, &attempt_context);
-                    return Ok(RetrySuccess::new(operation.take_value(), attempt_context));
+                    self.retry.observers().finished(
+                        RetryOutcomeKind::Succeeded,
+                        &attempt_context,
+                    );
+                    return Ok(RetrySuccess::new(
+                        operation.take_value(),
+                        attempt_context,
+                    ));
                 }
                 Err(failure) => {
                     self.retry
@@ -157,17 +206,34 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                             attempt_context,
                         ));
                     }
+                    if matches!(failure, AttemptFailure::Infrastructure(_)) {
+                        let detail = failure
+                            .execution_error()
+                            .map(|error| error.message().to_owned())
+                            .unwrap_or_else(|| {
+                                "worker execution failed".to_owned()
+                            });
+                        return Err(self.finish_with_execution_error(
+                            Some(failure),
+                            attempt_context,
+                            &detail,
+                        ));
+                    }
                     let mut diagnostics = Vec::new();
-                    let decision =
-                        self.retry
-                            .rules()
-                            .decide(&failure, &attempt_context, &mut diagnostics);
+                    let decision = self.retry.rules().decide(
+                        &failure,
+                        &attempt_context,
+                        &mut diagnostics,
+                    );
                     for diagnostic in &diagnostics {
-                        self.retry
-                            .observers()
-                            .diagnostic(diagnostic, &attempt_context, None);
+                        self.retry.observers().diagnostic(
+                            diagnostic,
+                            &attempt_context,
+                            None,
+                        );
                     }
                     let decision = default_decision(decision, &failure);
+                    let hint = decision.retry_after_hint();
                     if matches!(
                         failure,
                         AttemptFailure::Timeout {
@@ -188,17 +254,31 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                         ));
                     }
                     if let Some(reason) = flow.continuation_reason() {
-                        return Err(self.finish(reason, Some(failure), attempt_context));
+                        return Err(self.finish(
+                            reason,
+                            Some(failure),
+                            attempt_context,
+                        ));
                     }
                     let step = flow.next_backoff(decision);
-                    attempt_context = attempt_context.with_next_delay(step.effective_delay());
+                    attempt_context = attempt_context
+                        .with_next_delay(step.effective_delay())
+                        .with_retry_after_hint(hint);
                     self.retry
                         .observers()
                         .retry_scheduled(&step, &attempt_context);
-                    if let Some(reason) = flow.retry_reason(step.effective_delay()) {
-                        return Err(self.finish(reason, Some(failure), attempt_context));
+                    if let Some(reason) =
+                        flow.retry_reason(step.effective_delay())
+                    {
+                        return Err(self.finish(
+                            reason,
+                            Some(failure),
+                            attempt_context,
+                        ));
                     }
-                    if let Some(remaining) = flow.flow_sleep_cap(step.effective_delay()) {
+                    if let Some(remaining) =
+                        flow.flow_sleep_cap(step.effective_delay())
+                    {
                         if let Err(error) = self.sleeper.sleep_for(remaining) {
                             return Err(self.finish_with_timer_error(
                                 Some(failure),
@@ -212,7 +292,9 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                             attempt_context,
                         ));
                     }
-                    if let Err(error) = self.sleeper.sleep_for(step.effective_delay()) {
+                    if let Err(error) =
+                        self.sleeper.sleep_for(step.effective_delay())
+                    {
                         return Err(self.finish_with_timer_error(
                             Some(failure),
                             attempt_context,
@@ -255,9 +337,30 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             .finished(RetryOutcomeKind::Failed, error.context());
         error
     }
+
+    fn finish_with_execution_error(
+        &self,
+        failure: Option<AttemptFailure<E>>,
+        context: RetryContext,
+        message: &str,
+    ) -> RetryError<E> {
+        let error = RetryError::new_with_execution_error(
+            RetryErrorReason::WorkerFailed,
+            failure,
+            crate::RetryExecutionError::worker(message),
+            context,
+        );
+        self.retry
+            .observers()
+            .finished(RetryOutcomeKind::Failed, error.context());
+        error
+    }
 }
 
-fn default_decision<E>(decision: RetryDecision, failure: &AttemptFailure<E>) -> RetryDecision {
+fn default_decision<E>(
+    decision: RetryDecision,
+    failure: &AttemptFailure<E>,
+) -> RetryDecision {
     if !matches!(decision, RetryDecision::UseDefault) {
         return decision;
     }
@@ -278,7 +381,7 @@ fn terminal_reason<E>(failure: &AttemptFailure<E>) -> RetryErrorReason {
         | AttemptFailure::Timeout {
             kind: AttemptTimeoutKind::Flow,
         }
-        | AttemptFailure::Panic
-        | AttemptFailure::Infrastructure(_) => RetryErrorReason::Aborted,
+        | AttemptFailure::Panic => RetryErrorReason::Aborted,
+        AttemptFailure::Infrastructure(_) => RetryErrorReason::WorkerFailed,
     }
 }

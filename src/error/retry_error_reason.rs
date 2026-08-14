@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Terminal retry-flow reasons.
 
@@ -28,6 +30,8 @@ pub enum RetryErrorReason {
     FlowTimedOut,
     /// A timer or clock operation failed.
     TimerFailed,
+    /// A worker thread could not be created.
+    WorkerFailed,
     /// A timed-out worker did not exit within its cancellation grace period.
     WorkerStillRunning,
 }
@@ -40,8 +44,12 @@ impl RetryErrorReason {
             Self::AttemptsExhausted
             | Self::OperationBudgetExhausted
             | Self::TotalBudgetExhausted => RetryErrorKind::Exhausted,
-            Self::AttemptTimedOut | Self::FlowTimedOut => RetryErrorKind::TimedOut,
-            Self::TimerFailed | Self::WorkerStillRunning => RetryErrorKind::Infrastructure,
+            Self::AttemptTimedOut | Self::FlowTimedOut => {
+                RetryErrorKind::TimedOut
+            }
+            Self::TimerFailed
+            | Self::WorkerFailed
+            | Self::WorkerStillRunning => RetryErrorKind::Infrastructure,
         }
     }
 
@@ -55,6 +63,9 @@ impl RetryErrorReason {
 
     /// Returns whether infrastructure prevented continuation.
     pub fn is_infrastructure_failure(self) -> bool {
-        matches!(self, Self::TimerFailed | Self::WorkerStillRunning)
+        matches!(
+            self,
+            Self::TimerFailed | Self::WorkerFailed | Self::WorkerStillRunning
+        )
     }
 }

@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Retry-flow infrastructure failures.
 
@@ -14,6 +16,7 @@ use serde::Serialize;
 use super::retry_execution_error_kind::RetryExecutionErrorKind;
 
 /// Diagnostic information for a retry execution infrastructure failure.
+#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetryExecutionError {
     kind: RetryExecutionErrorKind,
@@ -40,11 +43,13 @@ impl RetryExecutionError {
     }
 
     /// Returns the infrastructure component.
+    #[must_use]
     pub fn kind(&self) -> RetryExecutionErrorKind {
         self.kind
     }
 
     /// Returns the diagnostic message.
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }

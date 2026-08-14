@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Immutable retry facade.
 
@@ -47,23 +49,27 @@ impl<E: 'static> Retry<E> {
     }
 
     /// Returns the immutable retry policy.
+    #[must_use = "use the policy to inspect retry configuration"]
     pub fn policy(&self) -> &RetryPolicy {
         &self.policy
     }
 
     /// Selects same-thread execution. This mode intentionally exposes no
     /// timeout because Rust cannot safely interrupt an arbitrary closure.
+    #[must_use]
     pub fn sync(&self) -> SyncRetry<'_, E> {
         SyncRetry::new(self)
     }
 
     /// Selects Tokio execution with per-attempt and whole-flow timeouts.
     #[cfg(feature = "tokio")]
+    #[must_use]
     pub fn asynchronous(&self) -> AsyncRetry<'_, E> {
         AsyncRetry::new(self)
     }
 
     /// Selects worker-thread execution with cooperative cancellation.
+    #[must_use]
     pub fn worker(&self) -> WorkerRetry<'_, E>
     where
         E: Send,

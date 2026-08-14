@@ -11,7 +11,8 @@ Qubit Retry 是一个面向 Rust 易失败任务的类型安全重试引擎，�
 
 ## 一个完整场景
 
-HTTP 客户端可以把瞬时网络错误交给重试规则处理，并保留服务端的 `Retry-After` 提示：
+HTTP 客户端可以把瞬时网络错误交给重试规则处理，并通过
+`RetryWithHint` 保留服务端的 `Retry-After` 提示：
 
 ```rust
 use std::time::Duration;
@@ -58,6 +59,10 @@ let response = retry.sync().run(|| std::fs::read("Cargo.toml"))?.into_value();
 同一个策略还可以交给 `retry.asynchronous()` 处理 Tokio future，或交给
 `retry.worker()` 隔离阻塞任务。
 
+当领域错误携带服务端延迟时，规则可以返回
+`RetryDecision::RetryWithHint(delay)`。配置的 backoff policy 会决定优先采用、
+将其作为最小延迟，还是忽略该 hint。
+
 ## 安装
 
 ```toml
@@ -79,9 +84,11 @@ qubit-retry = { version = "0.18", features = ["tokio"] }
 - `Retry::asynchronous()`（需要 `tokio` feature）提供单次 attempt 和整个 flow 的 timeout。
 - `Retry::worker()` 在 worker 线程隔离阻塞 attempt，捕获 panic，并在启动下一个 worker 前等待协作式取消。
 - 按注册顺序执行 `RetryRule`，第一个非 `UseDefault` 决策生效；`RetryObserver` 接收隔离后的生命周期回调。
+- `RetryRule` 可以返回 `Retry`、`RetryWithHint`、`RetryWithJitteredHint`、`Abort` 或
+  `UseDefault`；hint 会继续经过 backoff policy 的解析。
 - `AttemptFailureKind` 和 `RetryErrorKind` 是稳定分类；详细的
   `AttemptFailure` 与 `RetryErrorReason` 标记为 non-exhaustive，便于未来扩展运行时细节。
-- `BackoffState` 同时支持普通 retry 与 SSE 等 reconnect 流程，可处理显式延迟、服务端 hint、jitter 和指数增长溢出。
+- `BackoffState` 同时支持普通 retry 与 SSE 等 reconnect 流程，可处理服务端 hint、jitter 和指数增长溢出。
 
 预算只决定是否允许启动下一次 attempt。已经开始的 operation 即使跨过预算后才成功，也会返回成功。策略不会强杀同步 operation，也不会强杀不配合取消的 worker 线程。
 

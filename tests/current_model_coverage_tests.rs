@@ -2,21 +2,27 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicU32;
+#[cfg(feature = "tokio")]
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use qubit_clock::ManualMonotonicClock;
 use qubit_clock::MonotonicClock;
+#[cfg(feature = "tokio")]
 use qubit_clock::MonotonicInstant;
+#[cfg(feature = "tokio")]
 use qubit_clock::TimeError;
 use qubit_clock::Timer;
+#[cfg(feature = "tokio")]
 use qubit_clock::TimerFuture;
 use qubit_clock::test_util::FaultInjectingTimer;
 use qubit_clock::test_util::TimerFailurePoint;
@@ -89,7 +95,10 @@ fn current_error_model_exposes_all_terminal_parts() {
 
     let timer = RetryExecutionError::timer("timer unavailable");
     let worker = RetryExecutionError::worker("worker unavailable");
-    let direct = RetryExecutionError::new(RetryExecutionErrorKind::Worker, "worker stopped");
+    let direct = RetryExecutionError::new(
+        RetryExecutionErrorKind::Worker,
+        "worker stopped",
+    );
     assert_eq!(timer.kind(), RetryExecutionErrorKind::Timer);
     assert_eq!(timer.message(), "timer unavailable");
     assert_eq!(worker.kind(), RetryExecutionErrorKind::Worker);
@@ -111,7 +120,8 @@ fn current_error_model_exposes_all_terminal_parts() {
     assert_eq!(error.execution_error(), Some(&timer));
     assert!(error.last_error().is_none());
     assert!(error.source().is_some());
-    let (reason, failure, infrastructure, parts_context) = error.into_parts_with_execution_error();
+    let (reason, failure, infrastructure, parts_context) =
+        error.into_parts_with_execution_error();
     assert_eq!(reason, RetryErrorReason::TimerFailed);
     assert!(failure.is_some());
     assert!(infrastructure.is_some());
@@ -138,14 +148,17 @@ fn current_error_model_exposes_all_terminal_parts() {
         RetryErrorReason::AttemptTimedOut,
         RetryErrorReason::FlowTimedOut,
         RetryErrorReason::TimerFailed,
+        RetryErrorReason::WorkerFailed,
     ] {
-        let rendered = RetryError::<TestError>::new(reason, None, context).to_string();
+        let rendered =
+            RetryError::<TestError>::new(reason, None, context).to_string();
         assert!(!rendered.is_empty());
     }
     assert!(RetryErrorReason::OperationBudgetExhausted.is_elapsed_limit());
     assert!(RetryErrorReason::TotalBudgetExhausted.is_elapsed_limit());
     assert!(!RetryErrorReason::AttemptsExhausted.is_elapsed_limit());
     assert!(RetryErrorReason::TimerFailed.is_infrastructure_failure());
+    assert!(RetryErrorReason::WorkerFailed.is_infrastructure_failure());
     assert!(RetryErrorReason::WorkerStillRunning.is_infrastructure_failure());
     assert!(!RetryErrorReason::Aborted.is_infrastructure_failure());
     assert_eq!(RetryErrorReason::Aborted.kind(), RetryErrorKind::Aborted);
@@ -198,26 +211,35 @@ fn current_policy_builders_cover_backoff_variants() {
         Duration::from_millis(20)
     );
 
-    let uniform = BackoffPolicy::uniform(Duration::from_millis(10), Duration::from_millis(30))
-        .unwrap()
-        .with_full_jitter()
-        .prefer_retry_after();
+    let uniform = BackoffPolicy::uniform(
+        Duration::from_millis(10),
+        Duration::from_millis(30),
+    )
+    .unwrap()
+    .with_full_jitter()
+    .prefer_retry_after();
     assert_eq!(uniform.maximum_delay(), Some(Duration::from_millis(30)));
-    let mut uniform_state = uniform.start_with_random_source(deterministic.clone());
-    let hinted = uniform_state.next(BackoffRequest::jittered_hint(Duration::from_millis(15)));
+    let mut uniform_state =
+        uniform.start_with_random_source(deterministic.clone());
+    let hinted = uniform_state
+        .next(BackoffRequest::jittered_hint(Duration::from_millis(15)));
     assert_eq!(hinted.retry_index(), 1);
     assert!(hinted.base_delay() <= Duration::from_millis(30));
     assert!(hinted.effective_delay() <= Duration::from_millis(15));
     let _ = hinted.source();
 
-    let exponential =
-        BackoffPolicy::exponential(Duration::from_millis(5), 2.0, Duration::from_millis(40))
-            .unwrap()
-            .with_bounded_jitter(0.25)
-            .unwrap()
-            .use_retry_after_as_minimum();
+    let exponential = BackoffPolicy::exponential(
+        Duration::from_millis(5),
+        2.0,
+        Duration::from_millis(40),
+    )
+    .unwrap()
+    .with_bounded_jitter(0.25)
+    .unwrap()
+    .use_retry_after_as_minimum();
     assert_eq!(exponential.maximum_delay(), Some(Duration::from_millis(40)));
-    let mut exponential_state = exponential.start_with_random_source(deterministic);
+    let mut exponential_state =
+        exponential.start_with_random_source(deterministic);
     assert!(
         exponential_state
             .next(BackoffRequest::hint(Duration::from_millis(12)))
@@ -256,18 +278,23 @@ fn current_policy_builders_cover_backoff_variants() {
         3
     );
 
-    let mut saturated = BackoffPolicy::exponential(Duration::MAX, f64::MAX, Duration::MAX)
-        .unwrap()
-        .with_bounded_jitter(1.0)
-        .unwrap()
-        .start_with_random_source(Arc::new(FixedRetryRandomSource::new(1.0)));
-    let _ = saturated.next(BackoffRequest::policy());
-    let _ = saturated.next(BackoffRequest::policy());
-    let mut equal_uniform =
-        BackoffPolicy::uniform(Duration::from_millis(4), Duration::from_millis(4))
+    let mut saturated =
+        BackoffPolicy::exponential(Duration::MAX, f64::MAX, Duration::MAX)
             .unwrap()
-            .with_full_jitter()
-            .start_with_random_source(Arc::new(FixedRetryRandomSource::new(0.5)));
+            .with_bounded_jitter(1.0)
+            .unwrap()
+            .start_with_random_source(Arc::new(FixedRetryRandomSource::new(
+                1.0,
+            )));
+    let _ = saturated.next(BackoffRequest::policy());
+    let _ = saturated.next(BackoffRequest::policy());
+    let mut equal_uniform = BackoffPolicy::uniform(
+        Duration::from_millis(4),
+        Duration::from_millis(4),
+    )
+    .unwrap()
+    .with_full_jitter()
+    .start_with_random_source(Arc::new(FixedRetryRandomSource::new(0.5)));
     let _ = equal_uniform.next(BackoffRequest::policy());
 }
 
@@ -287,11 +314,19 @@ impl RetryObserver<TestError> for RecordingObserver {
         self.0.started.fetch_add(1, Ordering::SeqCst);
     }
 
-    fn on_attempt_failed(&self, _failure: &AttemptFailure<TestError>, _context: &RetryContext) {
+    fn on_attempt_failed(
+        &self,
+        _failure: &AttemptFailure<TestError>,
+        _context: &RetryContext,
+    ) {
         self.0.failed.fetch_add(1, Ordering::SeqCst);
     }
 
-    fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {
+    fn on_retry_scheduled(
+        &self,
+        _backoff: &BackoffStep,
+        _context: &RetryContext,
+    ) {
         self.0.scheduled.fetch_add(1, Ordering::SeqCst);
     }
 
@@ -299,7 +334,11 @@ impl RetryObserver<TestError> for RecordingObserver {
         self.0.finished.fetch_add(1, Ordering::SeqCst);
     }
 
-    fn on_diagnostic(&self, diagnostic: &RetryDiagnostic, _context: &RetryContext) {
+    fn on_diagnostic(
+        &self,
+        diagnostic: &RetryDiagnostic,
+        _context: &RetryContext,
+    ) {
         self.0
             .diagnostics
             .lock()
@@ -328,11 +367,60 @@ struct DefaultObserver;
 
 impl RetryObserver<TestError> for DefaultObserver {}
 
+type RetryHintRecord = Option<(Option<Duration>, Option<Duration>)>;
+
+struct HintRecordingObserver(Arc<Mutex<RetryHintRecord>>);
+
+impl RetryObserver<TestError> for HintRecordingObserver {
+    fn on_retry_scheduled(
+        &self,
+        _backoff: &BackoffStep,
+        context: &RetryContext,
+    ) {
+        *self.0.lock().unwrap() =
+            Some((context.retry_after_hint(), context.next_delay()));
+    }
+}
+
+#[test]
+fn full_executor_records_retry_hint_and_resolved_delay() {
+    let recorded = Arc::new(Mutex::new(None));
+    let attempts = AtomicU32::new(0);
+    let policy = RetryPolicy::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::ZERO).ignore_retry_after())
+        .build()
+        .unwrap();
+    let result = Retry::<TestError>::builder(policy)
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            RetryDecision::RetryWithHint(Duration::from_secs(3))
+        })
+        .observer(HintRecordingObserver(Arc::clone(&recorded)))
+        .build()
+        .sync()
+        .run(|| {
+            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(TestError("retry"))
+            } else {
+                Ok(())
+            }
+        })
+        .expect("hinted retry should succeed");
+
+    assert_eq!(
+        *recorded.lock().unwrap(),
+        Some((Some(Duration::from_secs(3)), Some(Duration::ZERO),))
+    );
+    assert_eq!(result.context().retry_after_hint(), None);
+}
+
+#[cfg(feature = "tokio")]
 struct SecondRegistrationFailsTimer {
     clock: Arc<ManualMonotonicClock>,
     registrations: AtomicUsize,
 }
 
+#[cfg(feature = "tokio")]
 impl SecondRegistrationFailsTimer {
     fn new() -> Self {
         Self {
@@ -342,12 +430,16 @@ impl SecondRegistrationFailsTimer {
     }
 }
 
+#[cfg(feature = "tokio")]
 impl Timer for SecondRegistrationFailsTimer {
     fn clock(&self) -> &dyn MonotonicClock {
         self.clock.as_ref()
     }
 
-    fn at(&self, _deadline: MonotonicInstant) -> Result<TimerFuture, TimeError> {
+    fn at(
+        &self,
+        _deadline: MonotonicInstant,
+    ) -> Result<TimerFuture, TimeError> {
         if self.registrations.fetch_add(1, Ordering::SeqCst) == 0 {
             Ok(Box::pin(std::future::pending()))
         } else {
@@ -366,8 +458,12 @@ fn observers_and_rules_cover_current_lifecycle() {
         .unwrap();
     let attempts = AtomicU32::new(0);
     let result = Retry::<TestError>::builder(policy)
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("rule panic"))
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::UseDefault)
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            panic!("rule panic")
+        })
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            RetryDecision::UseDefault
+        })
         .observer(PanickingObserver)
         .observer(RecordingObserver(Arc::clone(&counts)))
         .build()
@@ -401,11 +497,12 @@ fn retry_once_policy() -> RetryPolicy {
 
 #[test]
 fn sync_facade_reports_timer_and_budget_boundaries() {
-    let timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
-        TimerFailurePoint::Registration,
-        "retry-test",
-        "offline",
-    ));
+    let timer: Arc<dyn Timer> =
+        Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Registration,
+            "retry-test",
+            "offline",
+        ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
     let error = Retry::<TestError>::builder(retry_once_policy())
         .build()
@@ -433,19 +530,22 @@ fn sync_facade_reports_timer_and_budget_boundaries() {
     );
 
     let aborted = Retry::<TestError>::builder(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            RetryDecision::Abort
+        })
         .build()
         .sync()
         .run(|| Err::<(), _>(TestError("fatal")))
         .unwrap_err();
     assert_eq!(aborted.reason(), RetryErrorReason::Aborted);
 
-    let attempts_exhausted =
-        Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
-            .build()
-            .sync()
-            .run(|| Err::<(), _>(TestError("only attempt")))
-            .unwrap_err();
+    let attempts_exhausted = Retry::<TestError>::builder(
+        RetryPolicy::builder().max_attempts(1).build().unwrap(),
+    )
+    .build()
+    .sync()
+    .run(|| Err::<(), _>(TestError("only attempt")))
+    .unwrap_err();
     assert_eq!(
         attempts_exhausted.reason(),
         RetryErrorReason::AttemptsExhausted
@@ -488,9 +588,9 @@ fn sync_facade_reports_timer_and_budget_boundaries() {
     );
 
     let attempts = AtomicU32::new(0);
-    let explicit_delay = Retry::<TestError>::builder(retry_once_policy())
+    let hinted_retry = Retry::<TestError>::builder(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::RetryAfter(Duration::ZERO)
+            RetryDecision::RetryWithHint(Duration::ZERO)
         })
         .observer(DefaultObserver)
         .build()
@@ -503,27 +603,30 @@ fn sync_facade_reports_timer_and_budget_boundaries() {
             }
         })
         .unwrap();
-    assert_eq!(*explicit_delay.value(), 17);
+    assert_eq!(*hinted_retry.value(), 17);
 
     let callback_count = Arc::new(AtomicU32::new(0));
     let callback_count_for_observer = Arc::clone(&callback_count);
-    let _ = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
-        .observer(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-            callback_count_for_observer.fetch_add(1, Ordering::SeqCst);
-        })
-        .build()
-        .sync()
-        .run(|| Err::<(), _>(TestError("observed")));
+    let _ = Retry::<TestError>::builder(
+        RetryPolicy::builder().max_attempts(1).build().unwrap(),
+    )
+    .observer(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
+        callback_count_for_observer.fetch_add(1, Ordering::SeqCst);
+    })
+    .build()
+    .sync()
+    .run(|| Err::<(), _>(TestError("observed")));
     assert_eq!(callback_count.load(Ordering::SeqCst), 1);
 }
 
 #[test]
 fn worker_facade_reports_timer_panic_and_detached_worker() {
-    let timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
-        TimerFailurePoint::Registration,
-        "retry-test",
-        "offline",
-    ));
+    let timer: Arc<dyn Timer> =
+        Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Registration,
+            "retry-test",
+            "offline",
+        ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
     let timer_error = Retry::<TestError>::builder(retry_once_policy())
         .build()
@@ -564,12 +667,13 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     assert_eq!(detached.reason(), RetryErrorReason::WorkerStillRunning);
     assert_eq!(detached.context().unreaped_worker_count(), 1);
 
-    let attempts_exhausted =
-        Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
-            .build()
-            .worker()
-            .run(|_| Err::<(), _>(TestError("only attempt")))
-            .unwrap_err();
+    let attempts_exhausted = Retry::<TestError>::builder(
+        RetryPolicy::builder().max_attempts(1).build().unwrap(),
+    )
+    .build()
+    .worker()
+    .run(|_| Err::<(), _>(TestError("only attempt")))
+    .unwrap_err();
     assert_eq!(
         attempts_exhausted.reason(),
         RetryErrorReason::AttemptsExhausted
@@ -611,7 +715,9 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     );
 
     let rule_panics = Retry::<TestError>::builder(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("rule panic"))
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            panic!("rule panic")
+        })
         .build()
         .worker()
         .run(|_| Err::<(), _>(TestError("retry")))
@@ -630,11 +736,12 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     .unwrap_err();
     assert_eq!(zero_budget.reason(), RetryErrorReason::TotalBudgetExhausted);
 
-    let cap_timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
-        TimerFailurePoint::Registration,
-        "retry-test",
-        "offline",
-    ));
+    let cap_timer: Arc<dyn Timer> =
+        Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Registration,
+            "retry-test",
+            "offline",
+        ));
     let cap_error = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .max_attempts(2)
@@ -650,24 +757,28 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     .unwrap_err();
     assert_eq!(cap_error.reason(), RetryErrorReason::TimerFailed);
 
-    let explicit_retry =
-        Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
-            .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Retry)
-            .build()
-            .worker()
-            .run(|_| Err::<(), _>(TestError("retry")))
-            .unwrap_err();
+    let explicit_retry = Retry::<TestError>::builder(
+        RetryPolicy::builder().max_attempts(1).build().unwrap(),
+    )
+    .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+        RetryDecision::Retry
+    })
+    .build()
+    .worker()
+    .run(|_| Err::<(), _>(TestError("retry")))
+    .unwrap_err();
     assert_eq!(explicit_retry.reason(), RetryErrorReason::AttemptsExhausted);
 }
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
 async fn async_facade_reports_timer_failure_with_injected_components() {
-    let timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
-        TimerFailurePoint::Registration,
-        "retry-test",
-        "offline",
-    ));
+    let timer: Arc<dyn Timer> =
+        Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Registration,
+            "retry-test",
+            "offline",
+        ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
     let error = Retry::<TestError>::builder(retry_once_policy())
         .build()
@@ -680,13 +791,14 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
     assert_eq!(error.reason(), RetryErrorReason::TimerFailed);
     assert!(error.execution_error().is_some());
 
-    let attempts_exhausted =
-        Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
-            .build()
-            .asynchronous()
-            .run(|| async { Err::<(), _>(TestError("only attempt")) })
-            .await
-            .unwrap_err();
+    let attempts_exhausted = Retry::<TestError>::builder(
+        RetryPolicy::builder().max_attempts(1).build().unwrap(),
+    )
+    .build()
+    .asynchronous()
+    .run(|| async { Err::<(), _>(TestError("only attempt")) })
+    .await
+    .unwrap_err();
     assert_eq!(
         attempts_exhausted.reason(),
         RetryErrorReason::AttemptsExhausted
@@ -711,7 +823,9 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
     );
 
     let aborted = Retry::<TestError>::builder(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            RetryDecision::Abort
+        })
         .build()
         .asynchronous()
         .run(|| async { Err::<(), _>(TestError("fatal")) })
@@ -738,44 +852,50 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
         RetryErrorReason::TotalBudgetExhausted
     );
 
-    let registration_timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
-        TimerFailurePoint::Registration,
-        "retry-test",
-        "offline",
-    ));
-    let attempt_registration_error = Retry::<TestError>::builder(retry_once_policy())
-        .build()
-        .asynchronous()
-        .attempt_timeout(Duration::from_secs(1))
-        .timer(registration_timer)
-        .run(|| async { Ok::<_, TestError>(()) })
-        .await
-        .unwrap_err();
+    let registration_timer: Arc<dyn Timer> =
+        Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Registration,
+            "retry-test",
+            "offline",
+        ));
+    let attempt_registration_error =
+        Retry::<TestError>::builder(retry_once_policy())
+            .build()
+            .asynchronous()
+            .attempt_timeout(Duration::from_secs(1))
+            .timer(registration_timer)
+            .run(|| async { Ok::<_, TestError>(()) })
+            .await
+            .unwrap_err();
     assert_eq!(
         attempt_registration_error.reason(),
         RetryErrorReason::TimerFailed
     );
 
-    let completion_timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
-        TimerFailurePoint::Completion,
-        "retry-test",
-        "offline",
-    ));
-    let attempt_completion_error = Retry::<TestError>::builder(retry_once_policy())
-        .build()
-        .asynchronous()
-        .attempt_timeout(Duration::from_secs(1))
-        .timer(completion_timer)
-        .run(std::future::pending::<Result<(), TestError>>)
-        .await
-        .unwrap_err();
+    let completion_timer: Arc<dyn Timer> =
+        Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Completion,
+            "retry-test",
+            "offline",
+        ));
+    let attempt_completion_error =
+        Retry::<TestError>::builder(retry_once_policy())
+            .build()
+            .asynchronous()
+            .attempt_timeout(Duration::from_secs(1))
+            .timer(completion_timer)
+            .run(std::future::pending::<Result<(), TestError>>)
+            .await
+            .unwrap_err();
     assert_eq!(
         attempt_completion_error.reason(),
         RetryErrorReason::TimerFailed
     );
 
     let rule_panics = Retry::<TestError>::builder(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("rule panic"))
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            panic!("rule panic")
+        })
         .build()
         .asynchronous()
         .run(|| async { Err::<(), _>(TestError("retry")) })
@@ -796,13 +916,14 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
     .unwrap_err();
     assert_eq!(zero_budget.reason(), RetryErrorReason::TotalBudgetExhausted);
 
-    let successful_timed_attempt = Retry::<TestError>::builder(retry_once_policy())
-        .build()
-        .asynchronous()
-        .attempt_timeout(Duration::from_secs(1))
-        .run(|| async { Ok::<_, TestError>(23_u32) })
-        .await
-        .unwrap();
+    let successful_timed_attempt =
+        Retry::<TestError>::builder(retry_once_policy())
+            .build()
+            .asynchronous()
+            .attempt_timeout(Duration::from_secs(1))
+            .run(|| async { Ok::<_, TestError>(23_u32) })
+            .await
+            .unwrap();
     assert_eq!(*successful_timed_attempt.value(), 23);
 
     let tie = Retry::<TestError>::builder(retry_once_policy())
@@ -818,7 +939,8 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
         Some(AttemptTimeoutKind::Attempt)
     );
 
-    let cap_timer: Arc<dyn Timer> = Arc::new(SecondRegistrationFailsTimer::new());
+    let cap_timer: Arc<dyn Timer> =
+        Arc::new(SecondRegistrationFailsTimer::new());
     let cap_error = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .max_attempts(2)
@@ -845,24 +967,27 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
     assert_eq!(zero_flow.reason(), RetryErrorReason::FlowTimedOut);
 
     let clock = ManualMonotonicClock::new_shared();
-    let flow_expired_by_observer = Retry::<TestError>::builder(retry_once_policy())
-        .observer(AdvancingObserver(Arc::clone(&clock)))
-        .build()
-        .asynchronous()
-        .flow_timeout(Duration::from_secs(1))
-        .timer(clock.new_timer())
-        .run(|| async { Ok::<_, TestError>(()) })
-        .await
-        .unwrap_err();
+    let flow_expired_by_observer =
+        Retry::<TestError>::builder(retry_once_policy())
+            .observer(AdvancingObserver(Arc::clone(&clock)))
+            .build()
+            .asynchronous()
+            .flow_timeout(Duration::from_secs(1))
+            .timer(clock.new_timer())
+            .run(|| async { Ok::<_, TestError>(()) })
+            .await
+            .unwrap_err();
     assert_eq!(
         flow_expired_by_observer.reason(),
         RetryErrorReason::FlowTimedOut
     );
 
-    let mut thread_random =
-        BackoffPolicy::uniform(Duration::from_nanos(1), Duration::from_nanos(2))
-            .unwrap()
-            .with_full_jitter()
-            .start();
+    let mut thread_random = BackoffPolicy::uniform(
+        Duration::from_nanos(1),
+        Duration::from_nanos(2),
+    )
+    .unwrap()
+    .with_full_jitter()
+    .start();
     let _ = thread_random.next(BackoffRequest::policy());
 }

@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Mutable state for one retry or reconnect flow.
 
@@ -22,7 +24,10 @@ pub struct BackoffState {
 
 impl BackoffState {
     /// Creates an empty state.
-    pub(crate) fn new(policy: BackoffPolicy, random: Arc<dyn RetryRandomSource>) -> Self {
+    pub(crate) fn new(
+        policy: BackoffPolicy,
+        random: Arc<dyn RetryRandomSource>,
+    ) -> Self {
         Self {
             policy,
             random,
@@ -31,13 +36,18 @@ impl BackoffState {
     }
 
     /// Calculates the next scheduled retry delay.
+    #[must_use = "use the selected backoff step"]
     pub fn next(&mut self, request: BackoffRequest) -> BackoffStep {
         self.retry_index = self.retry_index.saturating_add(1);
         let base_delay = self
             .policy
             .base_delay(self.retry_index, self.random.as_ref());
-        self.policy
-            .resolve(base_delay, request, self.retry_index, self.random.as_ref())
+        self.policy.resolve(
+            base_delay,
+            request,
+            self.retry_index,
+            self.random.as_ref(),
+        )
     }
 
     /// Resets the retry index after a stable connection or completed flow.
@@ -46,6 +56,7 @@ impl BackoffState {
     }
 
     /// Returns the number of selected retry steps.
+    #[must_use]
     pub fn retry_index(&self) -> u32 {
         self.retry_index
     }

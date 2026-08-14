@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Internal ordered rule collection.
 
@@ -45,15 +47,16 @@ impl<E: 'static> RetryRules<E> {
         diagnostics: &mut Vec<RetryDiagnostic>,
     ) -> RetryDecision {
         for (index, rule) in self.rules.iter().enumerate() {
-            let decision =
-                std::panic::catch_unwind(AssertUnwindSafe(|| rule.decide(failure, context)))
-                    .unwrap_or_else(|_| {
-                        diagnostics.push(RetryDiagnostic::new(
-                            RetryDiagnosticKind::RulePanicked,
-                            index,
-                        ));
-                        RetryDecision::UseDefault
-                    });
+            let decision = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                rule.decide(failure, context)
+            }))
+            .unwrap_or_else(|_| {
+                diagnostics.push(RetryDiagnostic::new(
+                    RetryDiagnosticKind::RulePanicked,
+                    index,
+                ));
+                RetryDecision::UseDefault
+            });
             if !matches!(decision, RetryDecision::UseDefault) {
                 return decision;
             }
