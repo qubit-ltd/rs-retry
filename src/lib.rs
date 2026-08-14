@@ -59,6 +59,8 @@ pub use executor::AsyncRetry;
 pub use executor::AttemptCancelToken;
 pub use executor::Retry;
 pub use executor::RetryBuilder;
+pub use executor::RetryCancellationToken;
+pub use executor::RetryCancelled;
 pub use executor::RetrySuccess;
 pub use executor::WorkerRetry;
 pub use observer::RetryContext;
