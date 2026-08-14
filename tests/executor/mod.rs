@@ -7,6 +7,7 @@
 // =============================================================================
 //! Executor behavior coverage mirrors.
 
+mod async_cancellation_tests;
 mod async_retry_tests;
 mod attempt_cancel_token_tests;
 mod blocking_attempt_outcome_tests;

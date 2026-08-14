@@ -19,6 +19,7 @@ use qubit_clock::TokioTimer;
 use super::internal::RetryFlowController;
 use super::retry::Retry;
 use crate::AttemptFailure;
+use crate::RetryCancellationToken;
 use crate::RetryError;
 use crate::RetryInfrastructureFailure;
 use crate::RetryRandomSource;
@@ -31,6 +32,7 @@ pub struct AsyncRetry<'a, E> {
     retry: &'a Retry<E>,
     attempt_timeout: Option<Duration>,
     flow_timeout: Option<Duration>,
+    cancellation_token: Option<RetryCancellationToken>,
     timer: Option<Arc<dyn Timer>>,
     random_source: Arc<dyn RetryRandomSource>,
 }
@@ -41,6 +43,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
             retry,
             attempt_timeout: None,
             flow_timeout: None,
+            cancellation_token: None,
             timer: None,
             random_source: Arc::new(ThreadRetryRandomSource),
         }
@@ -55,6 +58,12 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     /// Sets the wall-clock timeout for the entire flow.
     pub fn flow_timeout(mut self, timeout: Duration) -> Self {
         self.flow_timeout = Some(timeout);
+        self
+    }
+
+    /// Sets the cooperative cancellation token observed by this execution.
+    pub fn cancellation_token(mut self, token: RetryCancellationToken) -> Self {
+        self.cancellation_token = Some(token);
         self
     }
 
@@ -100,7 +109,9 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         );
 
         loop {
-            let admission_sample = controller.before_attempt(clock, None)?;
+            let cancellation = self.cancellation_token.as_ref();
+            let admission_sample =
+                controller.before_attempt(clock, cancellation)?;
             let plan = controller.prepare_async_attempt(admission_sample)?;
             let timeout_future = match register_timeout(&timer, plan.deadline())
             {
@@ -113,53 +124,53 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                         ));
                 }
             };
-            controller.commit_prepared_attempt(plan, clock, None)?;
-            let outcome =
-                execute_attempt(timeout_future, plan.scope(), operation())
-                    .await;
+            controller.commit_prepared_attempt(plan, clock, cancellation)?;
+            let outcome = execute_attempt(
+                timeout_future,
+                plan.scope(),
+                cancellation,
+                operation(),
+            )
+            .await;
 
-            match outcome {
+            let directive = match outcome {
                 AsyncAttemptOutcome::Completed(Ok(value)) => {
                     let context = controller.finish_success(clock)?;
                     return Ok(RetrySuccess::new(value, context));
                 }
-                AsyncAttemptOutcome::Completed(Err(error)) => {
-                    let directive = controller.record_failure(
+                AsyncAttemptOutcome::Completed(Err(error)) => controller
+                    .record_failure(
                         AttemptFailure::Error(error),
                         clock,
-                        None,
-                    )?;
-                    if let Err(error) =
-                        sleep(&timer, directive.sleep_duration()).await
-                    {
-                        let error = controller
-                            .record_inactive_infrastructure_failure(
-                                timer_failure(error),
-                                clock.now(),
-                            );
-                        return Err(error);
-                    }
-                }
-                AsyncAttemptOutcome::TimedOut(scope) => {
-                    let directive = controller.record_failure(
+                        cancellation,
+                    )?,
+                AsyncAttemptOutcome::TimedOut(scope) => controller
+                    .record_failure(
                         AttemptFailure::TimedOut { scope },
                         clock,
-                        None,
-                    )?;
-                    if let Err(error) =
-                        sleep(&timer, directive.sleep_duration()).await
-                    {
-                        let error = controller
-                            .record_inactive_infrastructure_failure(
-                                timer_failure(error),
-                                clock.now(),
-                            );
-                        return Err(error);
-                    }
+                        cancellation,
+                    )?,
+                AsyncAttemptOutcome::Cancelled => {
+                    return Err(controller.record_attempt_cancellation(clock));
                 }
                 AsyncAttemptOutcome::TimerFailed(error) => {
                     let error = controller
                         .record_active_infrastructure_failure(
+                            timer_failure(error),
+                            clock.now(),
+                        );
+                    return Err(error);
+                }
+            };
+            match sleep(&timer, directive.sleep_duration(), cancellation).await
+            {
+                BackoffOutcome::Elapsed => {}
+                BackoffOutcome::Cancelled => {
+                    return Err(controller.record_backoff_cancellation(clock));
+                }
+                BackoffOutcome::TimerFailed(error) => {
+                    let error = controller
+                        .record_inactive_infrastructure_failure(
                             timer_failure(error),
                             clock.now(),
                         );
@@ -176,6 +187,8 @@ enum AsyncAttemptOutcome<T, E> {
     Completed(Result<T, E>),
     /// The cooperative timeout completed first.
     TimedOut(RetryTimeoutScope),
+    /// Cooperative cancellation interrupted the operation future.
+    Cancelled,
     /// Registering or polling the timeout timer failed.
     TimerFailed(TimeError),
 }
@@ -184,23 +197,53 @@ enum AsyncAttemptOutcome<T, E> {
 async fn execute_attempt<T, E, F>(
     timeout_future: Option<TimerFuture>,
     timeout_scope: Option<RetryTimeoutScope>,
+    cancellation: Option<&RetryCancellationToken>,
     operation: F,
 ) -> AsyncAttemptOutcome<T, E>
 where
     F: Future<Output = Result<T, E>>,
 {
-    let Some(mut timer_future) = timeout_future else {
-        return AsyncAttemptOutcome::Completed(operation.await);
-    };
-    let timeout_scope = timeout_scope
-        .expect("a registered attempt timeout always retains its scope");
     tokio::pin!(operation);
-    tokio::select! {
-        result = &mut operation => AsyncAttemptOutcome::Completed(result),
-        result = &mut timer_future => match result {
-            Ok(()) => AsyncAttemptOutcome::TimedOut(timeout_scope),
-            Err(error) => AsyncAttemptOutcome::TimerFailed(error),
-        },
+    match (timeout_future, cancellation) {
+        (Some(mut timer_future), Some(token)) => {
+            let cancellation = token.cancelled();
+            tokio::pin!(cancellation);
+            let timeout_scope = timeout_scope.expect(
+                "a registered attempt timeout always retains its scope",
+            );
+            tokio::select! {
+                biased;
+                result = &mut operation => AsyncAttemptOutcome::Completed(result),
+                () = &mut cancellation => AsyncAttemptOutcome::Cancelled,
+                result = &mut timer_future => match result {
+                    Ok(()) => AsyncAttemptOutcome::TimedOut(timeout_scope),
+                    Err(error) => AsyncAttemptOutcome::TimerFailed(error),
+                },
+            }
+        }
+        (Some(mut timer_future), None) => {
+            let timeout_scope = timeout_scope.expect(
+                "a registered attempt timeout always retains its scope",
+            );
+            tokio::select! {
+                biased;
+                result = &mut operation => AsyncAttemptOutcome::Completed(result),
+                result = &mut timer_future => match result {
+                    Ok(()) => AsyncAttemptOutcome::TimedOut(timeout_scope),
+                    Err(error) => AsyncAttemptOutcome::TimerFailed(error),
+                },
+            }
+        }
+        (None, Some(token)) => {
+            let cancellation = token.cancelled();
+            tokio::pin!(cancellation);
+            tokio::select! {
+                biased;
+                result = &mut operation => AsyncAttemptOutcome::Completed(result),
+                () = &mut cancellation => AsyncAttemptOutcome::Cancelled,
+            }
+        }
+        (None, None) => AsyncAttemptOutcome::Completed(operation.await),
     }
 }
 
@@ -215,13 +258,51 @@ fn register_timeout(
     deadline.map(|deadline| timer.at(deadline)).transpose()
 }
 
-/// Waits for one retry delay using the configured timer.
+/// Result of waiting for one retry delay.
+enum BackoffOutcome {
+    /// The delay elapsed normally.
+    Elapsed,
+    /// Cooperative cancellation interrupted the delay.
+    Cancelled,
+    /// Registering or polling the delay timer failed.
+    TimerFailed(TimeError),
+}
+
+/// Waits for one retry delay using the configured timer and cancellation token.
 async fn sleep(
     timer: &Arc<dyn Timer>,
     delay: Duration,
-) -> Result<(), TimeError> {
-    let future = timer.after(delay)?;
-    future.await
+    cancellation: Option<&RetryCancellationToken>,
+) -> BackoffOutcome {
+    if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
+        return BackoffOutcome::Cancelled;
+    }
+    let mut timer_future = match timer.after(delay) {
+        Ok(future) => future,
+        Err(_)
+            if cancellation
+                .is_some_and(RetryCancellationToken::is_cancelled) =>
+        {
+            return BackoffOutcome::Cancelled;
+        }
+        Err(error) => return BackoffOutcome::TimerFailed(error),
+    };
+    let Some(token) = cancellation else {
+        return match timer_future.await {
+            Ok(()) => BackoffOutcome::Elapsed,
+            Err(error) => BackoffOutcome::TimerFailed(error),
+        };
+    };
+    let cancellation = token.cancelled();
+    tokio::pin!(cancellation);
+    tokio::select! {
+        biased;
+        () = &mut cancellation => BackoffOutcome::Cancelled,
+        result = &mut timer_future => match result {
+            Ok(()) => BackoffOutcome::Elapsed,
+            Err(error) => BackoffOutcome::TimerFailed(error),
+        },
+    }
 }
 
 /// Converts one timer error into the public infrastructure failure model.

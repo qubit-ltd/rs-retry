@@ -491,6 +491,45 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         self.infrastructure(failure, context)
     }
 
+    /// Records cancellation while an admitted async operation is active.
+    ///
+    /// The terminal context retains the attempt ordinal and effective timeout.
+    /// If the completion clock sample is invalid, the clock infrastructure
+    /// failure takes precedence because no coherent cancellation context can
+    /// be constructed.
+    #[cfg(feature = "tokio")]
+    pub(crate) fn record_attempt_cancellation(
+        &mut self,
+        clock: &dyn MonotonicClock,
+    ) -> RetryError<E> {
+        if let Err(error) = self.state.finish_attempt(clock.now()) {
+            return self.inactive_clock_failure(error);
+        }
+        self.cancelled_with_context(
+            RetryCancellationPhase::Attempt,
+            self.snapshot(),
+        )
+    }
+
+    /// Records cancellation while no operation is active during backoff.
+    ///
+    /// The terminal context retains the last attempt failure and scheduling
+    /// metadata. If the clock cannot be refreshed coherently, a clock
+    /// infrastructure failure is returned instead.
+    #[cfg(feature = "tokio")]
+    pub(crate) fn record_backoff_cancellation(
+        &mut self,
+        clock: &dyn MonotonicClock,
+    ) -> RetryError<E> {
+        if let Err(error) = self.state.refresh(clock.now()) {
+            return self.inactive_clock_failure(error);
+        }
+        self.cancelled_with_context(
+            RetryCancellationPhase::Backoff,
+            self.snapshot(),
+        )
+    }
+
     /// Returns whether the optional cancellation token has been cancelled.
     fn is_cancelled(cancellation: Option<&RetryCancellationToken>) -> bool {
         cancellation.is_some_and(RetryCancellationToken::is_cancelled)
@@ -598,12 +637,22 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// Constructs a cancellation terminal error from the current snapshot.
     fn cancelled(&mut self, phase: RetryCancellationPhase) -> RetryError<E> {
         self.clear_current_attempt();
+        self.cancelled_with_context(phase, self.snapshot())
+    }
+
+    /// Constructs cancellation from an exact context without changing its
+    /// active-attempt overlay.
+    fn cancelled_with_context(
+        &mut self,
+        phase: RetryCancellationPhase,
+        context: RetryContext,
+    ) -> RetryError<E> {
         RetryError::new(
             RetryFailure::Cancelled {
                 phase,
                 last_failure: self.last_failure.take(),
             },
-            self.snapshot(),
+            context,
         )
     }
 
