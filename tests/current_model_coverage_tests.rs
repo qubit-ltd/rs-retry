@@ -605,6 +605,23 @@ fn sync_facade_reports_timer_and_budget_boundaries() {
         .unwrap();
     assert_eq!(*hinted_retry.value(), 17);
 
+    let attempts = AtomicU32::new(0);
+    let jittered_retry = Retry::<TestError>::builder(retry_once_policy())
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            RetryDecision::RetryWithJitteredHint(Duration::ZERO)
+        })
+        .build()
+        .sync()
+        .run(|| {
+            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(TestError("retry"))
+            } else {
+                Ok(19_u32)
+            }
+        })
+        .expect("jittered hint retry should succeed");
+    assert_eq!(*jittered_retry.value(), 19);
+
     let callback_count = Arc::new(AtomicU32::new(0));
     let callback_count_for_observer = Arc::clone(&callback_count);
     let _ = Retry::<TestError>::builder(
@@ -666,6 +683,24 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     release_sender.send(()).unwrap();
     assert_eq!(detached.reason(), RetryErrorReason::WorkerStillRunning);
     assert_eq!(detached.context().unreaped_worker_count(), 1);
+
+    let zero_grace = Retry::<TestError>::builder(retry_once_policy())
+        .build()
+        .worker()
+        .attempt_timeout(Duration::from_millis(1))
+        .cancellation_grace(Duration::ZERO)
+        .run(|token| {
+            while !token.is_cancelled() {
+                std::thread::yield_now();
+            }
+            Ok::<_, TestError>(())
+        })
+        .unwrap_err();
+    assert!(matches!(
+        zero_grace.reason(),
+        RetryErrorReason::WorkerStillRunning
+            | RetryErrorReason::AttemptTimedOut
+    ));
 
     let attempts_exhausted = Retry::<TestError>::builder(
         RetryPolicy::builder().max_attempts(1).build().unwrap(),
@@ -768,6 +803,21 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     .run(|_| Err::<(), _>(TestError("retry")))
     .unwrap_err();
     assert_eq!(explicit_retry.reason(), RetryErrorReason::AttemptsExhausted);
+}
+
+/// Covers worker thread naming through a successful worker attempt.
+#[test]
+fn worker_facade_accepts_thread_name() {
+    let result = Retry::<TestError>::builder(
+        RetryPolicy::builder().max_attempts(1).build().unwrap(),
+    )
+    .build()
+    .worker()
+    .thread_name("coverage-worker")
+    .run(|_| Ok::<_, TestError>(()))
+    .expect("named worker should start");
+
+    assert_eq!(*result.value(), ());
 }
 
 #[cfg(feature = "tokio")]
@@ -981,6 +1031,34 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
         flow_expired_by_observer.reason(),
         RetryErrorReason::FlowTimedOut
     );
+
+    let attempts = AtomicUsize::new(0);
+    let jittered_retry = Retry::<TestError>::builder(retry_once_policy())
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            RetryDecision::RetryWithJitteredHint(Duration::ZERO)
+        })
+        .build()
+        .asynchronous()
+        .run(|| async {
+            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(TestError("retry"))
+            } else {
+                Ok(29_u32)
+            }
+        })
+        .await
+        .expect("jittered hint retry should succeed");
+    assert_eq!(*jittered_retry.value(), 29);
+
+    let exhausted = Retry::<TestError>::builder(
+        RetryPolicy::builder().max_attempts(1).build().unwrap(),
+    )
+    .build()
+    .asynchronous()
+    .run(|| async { Err::<(), _>(TestError("only attempt")) })
+    .await
+    .unwrap_err();
+    assert_eq!(exhausted.reason(), RetryErrorReason::AttemptsExhausted);
 
     let mut thread_random = BackoffPolicy::uniform(
         Duration::from_nanos(1),
