@@ -10,9 +10,7 @@
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
-use super::RetryDiagnostic;
 use super::RetryObserver;
-use super::RetryOutcomeKind;
 use super::retry_panic_from_payload;
 use crate::AttemptFailure;
 use crate::BackoffStep;
@@ -75,46 +73,6 @@ impl<E: 'static> RetryObservers<E> {
         self.try_each(RetryCallbackPhase::RetryScheduled, |observer| {
             observer.on_retry_scheduled(backoff, context)
         })
-    }
-
-    /// Temporarily adapts legacy executors to [`Self::try_attempt_started`].
-    pub(crate) fn attempt_started(&self, context: &RetryContext) {
-        let _ = self.try_attempt_started(context);
-    }
-
-    /// Temporarily adapts legacy executors to [`Self::try_attempt_failed`].
-    pub(crate) fn attempt_failed(
-        &self,
-        failure: &AttemptFailure<E>,
-        context: &RetryContext,
-    ) {
-        let _ = self.try_attempt_failed(failure, context);
-    }
-
-    /// Temporarily adapts legacy executors to [`Self::try_retry_scheduled`].
-    pub(crate) fn retry_scheduled(
-        &self,
-        backoff: &BackoffStep,
-        context: &RetryContext,
-    ) {
-        let _ = self.try_retry_scheduled(backoff, context);
-    }
-
-    /// Temporarily retains the legacy terminal notification as a no-op.
-    pub(crate) fn finished(
-        &self,
-        _outcome: RetryOutcomeKind,
-        _context: &RetryContext,
-    ) {
-    }
-
-    /// Temporarily retains the legacy diagnostic notification as a no-op.
-    pub(crate) fn diagnostic(
-        &self,
-        _diagnostic: &RetryDiagnostic,
-        _context: &RetryContext,
-        _failed_index: Option<usize>,
-    ) {
     }
 
     /// Invokes one observer phase in registration order.

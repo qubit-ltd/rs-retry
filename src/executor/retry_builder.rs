@@ -44,8 +44,8 @@ impl<E: 'static> RetryBuilder<E> {
         self
     }
 
-    /// Appends an observer. Observer panics are isolated and reported as
-    /// diagnostics so they cannot corrupt retry control flow.
+    /// Appends an observer. An observer panic terminates execution with a
+    /// structured `RetryFailure::CallbackFailed` value.
     pub fn observer<O>(mut self, observer: O) -> Self
     where
         O: RetryObserver<E>,

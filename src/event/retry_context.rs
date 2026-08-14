@@ -328,6 +328,10 @@ impl RetryContext {
     /// The unchanged context. Worker-stop details are represented by the
     /// terminal infrastructure failure value.
     #[inline(always)]
+    #[allow(
+        dead_code,
+        reason = "legacy context shim remains until the T07 API removal"
+    )]
     pub(crate) fn with_unreaped_worker_count(self, _count: u32) -> Self {
         self
     }

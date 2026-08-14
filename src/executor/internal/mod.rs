@@ -8,7 +8,9 @@
 //! Shared implementation state for retry executors.
 
 mod effective_timeout;
+mod retry_flow_controller;
 mod retry_flow_state;
 
 pub(crate) use effective_timeout::EffectiveTimeout;
+pub(crate) use retry_flow_controller::RetryFlowController;
 pub(crate) use retry_flow_state::RetryFlowState;

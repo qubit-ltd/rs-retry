@@ -17,7 +17,6 @@ use crate::RetryCallbackFailure;
 use crate::RetryCallbackKind;
 use crate::RetryCallbackPhase;
 use crate::RetryContext;
-use crate::observer::RetryDiagnostic;
 use crate::observer::retry_panic_from_payload;
 
 /// Ordered rules. The first concrete decision wins.
@@ -68,20 +67,6 @@ impl<E: 'static> RetryRules<E> {
             }
         }
         Ok(RetryDecision::UseDefault)
-    }
-
-    /// Temporarily adapts the legacy executor contract to [`Self::try_decide`].
-    ///
-    /// Callback failures are intentionally discarded until the flow controller
-    /// consumes the structured result directly.
-    pub(crate) fn decide(
-        &self,
-        failure: &AttemptFailure<E>,
-        context: &RetryContext,
-        _diagnostics: &mut Vec<RetryDiagnostic>,
-    ) -> RetryDecision {
-        self.try_decide(failure, context)
-            .unwrap_or(RetryDecision::UseDefault)
     }
 }
 
