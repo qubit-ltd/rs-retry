@@ -9,91 +9,81 @@
 
 use std::fmt;
 
-use serde::Deserialize;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-
-use super::AttemptExecutionError;
-use super::AttemptFailureKind;
-use super::AttemptTimeoutKind;
+use super::RetryPanic;
+use super::RetryTimeoutScope;
 
 /// Failure produced by one admitted attempt.
 #[must_use]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
-#[serde(bound(
-    serialize = "E: Serialize",
-    deserialize = "E: DeserializeOwned"
-))]
 pub enum AttemptFailure<E> {
     /// The operation returned an application error.
     Error(E),
-    /// The attempt was cancelled by an execution timeout.
-    Timeout {
-        /// Boundary that cancelled the attempt.
-        kind: AttemptTimeoutKind,
+    /// A hard timeout stopped the attempt.
+    TimedOut {
+        /// Scope whose timeout expired.
+        scope: RetryTimeoutScope,
     },
     /// The isolated attempt panicked.
-    Panic,
-    /// The executor could not complete the attempt.
-    Infrastructure(AttemptExecutionError),
+    Panicked {
+        /// Stable representation of the panic payload.
+        panic: RetryPanic,
+    },
 }
 
 impl<E> AttemptFailure<E> {
-    /// Returns the stable failure classification.
-    #[must_use]
-    pub fn kind(&self) -> AttemptFailureKind {
-        match self {
-            Self::Error(_) => AttemptFailureKind::Application,
-            Self::Timeout { .. } => AttemptFailureKind::TimedOut,
-            Self::Panic => AttemptFailureKind::Panicked,
-            Self::Infrastructure(_) => AttemptFailureKind::Infrastructure,
-        }
-    }
-
     /// Returns whether this failure was caused by a timeout.
     #[must_use]
     pub fn is_timeout(&self) -> bool {
-        matches!(self, Self::Timeout { .. })
+        matches!(self, Self::TimedOut { .. })
     }
 
     /// Returns the application error, if present.
+    ///
+    /// # Returns
+    /// `Some(&E)` for [`Self::Error`], or `None` for timeout and panic
+    /// failures.
     #[must_use]
     pub fn as_error(&self) -> Option<&E> {
         match self {
             Self::Error(error) => Some(error),
-            Self::Timeout { .. } | Self::Panic | Self::Infrastructure(_) => {
-                None
-            }
+            Self::TimedOut { .. } | Self::Panicked { .. } => None,
         }
     }
 
     /// Consumes the failure and returns the application error, if present.
+    ///
+    /// # Returns
+    /// `Some(E)` for [`Self::Error`], or `None` for timeout and panic failures.
     #[must_use]
     pub fn into_error(self) -> Option<E> {
         match self {
             Self::Error(error) => Some(error),
-            Self::Timeout { .. } | Self::Panic | Self::Infrastructure(_) => {
-                None
-            }
+            Self::TimedOut { .. } | Self::Panicked { .. } => None,
         }
     }
 
-    /// Returns the timeout kind, if this was a timeout failure.
+    /// Returns the timeout scope, if this failure was caused by a timeout.
+    ///
+    /// # Returns
+    /// `Some(RetryTimeoutScope)` for [`Self::TimedOut`], or `None` otherwise.
     #[must_use]
-    pub fn timeout_kind(&self) -> Option<AttemptTimeoutKind> {
+    pub fn timeout_scope(&self) -> Option<RetryTimeoutScope> {
         match self {
-            Self::Timeout { kind } => Some(*kind),
-            Self::Error(_) | Self::Panic | Self::Infrastructure(_) => None,
+            Self::TimedOut { scope } => Some(*scope),
+            Self::Error(_) | Self::Panicked { .. } => None,
         }
     }
 
-    /// Returns the executor diagnostic, if present.
+    /// Returns the captured panic payload, if the attempt panicked.
+    ///
+    /// # Returns
+    /// `Some(&RetryPanic)` for [`Self::Panicked`], or `None` otherwise.
     #[must_use]
-    pub fn execution_error(&self) -> Option<&AttemptExecutionError> {
+    pub fn panic(&self) -> Option<&RetryPanic> {
         match self {
-            Self::Infrastructure(error) => Some(error),
-            Self::Error(_) | Self::Timeout { .. } | Self::Panic => None,
+            Self::Panicked { panic } => Some(panic),
+            Self::Error(_) | Self::TimedOut { .. } => None,
         }
     }
 }
@@ -102,12 +92,11 @@ impl<E: fmt::Display> fmt::Display for AttemptFailure<E> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Error(error) => write!(formatter, "{error}"),
-            Self::Timeout { kind } => {
-                write!(formatter, "attempt timed out ({kind:?})")
+            Self::TimedOut { scope } => {
+                write!(formatter, "attempt timed out ({scope})")
             }
-            Self::Panic => formatter.write_str("attempt panicked"),
-            Self::Infrastructure(error) => {
-                write!(formatter, "attempt infrastructure failed: {error}")
+            Self::Panicked { panic } => {
+                write!(formatter, "attempt panicked: {panic}")
             }
         }
     }

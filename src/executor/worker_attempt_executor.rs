@@ -22,8 +22,8 @@ use std::time::Duration;
 use super::attempt_cancel_token::AttemptCancelToken;
 use super::blocking_attempt::BlockingAttempt;
 use super::blocking_attempt_outcome::BlockingAttemptOutcome;
-use crate::AttemptExecutionError;
 use crate::AttemptFailure;
+use crate::RetryPanic;
 
 /// Runs one blocking attempt on a worker thread.
 pub(in crate::executor) struct WorkerAttemptExecutor;
@@ -33,33 +33,37 @@ impl WorkerAttemptExecutor {
     ///
     /// # Arguments
     /// - `operation`: Shared blocking operation.
-    /// - `attempt_timeout`: Effective timeout for this attempt, if any.
+    /// - `prepare`: Callback run after the worker has been spawned but before
+    ///   its operation is released. It commits the attempt and returns the
+    ///   effective timeout.
     /// - `worker_cancel_grace`: Maximum time to wait for a timed-out worker
     ///   after cancellation.
     ///
     /// # Returns
-    /// The attempt outcome, including the attempt result and unreaped worker
-    /// count.
+    /// The attempt outcome, with worker-spawn and post-timeout cleanup failures
+    /// kept separate from operation failures.
     ///
     /// # Worker Behavior
-    /// Operation panics are converted into [`AttemptFailure::Panic`].
-    /// Worker-spawn failures are converted into
-    /// [`AttemptFailure::Infrastructure`].
-    pub(in crate::executor) fn run<E>(
+    /// Operation panics are converted into [`AttemptFailure::Panicked`]. The
+    /// worker waits behind a start gate so a spawn failure is never counted as
+    /// an operation attempt.
+    pub(in crate::executor) fn run<E, X, P>(
         operation: Arc<dyn BlockingAttempt<E>>,
         thread_name: &str,
         stack_size: Option<usize>,
-        attempt_timeout: Option<Duration>,
         worker_cancel_grace: Duration,
-    ) -> BlockingAttemptOutcome<(), E>
+        prepare: P,
+    ) -> Result<BlockingAttemptOutcome<(), E>, X>
     where
         E: Send + 'static,
+        P: FnOnce() -> Result<Option<Duration>, X>,
     {
         // A bounded channel is enough because each worker sends exactly one
         // final attempt result. If the runner times out and drops the receiver,
         // send failure only means the retry flow has already moved on.
         let token = AttemptCancelToken::new();
         let (sender, receiver) = mpsc::sync_channel(1);
+        let (start_sender, start_receiver) = mpsc::sync_channel(0);
         let worker_token = token.clone();
         let mut builder =
             std::thread::Builder::new().name(thread_name.to_owned());
@@ -67,6 +71,9 @@ impl WorkerAttemptExecutor {
             builder = builder.stack_size(stack_size);
         }
         let worker = match builder.spawn(move || {
+            if start_receiver.recv().is_err() {
+                return;
+            }
             // Worker mode is the only synchronous mode with a panic
             // isolation boundary. Convert panic payloads into retry
             // failures so policy and listeners can handle them normally.
@@ -75,22 +82,33 @@ impl WorkerAttemptExecutor {
             }));
             let attempt_result = match result {
                 Ok(result) => result,
-                Err(_payload) => Err(AttemptFailure::Panic),
+                Err(payload) => Err(AttemptFailure::Panicked {
+                    panic: retry_panic(payload),
+                }),
             };
             let _ = sender.send(attempt_result);
         }) {
             Ok(worker) => worker,
             Err(error) => {
-                return BlockingAttemptOutcome::new(
-                    Err(AttemptFailure::Infrastructure(
-                        AttemptExecutionError::new(&error.to_string()),
-                    )),
-                    0,
-                );
+                return Ok(BlockingAttemptOutcome::WorkerSpawnFailed {
+                    message: error.to_string().into_boxed_str(),
+                });
             }
         };
 
-        match attempt_timeout {
+        let attempt_timeout = match prepare() {
+            Ok(timeout) => timeout,
+            Err(error) => {
+                drop(start_sender);
+                join_finished_worker(worker);
+                return Err(error);
+            }
+        };
+        start_sender
+            .send(())
+            .expect("a spawned worker must wait for its start signal");
+
+        let outcome = match attempt_timeout {
             Some(attempt_timeout) => worker_timeout_result_to_attempt_outcome(
                 receiver.recv_timeout(attempt_timeout),
                 receiver,
@@ -101,7 +119,8 @@ impl WorkerAttemptExecutor {
             None => {
                 worker_recv_result_to_attempt_outcome(receiver.recv(), worker)
             }
-        }
+        };
+        Ok(outcome)
     }
 }
 
@@ -120,7 +139,7 @@ fn worker_recv_result_to_attempt_outcome<E>(
 ) -> BlockingAttemptOutcome<(), E> {
     join_finished_worker(worker);
     let result = result.expect("worker thread must send exactly one result");
-    BlockingAttemptOutcome::new(result, 0)
+    BlockingAttemptOutcome::Completed(result)
 }
 
 /// Converts a timed worker receive result into a blocking attempt outcome.
@@ -152,18 +171,16 @@ where
         token.cancel();
         let worker_exited =
             wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
-        let unreaped_worker_count = if worker_exited { 0 } else { 1 };
-        BlockingAttemptOutcome::new(
-            Err(AttemptFailure::Timeout {
-                kind: crate::AttemptTimeoutKind::Attempt,
-            }),
-            unreaped_worker_count,
-        )
+        if worker_exited {
+            BlockingAttemptOutcome::TimedOut
+        } else {
+            BlockingAttemptOutcome::WorkerStillRunning
+        }
     } else {
         join_finished_worker(worker);
         let result =
             result.expect("worker thread must send exactly one result");
-        BlockingAttemptOutcome::new(result, 0)
+        BlockingAttemptOutcome::Completed(result)
     }
 }
 
@@ -207,4 +224,15 @@ fn wait_for_cancelled_worker<E>(
 /// - `worker`: Worker thread handle.
 fn join_finished_worker(worker: JoinHandle<()>) {
     let _ = worker.join();
+}
+
+/// Converts a dynamically typed panic payload into its stable public form.
+fn retry_panic(payload: Box<dyn std::any::Any + Send>) -> RetryPanic {
+    match payload.downcast::<&'static str>() {
+        Ok(message) => RetryPanic::StaticStr(*message),
+        Err(payload) => match payload.downcast::<String>() {
+            Ok(message) => RetryPanic::String(*message),
+            Err(_) => RetryPanic::NonString,
+        },
+    }
 }

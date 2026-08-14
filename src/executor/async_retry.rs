@@ -13,21 +13,18 @@ use std::time::Duration;
 
 use qubit_clock::TimeError;
 use qubit_clock::Timer;
+use qubit_clock::TimerFuture;
 use qubit_clock::TokioTimer;
 
-use super::internal::EffectiveTimeout;
-use super::internal::RetryFlowState;
+use super::internal::RetryFlowController;
 use super::retry::Retry;
 use crate::AttemptFailure;
-use crate::AttemptTimeoutKind;
-use crate::RetryContext;
 use crate::RetryError;
-use crate::RetryErrorReason;
+use crate::RetryInfrastructureFailure;
 use crate::RetryRandomSource;
 use crate::RetrySuccess;
-use crate::observer::RetryOutcomeKind;
+use crate::RetryTimeoutScope;
 use crate::random::ThreadRetryRandomSource;
-use crate::rule::RetryDecision;
 
 /// Tokio retry execution with explicit attempt and flow timeout controls.
 pub struct AsyncRetry<'a, E> {
@@ -77,6 +74,10 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     }
 
     /// Executes one future per attempt.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the public error intentionally retains lossless terminal context"
+    )]
     pub async fn run<T, F, Fut>(
         &self,
         mut operation: F,
@@ -90,233 +91,131 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
             .clone()
             .unwrap_or_else(|| Arc::new(TokioTimer::current()));
         let clock = timer.clock();
-        let mut flow = RetryFlowState::new(
-            clock,
-            self.retry.policy(),
+        let mut controller = RetryFlowController::new(
+            clock.now(),
+            self.retry,
             Arc::clone(&self.random_source),
+            self.attempt_timeout,
             self.flow_timeout,
-        )
-        .expect("validated retry limits must fit the monotonic clock");
-        let mut last_failure = None;
+        );
 
         loop {
-            let snapshot = flow.snapshot();
-            if let Some(reason) = flow.continuation_reason() {
-                return Err(self.finish(
-                    reason,
-                    last_failure,
-                    flow.context(snapshot, snapshot.attempts()),
-                ));
-            }
-
-            let before = flow.upcoming_context();
-            self.retry.observers().attempt_started(&before);
-
-            let attempt = match flow.begin_attempt() {
-                Ok(attempt) => attempt,
-                Err(reason) => {
-                    return Err(self.finish(
-                        reason,
-                        last_failure,
-                        flow.current_context(),
-                    ));
+            let admission_sample = controller.before_attempt(clock, None)?;
+            let plan = controller.prepare_async_attempt(admission_sample)?;
+            let timeout_future = match register_timeout(&timer, plan.deadline())
+            {
+                Ok(timeout_future) => timeout_future,
+                Err(error) => {
+                    return Err(controller
+                        .record_inactive_infrastructure_failure(
+                            timer_failure(error),
+                            clock.now(),
+                        ));
                 }
             };
-            let timeout = flow.effective_timeout(self.attempt_timeout);
-            let outcome = execute_attempt(&timer, timeout, operation()).await;
-            let snapshot = flow.finish_attempt(attempt);
-            let attempt_context = flow
-                .context(snapshot, snapshot.attempts())
-                .with_attempt_timeout(timeout.map(EffectiveTimeout::duration));
+            controller.commit_prepared_attempt(plan, clock, None)?;
+            let outcome =
+                execute_attempt(timeout_future, plan.scope(), operation())
+                    .await;
 
             match outcome {
-                Ok(value) => {
-                    self.retry.observers().finished(
-                        RetryOutcomeKind::Succeeded,
-                        &attempt_context,
-                    );
-                    return Ok(RetrySuccess::new(value, attempt_context));
+                AsyncAttemptOutcome::Completed(Ok(value)) => {
+                    let context = controller.finish_success(clock)?;
+                    return Ok(RetrySuccess::new(value, context));
                 }
-                Err(failure) => {
-                    self.retry
-                        .observers()
-                        .attempt_failed(&failure, &attempt_context);
-                    if matches!(failure, AttemptFailure::Infrastructure(_)) {
-                        let detail = failure
-                            .execution_error()
-                            .map(|error| error.message().to_owned())
-                            .unwrap_or_else(|| "async timer failed".to_owned());
-                        return Err(self.finish_with_execution_error(
-                            Some(failure),
-                            attempt_context,
-                            &detail,
-                        ));
-                    }
-                    let mut diagnostics = Vec::new();
-                    let decision = self.retry.rules().decide(
-                        &failure,
-                        &attempt_context,
-                        &mut diagnostics,
-                    );
-                    for diagnostic in &diagnostics {
-                        self.retry.observers().diagnostic(
-                            diagnostic,
-                            &attempt_context,
-                            None,
-                        );
-                    }
-                    let decision = default_decision(decision, &failure);
-                    let hint = decision.retry_after_hint();
-                    if matches!(
-                        failure,
-                        AttemptFailure::Timeout {
-                            kind: AttemptTimeoutKind::Flow
-                        }
-                    ) {
-                        return Err(self.finish(
-                            RetryErrorReason::FlowTimedOut,
-                            Some(failure),
-                            attempt_context,
-                        ));
-                    }
-                    if matches!(decision, RetryDecision::Abort) {
-                        return Err(self.finish(
-                            terminal_reason(&failure),
-                            Some(failure),
-                            attempt_context,
-                        ));
-                    }
-                    if let Some(reason) = flow.continuation_reason() {
-                        return Err(self.finish(
-                            reason,
-                            Some(failure),
-                            attempt_context,
-                        ));
-                    }
-                    let step = flow.next_backoff(decision);
-                    let scheduled =
-                        attempt_context.with_next_delay(step.effective_delay());
-                    let scheduled = scheduled.with_retry_after_hint(hint);
-                    self.retry.observers().retry_scheduled(&step, &scheduled);
-                    if let Some(reason) =
-                        flow.retry_reason(step.effective_delay())
-                    {
-                        return Err(self.finish(
-                            reason,
-                            Some(failure),
-                            scheduled,
-                        ));
-                    }
-                    if let Some(remaining) =
-                        flow.flow_sleep_cap(step.effective_delay())
-                    {
-                        if let Err(error) = sleep(&timer, remaining).await {
-                            return Err(self.finish_with_timer_error(
-                                Some(failure),
-                                scheduled,
-                                error,
-                            ));
-                        }
-                        return Err(self.finish(
-                            RetryErrorReason::FlowTimedOut,
-                            Some(failure),
-                            scheduled,
-                        ));
-                    }
+                AsyncAttemptOutcome::Completed(Err(error)) => {
+                    let directive = controller.record_failure(
+                        AttemptFailure::Error(error),
+                        clock,
+                        None,
+                    )?;
                     if let Err(error) =
-                        sleep(&timer, step.effective_delay()).await
+                        sleep(&timer, directive.sleep_duration()).await
                     {
-                        return Err(self.finish_with_timer_error(
-                            Some(failure),
-                            scheduled,
-                            error,
-                        ));
+                        let error = controller
+                            .record_inactive_infrastructure_failure(
+                                timer_failure(error),
+                                clock.now(),
+                            );
+                        return Err(error);
                     }
-                    last_failure = Some(failure);
+                }
+                AsyncAttemptOutcome::TimedOut(scope) => {
+                    let directive = controller.record_failure(
+                        AttemptFailure::TimedOut { scope },
+                        clock,
+                        None,
+                    )?;
+                    if let Err(error) =
+                        sleep(&timer, directive.sleep_duration()).await
+                    {
+                        let error = controller
+                            .record_inactive_infrastructure_failure(
+                                timer_failure(error),
+                                clock.now(),
+                            );
+                        return Err(error);
+                    }
+                }
+                AsyncAttemptOutcome::TimerFailed(error) => {
+                    let error = controller
+                        .record_active_infrastructure_failure(
+                            timer_failure(error),
+                            clock.now(),
+                        );
+                    return Err(error);
                 }
             }
         }
     }
-
-    fn finish(
-        &self,
-        reason: RetryErrorReason,
-        failure: Option<AttemptFailure<E>>,
-        context: RetryContext,
-    ) -> RetryError<E> {
-        let error = RetryError::new(reason, failure, context);
-        self.retry
-            .observers()
-            .finished(RetryOutcomeKind::Failed, error.context());
-        error
-    }
-
-    fn finish_with_timer_error(
-        &self,
-        failure: Option<AttemptFailure<E>>,
-        context: RetryContext,
-        error: TimeError,
-    ) -> RetryError<E> {
-        self.finish_with_execution_error(failure, context, &error.to_string())
-    }
-
-    fn finish_with_execution_error(
-        &self,
-        failure: Option<AttemptFailure<E>>,
-        context: RetryContext,
-        message: &str,
-    ) -> RetryError<E> {
-        let error = RetryError::new_with_execution_error(
-            RetryErrorReason::TimerFailed,
-            failure,
-            crate::RetryExecutionError::timer(message),
-            context,
-        );
-        self.retry
-            .observers()
-            .finished(RetryOutcomeKind::Failed, error.context());
-        error
-    }
 }
 
+/// Result of running an async attempt and its cooperative timeout timer.
+enum AsyncAttemptOutcome<T, E> {
+    /// The operation future completed before its timeout.
+    Completed(Result<T, E>),
+    /// The cooperative timeout completed first.
+    TimedOut(RetryTimeoutScope),
+    /// Registering or polling the timeout timer failed.
+    TimerFailed(TimeError),
+}
+
+/// Polls one operation with its optional cooperative timeout.
 async fn execute_attempt<T, E, F>(
-    timer: &Arc<dyn Timer>,
-    timeout: Option<EffectiveTimeout>,
+    timeout_future: Option<TimerFuture>,
+    timeout_scope: Option<RetryTimeoutScope>,
     operation: F,
-) -> Result<T, AttemptFailure<E>>
+) -> AsyncAttemptOutcome<T, E>
 where
     F: Future<Output = Result<T, E>>,
 {
-    let Some(timeout) = timeout else {
-        return operation.await.map_err(AttemptFailure::Error);
+    let Some(mut timer_future) = timeout_future else {
+        return AsyncAttemptOutcome::Completed(operation.await);
     };
-    let mut timer_future = match timer.after(timeout.duration()) {
-        Ok(timer_future) => timer_future,
-        Err(error) => {
-            return Err(AttemptFailure::Infrastructure(
-                crate::AttemptExecutionError::new(&error.to_string()),
-            ));
-        }
-    };
+    let timeout_scope = timeout_scope
+        .expect("a registered attempt timeout always retains its scope");
     tokio::pin!(operation);
     tokio::select! {
-        result = &mut operation => match result {
-            Ok(value) => Ok(value),
-            Err(error) => Err(AttemptFailure::Error(error)),
+        result = &mut operation => AsyncAttemptOutcome::Completed(result),
+        result = &mut timer_future => match result {
+            Ok(()) => AsyncAttemptOutcome::TimedOut(timeout_scope),
+            Err(error) => AsyncAttemptOutcome::TimerFailed(error),
         },
-        result = &mut timer_future => {
-            match result {
-                Ok(()) => Err(AttemptFailure::Timeout {
-                    kind: timeout.kind(),
-                }),
-                Err(error) => Err(AttemptFailure::Infrastructure(
-                    crate::AttemptExecutionError::new(&error.to_string()),
-                )),
-            }
-        }
     }
 }
 
+/// Registers the optional absolute deadline before counting the attempt.
+///
+/// # Errors
+/// Returns the timer's registration error without polling an operation future.
+fn register_timeout(
+    timer: &Arc<dyn Timer>,
+    deadline: Option<qubit_clock::MonotonicInstant>,
+) -> Result<Option<TimerFuture>, TimeError> {
+    deadline.map(|deadline| timer.at(deadline)).transpose()
+}
+
+/// Waits for one retry delay using the configured timer.
 async fn sleep(
     timer: &Arc<dyn Timer>,
     delay: Duration,
@@ -325,31 +224,9 @@ async fn sleep(
     future.await
 }
 
-fn default_decision<E>(
-    decision: RetryDecision,
-    failure: &AttemptFailure<E>,
-) -> RetryDecision {
-    if !matches!(decision, RetryDecision::UseDefault) {
-        return decision;
-    }
-    match failure {
-        AttemptFailure::Error(_) => RetryDecision::Retry,
-        AttemptFailure::Timeout { .. }
-        | AttemptFailure::Panic
-        | AttemptFailure::Infrastructure(_) => RetryDecision::Abort,
-    }
-}
-
-fn terminal_reason<E>(failure: &AttemptFailure<E>) -> RetryErrorReason {
-    match failure {
-        AttemptFailure::Timeout {
-            kind: AttemptTimeoutKind::Attempt,
-        } => RetryErrorReason::AttemptTimedOut,
-        AttemptFailure::Error(_)
-        | AttemptFailure::Timeout {
-            kind: AttemptTimeoutKind::Flow,
-        }
-        | AttemptFailure::Panic
-        | AttemptFailure::Infrastructure(_) => RetryErrorReason::Aborted,
+/// Converts one timer error into the public infrastructure failure model.
+fn timer_failure(error: TimeError) -> RetryInfrastructureFailure {
+    RetryInfrastructureFailure::Timer {
+        message: error.to_string().into_boxed_str(),
     }
 }

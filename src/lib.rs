@@ -34,6 +34,10 @@ pub use budget::RetryBudget;
 pub use budget::RetryBudgetError;
 pub use budget::RetryBudgetExhausted;
 pub use budget::RetryBudgetSnapshot;
+#[allow(
+    unused_imports,
+    reason = "legacy internal re-export remains until the T07 API removal"
+)]
 pub(crate) use error::AttemptExecutionError;
 pub use error::AttemptFailure;
 pub use error::AttemptFailureKind;
@@ -45,6 +49,10 @@ pub use error::RetryCancellationPhase;
 pub use error::RetryError;
 pub use error::RetryErrorKind;
 pub use error::RetryErrorReason;
+#[allow(
+    unused_imports,
+    reason = "legacy internal re-export remains until the T07 API removal"
+)]
 pub(crate) use error::RetryExecutionError;
 pub use error::RetryFailure;
 pub use error::RetryInfrastructureFailure;
