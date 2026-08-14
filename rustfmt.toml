@@ -1,0 +1,9 @@
+# Rustfmt configuration for Qubit Rust projects.
+edition = "2024"
+style_edition = "2024"
+max_width = 80
+wrap_comments = true
+comment_width = 80
+imports_granularity = "Item"
+group_imports = "StdExternalCrate"
+reorder_imports = true

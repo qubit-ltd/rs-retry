@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Retry continuation budgets.
 
@@ -12,6 +14,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 /// Limits that decide whether a retry flow may continue.
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetryLimits {
     max_attempts: NonZeroU32,
@@ -34,16 +37,19 @@ impl RetryLimits {
     }
 
     /// Returns the maximum number of attempts, including the first attempt.
+    #[must_use]
     pub fn max_attempts(&self) -> NonZeroU32 {
         self.max_attempts
     }
 
     /// Returns the cumulative operation-time budget.
+    #[must_use]
     pub fn max_operation_elapsed(&self) -> Option<Duration> {
         self.max_operation_elapsed
     }
 
     /// Returns the whole-flow wall-clock budget.
+    #[must_use]
     pub fn max_total_elapsed(&self) -> Option<Duration> {
         self.max_total_elapsed
     }
