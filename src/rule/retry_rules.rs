@@ -13,9 +13,12 @@ use std::sync::Arc;
 use super::RetryDecision;
 use super::RetryRule;
 use crate::AttemptFailure;
+use crate::RetryCallbackFailure;
+use crate::RetryCallbackKind;
+use crate::RetryCallbackPhase;
 use crate::RetryContext;
 use crate::observer::RetryDiagnostic;
-use crate::observer::RetryDiagnosticKind;
+use crate::observer::retry_panic_from_payload;
 
 /// Ordered rules. The first concrete decision wins.
 #[derive(Clone)]
@@ -39,28 +42,45 @@ impl<E: 'static> RetryRules<E> {
         self.rules.push(Arc::new(rule));
     }
 
-    /// Resolves the first non-default decision and collects diagnostics.
-    pub(crate) fn decide(
+    /// Resolves the first non-default decision.
+    ///
+    /// Returns the structured failure for the first panicking rule and stops
+    /// evaluating later rules.
+    pub(crate) fn try_decide(
         &self,
         failure: &AttemptFailure<E>,
         context: &RetryContext,
-        diagnostics: &mut Vec<RetryDiagnostic>,
-    ) -> RetryDecision {
+    ) -> Result<RetryDecision, RetryCallbackFailure> {
         for (index, rule) in self.rules.iter().enumerate() {
             let decision = std::panic::catch_unwind(AssertUnwindSafe(|| {
                 rule.decide(failure, context)
             }))
-            .unwrap_or_else(|_| {
-                diagnostics.push(RetryDiagnostic::new(
-                    RetryDiagnosticKind::RulePanicked,
+            .map_err(|payload| {
+                RetryCallbackFailure::new(
+                    RetryCallbackKind::Rule,
                     index,
-                ));
-                RetryDecision::UseDefault
-            });
+                    RetryCallbackPhase::RuleDecision,
+                    retry_panic_from_payload(payload),
+                )
+            })?;
             if !matches!(decision, RetryDecision::UseDefault) {
-                return decision;
+                return Ok(decision);
             }
         }
-        RetryDecision::UseDefault
+        Ok(RetryDecision::UseDefault)
+    }
+
+    /// Temporarily adapts the legacy executor contract to [`Self::try_decide`].
+    ///
+    /// Callback failures are intentionally discarded until the flow controller
+    /// consumes the structured result directly.
+    pub(crate) fn decide(
+        &self,
+        failure: &AttemptFailure<E>,
+        context: &RetryContext,
+        _diagnostics: &mut Vec<RetryDiagnostic>,
+    ) -> RetryDecision {
+        self.try_decide(failure, context)
+            .unwrap_or(RetryDecision::UseDefault)
     }
 }

@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+mod callback_failure_tests;
 mod retry_diagnostic_kind_tests;
 mod retry_diagnostic_tests;
 mod retry_observer_tests;
