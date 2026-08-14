@@ -25,20 +25,6 @@ use super::blocking_attempt_outcome::BlockingAttemptOutcome;
 use crate::AttemptExecutionError;
 use crate::AttemptFailure;
 
-const WORKER_SPAWN_FAILED_MESSAGE: &str = "failed to spawn retry worker thread";
-
-/// Builds a spawn-failure attempt outcome at the cold spawn error site.
-macro_rules! worker_spawn_failure {
-    ($error:expr) => {
-        BlockingAttemptOutcome::new(
-            Err(AttemptFailure::Infrastructure(AttemptExecutionError::new(
-                WORKER_SPAWN_FAILED_MESSAGE,
-            ))),
-            0,
-        )
-    };
-}
-
 /// Runs one blocking attempt on a worker thread.
 pub(in crate::executor) struct WorkerAttemptExecutor;
 
@@ -61,6 +47,8 @@ impl WorkerAttemptExecutor {
     /// [`AttemptFailure::Infrastructure`].
     pub(in crate::executor) fn run<E>(
         operation: Arc<dyn BlockingAttempt<E>>,
+        thread_name: &str,
+        stack_size: Option<usize>,
         attempt_timeout: Option<Duration>,
         worker_cancel_grace: Duration,
     ) -> BlockingAttemptOutcome<(), E>
@@ -73,22 +61,33 @@ impl WorkerAttemptExecutor {
         let token = AttemptCancelToken::new();
         let (sender, receiver) = mpsc::sync_channel(1);
         let worker_token = token.clone();
-        let worker = match std::thread::Builder::new()
-            .name("qubit-retry-worker".to_string())
-            .spawn(move || {
-                // Worker mode is the only synchronous mode with a panic
-                // isolation boundary. Convert panic payloads into retry
-                // failures so policy and listeners can handle them normally.
-                let result =
-                    panic::catch_unwind(panic::AssertUnwindSafe(|| operation.call(worker_token)));
-                let attempt_result = match result {
-                    Ok(result) => result,
-                    Err(_payload) => Err(AttemptFailure::Panic),
-                };
-                let _ = sender.send(attempt_result);
-            }) {
+        let mut builder =
+            std::thread::Builder::new().name(thread_name.to_owned());
+        if let Some(stack_size) = stack_size {
+            builder = builder.stack_size(stack_size);
+        }
+        let worker = match builder.spawn(move || {
+            // Worker mode is the only synchronous mode with a panic
+            // isolation boundary. Convert panic payloads into retry
+            // failures so policy and listeners can handle them normally.
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                operation.call(worker_token)
+            }));
+            let attempt_result = match result {
+                Ok(result) => result,
+                Err(_payload) => Err(AttemptFailure::Panic),
+            };
+            let _ = sender.send(attempt_result);
+        }) {
             Ok(worker) => worker,
-            Err(_error) => return worker_spawn_failure!(_error),
+            Err(error) => {
+                return BlockingAttemptOutcome::new(
+                    Err(AttemptFailure::Infrastructure(
+                        AttemptExecutionError::new(&error.to_string()),
+                    )),
+                    0,
+                );
+            }
         };
 
         match attempt_timeout {
@@ -99,7 +98,9 @@ impl WorkerAttemptExecutor {
                 &token,
                 worker_cancel_grace,
             ),
-            None => worker_recv_result_to_attempt_outcome(receiver.recv(), worker),
+            None => {
+                worker_recv_result_to_attempt_outcome(receiver.recv(), worker)
+            }
         }
     }
 }
@@ -149,7 +150,8 @@ where
         // token first, then waits briefly so well-behaved operations can return
         // and be joined before retry policy decides what to do next.
         token.cancel();
-        let worker_exited = wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
+        let worker_exited =
+            wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
         let unreaped_worker_count = if worker_exited { 0 } else { 1 };
         BlockingAttemptOutcome::new(
             Err(AttemptFailure::Timeout {
@@ -159,7 +161,8 @@ where
         )
     } else {
         join_finished_worker(worker);
-        let result = result.expect("worker thread must send exactly one result");
+        let result =
+            result.expect("worker thread must send exactly one result");
         BlockingAttemptOutcome::new(result, 0)
     }
 }

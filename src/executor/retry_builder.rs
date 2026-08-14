@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Builder for immutable retry definitions.
 
@@ -53,6 +55,7 @@ impl<E: 'static> RetryBuilder<E> {
     }
 
     /// Finishes the immutable retry definition.
+    #[must_use]
     pub fn build(self) -> Retry<E> {
         Retry::new(self.policy, self.rules, self.observers)
     }

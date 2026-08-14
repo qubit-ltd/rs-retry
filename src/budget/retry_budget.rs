@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Defines the reusable retry continuation-budget state machine.
 
@@ -18,46 +20,9 @@ use super::RetryAttempt;
 use super::RetryBudgetError;
 use super::RetryBudgetExhausted;
 use super::RetryBudgetSnapshot;
+use super::internal::BorrowedMonotonicClock;
+use super::internal::RetryResource;
 use crate::RetryLimits;
-
-/// Internal diagnostic labels retained by primitive budget values.
-#[derive(Debug, Clone)]
-enum RetryResource {
-    /// The finite count of admitted attempts.
-    Attempts,
-    /// The finite sum of operation durations.
-    OperationElapsed,
-    /// The continuous whole-flow elapsed duration.
-    TotalElapsed,
-}
-
-/// Borrows a clock without requiring a blanket implementation for references.
-struct BorrowedMonotonicClock<'a>(&'a dyn MonotonicClock);
-
-impl MonotonicClock for BorrowedMonotonicClock<'_> {
-    /// Returns the borrowed clock's domain.
-    fn domain(&self) -> qubit_clock::ClockDomain {
-        self.0.domain()
-    }
-
-    /// Returns the borrowed clock's current instant.
-    fn now(&self) -> MonotonicInstant {
-        self.0.now()
-    }
-
-    /// Calculates a deadline using the borrowed clock.
-    fn deadline_after(
-        &self,
-        duration: Duration,
-    ) -> Result<MonotonicInstant, qubit_clock::TimeError> {
-        self.0.deadline_after(duration)
-    }
-
-    /// Creates a timer using the borrowed clock.
-    fn new_timer(&self) -> std::sync::Arc<dyn qubit_clock::Timer> {
-        self.0.new_timer()
-    }
-}
 
 /// The single source of truth for retry continuation limits.
 ///
@@ -110,9 +75,14 @@ impl<'a> RetryBudget<'a> {
             })
             .transpose()
             .map_err(|error| match error {
-                TimeBudgetError::Clock { source, .. } => RetryBudgetError::Clock(source),
-                TimeBudgetError::Expired { .. } | TimeBudgetError::WouldExpire { .. } => {
-                    unreachable!("constructing a time budget only adds a deadline")
+                TimeBudgetError::Clock { source, .. } => {
+                    RetryBudgetError::Clock(source)
+                }
+                TimeBudgetError::Expired { .. }
+                | TimeBudgetError::WouldExpire { .. } => {
+                    unreachable!(
+                        "constructing a time budget only adds a deadline"
+                    )
                 }
             })?;
         let started_at = total
@@ -120,10 +90,13 @@ impl<'a> RetryBudget<'a> {
             .map_or_else(|| clock.now(), TimeBudget::started_at);
         Ok(Self {
             started_at,
-            attempts: ResourceBudget::new(RetryResource::Attempts, limits.max_attempts().get()),
-            operation: limits
-                .max_operation_elapsed()
-                .map(|duration| DurationBudget::new(RetryResource::OperationElapsed, duration)),
+            attempts: ResourceBudget::new(
+                RetryResource::Attempts,
+                limits.max_attempts().get(),
+            ),
+            operation: limits.max_operation_elapsed().map(|duration| {
+                DurationBudget::new(RetryResource::OperationElapsed, duration)
+            }),
             operation_elapsed: Duration::ZERO,
             total,
             last_attempt_elapsed: Duration::ZERO,
@@ -132,6 +105,7 @@ impl<'a> RetryBudget<'a> {
     }
 
     /// Samples and returns the current retry budget state.
+    #[must_use = "inspect the current retry budget snapshot"]
     pub fn snapshot(&self) -> RetryBudgetSnapshot {
         RetryBudgetSnapshot::new(
             self.attempts.used(),
@@ -146,7 +120,9 @@ impl<'a> RetryBudget<'a> {
     /// Returns the linear token required to finish that attempt, or the first
     /// exhausted limit in stable attempts, operation, total order. This method
     /// mutates only the attempt count when it succeeds.
-    pub fn begin_attempt(&mut self) -> Result<RetryAttempt, RetryBudgetExhausted> {
+    pub fn begin_attempt(
+        &mut self,
+    ) -> Result<RetryAttempt, RetryBudgetExhausted> {
         self.check_continuation()?;
         let number = self.attempts.used() + 1;
         let consumed = self.attempts.consume_available(1);
@@ -162,7 +138,10 @@ impl<'a> RetryBudget<'a> {
     /// The token is consumed exactly once. An overrun exhausts the operation
     /// allowance for future work but is retained exactly in the returned
     /// snapshot and never changes a completed attempt's outcome.
-    pub fn finish_attempt(&mut self, attempt: RetryAttempt) -> RetryBudgetSnapshot {
+    pub fn finish_attempt(
+        &mut self,
+        attempt: RetryAttempt,
+    ) -> RetryBudgetSnapshot {
         debug_assert_eq!(
             attempt.number,
             self.attempts.used(),
@@ -186,7 +165,10 @@ impl<'a> RetryBudget<'a> {
     /// A delay that reaches the total deadline is rejected. The next call to
     /// [`Self::begin_attempt`] rechecks all limits after the delay and any
     /// observer work has elapsed.
-    pub fn check_retry_after(&self, delay: Duration) -> Result<(), RetryBudgetExhausted> {
+    pub fn check_retry_after(
+        &self,
+        delay: Duration,
+    ) -> Result<(), RetryBudgetExhausted> {
         self.check_continuation()?;
         if self
             .total

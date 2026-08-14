@@ -50,11 +50,13 @@ impl EffectiveTimeout {
     }
 
     /// Returns the selected duration.
+    #[must_use]
     pub(crate) fn duration(self) -> Duration {
         self.duration
     }
 
     /// Returns the boundary responsible for cancellation.
+    #[must_use]
     pub(crate) fn kind(self) -> AttemptTimeoutKind {
         self.kind
     }

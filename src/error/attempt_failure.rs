@@ -2,6 +2,8 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Attempt-level failure values.
 
@@ -16,9 +18,13 @@ use super::AttemptFailureKind;
 use super::AttemptTimeoutKind;
 
 /// Failure produced by one admitted attempt.
+#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
-#[serde(bound(serialize = "E: Serialize", deserialize = "E: DeserializeOwned"))]
+#[serde(bound(
+    serialize = "E: Serialize",
+    deserialize = "E: DeserializeOwned"
+))]
 pub enum AttemptFailure<E> {
     /// The operation returned an application error.
     Error(E),
@@ -35,6 +41,7 @@ pub enum AttemptFailure<E> {
 
 impl<E> AttemptFailure<E> {
     /// Returns the stable failure classification.
+    #[must_use]
     pub fn kind(&self) -> AttemptFailureKind {
         match self {
             Self::Error(_) => AttemptFailureKind::Application,
@@ -45,27 +52,35 @@ impl<E> AttemptFailure<E> {
     }
 
     /// Returns whether this failure was caused by a timeout.
+    #[must_use]
     pub fn is_timeout(&self) -> bool {
         matches!(self, Self::Timeout { .. })
     }
 
     /// Returns the application error, if present.
+    #[must_use]
     pub fn as_error(&self) -> Option<&E> {
         match self {
             Self::Error(error) => Some(error),
-            Self::Timeout { .. } | Self::Panic | Self::Infrastructure(_) => None,
+            Self::Timeout { .. } | Self::Panic | Self::Infrastructure(_) => {
+                None
+            }
         }
     }
 
     /// Consumes the failure and returns the application error, if present.
+    #[must_use]
     pub fn into_error(self) -> Option<E> {
         match self {
             Self::Error(error) => Some(error),
-            Self::Timeout { .. } | Self::Panic | Self::Infrastructure(_) => None,
+            Self::Timeout { .. } | Self::Panic | Self::Infrastructure(_) => {
+                None
+            }
         }
     }
 
     /// Returns the timeout kind, if this was a timeout failure.
+    #[must_use]
     pub fn timeout_kind(&self) -> Option<AttemptTimeoutKind> {
         match self {
             Self::Timeout { kind } => Some(*kind),
@@ -74,6 +89,7 @@ impl<E> AttemptFailure<E> {
     }
 
     /// Returns the executor diagnostic, if present.
+    #[must_use]
     pub fn execution_error(&self) -> Option<&AttemptExecutionError> {
         match self {
             Self::Infrastructure(error) => Some(error),

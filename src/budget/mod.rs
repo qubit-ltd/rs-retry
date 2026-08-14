@@ -2,9 +2,12 @@
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Continuation-budget state for retry flows.
 
+mod internal;
 mod retry_attempt;
 mod retry_budget;
 mod retry_budget_error;
