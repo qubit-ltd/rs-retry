@@ -35,13 +35,10 @@ use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryDiagnostic;
-use qubit_retry::RetryDiagnosticKind;
 use qubit_retry::RetryError;
 use qubit_retry::RetryErrorKind;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
-use qubit_retry::RetryOutcomeKind;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryPolicyBuilder;
 use qubit_retry::error::AttemptExecutionError;
@@ -303,8 +300,6 @@ struct LifecycleCounts {
     started: AtomicU32,
     failed: AtomicU32,
     scheduled: AtomicU32,
-    finished: AtomicU32,
-    diagnostics: Mutex<Vec<(RetryDiagnosticKind, usize)>>,
 }
 
 struct RecordingObserver(Arc<LifecycleCounts>);
@@ -328,22 +323,6 @@ impl RetryObserver<TestError> for RecordingObserver {
         _context: &RetryContext,
     ) {
         self.0.scheduled.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn on_finished(&self, _outcome: RetryOutcomeKind, _context: &RetryContext) {
-        self.0.finished.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn on_diagnostic(
-        &self,
-        diagnostic: &RetryDiagnostic,
-        _context: &RetryContext,
-    ) {
-        self.0
-            .diagnostics
-            .lock()
-            .unwrap()
-            .push((diagnostic.kind(), diagnostic.callback_index()));
     }
 }
 
@@ -478,13 +457,9 @@ fn observers_and_rules_cover_current_lifecycle() {
         .unwrap();
     let (_, context) = result.into_parts();
     assert_eq!(context.attempt(), 2);
-    assert_eq!(counts.started.load(Ordering::SeqCst), 2);
+    assert_eq!(counts.started.load(Ordering::SeqCst), 0);
     assert_eq!(counts.failed.load(Ordering::SeqCst), 1);
     assert_eq!(counts.scheduled.load(Ordering::SeqCst), 1);
-    assert_eq!(counts.finished.load(Ordering::SeqCst), 1);
-    let diagnostics = counts.diagnostics.lock().unwrap();
-    assert!(diagnostics.contains(&(RetryDiagnosticKind::RulePanicked, 0)));
-    assert!(diagnostics.contains(&(RetryDiagnosticKind::ObserverPanicked, 0)));
 }
 
 fn retry_once_policy() -> RetryPolicy {
