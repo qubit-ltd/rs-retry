@@ -7,6 +7,7 @@
 // =============================================================================
 //! Shared continuation state for synchronous and timed retry executors.
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -125,28 +126,32 @@ impl<'a> RetryFlowState<'a> {
         self.backoff.next(request)
     }
 
-    /// Builds a context from a supplied budget snapshot and attempt ordinal.
+    /// Builds a context from a supplied budget snapshot and current ordinal.
     pub(crate) fn context(
         &self,
         snapshot: RetryBudgetSnapshot,
-        attempt: u32,
+        current_attempt: u32,
     ) -> RetryContext {
         RetryContext::from_parts(RetryContextParts {
-            attempt,
+            attempts: snapshot.attempts(),
+            current_attempt: NonZeroU32::new(current_attempt),
             max_attempts: self.policy.limits().max_attempts().get(),
             max_operation_elapsed: self.policy.limits().max_operation_elapsed(),
             max_total_elapsed: self.policy.limits().max_total_elapsed(),
             operation_elapsed: snapshot.operation_elapsed(),
             total_elapsed: snapshot.total_elapsed(),
-            attempt_elapsed: snapshot.attempt_elapsed(),
-            attempt_timeout: None,
+            last_attempt_elapsed: snapshot.attempt_elapsed(),
+            current_attempt_timeout: None,
+            next_delay: None,
+            retry_after_hint: None,
         })
     }
 
     /// Builds a context for the next attempt-start event.
     pub(crate) fn upcoming_context(&self) -> RetryContext {
         let snapshot = self.snapshot();
-        self.context(snapshot, snapshot.attempts().saturating_add(1))
+        let current_attempt = snapshot.attempts().saturating_add(1);
+        self.context(snapshot, current_attempt)
     }
 
     /// Builds a context for the latest committed attempt count.

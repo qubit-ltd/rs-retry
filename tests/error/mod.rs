@@ -16,4 +16,5 @@ mod retry_error_reason_tests;
 mod retry_error_tests;
 mod retry_execution_error_kind_tests;
 mod retry_execution_error_tests;
+mod retry_failure_tests;
 mod retry_policy_error_tests;
