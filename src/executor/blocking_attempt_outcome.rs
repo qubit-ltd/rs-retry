@@ -8,6 +8,7 @@
 //! Result returned from one blocking worker attempt.
 
 use crate::AttemptFailure;
+use crate::WorkerStopTrigger;
 
 /// Outcome of starting and waiting for one blocking worker attempt.
 pub(in crate::executor) enum BlockingAttemptOutcome<T, E> {
@@ -18,8 +19,14 @@ pub(in crate::executor) enum BlockingAttemptOutcome<T, E> {
         /// Diagnostic supplied by the thread runtime.
         message: Box<str>,
     },
-    /// The deadline expired, cancellation was requested, and the worker exited.
-    TimedOut,
-    /// The deadline expired but the worker did not exit during the grace period.
-    WorkerStillRunning,
+    /// A stop event won and the worker exited during the grace period.
+    Stopped {
+        /// First event that requested the worker to stop.
+        trigger: WorkerStopTrigger,
+    },
+    /// A stop event won but the worker did not exit during the grace period.
+    WorkerStillRunning {
+        /// First event that requested the worker to stop.
+        trigger: WorkerStopTrigger,
+    },
 }

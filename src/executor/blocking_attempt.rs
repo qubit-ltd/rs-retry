@@ -7,7 +7,7 @@
 // =============================================================================
 //! Type-erased blocking worker attempt used by the retry loop.
 
-use super::attempt_cancel_token::AttemptCancelToken;
+use super::attempt_cancellation_token::AttemptCancellationToken;
 use crate::AttemptFailure;
 
 /// Type-erased blocking worker attempt used by the retry loop.
@@ -21,5 +21,8 @@ pub(in crate::executor) trait BlockingAttempt<E>:
     ///
     /// # Returns
     /// `Ok(())` when the operation succeeded, or an attempt failure otherwise.
-    fn call(&self, token: AttemptCancelToken) -> Result<(), AttemptFailure<E>>;
+    fn call(
+        &self,
+        token: AttemptCancellationToken,
+    ) -> Result<(), AttemptFailure<E>>;
 }

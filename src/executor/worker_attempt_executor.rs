@@ -13,17 +13,53 @@
 //! cooperative cancellation, and reports whether a timed-out worker could not
 //! be reaped during the grace period.
 
+use std::future::Future;
 use std::panic;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::mpsc;
+use std::task::Context;
+use std::task::Wake;
+use std::task::Waker;
 use std::thread::JoinHandle;
 use std::time::Duration;
+use std::time::Instant;
 
-use super::attempt_cancel_token::AttemptCancelToken;
+use super::attempt_cancellation_token::AttemptCancellationToken;
 use super::blocking_attempt::BlockingAttempt;
 use super::blocking_attempt_outcome::BlockingAttemptOutcome;
+use super::internal::EffectiveTimeout;
+use super::retry_cancellation_token::RetryCancellationToken;
 use crate::AttemptFailure;
 use crate::RetryPanic;
+use crate::RetryTimeoutScope;
+use crate::WorkerStopTrigger;
+
+/// Event observed while waiting for one worker attempt.
+enum WorkerEvent<E> {
+    /// The worker finished and produced an attempt result.
+    Completed(Result<(), AttemptFailure<E>>),
+    /// The retry-flow cancellation token was cancelled.
+    Cancellation,
+}
+
+/// Waker that forwards flow cancellation into the worker event channel.
+struct CancellationWake<E> {
+    /// Event sender owned by the registered cancellation future.
+    sender: mpsc::Sender<WorkerEvent<E>>,
+}
+
+impl<E: Send + 'static> Wake for CancellationWake<E> {
+    /// Sends one cancellation event when the registered future is woken.
+    fn wake(self: Arc<Self>) {
+        let _ = self.sender.send(WorkerEvent::Cancellation);
+    }
+
+    /// Sends one cancellation event without consuming the shared waker.
+    fn wake_by_ref(self: &Arc<Self>) {
+        let _ = self.sender.send(WorkerEvent::Cancellation);
+    }
+}
 
 /// Runs one blocking attempt on a worker thread.
 pub(in crate::executor) struct WorkerAttemptExecutor;
@@ -52,19 +88,22 @@ impl WorkerAttemptExecutor {
         thread_name: &str,
         stack_size: Option<usize>,
         worker_cancel_grace: Duration,
+        cancellation: Option<&RetryCancellationToken>,
         prepare: P,
     ) -> Result<BlockingAttemptOutcome<(), E>, X>
     where
         E: Send + 'static,
-        P: FnOnce() -> Result<Option<Duration>, X>,
+        P: FnOnce() -> Result<Option<EffectiveTimeout>, X>,
     {
-        // A bounded channel is enough because each worker sends exactly one
-        // final attempt result. If the runner times out and drops the receiver,
-        // send failure only means the retry flow has already moved on.
-        let token = AttemptCancelToken::new();
-        let (sender, receiver) = mpsc::sync_channel(1);
+        // One channel combines the worker result and flow-cancellation wakeup
+        // so whichever event is received first fixes the stop decision. If the
+        // runner stops and drops the receiver, send failure only means the
+        // retry flow has already terminated.
+        let token = AttemptCancellationToken::new();
+        let (sender, receiver) = mpsc::channel();
         let (start_sender, start_receiver) = mpsc::sync_channel(0);
         let worker_token = token.clone();
+        let worker_sender = sender.clone();
         let mut builder =
             std::thread::Builder::new().name(thread_name.to_owned());
         if let Some(stack_size) = stack_size {
@@ -86,7 +125,7 @@ impl WorkerAttemptExecutor {
                     panic: retry_panic(payload),
                 }),
             };
-            let _ = sender.send(attempt_result);
+            let _ = worker_sender.send(WorkerEvent::Completed(attempt_result));
         }) {
             Ok(worker) => worker,
             Err(error) => {
@@ -96,7 +135,13 @@ impl WorkerAttemptExecutor {
             }
         };
 
-        let attempt_timeout = match prepare() {
+        let mut cancellation_future =
+            cancellation.map(|token| Box::pin(token.cancelled()));
+        if let Some(future) = cancellation_future.as_mut() {
+            register_cancellation_waker(future, &sender);
+        }
+
+        let effective_timeout = match prepare() {
             Ok(timeout) => timeout,
             Err(error) => {
                 drop(start_sender);
@@ -108,79 +153,121 @@ impl WorkerAttemptExecutor {
             .send(())
             .expect("a spawned worker must wait for its start signal");
 
-        let outcome = match attempt_timeout {
-            Some(attempt_timeout) => worker_timeout_result_to_attempt_outcome(
-                receiver.recv_timeout(attempt_timeout),
+        let first_event = match effective_timeout {
+            Some(timeout) => match receiver.recv_timeout(timeout.duration()) {
+                Ok(event) => event,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    let trigger = if cancellation
+                        .is_some_and(RetryCancellationToken::is_cancelled)
+                    {
+                        WorkerStopTrigger::Cancellation
+                    } else {
+                        timeout_trigger(timeout.scope())
+                    };
+                    return Ok(stop_worker(
+                        receiver,
+                        worker,
+                        &token,
+                        worker_cancel_grace,
+                        trigger,
+                    ));
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    panic!("worker event channel disconnected unexpectedly")
+                }
+            },
+            None => receiver
+                .recv()
+                .expect("worker event channel must produce one event"),
+        };
+        let outcome = match first_event {
+            WorkerEvent::Completed(result) => {
+                if cancellation
+                    .is_some_and(RetryCancellationToken::is_cancelled)
+                {
+                    token.cancel();
+                    join_finished_worker(worker);
+                    BlockingAttemptOutcome::Stopped {
+                        trigger: WorkerStopTrigger::Cancellation,
+                    }
+                } else {
+                    join_finished_worker(worker);
+                    BlockingAttemptOutcome::Completed(result)
+                }
+            }
+            WorkerEvent::Cancellation => stop_worker(
                 receiver,
                 worker,
                 &token,
                 worker_cancel_grace,
+                WorkerStopTrigger::Cancellation,
             ),
-            None => {
-                worker_recv_result_to_attempt_outcome(receiver.recv(), worker)
-            }
         };
         Ok(outcome)
     }
 }
 
-/// Converts a blocking worker receive result into an attempt outcome.
+/// Polls a cancellation future once with an event-channel waker.
 ///
 /// # Arguments
-/// - `result`: Result from waiting for the worker without an attempt timeout.
-/// - `worker`: Worker thread handle for joining the finished worker.
-///
-/// # Returns
-/// The attempt outcome. The worker is expected to send exactly one result even
-/// when the operation panics.
-fn worker_recv_result_to_attempt_outcome<E>(
-    result: Result<Result<(), AttemptFailure<E>>, mpsc::RecvError>,
-    worker: JoinHandle<()>,
-) -> BlockingAttemptOutcome<(), E> {
-    join_finished_worker(worker);
-    let result = result.expect("worker thread must send exactly one result");
-    BlockingAttemptOutcome::Completed(result)
+/// - `future`: Cancellation future to register.
+/// - `sender`: Worker event sender cloned into the waker.
+fn register_cancellation_waker<E: Send + 'static>(
+    future: &mut Pin<Box<super::retry_cancellation_token::RetryCancelled<'_>>>,
+    sender: &mpsc::Sender<WorkerEvent<E>>,
+) {
+    let waker = Waker::from(Arc::new(CancellationWake {
+        sender: sender.clone(),
+    }));
+    let mut context = Context::from_waker(&waker);
+    if future.as_mut().poll(&mut context).is_ready() {
+        let _ = sender.send(WorkerEvent::Cancellation);
+    }
 }
 
-/// Converts a timed worker receive result into a blocking attempt outcome.
+/// Maps an effective timeout scope to the worker stop trigger.
 ///
 /// # Arguments
-/// - `result`: Result from waiting for the worker up to the attempt timeout.
-/// - `receiver`: Receiver used for the post-timeout cancellation grace wait.
-/// - `worker`: Worker thread handle for joining finished workers.
-/// - `token`: Cancellation token to mark when the receive timed out.
-/// - `worker_cancel_grace`: Maximum time to wait for a timed-out worker after
-///   cancellation.
+/// - `scope`: Effective timeout scope selected by the retry controller.
 ///
 /// # Returns
-/// The attempt outcome, including unreaped-worker accounting for timeout cases.
-fn worker_timeout_result_to_attempt_outcome<E>(
-    result: Result<Result<(), AttemptFailure<E>>, mpsc::RecvTimeoutError>,
-    receiver: mpsc::Receiver<Result<(), AttemptFailure<E>>>,
+/// The corresponding stable worker stop trigger.
+fn timeout_trigger(scope: RetryTimeoutScope) -> WorkerStopTrigger {
+    match scope {
+        RetryTimeoutScope::Attempt => WorkerStopTrigger::AttemptTimeout,
+        RetryTimeoutScope::Flow => WorkerStopTrigger::FlowTimeout,
+    }
+}
+
+/// Cancels a worker after one fixed stop trigger and waits for its exit.
+///
+/// # Arguments
+/// - `receiver`: Event receiver used to observe worker completion.
+/// - `worker`: Worker handle joined only after completion is observed.
+/// - `token`: Attempt token marked before the grace wait begins.
+/// - `worker_cancel_grace`: Maximum cooperative cancellation grace period.
+/// - `trigger`: First event that requested the worker to stop.
+///
+/// # Returns
+/// A stopped outcome retaining the supplied trigger and whether the worker was
+/// reaped during its grace period.
+fn stop_worker<E>(
+    receiver: mpsc::Receiver<WorkerEvent<E>>,
     worker: JoinHandle<()>,
-    token: &AttemptCancelToken,
+    token: &AttemptCancellationToken,
     worker_cancel_grace: Duration,
+    trigger: WorkerStopTrigger,
 ) -> BlockingAttemptOutcome<(), E>
 where
     E: Send + 'static,
 {
-    if let Err(mpsc::RecvTimeoutError::Timeout) = result {
-        // Rust cannot forcibly stop a thread. The timeout marks the cooperative
-        // token first, then waits briefly so well-behaved operations can return
-        // and be joined before retry policy decides what to do next.
-        token.cancel();
-        let worker_exited =
-            wait_for_cancelled_worker(&receiver, worker, worker_cancel_grace);
-        if worker_exited {
-            BlockingAttemptOutcome::TimedOut
-        } else {
-            BlockingAttemptOutcome::WorkerStillRunning
-        }
+    token.cancel();
+    let worker_exited =
+        wait_for_stopped_worker(&receiver, worker, worker_cancel_grace);
+    if worker_exited {
+        BlockingAttemptOutcome::Stopped { trigger }
     } else {
-        join_finished_worker(worker);
-        let result =
-            result.expect("worker thread must send exactly one result");
-        BlockingAttemptOutcome::Completed(result)
+        BlockingAttemptOutcome::WorkerStillRunning { trigger }
     }
 }
 
@@ -197,25 +284,62 @@ where
 /// `true` when the worker was observed to exit before the grace period ended,
 /// otherwise `false`. When this returns `false`, the worker handle is dropped
 /// and the thread may continue running detached.
-fn wait_for_cancelled_worker<E>(
-    receiver: &mpsc::Receiver<Result<(), AttemptFailure<E>>>,
+fn wait_for_stopped_worker<E>(
+    receiver: &mpsc::Receiver<WorkerEvent<E>>,
     worker: JoinHandle<()>,
     grace: Duration,
 ) -> bool {
-    let exited = if grace.is_zero() {
-        // Zero grace still checks once so already-finished workers are joined
-        // instead of being reported as detached unnecessarily.
-        !matches!(receiver.try_recv(), Err(mpsc::TryRecvError::Empty))
-    } else {
-        match receiver.recv_timeout(grace) {
-            Ok(_) | Err(mpsc::RecvTimeoutError::Disconnected) => true,
-            Err(mpsc::RecvTimeoutError::Timeout) => false,
-        }
-    };
+    let exited = observe_worker_exit(receiver, grace);
     if exited {
         join_finished_worker(worker);
     }
     exited
+}
+
+/// Observes worker completion without allowing unrelated events to reset grace.
+///
+/// # Arguments
+/// - `receiver`: Worker event receiver.
+/// - `grace`: Maximum total time to wait.
+///
+/// # Returns
+/// `true` after a completion or channel disconnection, otherwise `false` when
+/// the fixed grace deadline expires. A grace too large for [`Instant`] is
+/// treated as unbounded and waits until completion or disconnection; unrelated
+/// cancellation events never reset a representable deadline.
+fn observe_worker_exit<E>(
+    receiver: &mpsc::Receiver<WorkerEvent<E>>,
+    grace: Duration,
+) -> bool {
+    let deadline = Instant::now().checked_add(grace);
+    loop {
+        let event = if grace.is_zero() {
+            match receiver.try_recv() {
+                Ok(event) => event,
+                Err(mpsc::TryRecvError::Empty) => return false,
+                Err(mpsc::TryRecvError::Disconnected) => return true,
+            }
+        } else if let Some(deadline) = deadline {
+            let Some(remaining) =
+                deadline.checked_duration_since(Instant::now())
+            else {
+                return false;
+            };
+            match receiver.recv_timeout(remaining) {
+                Ok(event) => event,
+                Err(mpsc::RecvTimeoutError::Timeout) => return false,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return true,
+            }
+        } else {
+            match receiver.recv() {
+                Ok(event) => event,
+                Err(mpsc::RecvError) => return true,
+            }
+        };
+        if matches!(event, WorkerEvent::Completed(_)) {
+            return true;
+        }
+    }
 }
 
 /// Joins a worker thread that has already been observed to finish.
