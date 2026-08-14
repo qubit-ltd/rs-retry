@@ -70,3 +70,48 @@ fn sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
         Some(&AttemptFailure::Error(TestError("first attempt failed")))
     );
 }
+
+/// Verifies the synchronous facade returns a successful value and context.
+#[test]
+fn sync_retry_returns_successful_value() {
+    let policy = RetryPolicy::builder()
+        .max_attempts(1)
+        .backoff(BackoffPolicy::immediate())
+        .build()
+        .unwrap();
+    let retry = Retry::<TestError>::builder(policy).build();
+
+    let success = retry
+        .sync()
+        .run(|| Ok::<_, TestError>(42_u32))
+        .expect("the synchronous operation should succeed");
+
+    assert_eq!(*success.value(), 42);
+    assert_eq!(success.context().attempt(), 1);
+}
+
+/// Verifies the synchronous facade retries a default application failure.
+#[test]
+fn sync_retry_retries_default_failure_before_success() {
+    let policy = RetryPolicy::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::immediate())
+        .build()
+        .unwrap();
+    let retry = Retry::<TestError>::builder(policy).build();
+    let attempts = AtomicUsize::new(0);
+
+    let success = retry
+        .sync()
+        .run(|| {
+            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(TestError("first attempt failed"))
+            } else {
+                Ok(42_u32)
+            }
+        })
+        .expect("the second synchronous attempt should succeed");
+
+    assert_eq!(*success.value(), 42);
+    assert_eq!(success.context().attempt(), 2);
+}
