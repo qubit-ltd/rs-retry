@@ -6,7 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_retry::AttemptCancelToken;
+use qubit_retry::AttemptCancellationToken;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
 use qubit_retry::RetryPolicy;
@@ -33,7 +33,7 @@ fn test_blocking_value_operation_is_observable_through_non_clone_success_value()
 
     let value = retry
         .worker()
-        .run(|_token: AttemptCancelToken| {
+        .run(|_token: AttemptCancellationToken| {
             Ok::<_, TestError>(NonCloneValue { text: "ok" })
         })
         .expect("worker operation should succeed");

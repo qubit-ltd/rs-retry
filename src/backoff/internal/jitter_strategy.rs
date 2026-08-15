@@ -7,11 +7,8 @@
 // =============================================================================
 //! Private jitter strategy representation.
 
-use serde::Deserialize;
-use serde::Serialize;
-
 /// Jitter applied to a policy or hint delay.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum JitterStrategy {
     /// Do not vary the selected delay.
     None,

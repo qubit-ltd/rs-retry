@@ -9,11 +9,8 @@
 
 use std::time::Duration;
 
-use serde::Deserialize;
-use serde::Serialize;
-
 /// Base-delay strategy used by [`super::super::BackoffPolicy`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BackoffStrategy {
     /// No delay.
     Immediate,
