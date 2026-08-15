@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use crate::AttemptTimeoutKind;
+use crate::RetryTimeoutScope;
 
 /// Effective hard timeout selected for one attempt.
 #[derive(Clone, Copy)]
@@ -17,7 +17,7 @@ pub(crate) struct EffectiveTimeout {
     /// Duration until cancellation.
     duration: Duration,
     /// Boundary responsible for cancellation.
-    kind: AttemptTimeoutKind,
+    scope: RetryTimeoutScope,
 }
 
 impl EffectiveTimeout {
@@ -31,19 +31,19 @@ impl EffectiveTimeout {
         match (attempt_timeout, flow_remaining) {
             (Some(attempt), Some(flow)) if attempt <= flow => Some(Self {
                 duration: attempt,
-                kind: AttemptTimeoutKind::Attempt,
+                scope: RetryTimeoutScope::Attempt,
             }),
             (Some(_), Some(flow)) => Some(Self {
                 duration: flow,
-                kind: AttemptTimeoutKind::Flow,
+                scope: RetryTimeoutScope::Flow,
             }),
             (Some(attempt), None) => Some(Self {
                 duration: attempt,
-                kind: AttemptTimeoutKind::Attempt,
+                scope: RetryTimeoutScope::Attempt,
             }),
             (None, Some(flow)) => Some(Self {
                 duration: flow,
-                kind: AttemptTimeoutKind::Flow,
+                scope: RetryTimeoutScope::Flow,
             }),
             (None, None) => None,
         }
@@ -57,7 +57,7 @@ impl EffectiveTimeout {
 
     /// Returns the boundary responsible for cancellation.
     #[must_use]
-    pub(crate) fn kind(self) -> AttemptTimeoutKind {
-        self.kind
+    pub(crate) fn scope(self) -> RetryTimeoutScope {
+        self.scope
     }
 }

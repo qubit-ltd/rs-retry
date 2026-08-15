@@ -7,8 +7,6 @@
 // =============================================================================
 //! Immutable retry facade.
 
-use qubit_error::BoxError;
-
 #[cfg(feature = "tokio")]
 use super::async_retry::AsyncRetry;
 use super::retry_builder::RetryBuilder;
@@ -24,7 +22,7 @@ use crate::rule::RetryRules;
 /// resources such as clocks, timers, and random sources belong to the selected
 /// execution facade, so cloning a retry definition is cheap and deterministic.
 #[derive(Clone)]
-pub struct Retry<E = BoxError> {
+pub struct Retry<E> {
     policy: RetryPolicy,
     rules: RetryRules<E>,
     observers: RetryObservers<E>,

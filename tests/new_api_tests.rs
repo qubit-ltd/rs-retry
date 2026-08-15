@@ -16,17 +16,24 @@ use qubit_clock::ManualMonotonicClock;
 #[cfg(feature = "tokio")]
 use qubit_clock::MonotonicClock;
 use qubit_retry::AttemptFailure;
-use qubit_retry::AttemptFailureKind;
-use qubit_retry::AttemptTimeoutKind;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffRequest;
 use qubit_retry::Retry;
+use qubit_retry::RetryCallbackFailure;
+use qubit_retry::RetryCallbackKind;
+use qubit_retry::RetryCallbackPhase;
+use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryErrorKind;
-use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryError;
+use qubit_retry::RetryFailure;
+use qubit_retry::RetryInfrastructureFailure;
+use qubit_retry::RetryLimitKind;
+use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryRule;
+use qubit_retry::RetryTimeoutScope;
+use qubit_retry::WorkerStopTrigger;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TestError;
@@ -38,6 +45,87 @@ impl std::fmt::Display for TestError {
 }
 
 impl std::error::Error for TestError {}
+
+/// Runs one failing operation to produce a public terminal retry error.
+fn create_exhausted_error() -> RetryError<TestError> {
+    Retry::<TestError>::builder(
+        RetryPolicy::builder()
+            .max_attempts(1)
+            .build()
+            .expect("terminal-accessor policy should be valid"),
+    )
+    .build()
+    .sync()
+    .run::<(), _>(|| Err(TestError))
+    .expect_err("one failed attempt should exhaust the policy")
+}
+
+/// Verifies public retry-error accessors retain all terminal information.
+#[test]
+fn test_retry_error_terminal_accessors_are_lossless() {
+    let error = create_exhausted_error();
+    assert_eq!(error.last_failure(), error.failure().last_failure());
+    assert_eq!(error.last_error(), Some(&TestError));
+    let failure = error.into_failure();
+    assert!(matches!(
+        failure,
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::Attempts,
+            last_failure: Some(AttemptFailure::Error(TestError)),
+            ..
+        }
+    ));
+
+    let error = create_exhausted_error();
+    let (failure, context) = error.into_parts();
+    assert_eq!(failure.last_error(), Some(&TestError));
+    assert_eq!(context.attempts(), 1);
+    assert_eq!(context.current_attempt(), None);
+}
+
+/// Verifies public component constructors expose their complete stable data.
+#[test]
+fn test_public_failure_component_constructors_and_accessors() {
+    let context = RetryContext::new(2, 4);
+    assert_eq!(context.attempts(), 2);
+    assert_eq!(
+        context.current_attempt().map(std::num::NonZeroU32::get),
+        Some(2)
+    );
+    assert_eq!(context.max_attempts(), 4);
+
+    let callback = RetryCallbackFailure::new(
+        RetryCallbackKind::Observer,
+        3,
+        RetryCallbackPhase::RetryScheduled,
+        RetryPanic::String("observer panic".to_owned()),
+    );
+    assert_eq!(callback.callback(), RetryCallbackKind::Observer);
+    assert_eq!(callback.index(), 3);
+    assert_eq!(callback.phase(), RetryCallbackPhase::RetryScheduled);
+    assert_eq!(callback.panic().message(), Some("observer panic"));
+
+    let attempt = AttemptFailure::<TestError>::TimedOut {
+        scope: RetryTimeoutScope::Flow,
+    };
+    assert!(attempt.is_timeout());
+    assert_eq!(attempt.timeout_scope(), Some(RetryTimeoutScope::Flow));
+    assert_eq!(attempt.as_error(), None);
+
+    let infrastructure = RetryInfrastructureFailure::WorkerStillRunning {
+        trigger: WorkerStopTrigger::Cancellation,
+    };
+    assert_eq!(infrastructure.message(), None);
+    assert_eq!(
+        infrastructure.worker_stop_trigger(),
+        Some(WorkerStopTrigger::Cancellation)
+    );
+
+    let cancellation = RetryCancellationToken::new();
+    assert!(!cancellation.is_cancelled());
+    cancellation.cancel();
+    assert!(cancellation.is_cancelled());
+}
 
 #[test]
 fn policy_validates_limits_and_backoff_state() {
@@ -76,7 +164,7 @@ fn sync_facade_retries_application_failure() {
     });
     let success = result.expect("second attempt succeeds");
     assert_eq!(*success.value(), 42);
-    assert_eq!(success.context().attempt(), 2);
+    assert_eq!(success.context().attempts(), 2);
 }
 
 #[test]
@@ -107,12 +195,14 @@ fn first_rule_wins_and_failure_kind_is_stable() {
         .rule(AbortRule)
         .build();
     let error = retry.sync().run::<(), _>(|| Err(TestError)).unwrap_err();
-    assert_eq!(error.kind(), RetryErrorKind::Exhausted);
-    assert_eq!(error.reason(), RetryErrorReason::AttemptsExhausted);
-    assert_eq!(
-        error.last_failure().unwrap().kind(),
-        AttemptFailureKind::Application
-    );
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::Attempts,
+            last_failure: Some(AttemptFailure::Error(TestError)),
+            ..
+        }
+    ));
 }
 
 #[cfg(feature = "tokio")]
@@ -156,8 +246,16 @@ async fn async_attempt_timeout_has_a_distinct_terminal_reason() {
         .await
         .unwrap_err();
 
-    assert_eq!(error.reason(), RetryErrorReason::AttemptTimedOut);
-    assert_eq!(error.kind(), RetryErrorKind::TimedOut);
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Attempt,
+            last_failure: Some(AttemptFailure::TimedOut {
+                scope: RetryTimeoutScope::Attempt
+            }),
+            ..
+        }
+    ));
 }
 
 #[cfg(feature = "tokio")]
@@ -185,11 +283,16 @@ async fn async_shorter_flow_timeout_reports_flow_source() {
     let error = future
         .await
         .expect_err("flow timeout should terminate retry");
-    assert_eq!(error.reason(), RetryErrorReason::FlowTimedOut);
-    assert_eq!(
-        error.last_failure().and_then(AttemptFailure::timeout_kind),
-        Some(AttemptTimeoutKind::Flow)
-    );
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Flow,
+            last_failure: Some(AttemptFailure::TimedOut {
+                scope: RetryTimeoutScope::Flow
+            }),
+            ..
+        }
+    ));
 }
 
 #[cfg(feature = "tokio")]
@@ -231,7 +334,13 @@ async fn async_flow_timeout_caps_retry_sleep() {
     let error = future
         .await
         .expect_err("flow timeout should terminate retry");
-    assert_eq!(error.reason(), RetryErrorReason::FlowTimedOut);
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Flow,
+            ..
+        }
+    ));
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }
 
@@ -272,8 +381,16 @@ fn worker_attempt_timeout_has_a_distinct_terminal_reason() {
         })
         .unwrap_err();
 
-    assert_eq!(error.reason(), RetryErrorReason::AttemptTimedOut);
-    assert_eq!(error.kind(), RetryErrorKind::TimedOut);
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Attempt,
+            last_failure: Some(AttemptFailure::TimedOut {
+                scope: RetryTimeoutScope::Attempt
+            }),
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -293,11 +410,16 @@ fn worker_shorter_flow_timeout_reports_flow_source() {
         })
         .expect_err("flow timeout should terminate retry");
 
-    assert_eq!(error.reason(), RetryErrorReason::FlowTimedOut);
-    assert_eq!(
-        error.last_failure().and_then(AttemptFailure::timeout_kind),
-        Some(AttemptTimeoutKind::Flow)
-    );
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Flow,
+            last_failure: Some(AttemptFailure::TimedOut {
+                scope: RetryTimeoutScope::Flow
+            }),
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -319,7 +441,13 @@ fn worker_flow_timeout_caps_retry_sleep() {
         })
         .expect_err("flow timeout should terminate retry");
 
-    assert_eq!(error.reason(), RetryErrorReason::FlowTimedOut);
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Flow,
+            ..
+        }
+    ));
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert!(
         error.context().total_elapsed() < Duration::from_millis(100),
