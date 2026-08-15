@@ -195,6 +195,24 @@ fn test_retry_cancellation_token_default_starts_not_cancelled() {
     assert!(!token.is_cancelled());
 }
 
+/// Verifies a cloned token reports the same cancellation source.
+#[test]
+fn test_retry_cancellation_token_clone_shares_source() {
+    let token = RetryCancellationToken::new();
+    let clone = token.clone();
+
+    assert!(token.shares_source_with(&clone));
+}
+
+/// Verifies independently created tokens report distinct cancellation sources.
+#[test]
+fn test_retry_cancellation_token_independent_tokens_do_not_share_source() {
+    let first = RetryCancellationToken::new();
+    let second = RetryCancellationToken::new();
+
+    assert!(!first.shares_source_with(&second));
+}
+
 /// Verifies repeated cancellation requests wake a registered waiter once.
 #[test]
 fn test_retry_cancellation_token_cancel_is_idempotent() {

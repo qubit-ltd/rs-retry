@@ -33,6 +33,28 @@ impl RetryCancellationToken {
         Self::default()
     }
 
+    /// Returns whether this token and `other` share one cancellation source.
+    ///
+    /// Tokens cloned from one another share a source, so cancellation requested
+    /// through either token is observed by both. Independently created tokens
+    /// do not share a source, even when they currently have the same cancelled
+    /// state.
+    ///
+    /// # Parameters
+    ///
+    /// - `other`: The token whose cancellation source is compared with this
+    ///   token's source.
+    ///
+    /// # Returns
+    ///
+    /// `true` when both tokens refer to the same cancellation source; `false`
+    /// otherwise.
+    #[inline(always)]
+    #[must_use]
+    pub fn shares_source_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.state, &other.state)
+    }
+
     /// Requests cancellation and wakes all currently registered waiters.
     ///
     /// # Side Effects
