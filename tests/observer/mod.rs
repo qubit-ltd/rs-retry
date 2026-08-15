@@ -9,3 +9,4 @@
 mod callback_failure_tests;
 mod retry_observer_tests;
 mod retry_observers_tests;
+mod retry_panic_from_payload_tests;

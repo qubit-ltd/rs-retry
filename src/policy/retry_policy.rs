@@ -15,6 +15,8 @@ use serde::Deserializer;
 use serde::Serialize;
 #[cfg(feature = "serde")]
 use serde::Serializer;
+#[cfg(feature = "serde")]
+use serde::de::Error;
 
 use super::RetryLimits;
 use super::RetryPolicyBuilder;
@@ -49,7 +51,7 @@ impl<'de> Deserialize<'de> for RetryPolicy {
         D: Deserializer<'de>,
     {
         let data = RetryPolicyData::deserialize(deserializer)?;
-        Self::try_from(data).map_err(serde::de::Error::custom)
+        Self::try_from(data).map_err(Error::custom)
     }
 }
 

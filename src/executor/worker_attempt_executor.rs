@@ -213,7 +213,7 @@ impl WorkerAttemptExecutor {
 /// - `future`: Cancellation future to register.
 /// - `sender`: Worker event sender cloned into the waker.
 fn register_cancellation_waker<E: Send + 'static>(
-    future: &mut Pin<Box<super::retry_cancellation_token::RetryCancelled<'_>>>,
+    future: &mut Pin<Box<super::RetryCancelled<'_>>>,
     sender: &mpsc::Sender<WorkerEvent<E>>,
 ) {
     let waker = Waker::from(Arc::new(CancellationWake {

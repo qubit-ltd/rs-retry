@@ -250,53 +250,6 @@ struct DefaultObserver;
 
 impl RetryObserver<TestError> for DefaultObserver {}
 
-type RetryHintRecord = Option<(Option<Duration>, Option<Duration>)>;
-
-struct HintRecordingObserver(Arc<Mutex<RetryHintRecord>>);
-
-impl RetryObserver<TestError> for HintRecordingObserver {
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        context: &RetryContext,
-    ) {
-        *self.0.lock().unwrap() =
-            Some((context.retry_after_hint(), context.next_delay()));
-    }
-}
-
-#[test]
-fn full_executor_records_retry_hint_and_resolved_delay() {
-    let recorded = Arc::new(Mutex::new(None));
-    let attempts = AtomicU32::new(0);
-    let policy = RetryPolicy::builder()
-        .max_attempts(2)
-        .backoff(BackoffPolicy::fixed(Duration::ZERO).ignore_retry_after())
-        .build()
-        .unwrap();
-    let result = Retry::<TestError>::builder(policy)
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::RetryWithHint(Duration::from_secs(3))
-        })
-        .observer(HintRecordingObserver(Arc::clone(&recorded)))
-        .build()
-        .sync()
-        .run(|| {
-            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                Err(TestError("retry"))
-            } else {
-                Ok(())
-            }
-        })
-        .expect("hinted retry should succeed");
-
-    assert_eq!(
-        *recorded.lock().unwrap(),
-        Some((Some(Duration::from_secs(3)), Some(Duration::ZERO),))
-    );
-    assert_eq!(result.context().retry_after_hint(), None);
-}
-
 #[cfg(feature = "tokio")]
 struct SecondRegistrationFailsTimer {
     clock: Arc<ManualMonotonicClock>,

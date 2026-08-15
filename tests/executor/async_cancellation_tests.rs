@@ -54,6 +54,8 @@ use qubit_retry::RetryContext;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryDecision;
 #[cfg(feature = "tokio")]
+use qubit_retry::RetryError;
+#[cfg(feature = "tokio")]
 use qubit_retry::RetryFailure;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryObserver;
@@ -172,7 +174,7 @@ impl RetryObserver<TestError> for CancelOnAttemptFailed {
 /// Asserts one cancellation terminal and returns its retained last failure.
 #[cfg(feature = "tokio")]
 fn assert_cancelled(
-    error: &qubit_retry::RetryError<TestError>,
+    error: &RetryError<TestError>,
     expected_phase: RetryCancellationPhase,
 ) -> Option<&AttemptFailure<TestError>> {
     let RetryFailure::Cancelled {
@@ -187,6 +189,19 @@ fn assert_cancelled(
         );
     };
     assert_eq!(*phase, expected_phase);
+    assert_eq!(error.failure().last_failure(), last_failure.as_ref());
+    assert_eq!(
+        error.failure().last_error(),
+        last_failure.as_ref().and_then(AttemptFailure::as_error)
+    );
+    let suffix = last_failure
+        .as_ref()
+        .map(|failure| format!("; last attempt failed: {failure}"))
+        .unwrap_or_default();
+    assert_eq!(
+        error.failure().to_string(),
+        format!("retry cancelled: {expected_phase}{suffix}")
+    );
     last_failure.as_ref()
 }
 
