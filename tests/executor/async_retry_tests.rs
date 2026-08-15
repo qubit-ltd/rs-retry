@@ -7,7 +7,11 @@
 // =============================================================================
 
 #[cfg(feature = "tokio")]
+use std::future::pending;
+#[cfg(feature = "tokio")]
 use std::future::poll_fn;
+#[cfg(feature = "tokio")]
+use std::num::NonZeroU32;
 #[cfg(feature = "tokio")]
 use std::sync::Arc;
 #[cfg(feature = "tokio")]
@@ -16,6 +20,8 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 #[cfg(feature = "tokio")]
 use std::sync::atomic::Ordering;
+#[cfg(feature = "tokio")]
+use std::task::Poll;
 #[cfg(feature = "tokio")]
 use std::time::Duration;
 
@@ -50,6 +56,8 @@ use qubit_retry::RetryDecision;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryFailure;
 #[cfg(feature = "tokio")]
+use qubit_retry::RetryInfrastructureFailure;
+#[cfg(feature = "tokio")]
 use qubit_retry::RetryLimitKind;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryPolicy;
@@ -57,7 +65,35 @@ use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
 
 #[cfg(feature = "tokio")]
-use crate::support::*;
+use crate::support::CountingPhaseObserver;
+#[cfg(feature = "tokio")]
+use crate::support::ElapsedObserverCallback;
+#[cfg(feature = "tokio")]
+use crate::support::ElapsedRuleCallback;
+#[cfg(feature = "tokio")]
+use crate::support::ObserverPhaseCounts;
+#[cfg(feature = "tokio")]
+use crate::support::PanickingPhaseObserver;
+#[cfg(feature = "tokio")]
+use crate::support::TestError;
+#[cfg(feature = "tokio")]
+use crate::support::assert_callback_panic_elapsed;
+#[cfg(feature = "tokio")]
+use crate::support::assert_matrix_abort;
+#[cfg(feature = "tokio")]
+use crate::support::assert_matrix_infrastructure;
+#[cfg(feature = "tokio")]
+use crate::support::assert_matrix_limit;
+#[cfg(feature = "tokio")]
+use crate::support::assert_matrix_observer_panic;
+#[cfg(feature = "tokio")]
+use crate::support::assert_matrix_rule_panic;
+#[cfg(feature = "tokio")]
+use crate::support::assert_matrix_timeout;
+#[cfg(feature = "tokio")]
+use crate::support::callback_elapsed_records;
+#[cfg(feature = "tokio")]
+use crate::support::completion_regressing_timer;
 
 /// Timer fixture that advances manual time while registering an absolute
 /// deadline and records the exact deadline supplied by the facade.
@@ -70,7 +106,8 @@ struct AdvancingAtTimer {
 
 #[cfg(feature = "tokio")]
 impl AdvancingAtTimer {
-    /// Creates a timer that advances by `registration_advance` in [`Timer::at`].
+    /// Creates a timer that advances by `registration_advance` in
+    /// [`Timer::at`].
     fn new(
         clock: Arc<ManualMonotonicClock>,
         registration_advance: Duration,
@@ -273,7 +310,7 @@ async fn async_retry_refreshes_elapsed_time_between_callback_phases() {
     );
     assert!(matches!(
         error.failure(),
-        qubit_retry::RetryFailure::Exhausted {
+        RetryFailure::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             ..
         }
@@ -364,7 +401,7 @@ async fn async_retry_matches_shared_infrastructure_and_timeout_matrix() {
             .build()
             .asynchronous()
             .attempt_timeout(Duration::from_millis(1))
-            .run(std::future::pending::<Result<(), TestError>>)
+            .run(pending::<Result<(), TestError>>)
             .await
             .expect_err("the pending attempt must hit its attempt timeout");
     assert_matrix_timeout(&attempt_timeout, RetryTimeoutScope::Attempt, 1);
@@ -374,7 +411,7 @@ async fn async_retry_matches_shared_infrastructure_and_timeout_matrix() {
             .build()
             .asynchronous()
             .flow_timeout(Duration::from_millis(1))
-            .run(std::future::pending::<Result<(), TestError>>)
+            .run(pending::<Result<(), TestError>>)
             .await
             .expect_err("the pending attempt must hit its flow timeout");
     assert_matrix_timeout(&flow_timeout, RetryTimeoutScope::Flow, 1);
@@ -404,7 +441,7 @@ async fn async_timeout_registration_failure_does_not_start_attempt() {
             let poll_count = Arc::clone(&poll_count);
             poll_fn(move |_| {
                 poll_count.fetch_add(1, Ordering::SeqCst);
-                std::task::Poll::Ready(Ok::<(), TestError>(()))
+                Poll::Ready(Ok::<(), TestError>(()))
             })
         }
     })
@@ -414,7 +451,7 @@ async fn async_timeout_registration_failure_does_not_start_attempt() {
     assert!(matches!(
         error.failure(),
         RetryFailure::Infrastructure {
-            failure: qubit_retry::RetryInfrastructureFailure::Timer { .. },
+            failure: RetryInfrastructureFailure::Timer { .. },
             last_failure: None,
             ..
         }
@@ -483,7 +520,7 @@ async fn async_timeout_uses_fixed_deadline_and_preserves_selected_scope() {
                             .advance(operation_advance)
                             .expect("operation should advance to the deadline");
                     }
-                    std::task::Poll::Pending::<Result<(), TestError>>
+                    Poll::Pending::<Result<(), TestError>>
                 })
             }
         })
@@ -541,7 +578,7 @@ async fn async_registration_reaching_deadline_does_not_start_operation() {
             let poll_count = Arc::clone(&poll_count);
             poll_fn(move |_| {
                 poll_count.fetch_add(1, Ordering::SeqCst);
-                std::task::Poll::Ready(Ok::<(), TestError>(()))
+                Poll::Ready(Ok::<(), TestError>(()))
             })
         }
     })
@@ -579,24 +616,21 @@ async fn async_timeout_polling_failure_retains_active_attempt_scope() {
         "attempt-timeout",
         "offline",
     )))
-    .run(std::future::pending::<Result<(), TestError>>)
+    .run(pending::<Result<(), TestError>>)
     .await
     .expect_err("timer polling failure must retain the active attempt");
 
     assert!(matches!(
         error.failure(),
         RetryFailure::Infrastructure {
-            failure: qubit_retry::RetryInfrastructureFailure::Timer { .. },
+            failure: RetryInfrastructureFailure::Timer { .. },
             last_failure: None,
             ..
         }
     ));
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(
-        error
-            .context()
-            .current_attempt()
-            .map(std::num::NonZeroU32::get),
+        error.context().current_attempt().map(NonZeroU32::get),
         Some(1)
     );
     assert_eq!(

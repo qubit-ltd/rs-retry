@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+mod internal;
 mod retry_limits_tests;
 mod retry_policy_builder_tests;
 mod retry_policy_tests;

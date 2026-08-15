@@ -30,7 +30,22 @@ use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
 use qubit_retry::WorkerStopTrigger;
 
-use crate::support::*;
+use crate::support::CountingPhaseObserver;
+use crate::support::ElapsedObserverCallback;
+use crate::support::ElapsedRuleCallback;
+use crate::support::ObserverPhaseCounts;
+use crate::support::PanickingPhaseObserver;
+use crate::support::TestError;
+use crate::support::assert_callback_panic_elapsed;
+use crate::support::assert_matrix_abort;
+use crate::support::assert_matrix_infrastructure;
+use crate::support::assert_matrix_limit;
+use crate::support::assert_matrix_observer_panic;
+use crate::support::assert_matrix_rule_panic;
+use crate::support::assert_matrix_timeout;
+use crate::support::callback_elapsed_records;
+use crate::support::completion_regressing_timer;
+use crate::support::rule_terminal_regressing_timer;
 
 #[test]
 fn worker_facade_is_available() {

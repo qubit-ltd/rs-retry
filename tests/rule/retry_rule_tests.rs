@@ -24,7 +24,7 @@ impl RetryRule<()> for NoopRule {
 }
 
 #[test]
-fn rule_trait_accepts_function_callbacks() {
+fn test_rule_trait_accepts_function_callbacks() {
     let rule: Box<dyn RetryRule<()>> = Box::new(NoopRule);
     let _ = rule;
 }

@@ -33,7 +33,21 @@ use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
 
-use crate::support::*;
+use crate::support::CountingPhaseObserver;
+use crate::support::ElapsedObserverCallback;
+use crate::support::ElapsedRuleCallback;
+use crate::support::ObserverPhaseCounts;
+use crate::support::PanickingPhaseObserver;
+use crate::support::TestError;
+use crate::support::assert_callback_panic_elapsed;
+use crate::support::assert_matrix_abort;
+use crate::support::assert_matrix_infrastructure;
+use crate::support::assert_matrix_limit;
+use crate::support::assert_matrix_observer_panic;
+use crate::support::assert_matrix_rule_panic;
+use crate::support::callback_elapsed_records;
+use crate::support::completion_regressing_timer;
+use crate::support::rule_terminal_regressing_timer;
 
 #[test]
 fn sync_facade_is_available() {
@@ -109,21 +123,6 @@ impl Timer for SuccessCompletionRegressingTimer {
 }
 
 #[test]
-fn sync_retry_success_clears_current_attempt_scope() {
-    let policy = RetryPolicy::builder().build().unwrap();
-    let result = Retry::<TestError>::builder(policy)
-        .build()
-        .sync()
-        .run(|| Ok(42_u32))
-        .expect("the first operation should succeed");
-
-    assert_eq!(*result.value(), 42);
-    assert_eq!(result.context().attempts(), 1);
-    assert_eq!(result.context().current_attempt(), None);
-    assert_eq!(result.context().current_attempt_timeout(), None);
-}
-
-#[test]
 fn sync_retry_success_clock_regression_returns_infrastructure_error() {
     let policy = RetryPolicy::builder().build().unwrap();
     let error = Retry::<TestError>::builder(policy)
@@ -144,38 +143,6 @@ fn sync_retry_success_clock_regression_returns_infrastructure_error() {
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(error.context().current_attempt_timeout(), None);
-}
-
-#[test]
-fn sync_retry_abort_and_limit_clear_current_attempt_scope() {
-    let abort_policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
-    let aborted = Retry::<TestError>::builder(abort_policy)
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            qubit_retry::RetryDecision::Abort
-        })
-        .build()
-        .sync()
-        .run(|| Err::<(), _>(TestError("abort")))
-        .expect_err("the abort rule must terminate the flow");
-    assert!(matches!(aborted.failure(), RetryFailure::Aborted { .. }));
-    assert_eq!(aborted.context().current_attempt(), None);
-    assert_eq!(aborted.context().current_attempt_timeout(), None);
-
-    let limit_policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let exhausted = Retry::<TestError>::builder(limit_policy)
-        .build()
-        .sync()
-        .run(|| Err::<(), _>(TestError("limit")))
-        .expect_err("one failed operation must exhaust the attempt limit");
-    assert!(matches!(
-        exhausted.failure(),
-        RetryFailure::Exhausted {
-            limit: RetryLimitKind::Attempts,
-            ..
-        }
-    ));
-    assert_eq!(exhausted.context().current_attempt(), None);
-    assert_eq!(exhausted.context().current_attempt_timeout(), None);
 }
 
 #[test]

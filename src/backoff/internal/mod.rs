@@ -9,17 +9,23 @@
 
 mod backoff_policy_data;
 mod backoff_strategy;
+#[cfg(feature = "serde")]
+mod backoff_strategy_data;
 mod jitter_strategy;
+#[cfg(feature = "serde")]
+mod jitter_strategy_data;
 mod retry_after_strategy;
+#[cfg(feature = "serde")]
+mod retry_after_strategy_data;
 
 #[cfg(feature = "serde")]
 pub(super) use backoff_policy_data::BackoffPolicyData;
 pub(super) use backoff_strategy::BackoffStrategy;
 #[cfg(feature = "serde")]
-pub(super) use backoff_strategy::BackoffStrategyData;
+pub(super) use backoff_strategy_data::BackoffStrategyData;
 pub(super) use jitter_strategy::JitterStrategy;
 #[cfg(feature = "serde")]
-pub(super) use jitter_strategy::JitterStrategyData;
+pub(super) use jitter_strategy_data::JitterStrategyData;
 pub(super) use retry_after_strategy::RetryAfterStrategy;
 #[cfg(feature = "serde")]
-pub(super) use retry_after_strategy::RetryAfterStrategyData;
+pub(super) use retry_after_strategy_data::RetryAfterStrategyData;

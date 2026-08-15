@@ -18,6 +18,8 @@ use serde::Deserializer;
 use serde::Serialize;
 #[cfg(feature = "serde")]
 use serde::Serializer;
+#[cfg(feature = "serde")]
+use serde::de::Error;
 
 #[cfg(feature = "serde")]
 use super::internal::RetryLimitsData;
@@ -49,7 +51,7 @@ impl<'de> Deserialize<'de> for RetryLimits {
         D: Deserializer<'de>,
     {
         let data = RetryLimitsData::deserialize(deserializer)?;
-        Self::try_from(data).map_err(serde::de::Error::custom)
+        Self::try_from(data).map_err(Error::custom)
     }
 }
 

@@ -63,7 +63,8 @@ impl ElapsedObserverCallback {
         }
     }
 
-    /// Records the supplied context, advances one second, and optionally panics.
+    /// Records the supplied context, advances one second, and optionally
+    /// panics.
     fn observe(&self, phase: RetryCallbackPhase, context: &RetryContext) {
         if self.phase != phase {
             return;
@@ -266,7 +267,10 @@ pub(crate) fn assert_matrix_abort(error: &RetryError<TestError>) {
         panic!("expected an aborted terminal failure");
     };
     assert_eq!(last_failure, &AttemptFailure::Error(TestError("matrix")));
+    assert_eq!(error.failure().last_failure(), Some(last_failure));
+    assert_eq!(error.failure().last_error(), Some(&TestError("matrix")));
     assert_eq!(error.last_error(), Some(&TestError("matrix")));
+    assert_eq!(error.failure().to_string(), "retry aborted: matrix");
     assert_terminal_context(error.context(), 1, None);
 }
 
@@ -294,6 +298,20 @@ pub(crate) fn assert_matrix_limit(
     } else {
         assert_eq!(last_failure, &None);
     }
+    assert_eq!(error.failure().last_failure(), last_failure.as_ref());
+    assert_eq!(
+        error.failure().last_error(),
+        has_last_failure.then_some(&TestError("matrix"))
+    );
+    let suffix = if has_last_failure {
+        "; last attempt failed: matrix"
+    } else {
+        ""
+    };
+    assert_eq!(
+        error.failure().to_string(),
+        format!("retry limit exhausted: {limit}{suffix}")
+    );
     assert_terminal_context(error.context(), expected_attempts, None);
     match limit {
         RetryLimitKind::Attempts => {
@@ -395,6 +413,20 @@ pub(crate) fn assert_matrix_infrastructure(
         last_failure.as_ref(),
         has_last_failure.then_some(&AttemptFailure::Error(TestError("matrix")))
     );
+    assert_eq!(error.failure().last_failure(), last_failure.as_ref());
+    assert_eq!(
+        error.failure().last_error(),
+        has_last_failure.then_some(&TestError("matrix"))
+    );
+    let suffix = if has_last_failure {
+        "; last attempt failed: matrix"
+    } else {
+        ""
+    };
+    assert_eq!(
+        error.failure().to_string(),
+        format!("retry infrastructure failed: {failure}{suffix}")
+    );
     assert_terminal_context(
         error.context(),
         expected_attempts,
@@ -418,6 +450,17 @@ pub(crate) fn assert_matrix_timeout(
     };
     assert_eq!(*terminal_scope, scope);
     assert_eq!(last_failure, &Some(AttemptFailure::TimedOut { scope }));
+    assert_eq!(error.failure().last_failure(), last_failure.as_ref());
+    assert_eq!(error.failure().last_error(), None);
+    assert_eq!(
+        error.failure().to_string(),
+        format!(
+            "retry timed out: {scope}; last attempt failed: {}",
+            last_failure
+                .as_ref()
+                .expect("timeout matrix retains its failed attempt")
+        )
+    );
     assert_terminal_context(error.context(), expected_attempts, None);
 }
 
@@ -431,7 +474,8 @@ pub(crate) fn completion_regressing_timer() -> Arc<dyn Timer> {
     })
 }
 
-/// Creates a timer whose post-rule terminal refresh regresses behind flow start.
+/// Creates a timer whose post-rule terminal refresh regresses behind flow
+/// start.
 pub(crate) fn rule_terminal_regressing_timer() -> Arc<dyn Timer> {
     Arc::new(RuleTerminalRegressingTimer {
         clock: RuleTerminalRegressingClock {
@@ -486,6 +530,20 @@ fn assert_matrix_callback(
     assert_eq!(
         last_failure.as_ref(),
         has_last_failure.then_some(&AttemptFailure::Error(TestError("matrix")))
+    );
+    assert_eq!(error.failure().last_failure(), last_failure.as_ref());
+    assert_eq!(
+        error.failure().last_error(),
+        has_last_failure.then_some(&TestError("matrix"))
+    );
+    let suffix = if has_last_failure {
+        "; last attempt failed: matrix"
+    } else {
+        ""
+    };
+    assert_eq!(
+        error.failure().to_string(),
+        format!("retry callback failed: {callback}{suffix}")
     );
     assert_terminal_context(error.context(), attempts, current_attempt);
 }

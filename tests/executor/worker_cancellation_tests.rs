@@ -323,7 +323,7 @@ fn test_worker_attempt_cancellation_discards_late_error() {
     })
     .rule({
         let rule_calls = Arc::clone(&rule_calls);
-        move |_: &qubit_retry::AttemptFailure<TestError>, _: &RetryContext| {
+        move |_: &AttemptFailure<TestError>, _: &RetryContext| {
             rule_calls.fetch_add(1, Ordering::SeqCst);
             RetryDecision::Retry
         }
@@ -593,7 +593,7 @@ fn assert_blocked_worker_timeout_trigger(
             .expect("blocked-worker policy should be valid"),
     )
     .build();
-    let clock = qubit_clock::ManualMonotonicClock::new_shared();
+    let clock = ManualMonotonicClock::new_shared();
     let worker = retry
         .worker()
         .timer(clock.new_timer())

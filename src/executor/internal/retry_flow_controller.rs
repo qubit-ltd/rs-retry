@@ -13,9 +13,14 @@ use std::time::Duration;
 
 use qubit_clock::MonotonicClock;
 use qubit_clock::MonotonicInstant;
+use qubit_clock::TimeError;
 
 use super::super::Retry;
+use super::AttemptPlan;
 use super::EffectiveTimeout;
+#[cfg(feature = "tokio")]
+use super::PreparedAttemptPlan;
+use super::RetryDirective;
 use super::RetryFlowState;
 use crate::AttemptFailure;
 use crate::RetryCancellationPhase;
@@ -30,66 +35,6 @@ use crate::RetryRandomSource;
 use crate::RetryTimeoutScope;
 use crate::observer::RetryObservers;
 use crate::rule::RetryRules;
-
-/// One admitted attempt together with its effective hard timeout.
-#[derive(Clone, Copy)]
-pub(crate) struct AttemptPlan {
-    /// Runtime-independent timeout selected for this operation.
-    timeout: Option<EffectiveTimeout>,
-}
-
-impl AttemptPlan {
-    /// Returns the effective hard timeout selected for this attempt.
-    pub(crate) fn timeout(&self) -> Option<EffectiveTimeout> {
-        self.timeout
-    }
-}
-
-/// One async attempt prepared against an immutable absolute deadline.
-#[cfg(feature = "tokio")]
-#[derive(Clone, Copy)]
-pub(crate) struct PreparedAttemptPlan {
-    /// Absolute timeout transaction prepared before timer registration.
-    timeout: Option<PreparedTimeout>,
-}
-
-#[cfg(feature = "tokio")]
-impl PreparedAttemptPlan {
-    /// Returns the absolute timer deadline, when this attempt is bounded.
-    pub(crate) fn deadline(&self) -> Option<MonotonicInstant> {
-        self.timeout.map(|timeout| timeout.deadline)
-    }
-
-    /// Returns the boundary responsible for the prepared deadline.
-    pub(crate) fn scope(&self) -> Option<RetryTimeoutScope> {
-        self.timeout.map(|timeout| timeout.scope)
-    }
-}
-
-/// Absolute timeout selected from one coherent admission clock sample.
-#[cfg(feature = "tokio")]
-#[derive(Clone, Copy)]
-struct PreparedTimeout {
-    /// Fixed deadline registered with the async timer.
-    deadline: MonotonicInstant,
-    /// Effective duration at the admission sample.
-    duration: Duration,
-    /// Boundary responsible for the fixed deadline.
-    scope: RetryTimeoutScope,
-}
-
-/// Runtime work selected after one failed attempt.
-pub(crate) struct RetryDirective {
-    /// Sleep duration after applying the remaining hard-flow timeout.
-    sleep_duration: Duration,
-}
-
-impl RetryDirective {
-    /// Returns the duration the executor should wait before retrying.
-    pub(crate) fn sleep_duration(&self) -> Duration {
-        self.sleep_duration
-    }
-}
 
 /// Owns all runtime-independent decisions and terminal error construction.
 pub(crate) struct RetryFlowController<'a, E> {
@@ -114,7 +59,8 @@ pub(crate) struct RetryFlowController<'a, E> {
 }
 
 impl<'a, E: 'static> RetryFlowController<'a, E> {
-    /// Creates a controller from one immutable retry definition and clock sample.
+    /// Creates a controller from one immutable retry definition and clock
+    /// sample.
     pub(crate) fn new(
         started_at: MonotonicInstant,
         retry: &'a Retry<E>,
@@ -143,10 +89,10 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// Checks all pre-attempt gates and invokes the attempt-started observers.
     ///
     /// # Errors
-    /// Returns a terminal retry error when a timeout, cancellation, continuation
-    /// limit, clock failure, or attempt-started observer failure stops the flow.
-    /// The upcoming operation is not counted until a facade commits it after
-    /// its runtime-specific preparation succeeds.
+    /// Returns a terminal retry error when a timeout, cancellation,
+    /// continuation limit, clock failure, or attempt-started observer
+    /// failure stops the flow. The upcoming operation is not counted until
+    /// a facade commits it after its runtime-specific preparation succeeds.
     #[allow(
         clippy::result_large_err,
         reason = "the controller constructs the lossless public terminal error"
@@ -219,8 +165,9 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
             Ok(timeout) => timeout,
             Err(error) => return Err(self.inactive_clock_failure(error)),
         };
-        self.current_attempt_timeout = timeout.map(|timeout| timeout.duration);
-        Ok(PreparedAttemptPlan { timeout })
+        let plan = PreparedAttemptPlan::from_timeout(timeout);
+        self.current_attempt_timeout = plan.duration();
+        Ok(plan)
     }
 
     /// Commits an admitted attempt after runtime preparation has succeeded.
@@ -274,16 +221,15 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     ) -> Result<(), RetryError<E>> {
         let now = clock.now();
         self.refresh_or_error(now)?;
-        if let Some(timeout) = plan.timeout {
-            let deadline_reached =
-                match Self::deadline_reached(now, timeout.deadline) {
-                    Ok(deadline_reached) => deadline_reached,
-                    Err(error) => {
-                        return Err(self.inactive_clock_failure(error));
-                    }
-                };
+        if let Some((deadline, scope)) = plan.deadline_and_scope() {
+            let deadline_reached = match Self::deadline_reached(now, deadline) {
+                Ok(deadline_reached) => deadline_reached,
+                Err(error) => {
+                    return Err(self.inactive_clock_failure(error));
+                }
+            };
             if deadline_reached {
-                return Err(self.timed_out(timeout.scope));
+                return Err(self.timed_out(scope));
             }
         }
         if self.state.flow_timed_out() {
@@ -538,7 +484,10 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     fn prepare_timeout(
         &self,
         now: MonotonicInstant,
-    ) -> Result<Option<PreparedTimeout>, qubit_clock::TimeError> {
+    ) -> Result<
+        Option<(MonotonicInstant, Duration, RetryTimeoutScope)>,
+        TimeError,
+    > {
         let Some(timeout) = self.state.effective_timeout(self.attempt_timeout)
         else {
             return Ok(None);
@@ -552,11 +501,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
                 .flow_deadline()?
                 .expect("a flow-scoped timeout requires a configured deadline"),
         };
-        Ok(Some(PreparedTimeout {
-            deadline,
-            duration: timeout.duration(),
-            scope: timeout.scope(),
-        }))
+        Ok(Some((deadline, timeout.duration(), timeout.scope())))
     }
 
     /// Returns whether `now` is at or beyond a prepared same-domain deadline.
@@ -564,7 +509,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     fn deadline_reached(
         now: MonotonicInstant,
         deadline: MonotonicInstant,
-    ) -> Result<bool, qubit_clock::TimeError> {
+    ) -> Result<bool, TimeError> {
         deadline.validate_domain(now.domain())?;
         Ok(now.elapsed_since_origin() >= deadline.elapsed_since_origin())
     }
@@ -715,10 +660,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     }
 
     /// Converts an invalid clock sample into an inactive terminal failure.
-    fn inactive_clock_failure(
-        &mut self,
-        error: qubit_clock::TimeError,
-    ) -> RetryError<E> {
+    fn inactive_clock_failure(&mut self, error: TimeError) -> RetryError<E> {
         self.clear_current_attempt();
         self.infrastructure(
             RetryInfrastructureFailure::Clock {

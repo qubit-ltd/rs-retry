@@ -17,6 +17,7 @@ use std::task::Waker;
 use std::time::Duration;
 
 use qubit_clock::BlockingSleeper;
+use qubit_clock::MonotonicClock;
 use qubit_clock::StdTimer;
 use qubit_clock::TimeError;
 use qubit_clock::Timer;
@@ -274,7 +275,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     fn finish_failed_attempt(
         &self,
         controller: &mut RetryFlowController<'_, E>,
-        clock: &dyn qubit_clock::MonotonicClock,
+        clock: &dyn MonotonicClock,
         failure: AttemptFailure<E>,
     ) -> Result<(), RetryError<E>> {
         let directive = controller.record_failure(

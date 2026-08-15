@@ -11,6 +11,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use qubit_clock::MonotonicInstant;
 use qubit_clock::TimeError;
 use qubit_clock::Timer;
 use qubit_clock::TimerFuture;
@@ -253,7 +254,7 @@ where
 /// Returns the timer's registration error without polling an operation future.
 fn register_timeout(
     timer: &Arc<dyn Timer>,
-    deadline: Option<qubit_clock::MonotonicInstant>,
+    deadline: Option<MonotonicInstant>,
 ) -> Result<Option<TimerFuture>, TimeError> {
     deadline.map(|deadline| timer.at(deadline)).transpose()
 }
