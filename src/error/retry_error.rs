@@ -10,6 +10,7 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::AttemptFailure;
 use crate::RetryContext;
 use crate::RetryFailure;
 use crate::RetrySuccess;
@@ -56,6 +57,17 @@ impl<E> RetryError<E> {
         &self.context
     }
 
+    /// Returns the last attempt failure retained by the terminal failure.
+    ///
+    /// # Returns
+    /// `Some(&AttemptFailure<E>)` when an attempt failed before termination,
+    /// or `None` when the flow stopped without an attempt failure.
+    #[inline(always)]
+    #[must_use]
+    pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
+        self.failure.last_failure()
+    }
+
     /// Returns the last application error retained by the terminal failure.
     ///
     /// # Returns
@@ -65,6 +77,16 @@ impl<E> RetryError<E> {
     #[must_use]
     pub fn last_error(&self) -> Option<&E> {
         self.failure.last_error()
+    }
+
+    /// Consumes the error and returns its complete terminal failure.
+    ///
+    /// # Returns
+    /// The lossless terminal [`RetryFailure`] value.
+    #[inline(always)]
+    #[must_use]
+    pub fn into_failure(self) -> RetryFailure<E> {
+        self.failure
     }
 
     /// Consumes the error and returns its complete terminal data.
