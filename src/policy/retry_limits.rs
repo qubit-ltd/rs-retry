@@ -10,16 +10,47 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
+#[cfg(feature = "serde")]
 use serde::Deserialize;
+#[cfg(feature = "serde")]
+use serde::Deserializer;
+#[cfg(feature = "serde")]
 use serde::Serialize;
+#[cfg(feature = "serde")]
+use serde::Serializer;
 
+#[cfg(feature = "serde")]
+use super::internal::RetryLimitsData;
 /// Limits that decide whether a retry flow may continue.
 #[must_use]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetryLimits {
     max_attempts: NonZeroU32,
     max_operation_elapsed: Option<Duration>,
     max_total_elapsed: Option<Duration>,
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for RetryLimits {
+    /// Serializes validated limits through the stable private wire DTO.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        RetryLimitsData::from(self).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for RetryLimits {
+    /// Deserializes limits and rejects invalid or unknown configuration data.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let data = RetryLimitsData::deserialize(deserializer)?;
+        Self::try_from(data).map_err(serde::de::Error::custom)
+    }
 }
 
 impl RetryLimits {

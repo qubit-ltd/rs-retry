@@ -13,9 +13,6 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
-use serde::Deserialize;
-use serde::Serialize;
-
 use super::RetryContextParts;
 
 /// Context emitted for retry lifecycle events.
@@ -27,7 +24,7 @@ use super::RetryContextParts;
 /// elapsed time spent in the retry flow and includes operation execution,
 /// retry sleep, retry-after sleep, and retry-control listener time.
 #[must_use]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetryContext {
     /// Number of operations that actually started.
     attempts: u32,

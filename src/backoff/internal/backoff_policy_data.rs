@@ -7,20 +7,27 @@
 // =============================================================================
 //! Unvalidated serde representation for a backoff policy.
 
+#[cfg(feature = "serde")]
 use serde::Deserialize;
+#[cfg(feature = "serde")]
 use serde::Serialize;
 
-use super::BackoffStrategy;
-use super::JitterStrategy;
-use super::RetryAfterStrategy;
+#[cfg(feature = "serde")]
+use super::BackoffStrategyData;
+#[cfg(feature = "serde")]
+use super::JitterStrategyData;
+#[cfg(feature = "serde")]
+use super::RetryAfterStrategyData;
 
 /// Raw policy data validated before it becomes a [`crate::BackoffPolicy`].
+#[cfg(feature = "serde")]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BackoffPolicyData {
+#[serde(deny_unknown_fields)]
+pub(crate) struct BackoffPolicyData {
     /// Base-delay strategy.
-    pub strategy: BackoffStrategy,
+    pub strategy: BackoffStrategyData,
     /// Jitter strategy.
-    pub jitter: JitterStrategy,
+    pub jitter: JitterStrategyData,
     /// Retry-after hint strategy.
-    pub retry_after: RetryAfterStrategy,
+    pub retry_after: RetryAfterStrategyData,
 }

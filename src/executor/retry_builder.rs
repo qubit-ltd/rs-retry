@@ -7,8 +7,6 @@
 // =============================================================================
 //! Builder for immutable retry definitions.
 
-use qubit_error::BoxError;
-
 use super::retry::Retry;
 use crate::RetryPolicy;
 use crate::observer::RetryObserver;
@@ -18,7 +16,7 @@ use crate::rule::RetryRules;
 
 /// Builds a [`Retry`] from a policy, ordered rules, and observers.
 #[must_use]
-pub struct RetryBuilder<E = BoxError> {
+pub struct RetryBuilder<E> {
     policy: RetryPolicy,
     rules: RetryRules<E>,
     observers: RetryObservers<E>,

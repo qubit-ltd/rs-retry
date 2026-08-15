@@ -36,19 +36,16 @@ harness = false
 
 [features]
 default = []
+serde = ["dep:serde"]
 tokio = ["dep:tokio", "qubit-clock/tokio"]
 
 [dependencies]
 qubit-budget = { version = "0.4", path = "../rs-budget", features = ["time"] }
-serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1.52", features = ["time", "rt", "macros"], optional = true }
-rand = "0.10"
-thiserror = "2"
-
-qubit-error = "0.2"
-qubit-datatype = { version = "0.11", path = "../rs-datatype", default-features = false, features = ["duration"] }
-qubit-function = "0.16"
 qubit-clock = "0.12"
+rand = "0.10"
+serde = { version = "1.0", features = ["derive"], optional = true }
+thiserror = "2"
+tokio = { version = "1.52", features = ["time", "rt", "macros"], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"

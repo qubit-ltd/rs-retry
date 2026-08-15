@@ -11,6 +11,7 @@ use std::time::Duration;
 use qubit_retry::BackoffPolicy;
 
 #[test]
+#[cfg(feature = "serde")]
 fn test_policy_serde_round_trip_preserves_valid_policy() {
     let policy = BackoffPolicy::exponential(
         Duration::from_millis(10),
@@ -29,17 +30,21 @@ fn test_policy_serde_round_trip_preserves_valid_policy() {
 }
 
 #[test]
+#[cfg(feature = "serde")]
 fn test_policy_serde_rejects_invalid_uniform_bounds() {
     let policy =
         BackoffPolicy::uniform(Duration::from_secs(1), Duration::from_secs(2))
             .unwrap();
     let mut encoded = serde_json::to_value(policy).unwrap();
-    encoded["strategy"]["Uniform"]["min"] =
-        serde_json::json!({"secs": 3, "nanos": 0});
-    assert!(serde_json::from_value::<BackoffPolicy>(encoded).is_err());
+    encoded["strategy"]["minimum"] =
+        serde_json::json!({"seconds": 3, "nanoseconds": 0});
+    let error = serde_json::from_value::<BackoffPolicy>(encoded)
+        .expect_err("reversed uniform bounds must be rejected");
+    assert!(error.to_string().contains("minimum delay"));
 }
 
 #[test]
+#[cfg(feature = "serde")]
 fn test_policy_serde_rejects_invalid_exponential_values() {
     let policy = BackoffPolicy::exponential(
         Duration::from_secs(1),
@@ -48,26 +53,32 @@ fn test_policy_serde_rejects_invalid_exponential_values() {
     )
     .unwrap();
     let mut reversed = serde_json::to_value(&policy).unwrap();
-    reversed["strategy"]["Exponential"]["initial"] = serde_json::json!({
-        "secs": 3,
-        "nanos": 0
+    reversed["strategy"]["initial"] = serde_json::json!({
+        "seconds": 3,
+        "nanoseconds": 0
     });
-    assert!(serde_json::from_value::<BackoffPolicy>(reversed).is_err());
+    let error = serde_json::from_value::<BackoffPolicy>(reversed)
+        .expect_err("an initial delay above maximum must be rejected");
+    assert!(error.to_string().contains("initial delay"));
 
     let mut multiplier = serde_json::to_value(policy).unwrap();
-    multiplier["strategy"]["Exponential"]["multiplier"] =
-        serde_json::json!(0.5);
-    assert!(serde_json::from_value::<BackoffPolicy>(multiplier).is_err());
+    multiplier["strategy"]["multiplier"] = serde_json::json!(0.5);
+    let error = serde_json::from_value::<BackoffPolicy>(multiplier)
+        .expect_err("a multiplier below one must be rejected");
+    assert!(error.to_string().contains("multiplier"));
 }
 
 #[test]
+#[cfg(feature = "serde")]
 fn test_policy_serde_rejects_invalid_jitter_ratio() {
     let policy = BackoffPolicy::fixed(Duration::from_secs(1))
         .with_bounded_jitter(0.25)
         .unwrap();
     let mut encoded = serde_json::to_value(policy).unwrap();
-    encoded["jitter"]["Bounded"]["ratio"] = serde_json::json!(1.5);
-    assert!(serde_json::from_value::<BackoffPolicy>(encoded).is_err());
+    encoded["jitter"]["ratio"] = serde_json::json!(1.5);
+    let error = serde_json::from_value::<BackoffPolicy>(encoded)
+        .expect_err("a jitter ratio above one must be rejected");
+    assert!(error.to_string().contains("jitter ratio"));
 }
 
 #[test]
