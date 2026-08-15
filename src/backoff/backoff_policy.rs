@@ -10,15 +10,22 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(feature = "serde")]
 use serde::Deserialize;
+#[cfg(feature = "serde")]
 use serde::Deserializer;
+#[cfg(feature = "serde")]
 use serde::Serialize;
+#[cfg(feature = "serde")]
+use serde::Serializer;
+#[cfg(feature = "serde")]
 use serde::de::Error;
 
 use super::BackoffRequest;
 use super::BackoffState;
 use super::BackoffStep;
 use super::backoff_delay_source::BackoffDelaySource;
+#[cfg(feature = "serde")]
 use super::internal::BackoffPolicyData;
 use super::internal::BackoffStrategy;
 use super::internal::JitterStrategy;
@@ -29,7 +36,7 @@ use crate::random::ThreadRetryRandomSource;
 
 /// Immutable delay strategy shared by retry and reconnect flows.
 #[must_use]
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BackoffPolicy {
     strategy: BackoffStrategy,
     jitter: JitterStrategy,
@@ -278,6 +285,18 @@ impl BackoffPolicy {
     }
 }
 
+#[cfg(feature = "serde")]
+impl Serialize for BackoffPolicy {
+    /// Serializes a policy through the stable private wire DTO.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        BackoffPolicyData::from(self).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for BackoffPolicy {
     /// Deserializes and validates one backoff policy.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -285,12 +304,34 @@ impl<'de> Deserialize<'de> for BackoffPolicy {
         D: Deserializer<'de>,
     {
         let data = BackoffPolicyData::deserialize(deserializer)?;
+        Self::try_from(data).map_err(Error::custom)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl From<&BackoffPolicy> for BackoffPolicyData {
+    /// Copies a runtime policy into its stable wire representation.
+    fn from(policy: &BackoffPolicy) -> Self {
+        Self {
+            strategy: (&policy.strategy).into(),
+            jitter: policy.jitter.into(),
+            retry_after: policy.retry_after.into(),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<BackoffPolicyData> for BackoffPolicy {
+    type Error = RetryPolicyError;
+
+    /// Converts wire data and validates strategy and jitter invariants.
+    fn try_from(data: BackoffPolicyData) -> Result<Self, Self::Error> {
         let policy = Self {
-            strategy: data.strategy,
-            jitter: data.jitter,
-            retry_after: data.retry_after,
+            strategy: data.strategy.try_into()?,
+            jitter: data.jitter.into(),
+            retry_after: data.retry_after.into(),
         };
-        policy.validate().map_err(Error::custom)?;
+        policy.validate()?;
         Ok(policy)
     }
 }

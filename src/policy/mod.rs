@@ -7,6 +7,7 @@
 // =============================================================================
 //! Pure retry policy values and their validated builder.
 
+pub(crate) mod internal;
 mod retry_limits;
 mod retry_policy;
 mod retry_policy_builder;

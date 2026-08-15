@@ -9,7 +9,7 @@
 
 use std::sync::Mutex;
 
-use super::attempt_cancel_token::AttemptCancelToken;
+use super::attempt_cancellation_token::AttemptCancellationToken;
 use super::blocking_attempt::BlockingAttempt;
 use crate::AttemptFailure;
 
@@ -61,7 +61,7 @@ impl<T, E, F> BlockingAttempt<E> for BlockingValueOperation<T, F>
 where
     T: Send + 'static,
     E: Send + 'static,
-    F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
+    F: Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static,
 {
     /// Calls the wrapped operation and stores successful values.
     ///
@@ -70,7 +70,10 @@ where
     ///
     /// # Returns
     /// `Ok(())` after storing a successful value, or an application failure.
-    fn call(&self, token: AttemptCancelToken) -> Result<(), AttemptFailure<E>> {
+    fn call(
+        &self,
+        token: AttemptCancellationToken,
+    ) -> Result<(), AttemptFailure<E>> {
         match (self.operation)(token) {
             Ok(result) => {
                 let mut value = self

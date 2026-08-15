@@ -6,7 +6,6 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicU32;
@@ -27,161 +26,63 @@ use qubit_clock::TimerFuture;
 use qubit_clock::test_util::FaultInjectingTimer;
 use qubit_clock::test_util::TimerFailurePoint;
 use qubit_retry::AttemptFailure;
-use qubit_retry::AttemptFailureKind;
-use qubit_retry::AttemptTimeoutKind;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffRequest;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
+use qubit_retry::RetryCallbackKind;
+use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryDiagnostic;
-use qubit_retry::RetryDiagnosticKind;
-use qubit_retry::RetryError;
-use qubit_retry::RetryErrorKind;
-use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFailure;
+use qubit_retry::RetryInfrastructureFailure;
+use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
-use qubit_retry::RetryOutcomeKind;
+use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryPolicyBuilder;
-use qubit_retry::error::AttemptExecutionError;
-use qubit_retry::error::RetryExecutionError;
-use qubit_retry::error::RetryExecutionErrorKind;
+use qubit_retry::RetryTimeoutScope;
+use qubit_retry::WorkerStopTrigger;
 
 use crate::support::FixedRetryRandomSource;
 use crate::support::TestError;
 
 #[test]
 fn current_error_model_exposes_all_terminal_parts() {
-    let execution = AttemptExecutionError::new("spawn failed");
-    assert_eq!(execution.message(), "spawn failed");
-    assert_eq!(execution.to_string(), "spawn failed");
-
     let failures = [
         AttemptFailure::Error(TestError("application")),
-        AttemptFailure::Timeout {
-            kind: AttemptTimeoutKind::Attempt,
+        AttemptFailure::TimedOut {
+            scope: RetryTimeoutScope::Attempt,
         },
-        AttemptFailure::Timeout {
-            kind: AttemptTimeoutKind::Flow,
+        AttemptFailure::TimedOut {
+            scope: RetryTimeoutScope::Flow,
         },
-        AttemptFailure::Panic,
-        AttemptFailure::Infrastructure(execution.clone()),
+        AttemptFailure::Panicked {
+            panic: RetryPanic::StaticStr("isolated"),
+        },
     ];
-    assert_eq!(failures[0].kind(), AttemptFailureKind::Application);
-    assert_eq!(failures[1].kind(), AttemptFailureKind::TimedOut);
-    assert_eq!(failures[3].kind(), AttemptFailureKind::Panicked);
-    assert_eq!(failures[4].kind(), AttemptFailureKind::Infrastructure);
     assert_eq!(failures[0].as_error(), Some(&TestError("application")));
     assert!(failures[1].is_timeout());
     assert_eq!(
-        failures[1].timeout_kind(),
-        Some(AttemptTimeoutKind::Attempt)
+        failures[1].timeout_scope(),
+        Some(RetryTimeoutScope::Attempt)
     );
-    assert_eq!(failures[2].timeout_kind(), Some(AttemptTimeoutKind::Flow));
-    assert_eq!(failures[4].execution_error(), Some(&execution));
+    assert_eq!(failures[2].timeout_scope(), Some(RetryTimeoutScope::Flow));
+    assert_eq!(
+        failures[3].panic(),
+        Some(&RetryPanic::StaticStr("isolated"))
+    );
     assert!(failures[3].as_error().is_none());
-    assert!(failures[0].timeout_kind().is_none());
-    assert!(failures[0].execution_error().is_none());
+    assert!(failures[0].timeout_scope().is_none());
+    assert!(failures[0].panic().is_none());
     assert!(failures[3].clone().into_error().is_none());
     assert_eq!(
         failures[0].clone().into_error(),
         Some(TestError("application"))
     );
     assert_eq!(failures[0].to_string(), "application");
-    assert!(failures[1].to_string().contains("Attempt"));
-    assert_eq!(failures[3].to_string(), "attempt panicked");
-    assert!(failures[4].to_string().contains("spawn failed"));
-
-    let timer = RetryExecutionError::timer("timer unavailable");
-    let worker = RetryExecutionError::worker("worker unavailable");
-    let direct = RetryExecutionError::new(
-        RetryExecutionErrorKind::Worker,
-        "worker stopped",
-    );
-    assert_eq!(timer.kind(), RetryExecutionErrorKind::Timer);
-    assert_eq!(timer.message(), "timer unavailable");
-    assert_eq!(worker.kind(), RetryExecutionErrorKind::Worker);
-    assert_eq!(direct.to_string(), "worker: worker stopped");
-    assert_eq!(RetryExecutionErrorKind::Timer.to_string(), "timer");
-    assert_eq!(RetryExecutionErrorKind::Worker.to_string(), "worker");
-
-    let context = RetryContext::new(2, 3);
-    let error = RetryError::<TestError>::new_with_execution_error(
-        RetryErrorReason::TimerFailed,
-        Some(AttemptFailure::<TestError>::Infrastructure(execution)),
-        timer.clone(),
-        context,
-    );
-    assert_eq!(error.reason(), RetryErrorReason::TimerFailed);
-    assert_eq!(error.kind(), RetryErrorKind::Infrastructure);
-    assert_eq!(error.attempts(), 2);
-    assert_eq!(error.context(), &context);
-    assert_eq!(error.execution_error(), Some(&timer));
-    assert!(error.last_error().is_none());
-    assert!(error.source().is_some());
-    let (reason, failure, infrastructure, parts_context) =
-        error.into_parts_with_execution_error();
-    assert_eq!(reason, RetryErrorReason::TimerFailed);
-    assert!(failure.is_some());
-    assert!(infrastructure.is_some());
-    assert_eq!(parts_context, context);
-
-    let application = RetryError::new(
-        RetryErrorReason::Aborted,
-        Some(AttemptFailure::Error(TestError("fatal"))),
-        context,
-    );
-    assert_eq!(application.last_error(), Some(&TestError("fatal")));
-    assert_eq!(application.source().unwrap().to_string(), "fatal");
-    assert!(application.to_string().contains("retry aborted"));
-    let (reason, failure, _) = application.clone().into_parts();
-    assert_eq!(reason, RetryErrorReason::Aborted);
-    assert!(failure.is_some());
-    assert_eq!(application.into_last_error(), Some(TestError("fatal")));
-
-    for reason in [
-        RetryErrorReason::AttemptsExhausted,
-        RetryErrorReason::OperationBudgetExhausted,
-        RetryErrorReason::TotalBudgetExhausted,
-        RetryErrorReason::WorkerStillRunning,
-        RetryErrorReason::AttemptTimedOut,
-        RetryErrorReason::FlowTimedOut,
-        RetryErrorReason::TimerFailed,
-        RetryErrorReason::WorkerFailed,
-    ] {
-        let rendered =
-            RetryError::<TestError>::new(reason, None, context).to_string();
-        assert!(!rendered.is_empty());
-    }
-    assert!(RetryErrorReason::OperationBudgetExhausted.is_elapsed_limit());
-    assert!(RetryErrorReason::TotalBudgetExhausted.is_elapsed_limit());
-    assert!(!RetryErrorReason::AttemptsExhausted.is_elapsed_limit());
-    assert!(RetryErrorReason::TimerFailed.is_infrastructure_failure());
-    assert!(RetryErrorReason::WorkerFailed.is_infrastructure_failure());
-    assert!(RetryErrorReason::WorkerStillRunning.is_infrastructure_failure());
-    assert!(!RetryErrorReason::Aborted.is_infrastructure_failure());
-    assert_eq!(RetryErrorReason::Aborted.kind(), RetryErrorKind::Aborted);
-    assert!(
-        RetryError::<TestError>::new(
-            RetryErrorReason::AttemptTimedOut,
-            Some(AttemptFailure::Timeout {
-                kind: AttemptTimeoutKind::Attempt,
-            }),
-            context,
-        )
-        .source()
-        .is_none()
-    );
-    assert!(
-        RetryError::<TestError>::new(
-            RetryErrorReason::Aborted,
-            Some(AttemptFailure::Panic),
-            context,
-        )
-        .source()
-        .is_none()
-    );
+    assert_eq!(failures[1].to_string(), "attempt timed out (attempt)");
+    assert_eq!(failures[3].to_string(), "attempt panicked: isolated");
 }
 
 #[test]
@@ -303,8 +204,6 @@ struct LifecycleCounts {
     started: AtomicU32,
     failed: AtomicU32,
     scheduled: AtomicU32,
-    finished: AtomicU32,
-    diagnostics: Mutex<Vec<(RetryDiagnosticKind, usize)>>,
 }
 
 struct RecordingObserver(Arc<LifecycleCounts>);
@@ -329,22 +228,6 @@ impl RetryObserver<TestError> for RecordingObserver {
     ) {
         self.0.scheduled.fetch_add(1, Ordering::SeqCst);
     }
-
-    fn on_finished(&self, _outcome: RetryOutcomeKind, _context: &RetryContext) {
-        self.0.finished.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn on_diagnostic(
-        &self,
-        diagnostic: &RetryDiagnostic,
-        _context: &RetryContext,
-    ) {
-        self.0
-            .diagnostics
-            .lock()
-            .unwrap()
-            .push((diagnostic.kind(), diagnostic.callback_index()));
-    }
 }
 
 struct PanickingObserver;
@@ -366,53 +249,6 @@ impl RetryObserver<TestError> for AdvancingObserver {
 struct DefaultObserver;
 
 impl RetryObserver<TestError> for DefaultObserver {}
-
-type RetryHintRecord = Option<(Option<Duration>, Option<Duration>)>;
-
-struct HintRecordingObserver(Arc<Mutex<RetryHintRecord>>);
-
-impl RetryObserver<TestError> for HintRecordingObserver {
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        context: &RetryContext,
-    ) {
-        *self.0.lock().unwrap() =
-            Some((context.retry_after_hint(), context.next_delay()));
-    }
-}
-
-#[test]
-fn full_executor_records_retry_hint_and_resolved_delay() {
-    let recorded = Arc::new(Mutex::new(None));
-    let attempts = AtomicU32::new(0);
-    let policy = RetryPolicy::builder()
-        .max_attempts(2)
-        .backoff(BackoffPolicy::fixed(Duration::ZERO).ignore_retry_after())
-        .build()
-        .unwrap();
-    let result = Retry::<TestError>::builder(policy)
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::RetryWithHint(Duration::from_secs(3))
-        })
-        .observer(HintRecordingObserver(Arc::clone(&recorded)))
-        .build()
-        .sync()
-        .run(|| {
-            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                Err(TestError("retry"))
-            } else {
-                Ok(())
-            }
-        })
-        .expect("hinted retry should succeed");
-
-    assert_eq!(
-        *recorded.lock().unwrap(),
-        Some((Some(Duration::from_secs(3)), Some(Duration::ZERO),))
-    );
-    assert_eq!(result.context().retry_after_hint(), None);
-}
 
 #[cfg(feature = "tokio")]
 struct SecondRegistrationFailsTimer {
@@ -456,35 +292,71 @@ fn observers_and_rules_cover_current_lifecycle() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .unwrap();
-    let attempts = AtomicU32::new(0);
-    let result = Retry::<TestError>::builder(policy)
+    let observer_error = Retry::<TestError>::builder(policy.clone())
+        .observer(PanickingObserver)
+        .observer(RecordingObserver(Arc::clone(&counts)))
+        .build()
+        .sync()
+        .run(|| Ok::<_, TestError>(11_u32))
+        .expect_err("the first started observer panic must terminate the flow");
+    let RetryFailure::CallbackFailed {
+        callback,
+        last_failure,
+        ..
+    } = observer_error.failure()
+    else {
+        panic!("expected an observer callback failure");
+    };
+    assert_eq!(callback.callback(), RetryCallbackKind::Observer);
+    assert_eq!(callback.index(), 0);
+    assert_eq!(callback.phase(), RetryCallbackPhase::AttemptStarted);
+    assert_eq!(last_failure, &None);
+    assert_eq!(observer_error.context().attempts(), 0);
+    assert_eq!(
+        observer_error
+            .context()
+            .current_attempt()
+            .map(std::num::NonZeroU32::get),
+        Some(1)
+    );
+    assert_eq!(counts.started.load(Ordering::SeqCst), 0);
+
+    let rule_error = Retry::<TestError>::builder(policy)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
             panic!("rule panic")
         })
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
             RetryDecision::UseDefault
         })
-        .observer(PanickingObserver)
         .observer(RecordingObserver(Arc::clone(&counts)))
         .build()
         .sync()
-        .run(|| {
-            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                Err(TestError("retry"))
-            } else {
-                Ok(11_u32)
-            }
-        })
-        .unwrap();
-    let (_, context) = result.into_parts();
-    assert_eq!(context.attempt(), 2);
-    assert_eq!(counts.started.load(Ordering::SeqCst), 2);
+        .run(|| Err::<u32, _>(TestError("retry")))
+        .expect_err("the first rule panic must terminate the flow");
+    let RetryFailure::CallbackFailed {
+        callback,
+        last_failure,
+        ..
+    } = rule_error.failure()
+    else {
+        panic!("expected a rule callback failure");
+    };
+    assert_eq!(callback.callback(), RetryCallbackKind::Rule);
+    assert_eq!(callback.index(), 0);
+    assert_eq!(callback.phase(), RetryCallbackPhase::RuleDecision);
+    assert_eq!(
+        last_failure,
+        &Some(AttemptFailure::Error(TestError("retry")))
+    );
     assert_eq!(counts.failed.load(Ordering::SeqCst), 1);
-    assert_eq!(counts.scheduled.load(Ordering::SeqCst), 1);
-    assert_eq!(counts.finished.load(Ordering::SeqCst), 1);
-    let diagnostics = counts.diagnostics.lock().unwrap();
-    assert!(diagnostics.contains(&(RetryDiagnosticKind::RulePanicked, 0)));
-    assert!(diagnostics.contains(&(RetryDiagnosticKind::ObserverPanicked, 0)));
+    assert_eq!(counts.scheduled.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        rule_error
+            .context()
+            .current_attempt()
+            .map(std::num::NonZeroU32::get),
+        Some(1)
+    );
 }
 
 fn retry_once_policy() -> RetryPolicy {
@@ -511,8 +383,15 @@ fn sync_facade_reports_timer_and_budget_boundaries() {
         .random_source(random)
         .run(|| Err::<(), _>(TestError("retry")))
         .unwrap_err();
-    assert_eq!(error.reason(), RetryErrorReason::TimerFailed);
-    assert!(error.execution_error().is_some());
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::Infrastructure {
+            failure: RetryInfrastructureFailure::Timer { .. },
+            ..
+        }
+    ));
+    assert_eq!(error.context().current_attempt(), None);
+    assert_eq!(error.context().current_attempt_timeout(), None);
 
     let exhausted = Retry::<TestError>::builder(
         RetryPolicy::builder()
@@ -524,10 +403,13 @@ fn sync_facade_reports_timer_and_budget_boundaries() {
     .sync()
     .run(|| Ok::<_, TestError>(()))
     .unwrap_err();
-    assert_eq!(
-        exhausted.reason(),
-        RetryErrorReason::OperationBudgetExhausted
-    );
+    assert!(matches!(
+        exhausted.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::OperationElapsed,
+            ..
+        }
+    ));
 
     let aborted = Retry::<TestError>::builder(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
@@ -537,7 +419,7 @@ fn sync_facade_reports_timer_and_budget_boundaries() {
         .sync()
         .run(|| Err::<(), _>(TestError("fatal")))
         .unwrap_err();
-    assert_eq!(aborted.reason(), RetryErrorReason::Aborted);
+    assert!(matches!(aborted.failure(), RetryFailure::Aborted { .. }));
 
     let attempts_exhausted = Retry::<TestError>::builder(
         RetryPolicy::builder().max_attempts(1).build().unwrap(),
@@ -546,10 +428,13 @@ fn sync_facade_reports_timer_and_budget_boundaries() {
     .sync()
     .run(|| Err::<(), _>(TestError("only attempt")))
     .unwrap_err();
-    assert_eq!(
-        attempts_exhausted.reason(),
-        RetryErrorReason::AttemptsExhausted
-    );
+    assert!(matches!(
+        attempts_exhausted.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::Attempts,
+            ..
+        }
+    ));
 
     let delay_rejected = Retry::<TestError>::builder(
         RetryPolicy::builder()
@@ -563,10 +448,13 @@ fn sync_facade_reports_timer_and_budget_boundaries() {
     .sync()
     .run(|| Err::<(), _>(TestError("retry")))
     .unwrap_err();
-    assert_eq!(
-        delay_rejected.reason(),
-        RetryErrorReason::TotalBudgetExhausted
-    );
+    assert!(matches!(
+        delay_rejected.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::TotalElapsed,
+            ..
+        }
+    ));
 
     let clock = ManualMonotonicClock::new_shared();
     let observer = AdvancingObserver(Arc::clone(&clock));
@@ -582,10 +470,13 @@ fn sync_facade_reports_timer_and_budget_boundaries() {
     .timer(clock.new_timer())
     .run(|| Ok::<_, TestError>(()))
     .unwrap_err();
-    assert_eq!(
-        expired_by_observer.reason(),
-        RetryErrorReason::TotalBudgetExhausted
-    );
+    assert!(matches!(
+        expired_by_observer.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::TotalElapsed,
+            ..
+        }
+    ));
 
     let attempts = AtomicU32::new(0);
     let hinted_retry = Retry::<TestError>::builder(retry_once_policy())
@@ -652,17 +543,25 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
         .random_source(random)
         .run(|_| Err::<(), _>(TestError("retry")))
         .unwrap_err();
-    assert_eq!(timer_error.reason(), RetryErrorReason::TimerFailed);
+    assert!(matches!(
+        timer_error.failure(),
+        RetryFailure::Infrastructure {
+            failure: RetryInfrastructureFailure::Timer { .. },
+            ..
+        }
+    ));
 
     let panic_error = Retry::<TestError>::builder(retry_once_policy())
         .build()
         .worker()
         .run(|_| -> Result<(), TestError> { panic!("isolated") })
         .unwrap_err();
-    assert_eq!(panic_error.reason(), RetryErrorReason::Aborted);
     assert!(matches!(
-        panic_error.last_failure(),
-        Some(AttemptFailure::Panic)
+        panic_error.failure(),
+        RetryFailure::Aborted {
+            last_failure: AttemptFailure::Panicked { .. },
+            ..
+        }
     ));
 
     let (release_sender, release_receiver) = std::sync::mpsc::channel();
@@ -681,8 +580,26 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
         })
         .unwrap_err();
     release_sender.send(()).unwrap();
-    assert_eq!(detached.reason(), RetryErrorReason::WorkerStillRunning);
-    assert_eq!(detached.context().unreaped_worker_count(), 1);
+    assert!(matches!(
+        detached.failure(),
+        RetryFailure::Infrastructure {
+            failure: RetryInfrastructureFailure::WorkerStillRunning {
+                trigger: WorkerStopTrigger::AttemptTimeout
+            },
+            ..
+        }
+    ));
+    assert_eq!(
+        detached
+            .context()
+            .current_attempt()
+            .map(std::num::NonZeroU32::get),
+        Some(1)
+    );
+    assert_eq!(
+        detached.context().current_attempt_timeout(),
+        Some(Duration::from_millis(1))
+    );
 
     let zero_grace = Retry::<TestError>::builder(retry_once_policy())
         .build()
@@ -709,10 +626,13 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     .worker()
     .run(|_| Err::<(), _>(TestError("only attempt")))
     .unwrap_err();
-    assert_eq!(
-        attempts_exhausted.reason(),
-        RetryErrorReason::AttemptsExhausted
-    );
+    assert!(matches!(
+        attempts_exhausted.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::Attempts,
+            ..
+        }
+    ));
 
     let delay_rejected = Retry::<TestError>::builder(
         RetryPolicy::builder()
@@ -726,10 +646,13 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     .worker()
     .run(|_| Err::<(), _>(TestError("retry")))
     .unwrap_err();
-    assert_eq!(
-        delay_rejected.reason(),
-        RetryErrorReason::TotalBudgetExhausted
-    );
+    assert!(matches!(
+        delay_rejected.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::TotalElapsed,
+            ..
+        }
+    ));
 
     let clock = ManualMonotonicClock::new_shared();
     let expired_by_observer = Retry::<TestError>::builder(
@@ -744,10 +667,13 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     .timer(clock.new_timer())
     .run(|_| Ok::<_, TestError>(()))
     .unwrap_err();
-    assert_eq!(
-        expired_by_observer.reason(),
-        RetryErrorReason::TotalBudgetExhausted
-    );
+    assert!(matches!(
+        expired_by_observer.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::TotalElapsed,
+            ..
+        }
+    ));
 
     let rule_panics = Retry::<TestError>::builder(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
@@ -757,7 +683,10 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
         .worker()
         .run(|_| Err::<(), _>(TestError("retry")))
         .unwrap_err();
-    assert_eq!(rule_panics.reason(), RetryErrorReason::AttemptsExhausted);
+    assert!(matches!(
+        rule_panics.failure(),
+        RetryFailure::CallbackFailed { .. }
+    ));
 
     let zero_budget = Retry::<TestError>::builder(
         RetryPolicy::builder()
@@ -769,7 +698,13 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     .worker()
     .run(|_| Ok::<_, TestError>(()))
     .unwrap_err();
-    assert_eq!(zero_budget.reason(), RetryErrorReason::TotalBudgetExhausted);
+    assert!(matches!(
+        zero_budget.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::TotalElapsed,
+            ..
+        }
+    ));
 
     let cap_timer: Arc<dyn Timer> =
         Arc::new(FaultInjectingTimer::backend_unavailable(
@@ -790,7 +725,13 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     .timer(cap_timer)
     .run(|_| Err::<(), _>(TestError("retry")))
     .unwrap_err();
-    assert_eq!(cap_error.reason(), RetryErrorReason::TimerFailed);
+    assert!(matches!(
+        cap_error.failure(),
+        RetryFailure::Infrastructure {
+            failure: RetryInfrastructureFailure::Timer { .. },
+            ..
+        }
+    ));
 
     let explicit_retry = Retry::<TestError>::builder(
         RetryPolicy::builder().max_attempts(1).build().unwrap(),
@@ -802,7 +743,13 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
     .worker()
     .run(|_| Err::<(), _>(TestError("retry")))
     .unwrap_err();
-    assert_eq!(explicit_retry.reason(), RetryErrorReason::AttemptsExhausted);
+    assert!(matches!(
+        explicit_retry.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::Attempts,
+            ..
+        }
+    ));
 }
 
 /// Covers worker thread naming through a successful worker attempt.
@@ -838,8 +785,13 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
         .run(|| async { Err::<(), _>(TestError("retry")) })
         .await
         .unwrap_err();
-    assert_eq!(error.reason(), RetryErrorReason::TimerFailed);
-    assert!(error.execution_error().is_some());
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::Infrastructure {
+            failure: RetryInfrastructureFailure::Timer { .. },
+            ..
+        }
+    ));
 
     let attempts_exhausted = Retry::<TestError>::builder(
         RetryPolicy::builder().max_attempts(1).build().unwrap(),
@@ -849,10 +801,13 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
     .run(|| async { Err::<(), _>(TestError("only attempt")) })
     .await
     .unwrap_err();
-    assert_eq!(
-        attempts_exhausted.reason(),
-        RetryErrorReason::AttemptsExhausted
-    );
+    assert!(matches!(
+        attempts_exhausted.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::Attempts,
+            ..
+        }
+    ));
 
     let delay_rejected = Retry::<TestError>::builder(
         RetryPolicy::builder()
@@ -867,10 +822,13 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
     .run(|| async { Err::<(), _>(TestError("retry")) })
     .await
     .unwrap_err();
-    assert_eq!(
-        delay_rejected.reason(),
-        RetryErrorReason::TotalBudgetExhausted
-    );
+    assert!(matches!(
+        delay_rejected.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::TotalElapsed,
+            ..
+        }
+    ));
 
     let aborted = Retry::<TestError>::builder(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
@@ -881,7 +839,7 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
         .run(|| async { Err::<(), _>(TestError("fatal")) })
         .await
         .unwrap_err();
-    assert_eq!(aborted.reason(), RetryErrorReason::Aborted);
+    assert!(matches!(aborted.failure(), RetryFailure::Aborted { .. }));
 
     let clock = ManualMonotonicClock::new_shared();
     let expired_by_observer = Retry::<TestError>::builder(
@@ -897,10 +855,13 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
     .run(|| async { Ok::<_, TestError>(()) })
     .await
     .unwrap_err();
-    assert_eq!(
-        expired_by_observer.reason(),
-        RetryErrorReason::TotalBudgetExhausted
-    );
+    assert!(matches!(
+        expired_by_observer.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::TotalElapsed,
+            ..
+        }
+    ));
 
     let registration_timer: Arc<dyn Timer> =
         Arc::new(FaultInjectingTimer::backend_unavailable(
@@ -917,10 +878,13 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
             .run(|| async { Ok::<_, TestError>(()) })
             .await
             .unwrap_err();
-    assert_eq!(
-        attempt_registration_error.reason(),
-        RetryErrorReason::TimerFailed
-    );
+    assert!(matches!(
+        attempt_registration_error.failure(),
+        RetryFailure::Infrastructure {
+            failure: RetryInfrastructureFailure::Timer { .. },
+            ..
+        }
+    ));
 
     let completion_timer: Arc<dyn Timer> =
         Arc::new(FaultInjectingTimer::backend_unavailable(
@@ -937,10 +901,13 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
             .run(std::future::pending::<Result<(), TestError>>)
             .await
             .unwrap_err();
-    assert_eq!(
-        attempt_completion_error.reason(),
-        RetryErrorReason::TimerFailed
-    );
+    assert!(matches!(
+        attempt_completion_error.failure(),
+        RetryFailure::Infrastructure {
+            failure: RetryInfrastructureFailure::Timer { .. },
+            ..
+        }
+    ));
 
     let rule_panics = Retry::<TestError>::builder(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
@@ -951,7 +918,10 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
         .run(|| async { Err::<(), _>(TestError("retry")) })
         .await
         .unwrap_err();
-    assert_eq!(rule_panics.reason(), RetryErrorReason::AttemptsExhausted);
+    assert!(matches!(
+        rule_panics.failure(),
+        RetryFailure::CallbackFailed { .. }
+    ));
 
     let zero_budget = Retry::<TestError>::builder(
         RetryPolicy::builder()
@@ -964,7 +934,13 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
     .run(|| async { Ok::<_, TestError>(()) })
     .await
     .unwrap_err();
-    assert_eq!(zero_budget.reason(), RetryErrorReason::TotalBudgetExhausted);
+    assert!(matches!(
+        zero_budget.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::TotalElapsed,
+            ..
+        }
+    ));
 
     let successful_timed_attempt =
         Retry::<TestError>::builder(retry_once_policy())
@@ -984,10 +960,16 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
         .run(std::future::pending::<Result<(), TestError>>)
         .await
         .unwrap_err();
-    assert_eq!(
-        tie.last_failure().and_then(AttemptFailure::timeout_kind),
-        Some(AttemptTimeoutKind::Attempt)
-    );
+    assert!(matches!(
+        tie.failure(),
+        RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Attempt,
+            last_failure: Some(AttemptFailure::TimedOut {
+                scope: RetryTimeoutScope::Attempt
+            }),
+            ..
+        }
+    ));
 
     let cap_timer: Arc<dyn Timer> =
         Arc::new(SecondRegistrationFailsTimer::new());
@@ -1005,7 +987,13 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
     .run(|| async { Err::<(), _>(TestError("retry")) })
     .await
     .unwrap_err();
-    assert_eq!(cap_error.reason(), RetryErrorReason::TimerFailed);
+    assert!(matches!(
+        cap_error.failure(),
+        RetryFailure::Infrastructure {
+            failure: RetryInfrastructureFailure::Timer { .. },
+            ..
+        }
+    ));
 
     let zero_flow = Retry::<TestError>::builder(retry_once_policy())
         .build()
@@ -1014,7 +1002,13 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
         .run(|| async { Ok::<_, TestError>(()) })
         .await
         .unwrap_err();
-    assert_eq!(zero_flow.reason(), RetryErrorReason::FlowTimedOut);
+    assert!(matches!(
+        zero_flow.failure(),
+        RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Flow,
+            ..
+        }
+    ));
 
     let clock = ManualMonotonicClock::new_shared();
     let flow_expired_by_observer =
@@ -1027,10 +1021,13 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
             .run(|| async { Ok::<_, TestError>(()) })
             .await
             .unwrap_err();
-    assert_eq!(
-        flow_expired_by_observer.reason(),
-        RetryErrorReason::FlowTimedOut
-    );
+    assert!(matches!(
+        flow_expired_by_observer.failure(),
+        RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Flow,
+            ..
+        }
+    ));
 
     let attempts = AtomicUsize::new(0);
     let jittered_retry = Retry::<TestError>::builder(retry_once_policy())

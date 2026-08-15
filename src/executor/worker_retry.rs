@@ -7,31 +7,65 @@
 // =============================================================================
 //! Worker-thread execution facade for blocking operations.
 
+use std::future::Future;
 use std::sync::Arc;
+use std::sync::mpsc;
+use std::task::Context;
+use std::task::Poll;
+use std::task::Wake;
+use std::task::Waker;
 use std::time::Duration;
 
 use qubit_clock::BlockingSleeper;
+use qubit_clock::MonotonicClock;
 use qubit_clock::StdTimer;
 use qubit_clock::TimeError;
 use qubit_clock::Timer;
 
-use super::attempt_cancel_token::AttemptCancelToken;
+use super::attempt_cancellation_token::AttemptCancellationToken;
 use super::blocking_attempt::BlockingAttempt;
+use super::blocking_attempt_outcome::BlockingAttemptOutcome;
 use super::blocking_value_operation::BlockingValueOperation;
-use super::internal::EffectiveTimeout;
-use super::internal::RetryFlowState;
+use super::internal::RetryFlowController;
 use super::retry::Retry;
+use super::retry_cancellation_token::RetryCancellationToken;
 use super::worker_attempt_executor::WorkerAttemptExecutor;
 use crate::AttemptFailure;
-use crate::AttemptTimeoutKind;
-use crate::RetryContext;
 use crate::RetryError;
-use crate::RetryErrorReason;
+use crate::RetryInfrastructureFailure;
 use crate::RetryRandomSource;
 use crate::RetrySuccess;
-use crate::observer::RetryOutcomeKind;
+use crate::RetryTimeoutScope;
+use crate::WorkerStopTrigger;
 use crate::random::ThreadRetryRandomSource;
-use crate::rule::RetryDecision;
+
+/// Result of waiting for one blocking retry delay.
+enum BlockingBackoffOutcome {
+    /// The configured delay elapsed.
+    Elapsed,
+    /// Flow cancellation interrupted the delay.
+    Cancelled,
+    /// Registering or polling the delay timer failed.
+    TimerFailed(TimeError),
+}
+
+/// Waker that forwards timer and cancellation notifications to one channel.
+struct BlockingBackoffWake {
+    /// Notification sender shared by both futures.
+    sender: mpsc::Sender<()>,
+}
+
+impl Wake for BlockingBackoffWake {
+    /// Wakes the blocking retry thread through its notification channel.
+    fn wake(self: Arc<Self>) {
+        let _ = self.sender.send(());
+    }
+
+    /// Wakes the blocking retry thread without consuming the shared waker.
+    fn wake_by_ref(self: &Arc<Self>) {
+        let _ = self.sender.send(());
+    }
+}
 
 /// Worker retry execution with cooperative cancellation.
 pub struct WorkerRetry<'a, E> {
@@ -41,6 +75,7 @@ pub struct WorkerRetry<'a, E> {
     attempt_timeout: Option<Duration>,
     flow_timeout: Option<Duration>,
     cancellation_grace: Duration,
+    cancellation_token: Option<RetryCancellationToken>,
     sleeper: BlockingSleeper,
     random_source: Arc<dyn RetryRandomSource>,
 }
@@ -54,6 +89,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             attempt_timeout: None,
             flow_timeout: None,
             cancellation_grace: Duration::from_millis(100),
+            cancellation_token: None,
             sleeper: BlockingSleeper::new(Arc::new(StdTimer::new())),
             random_source: Arc::new(ThreadRetryRandomSource),
         }
@@ -74,6 +110,18 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     /// Sets the grace period used after requesting cooperative cancellation.
     pub fn cancellation_grace(mut self, grace: Duration) -> Self {
         self.cancellation_grace = grace;
+        self
+    }
+
+    /// Sets the token used to cancel the complete worker retry flow.
+    ///
+    /// # Parameters
+    /// - `token`: Shared flow cancellation token.
+    ///
+    /// # Returns
+    /// A worker facade that observes the supplied token.
+    pub fn cancellation_token(mut self, token: RetryCancellationToken) -> Self {
+        self.cancellation_token = Some(token);
         self
     }
 
@@ -117,271 +165,187 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     }
 
     /// Runs one cancellable worker operation per attempt.
-    #[allow(clippy::result_large_err)]
+    #[allow(
+        clippy::result_large_err,
+        reason = "the public error intentionally retains lossless terminal context"
+    )]
     pub fn run<T, F>(
         &self,
         operation: F,
     ) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         T: Send + 'static,
-        F: Fn(AttemptCancelToken) -> Result<T, E> + Send + Sync + 'static,
+        F: Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static,
     {
         let operation = Arc::new(BlockingValueOperation::new(operation));
         let worker_operation: Arc<dyn BlockingAttempt<E>> = operation.clone();
         let timer = self.sleeper.timer();
         let clock = timer.clock();
-        let mut flow = RetryFlowState::new(
-            clock,
-            self.retry.policy(),
+        let mut controller = RetryFlowController::new(
+            clock.now(),
+            self.retry,
             Arc::clone(&self.random_source),
+            self.attempt_timeout,
             self.flow_timeout,
-        )
-        .expect("validated retry limits must fit the monotonic clock");
-        let mut last_failure = None;
+        );
 
         loop {
-            let snapshot = flow.snapshot();
-            if let Some(reason) = flow.continuation_reason() {
-                let context = flow.context(snapshot, snapshot.attempts());
-                return Err(self.finish(reason, last_failure, context));
-            }
-            let before = flow.upcoming_context();
-            self.retry.observers().attempt_started(&before);
-
-            let attempt = match flow.begin_attempt() {
-                Ok(attempt) => attempt,
-                Err(reason) => {
-                    return Err(self.finish(
-                        reason,
-                        last_failure,
-                        flow.current_context(),
-                    ));
-                }
-            };
-            let effective_timeout =
-                flow.effective_timeout(self.attempt_timeout);
+            let cancellation = self.cancellation_token.as_ref();
+            let _ = controller.before_attempt(clock, cancellation)?;
             let outcome = WorkerAttemptExecutor::run(
                 Arc::clone(&worker_operation),
                 &self.thread_name,
                 self.stack_size,
-                effective_timeout.map(EffectiveTimeout::duration),
                 self.cancellation_grace,
-            );
-            let snapshot = flow.finish_attempt(attempt);
-            let mut attempt_context = flow
-                .context(snapshot, snapshot.attempts())
-                .with_attempt_timeout(
-                    effective_timeout.map(EffectiveTimeout::duration),
-                )
-                .with_unreaped_worker_count(outcome.unreaped_worker_count);
-            let result = match outcome.result {
-                Ok(()) => Ok(()),
-                Err(AttemptFailure::Timeout { .. }) => {
-                    let kind = effective_timeout
-                        .map(EffectiveTimeout::kind)
-                        .unwrap_or(AttemptTimeoutKind::Attempt);
-                    Err(AttemptFailure::Timeout { kind })
-                }
-                Err(failure) => Err(failure),
-            };
-            match result {
-                Ok(()) => {
-                    self.retry.observers().finished(
-                        RetryOutcomeKind::Succeeded,
-                        &attempt_context,
-                    );
+                cancellation,
+                || {
+                    let plan =
+                        controller.commit_attempt(clock, cancellation)?;
+                    Ok(plan.timeout())
+                },
+            )?;
+
+            match outcome {
+                BlockingAttemptOutcome::Completed(Ok(())) => {
+                    let context = controller.finish_success(clock)?;
                     return Ok(RetrySuccess::new(
                         operation.take_value(),
-                        attempt_context,
+                        context,
                     ));
                 }
-                Err(failure) => {
-                    self.retry
-                        .observers()
-                        .attempt_failed(&failure, &attempt_context);
-                    if attempt_context.unreaped_worker_count() > 0 {
-                        return Err(self.finish(
-                            RetryErrorReason::WorkerStillRunning,
-                            Some(failure),
-                            attempt_context,
-                        ));
-                    }
-                    if matches!(failure, AttemptFailure::Infrastructure(_)) {
-                        let detail = failure
-                            .execution_error()
-                            .map(|error| error.message().to_owned())
-                            .unwrap_or_else(|| {
-                                "worker execution failed".to_owned()
-                            });
-                        return Err(self.finish_with_execution_error(
-                            Some(failure),
-                            attempt_context,
-                            &detail,
-                        ));
-                    }
-                    let mut diagnostics = Vec::new();
-                    let decision = self.retry.rules().decide(
-                        &failure,
-                        &attempt_context,
-                        &mut diagnostics,
-                    );
-                    for diagnostic in &diagnostics {
-                        self.retry.observers().diagnostic(
-                            diagnostic,
-                            &attempt_context,
-                            None,
+                BlockingAttemptOutcome::WorkerSpawnFailed { message } => {
+                    let error = controller
+                        .record_inactive_infrastructure_failure(
+                            RetryInfrastructureFailure::WorkerSpawn { message },
+                            clock.now(),
+                        );
+                    return Err(error);
+                }
+                BlockingAttemptOutcome::WorkerStillRunning { trigger } => {
+                    let error = controller
+                        .record_active_infrastructure_failure(
+                            RetryInfrastructureFailure::WorkerStillRunning {
+                                trigger,
+                            },
+                            clock.now(),
+                        );
+                    return Err(error);
+                }
+                BlockingAttemptOutcome::Stopped { trigger } => match trigger {
+                    WorkerStopTrigger::Cancellation => {
+                        return Err(
+                            controller.record_attempt_cancellation(clock)
                         );
                     }
-                    let decision = default_decision(decision, &failure);
-                    let hint = decision.retry_after_hint();
-                    if matches!(
+                    WorkerStopTrigger::AttemptTimeout => {
+                        self.finish_failed_attempt(
+                            &mut controller,
+                            clock,
+                            AttemptFailure::TimedOut {
+                                scope: RetryTimeoutScope::Attempt,
+                            },
+                        )?;
+                    }
+                    WorkerStopTrigger::FlowTimeout => {
+                        self.finish_failed_attempt(
+                            &mut controller,
+                            clock,
+                            AttemptFailure::TimedOut {
+                                scope: RetryTimeoutScope::Flow,
+                            },
+                        )?;
+                    }
+                },
+                BlockingAttemptOutcome::Completed(Err(failure)) => {
+                    self.finish_failed_attempt(
+                        &mut controller,
+                        clock,
                         failure,
-                        AttemptFailure::Timeout {
-                            kind: AttemptTimeoutKind::Flow
-                        }
-                    ) {
-                        return Err(self.finish(
-                            RetryErrorReason::FlowTimedOut,
-                            Some(failure),
-                            attempt_context,
-                        ));
-                    }
-                    if matches!(decision, RetryDecision::Abort) {
-                        return Err(self.finish(
-                            terminal_reason(&failure),
-                            Some(failure),
-                            attempt_context,
-                        ));
-                    }
-                    if let Some(reason) = flow.continuation_reason() {
-                        return Err(self.finish(
-                            reason,
-                            Some(failure),
-                            attempt_context,
-                        ));
-                    }
-                    let step = flow.next_backoff(decision);
-                    attempt_context = attempt_context
-                        .with_next_delay(step.effective_delay())
-                        .with_retry_after_hint(hint);
-                    self.retry
-                        .observers()
-                        .retry_scheduled(&step, &attempt_context);
-                    if let Some(reason) =
-                        flow.retry_reason(step.effective_delay())
-                    {
-                        return Err(self.finish(
-                            reason,
-                            Some(failure),
-                            attempt_context,
-                        ));
-                    }
-                    if let Some(remaining) =
-                        flow.flow_sleep_cap(step.effective_delay())
-                    {
-                        if let Err(error) = self.sleeper.sleep_for(remaining) {
-                            return Err(self.finish_with_timer_error(
-                                Some(failure),
-                                attempt_context,
-                                error,
-                            ));
-                        }
-                        return Err(self.finish(
-                            RetryErrorReason::FlowTimedOut,
-                            Some(failure),
-                            attempt_context,
-                        ));
-                    }
-                    if let Err(error) =
-                        self.sleeper.sleep_for(step.effective_delay())
-                    {
-                        return Err(self.finish_with_timer_error(
-                            Some(failure),
-                            attempt_context,
-                            error,
-                        ));
-                    }
-                    last_failure = Some(failure);
+                    )?;
                 }
             }
         }
     }
 
-    fn finish(
+    /// Records one attempt failure and performs the selected blocking delay.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the internal helper propagates the lossless public terminal error"
+    )]
+    fn finish_failed_attempt(
         &self,
-        reason: RetryErrorReason,
-        failure: Option<AttemptFailure<E>>,
-        context: RetryContext,
-    ) -> RetryError<E> {
-        let error = RetryError::new(reason, failure, context);
-        self.retry
-            .observers()
-            .finished(RetryOutcomeKind::Failed, error.context());
-        error
-    }
-
-    fn finish_with_timer_error(
-        &self,
-        failure: Option<AttemptFailure<E>>,
-        context: RetryContext,
-        error: TimeError,
-    ) -> RetryError<E> {
-        let error = RetryError::new_with_execution_error(
-            RetryErrorReason::TimerFailed,
+        controller: &mut RetryFlowController<'_, E>,
+        clock: &dyn MonotonicClock,
+        failure: AttemptFailure<E>,
+    ) -> Result<(), RetryError<E>> {
+        let directive = controller.record_failure(
             failure,
-            crate::RetryExecutionError::timer(&error.to_string()),
-            context,
-        );
-        self.retry
-            .observers()
-            .finished(RetryOutcomeKind::Failed, error.context());
-        error
-    }
-
-    fn finish_with_execution_error(
-        &self,
-        failure: Option<AttemptFailure<E>>,
-        context: RetryContext,
-        message: &str,
-    ) -> RetryError<E> {
-        let error = RetryError::new_with_execution_error(
-            RetryErrorReason::WorkerFailed,
-            failure,
-            crate::RetryExecutionError::worker(message),
-            context,
-        );
-        self.retry
-            .observers()
-            .finished(RetryOutcomeKind::Failed, error.context());
-        error
-    }
-}
-
-fn default_decision<E>(
-    decision: RetryDecision,
-    failure: &AttemptFailure<E>,
-) -> RetryDecision {
-    if !matches!(decision, RetryDecision::UseDefault) {
-        return decision;
-    }
-    match failure {
-        AttemptFailure::Error(_) => RetryDecision::Retry,
-        AttemptFailure::Timeout { .. }
-        | AttemptFailure::Panic
-        | AttemptFailure::Infrastructure(_) => RetryDecision::Abort,
-    }
-}
-
-fn terminal_reason<E>(failure: &AttemptFailure<E>) -> RetryErrorReason {
-    match failure {
-        AttemptFailure::Timeout {
-            kind: AttemptTimeoutKind::Attempt,
-        } => RetryErrorReason::AttemptTimedOut,
-        AttemptFailure::Error(_)
-        | AttemptFailure::Timeout {
-            kind: AttemptTimeoutKind::Flow,
+            clock,
+            self.cancellation_token.as_ref(),
+        )?;
+        match self.wait_for_backoff(directive.sleep_duration()) {
+            BlockingBackoffOutcome::Elapsed => {}
+            BlockingBackoffOutcome::Cancelled => {
+                return Err(controller.record_backoff_cancellation(clock));
+            }
+            BlockingBackoffOutcome::TimerFailed(timer_error) => {
+                let error = controller.record_inactive_infrastructure_failure(
+                    RetryInfrastructureFailure::Timer {
+                        message: timer_error.to_string().into_boxed_str(),
+                    },
+                    clock.now(),
+                );
+                return Err(error);
+            }
         }
-        | AttemptFailure::Panic => RetryErrorReason::Aborted,
-        AttemptFailure::Infrastructure(_) => RetryErrorReason::WorkerFailed,
+        Ok(())
+    }
+
+    /// Waits for one retry delay while observing flow cancellation.
+    ///
+    /// # Parameters
+    /// - `delay`: Selected backoff duration.
+    ///
+    /// # Returns
+    /// Whether the delay elapsed, cancellation won, or the timer failed.
+    /// Cancellation is polled before the timer so it wins when both become
+    /// ready before the same wake cycle.
+    fn wait_for_backoff(&self, delay: Duration) -> BlockingBackoffOutcome {
+        let Some(token) = self.cancellation_token.as_ref() else {
+            return match self.sleeper.sleep_for(delay) {
+                Ok(()) => BlockingBackoffOutcome::Elapsed,
+                Err(error) => BlockingBackoffOutcome::TimerFailed(error),
+            };
+        };
+        if token.is_cancelled() {
+            return BlockingBackoffOutcome::Cancelled;
+        }
+        let mut timer_future = match self.sleeper.timer().after(delay) {
+            Ok(future) => future,
+            Err(_) if token.is_cancelled() => {
+                return BlockingBackoffOutcome::Cancelled;
+            }
+            Err(error) => return BlockingBackoffOutcome::TimerFailed(error),
+        };
+        let mut cancellation = Box::pin(token.cancelled());
+        let (sender, receiver) = mpsc::channel();
+        let waker = Waker::from(Arc::new(BlockingBackoffWake { sender }));
+        let mut context = Context::from_waker(&waker);
+        loop {
+            if cancellation.as_mut().poll(&mut context).is_ready() {
+                return BlockingBackoffOutcome::Cancelled;
+            }
+            if let Poll::Ready(result) =
+                timer_future.as_mut().poll(&mut context)
+            {
+                return match result {
+                    Ok(()) => BlockingBackoffOutcome::Elapsed,
+                    Err(error) => BlockingBackoffOutcome::TimerFailed(error),
+                };
+            }
+            receiver
+                .recv()
+                .expect("backoff futures must retain their shared waker");
+        }
     }
 }

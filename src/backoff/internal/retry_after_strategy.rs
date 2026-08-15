@@ -7,11 +7,8 @@
 // =============================================================================
 //! Private retry-after hint resolution strategy.
 
-use serde::Deserialize;
-use serde::Serialize;
-
 /// Resolution policy for caller-provided retry-after hints.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryAfterStrategy {
     /// Use the hint as the selected delay.
     PreferHint,
