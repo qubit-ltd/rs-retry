@@ -5,268 +5,108 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Retry execution errors.
-//!
-//! This module contains the error returned when a retry executor stops without
-//! a successful result. The original application error type is preserved in the
-//! generic parameter `E`.
+//! Lossless retry execution errors.
 
 use std::error::Error;
 use std::fmt;
 
-use serde::Deserialize;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-
 use crate::AttemptFailure;
 use crate::RetryContext;
-use crate::RetryErrorKind;
-use crate::RetryErrorReason;
+use crate::RetryFailure;
 use crate::RetrySuccess;
-use crate::error::RetryExecutionError;
 
 /// Error returned when a retry flow terminates without a successful result.
 ///
-/// The generic parameter `E` is the caller's application error type. It is
-/// preserved in [`AttemptFailure::Error`] when the terminal failure came from
-/// the user operation. Runtime failures such as timeout, panic, and executor
-/// failures are preserved through [`RetryError::last_failure`].
+/// The terminal classification and all of its associated data live in one
+/// [`RetryFailure`] value. The context is the coherent snapshot captured at
+/// the same terminal decision.
 #[must_use]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(
-    serialize = "E: Serialize",
-    deserialize = "E: DeserializeOwned"
-))]
+#[derive(Debug)]
 pub struct RetryError<E> {
-    /// Terminal reason selected by the retry flow.
-    reason: RetryErrorReason,
-    /// Last attempt failure, if any attempt ran before termination.
-    last_failure: Option<AttemptFailure<E>>,
-    /// Retry infrastructure failure, when a control-path operation failed.
-    execution_error: Option<RetryExecutionError>,
-    /// Context snapshot captured when the retry flow stopped.
+    /// Terminal retry-flow failure.
+    failure: RetryFailure<E>,
+    /// Context snapshot captured when the flow stopped.
     context: RetryContext,
 }
 
 /// Result alias returned by retry executor execution.
-///
-/// The success type `T` is chosen by each operation. The error type `E`
-/// remains the caller's original application error and is wrapped by
-/// [`RetryError`] only when retry execution terminates unsuccessfully.
 pub type RetryResult<T, E> = Result<RetrySuccess<T>, RetryError<E>>;
 
 impl<E> RetryError<E> {
-    /// Creates a retry error.
+    /// Creates a lossless retry error for executor-internal use.
     ///
     /// # Arguments
-    /// - `reason`: Terminal reason.
-    /// - `last_failure`: Last observed attempt failure, if any.
-    /// - `context`: Retry context captured at termination.
-    ///
-    /// # Returns
-    /// A retry error preserving the terminal reason and context.
-    #[inline]
-    pub fn new(
-        reason: RetryErrorReason,
-        last_failure: Option<AttemptFailure<E>>,
-        context: RetryContext,
-    ) -> Self {
-        Self {
-            reason,
-            last_failure,
-            context,
-            execution_error: None,
-        }
+    /// - `failure`: Complete terminal failure value.
+    /// - `context`: Context captured at the terminal decision.
+    #[inline(always)]
+    pub(crate) fn new(failure: RetryFailure<E>, context: RetryContext) -> Self {
+        Self { failure, context }
     }
 
-    /// Creates a retry error while preserving a control-path failure.
-    #[allow(dead_code)]
-    pub fn new_with_execution_error(
-        reason: RetryErrorReason,
-        last_failure: Option<AttemptFailure<E>>,
-        execution_error: RetryExecutionError,
-        context: RetryContext,
-    ) -> Self {
-        Self {
-            reason,
-            last_failure,
-            execution_error: Some(execution_error),
-            context,
-        }
-    }
-
-    /// Returns the terminal retry error reason.
-    ///
-    /// # Returns
-    /// The reason the retry flow stopped.
+    /// Returns the complete terminal failure.
     #[inline(always)]
     #[must_use]
-    pub fn reason(&self) -> RetryErrorReason {
-        self.reason
-    }
-
-    /// Returns the stable terminal error category.
-    #[must_use]
-    pub fn kind(&self) -> RetryErrorKind {
-        self.reason.kind()
-    }
-
-    /// Returns a control-path execution failure, if one exists.
-    #[must_use]
-    pub fn execution_error(&self) -> Option<&RetryExecutionError> {
-        self.execution_error.as_ref()
+    pub const fn failure(&self) -> &RetryFailure<E> {
+        &self.failure
     }
 
     /// Returns the retry context captured at termination.
-    ///
-    /// # Returns
-    /// A context snapshot with attempt counts and timing metadata.
     #[inline(always)]
     #[must_use = "inspect the terminal retry context"]
-    pub fn context(&self) -> &RetryContext {
+    pub const fn context(&self) -> &RetryContext {
         &self.context
     }
 
-    /// Returns the number of attempts admitted into execution.
-    ///
-    /// `before_attempt` receives the upcoming one-based attempt number before
-    /// it is committed. If a pre-attempt listener exhausts a budget, this count
-    /// does not include that unexecuted attempt.
-    /// In particular, the first `before_attempt` callback may see `1` while the
-    /// operation runs zero times and this method returns `0`.
+    /// Returns the last attempt failure retained by the terminal failure.
     ///
     /// # Returns
-    /// The committed operation-attempt count at termination.
-    #[inline(always)]
-    #[must_use]
-    pub fn attempts(&self) -> u32 {
-        self.context.attempt()
-    }
-
-    /// Returns the last failure, if one exists.
-    ///
-    /// # Returns
-    /// `Some(&AttemptFailure<E>)` when at least one attempt failure was
-    /// observed; `None` when the retry flow stopped before any attempt ran.
+    /// `Some(&AttemptFailure<E>)` when an attempt failed before termination,
+    /// or `None` when the flow stopped without an attempt failure.
     #[inline(always)]
     #[must_use]
     pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
-        self.last_failure.as_ref()
+        self.failure.last_failure()
     }
 
-    /// Returns the last application error, if one exists.
+    /// Returns the last application error retained by the terminal failure.
     ///
     /// # Returns
-    /// `Some(&E)` when the terminal failure wraps an application error;
-    /// `None` for timeout, panic, executor failures, or elapsed-budget failures
-    /// with no attempt.
+    /// `Some(&E)` when the last attempt returned an application error, or
+    /// `None` when no application error is retained.
     #[inline(always)]
     #[must_use]
     pub fn last_error(&self) -> Option<&E> {
-        self.last_failure().and_then(AttemptFailure::as_error)
+        self.failure.last_error()
     }
 
-    /// Consumes the retry error and returns the last application error when
-    /// the final failure wraps one.
+    /// Consumes the error and returns its complete terminal failure.
     ///
     /// # Returns
-    /// `Some(E)` when the terminal failure owns an application error; `None`
-    /// when the terminal failure was a timeout, panic, executor failure, or
-    /// when no attempt ran.
+    /// The lossless terminal [`RetryFailure`] value.
     #[inline(always)]
     #[must_use]
-    pub fn into_last_error(self) -> Option<E> {
-        self.last_failure.and_then(AttemptFailure::into_error)
+    pub fn into_failure(self) -> RetryFailure<E> {
+        self.failure
     }
 
-    /// Consumes the retry error and returns all terminal parts.
+    /// Consumes the error and returns its complete terminal data.
     ///
     /// # Returns
-    /// A tuple `(reason, last_failure, context)` preserving all terminal data.
+    /// The lossless `(failure, context)` pair.
     #[inline(always)]
-    pub fn into_parts(
-        self,
-    ) -> (RetryErrorReason, Option<AttemptFailure<E>>, RetryContext) {
-        (self.reason, self.last_failure, self.context)
-    }
-
-    /// Consumes the error and returns all terminal data including execution
-    /// infrastructure diagnostics.
-    pub fn into_parts_with_execution_error(
-        self,
-    ) -> (
-        RetryErrorReason,
-        Option<AttemptFailure<E>>,
-        Option<RetryExecutionError>,
-        RetryContext,
-    ) {
-        (
-            self.reason,
-            self.last_failure,
-            self.execution_error,
-            self.context,
-        )
+    pub fn into_parts(self) -> (RetryFailure<E>, RetryContext) {
+        (self.failure, self.context)
     }
 }
 
-impl<E> fmt::Display for RetryError<E>
-where
-    E: fmt::Display,
-{
-    /// Formats the retry error for diagnostics.
-    ///
-    /// # Arguments
-    /// - `f`: Formatter provided by the standard formatting machinery.
-    ///
-    /// # Returns
-    /// `fmt::Result` from the formatter.
-    ///
-    /// # Errors
-    /// Returns a formatting error if the underlying formatter fails.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let attempts = self.attempts();
-        let message = match self.reason {
-            RetryErrorReason::Aborted => {
-                format!("retry aborted after {attempts} attempt(s)")
-            }
-            RetryErrorReason::AttemptsExhausted => format!(
-                "retry attempts exceeded after {attempts} attempt(s), max {}",
-                self.context.max_attempts()
-            ),
-            RetryErrorReason::OperationBudgetExhausted => {
-                format!(
-                    "retry max operation elapsed exceeded after {attempts} attempt(s)"
-                )
-            }
-            RetryErrorReason::TotalBudgetExhausted => {
-                format!(
-                    "retry max total elapsed exceeded after {attempts} attempt(s)"
-                )
-            }
-            RetryErrorReason::WorkerStillRunning => {
-                "retry worker still running after timeout cancellation grace"
-                    .to_string()
-            }
-            RetryErrorReason::AttemptTimedOut => {
-                format!("retry attempt timed out after {attempts} attempt(s)")
-            }
-            RetryErrorReason::FlowTimedOut => {
-                format!("retry flow timed out after {attempts} attempt(s)")
-            }
-            RetryErrorReason::TimerFailed => {
-                format!("retry timer failed after {attempts} attempt(s)")
-            }
-            RetryErrorReason::WorkerFailed => {
-                format!(
-                    "retry worker failed to start after {attempts} attempt(s)"
-                )
-            }
-        };
-        f.write_str(&message)?;
-        if let Some(failure) = &self.last_failure {
-            write!(f, "; last failure: {failure}")?;
-        }
-        Ok(())
+impl<E: fmt::Display> fmt::Display for RetryError<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{} after {} attempt(s)",
+            self.failure,
+            self.context.attempts(),
+        )
     }
 }
 
@@ -274,24 +114,9 @@ impl<E> Error for RetryError<E>
 where
     E: Error + 'static,
 {
-    /// Returns the source terminal failure when one is available.
-    ///
-    /// # Returns
-    /// `Some(&dyn Error)` when the terminal failure wraps an application error,
-    /// captured panic, or executor failure; otherwise `None`.
+    /// Returns the last application error as the standard error source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self.last_failure() {
-            Some(AttemptFailure::Error(error)) => {
-                Some(error as &(dyn Error + 'static))
-            }
-            Some(AttemptFailure::Panic) => None,
-            Some(AttemptFailure::Infrastructure(error)) => {
-                Some(error as &(dyn Error + 'static))
-            }
-            Some(AttemptFailure::Timeout { .. }) | None => self
-                .execution_error
-                .as_ref()
-                .map(|error| error as &(dyn Error + 'static)),
-        }
+        self.last_error()
+            .map(|error| error as &(dyn Error + 'static))
     }
 }
