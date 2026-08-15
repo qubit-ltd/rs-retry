@@ -11,17 +11,11 @@ use std::any::Any;
 
 use crate::RetryPanic;
 
-mod retry_diagnostic;
-mod retry_diagnostic_kind;
 mod retry_observer;
 mod retry_observers;
-mod retry_outcome_kind;
 
-pub use retry_diagnostic::RetryDiagnostic;
-pub use retry_diagnostic_kind::RetryDiagnosticKind;
 pub use retry_observer::RetryObserver;
 pub(crate) use retry_observers::RetryObservers;
-pub use retry_outcome_kind::RetryOutcomeKind;
 
 pub use crate::event::RetryContext;
 

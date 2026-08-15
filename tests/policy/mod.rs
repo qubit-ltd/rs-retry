@@ -9,3 +9,4 @@
 mod retry_limits_tests;
 mod retry_policy_builder_tests;
 mod retry_policy_tests;
+mod serde_wire_tests;
