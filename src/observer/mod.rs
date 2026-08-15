@@ -7,16 +7,12 @@
 // =============================================================================
 //! Retry lifecycle observation.
 
-mod retry_diagnostic;
-mod retry_diagnostic_kind;
+mod internal;
 mod retry_observer;
 mod retry_observers;
-mod retry_outcome_kind;
 
-pub use retry_diagnostic::RetryDiagnostic;
-pub use retry_diagnostic_kind::RetryDiagnosticKind;
+pub(crate) use internal::retry_panic_from_payload;
 pub use retry_observer::RetryObserver;
 pub(crate) use retry_observers::RetryObservers;
-pub use retry_outcome_kind::RetryOutcomeKind;
 
 pub use crate::event::RetryContext;

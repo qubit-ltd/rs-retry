@@ -7,8 +7,6 @@
 // =============================================================================
 //! Builder for immutable retry definitions.
 
-use qubit_error::BoxError;
-
 use super::retry::Retry;
 use crate::RetryPolicy;
 use crate::observer::RetryObserver;
@@ -18,7 +16,7 @@ use crate::rule::RetryRules;
 
 /// Builds a [`Retry`] from a policy, ordered rules, and observers.
 #[must_use]
-pub struct RetryBuilder<E = BoxError> {
+pub struct RetryBuilder<E> {
     policy: RetryPolicy,
     rules: RetryRules<E>,
     observers: RetryObservers<E>,
@@ -44,8 +42,8 @@ impl<E: 'static> RetryBuilder<E> {
         self
     }
 
-    /// Appends an observer. Observer panics are isolated and reported as
-    /// diagnostics so they cannot corrupt retry control flow.
+    /// Appends an observer. An observer panic terminates execution with a
+    /// structured `RetryFailure::CallbackFailed` value.
     pub fn observer<O>(mut self, observer: O) -> Self
     where
         O: RetryObserver<E>,
