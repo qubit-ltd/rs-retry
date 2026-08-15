@@ -7,8 +7,6 @@
 // =============================================================================
 //! Retry observer trait.
 
-use super::RetryDiagnostic;
-use super::RetryOutcomeKind;
 use crate::AttemptFailure;
 use crate::BackoffStep;
 use crate::RetryContext;
@@ -30,18 +28,6 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     fn on_retry_scheduled(
         &self,
         _backoff: &BackoffStep,
-        _context: &RetryContext,
-    ) {
-    }
-
-    /// Observes the terminal outcome.
-    fn on_finished(&self, _outcome: RetryOutcomeKind, _context: &RetryContext) {
-    }
-
-    /// Observes an isolated callback panic.
-    fn on_diagnostic(
-        &self,
-        _diagnostic: &RetryDiagnostic,
         _context: &RetryContext,
     ) {
     }

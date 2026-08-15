@@ -5,107 +5,166 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Shared continuation state for synchronous and timed retry executors.
+//! Runtime-independent state used by the retry flow controller.
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
-use qubit_clock::MonotonicClock;
+use qubit_clock::MonotonicInstant;
+use qubit_clock::TimeError;
 
 use super::EffectiveTimeout;
 use crate::BackoffRequest;
 use crate::BackoffState;
 use crate::BackoffStep;
-use crate::RetryAttempt;
-use crate::RetryBudget;
-use crate::RetryBudgetError;
-use crate::RetryBudgetExhausted;
-use crate::RetryBudgetSnapshot;
 use crate::RetryContext;
-use crate::RetryErrorReason;
+use crate::RetryLimitKind;
 use crate::RetryPolicy;
 use crate::RetryRandomSource;
 use crate::event::RetryContextParts;
 use crate::rule::RetryDecision;
 
-/// Runtime state shared by every executor for one retry flow.
+/// Mutable timing, attempt, and backoff state for one retry flow.
 pub(crate) struct RetryFlowState<'a> {
     /// Immutable continuation and backoff policy.
     policy: &'a RetryPolicy,
-    /// Single source of truth for attempt and elapsed continuation limits.
-    budget: RetryBudget<'a>,
+    /// First monotonic sample for the flow.
+    started_at: MonotonicInstant,
+    /// Latest total elapsed snapshot.
+    total_elapsed: Duration,
+    /// Number of admitted operations.
+    attempts: u32,
+    /// Cumulative elapsed operation time.
+    operation_elapsed: Duration,
+    /// Duration of the latest completed operation.
+    last_attempt_elapsed: Duration,
+    /// Start sample for the active attempt, if any.
+    attempt_started_at: Option<MonotonicInstant>,
     /// Mutable backoff sequence.
     backoff: BackoffState,
-    /// Optional hard deadline for the whole execution flow.
+    /// Optional hard timeout for the complete flow.
     flow_timeout: Option<Duration>,
 }
 
 impl<'a> RetryFlowState<'a> {
-    /// Creates a flow state driven by the supplied clock and random source.
+    /// Creates state from one coherent initial monotonic sample.
     pub(crate) fn new(
-        clock: &'a dyn MonotonicClock,
+        started_at: MonotonicInstant,
         policy: &'a RetryPolicy,
         random_source: Arc<dyn RetryRandomSource>,
         flow_timeout: Option<Duration>,
-    ) -> Result<Self, RetryBudgetError> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             policy,
-            budget: RetryBudget::new(clock, *policy.limits())?,
+            started_at,
+            total_elapsed: Duration::ZERO,
+            attempts: 0,
+            operation_elapsed: Duration::ZERO,
+            last_attempt_elapsed: Duration::ZERO,
+            attempt_started_at: None,
             backoff: policy.backoff().start_with_random_source(random_source),
             flow_timeout,
-        })
-    }
-
-    /// Returns the latest budget snapshot.
-    pub(crate) fn snapshot(&self) -> RetryBudgetSnapshot {
-        self.budget.snapshot()
-    }
-
-    /// Checks whether execution may continue immediately.
-    pub(crate) fn continuation_reason(&self) -> Option<RetryErrorReason> {
-        let snapshot = self.snapshot();
-        if self
-            .flow_timeout
-            .is_some_and(|limit| snapshot.total_elapsed() >= limit)
-        {
-            return Some(RetryErrorReason::FlowTimedOut);
         }
-        self.budget
-            .check_retry_after(Duration::ZERO)
-            .err()
-            .map(Self::budget_reason)
     }
 
-    /// Checks policy budgets for a prospective retry delay.
-    pub(crate) fn retry_reason(
+    /// Refreshes total elapsed time from `now`.
+    ///
+    /// # Errors
+    /// Returns a clock error when `now` is from another domain or precedes the
+    /// flow's initial sample.
+    pub(crate) fn refresh(
+        &mut self,
+        now: MonotonicInstant,
+    ) -> Result<(), TimeError> {
+        self.total_elapsed = now.duration_since(self.started_at)?;
+        Ok(())
+    }
+
+    /// Returns whether the hard flow timeout has expired.
+    pub(crate) fn flow_timed_out(&self) -> bool {
+        self.flow_timeout
+            .is_some_and(|limit| self.total_elapsed >= limit)
+    }
+
+    /// Returns the first continuation limit that prevents another action.
+    pub(crate) fn continuation_limit(&self) -> Option<RetryLimitKind> {
+        let limits = self.policy.limits();
+        if self.attempts >= limits.max_attempts().get() {
+            return Some(RetryLimitKind::Attempts);
+        }
+        if limits
+            .max_operation_elapsed()
+            .is_some_and(|limit| self.operation_elapsed >= limit)
+        {
+            return Some(RetryLimitKind::OperationElapsed);
+        }
+        if limits
+            .max_total_elapsed()
+            .is_some_and(|limit| self.total_elapsed >= limit)
+        {
+            return Some(RetryLimitKind::TotalElapsed);
+        }
+        None
+    }
+
+    /// Checks whether a prospective retry delay remains inside all limits.
+    pub(crate) fn retry_limit(
         &self,
         delay: Duration,
-    ) -> Option<RetryErrorReason> {
-        self.budget
-            .check_retry_after(delay)
-            .err()
-            .map(Self::budget_reason)
-    }
-
-    /// Admits one attempt and returns its linear completion token.
-    pub(crate) fn begin_attempt(
-        &mut self,
-    ) -> Result<RetryAttempt, RetryErrorReason> {
-        if self
-            .flow_remaining()
-            .is_some_and(|remaining| remaining.is_zero())
-        {
-            return Err(RetryErrorReason::FlowTimedOut);
+    ) -> Option<RetryLimitKind> {
+        if let Some(limit) = self.continuation_limit() {
+            return Some(limit);
         }
-        self.budget.begin_attempt().map_err(Self::budget_reason)
+        self.policy
+            .limits()
+            .max_total_elapsed()
+            .filter(|limit| self.total_elapsed.saturating_add(delay) >= *limit)
+            .map(|_| RetryLimitKind::TotalElapsed)
     }
 
-    /// Finishes one admitted attempt and returns the updated snapshot.
+    /// Commits an already-checked attempt and starts its elapsed measurement.
+    pub(crate) fn begin_attempt(&mut self, now: MonotonicInstant) {
+        debug_assert!(self.attempt_started_at.is_none());
+        self.attempts = self.attempts.saturating_add(1);
+        self.attempt_started_at = Some(now);
+    }
+
+    /// Finishes the active attempt and refreshes all elapsed snapshots.
+    ///
+    /// # Errors
+    /// Returns a clock error when the supplied sample is invalid for the
+    /// flow's clock domain or precedes the attempt start.
     pub(crate) fn finish_attempt(
         &mut self,
-        attempt: RetryAttempt,
-    ) -> RetryBudgetSnapshot {
-        self.budget.finish_attempt(attempt)
+        now: MonotonicInstant,
+    ) -> Result<(), TimeError> {
+        let started_at = self
+            .attempt_started_at
+            .as_ref()
+            .expect("an admitted attempt must be active before completion");
+        let total_elapsed = now.duration_since(self.started_at)?;
+        let elapsed = now.duration_since(*started_at)?;
+        self.total_elapsed = total_elapsed;
+        self.last_attempt_elapsed = elapsed;
+        self.operation_elapsed = self.operation_elapsed.saturating_add(elapsed);
+        self.attempt_started_at = None;
+        Ok(())
+    }
+
+    /// Refreshes elapsed time for a terminal infrastructure event.
+    ///
+    /// An active attempt is closed so its elapsed duration appears in the
+    /// terminal context even when runtime mechanics failed.
+    pub(crate) fn finish_for_infrastructure(
+        &mut self,
+        now: MonotonicInstant,
+    ) -> Result<(), TimeError> {
+        if self.attempt_started_at.is_some() {
+            self.finish_attempt(now)
+        } else {
+            self.refresh(now)
+        }
     }
 
     /// Selects and advances the next backoff step.
@@ -125,43 +184,27 @@ impl<'a> RetryFlowState<'a> {
         self.backoff.next(request)
     }
 
-    /// Builds a context from a supplied budget snapshot and attempt ordinal.
-    pub(crate) fn context(
-        &self,
-        snapshot: RetryBudgetSnapshot,
-        attempt: u32,
-    ) -> RetryContext {
-        RetryContext::from_parts(RetryContextParts {
-            attempt,
-            max_attempts: self.policy.limits().max_attempts().get(),
-            max_operation_elapsed: self.policy.limits().max_operation_elapsed(),
-            max_total_elapsed: self.policy.limits().max_total_elapsed(),
-            operation_elapsed: snapshot.operation_elapsed(),
-            total_elapsed: snapshot.total_elapsed(),
-            attempt_elapsed: snapshot.attempt_elapsed(),
-            attempt_timeout: None,
-        })
-    }
-
-    /// Builds a context for the next attempt-start event.
-    pub(crate) fn upcoming_context(&self) -> RetryContext {
-        let snapshot = self.snapshot();
-        self.context(snapshot, snapshot.attempts().saturating_add(1))
-    }
-
-    /// Builds a context for the latest committed attempt count.
-    pub(crate) fn current_context(&self) -> RetryContext {
-        let snapshot = self.snapshot();
-        self.context(snapshot, snapshot.attempts())
-    }
-
-    /// Returns time remaining before the hard flow deadline.
+    /// Returns time remaining before the hard flow timeout.
     pub(crate) fn flow_remaining(&self) -> Option<Duration> {
-        let elapsed = self.snapshot().total_elapsed();
-        self.flow_timeout.map(|limit| limit.saturating_sub(elapsed))
+        self.flow_timeout
+            .map(|limit| limit.saturating_sub(self.total_elapsed))
     }
 
-    /// Selects the source-aware hard timeout for the next attempt.
+    /// Returns the absolute hard-flow deadline, when configured.
+    ///
+    /// # Errors
+    /// Returns a clock overflow error when the configured duration cannot be
+    /// represented in the flow's monotonic clock domain.
+    #[cfg(feature = "tokio")]
+    pub(crate) fn flow_deadline(
+        &self,
+    ) -> Result<Option<MonotonicInstant>, TimeError> {
+        self.flow_timeout
+            .map(|timeout| self.started_at.checked_add(timeout))
+            .transpose()
+    }
+
+    /// Selects the source-aware timeout for the next attempt.
     pub(crate) fn effective_timeout(
         &self,
         attempt_timeout: Option<Duration>,
@@ -169,24 +212,35 @@ impl<'a> RetryFlowState<'a> {
         EffectiveTimeout::select(attempt_timeout, self.flow_remaining())
     }
 
-    /// Returns the flow sleep cap when a delay reaches the hard deadline.
-    pub(crate) fn flow_sleep_cap(&self, delay: Duration) -> Option<Duration> {
+    /// Caps a retry sleep at the remaining hard flow timeout.
+    pub(crate) fn sleep_duration(&self, delay: Duration) -> Duration {
         self.flow_remaining()
-            .filter(|remaining| delay >= *remaining)
+            .map_or(delay, |remaining| delay.min(remaining))
     }
 
-    /// Maps continuation budget exhaustion into the public error vocabulary.
-    fn budget_reason(exhausted: RetryBudgetExhausted) -> RetryErrorReason {
-        match exhausted {
-            RetryBudgetExhausted::Attempts => {
-                RetryErrorReason::AttemptsExhausted
-            }
-            RetryBudgetExhausted::OperationElapsed => {
-                RetryErrorReason::OperationBudgetExhausted
-            }
-            RetryBudgetExhausted::TotalElapsed => {
-                RetryErrorReason::TotalBudgetExhausted
-            }
-        }
+    /// Returns the next one-based attempt ordinal.
+    pub(crate) fn next_attempt(&self) -> NonZeroU32 {
+        NonZeroU32::new(self.attempts.saturating_add(1))
+            .expect("an attempt ordinal is always non-zero")
+    }
+
+    /// Builds a context from the latest coherent state snapshot.
+    pub(crate) fn context(
+        &self,
+        current_attempt: Option<NonZeroU32>,
+    ) -> RetryContext {
+        RetryContext::from_parts(RetryContextParts {
+            attempts: self.attempts,
+            current_attempt,
+            max_attempts: self.policy.limits().max_attempts().get(),
+            max_operation_elapsed: self.policy.limits().max_operation_elapsed(),
+            max_total_elapsed: self.policy.limits().max_total_elapsed(),
+            operation_elapsed: self.operation_elapsed,
+            total_elapsed: self.total_elapsed,
+            last_attempt_elapsed: self.last_attempt_elapsed,
+            current_attempt_timeout: None,
+            next_delay: None,
+            retry_after_hint: None,
+        })
     }
 }

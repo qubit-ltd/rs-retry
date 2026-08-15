@@ -7,13 +7,16 @@
 // =============================================================================
 //! Error behavior coverage mirrors.
 
-mod attempt_execution_error_tests;
-mod attempt_failure_kind_tests;
 mod attempt_failure_tests;
-mod attempt_timeout_kind_tests;
-mod retry_error_kind_tests;
-mod retry_error_reason_tests;
+mod retry_callback_failure_tests;
+mod retry_callback_kind_tests;
+mod retry_callback_phase_tests;
+mod retry_cancellation_phase_tests;
 mod retry_error_tests;
-mod retry_execution_error_kind_tests;
-mod retry_execution_error_tests;
+mod retry_failure_tests;
+mod retry_infrastructure_failure_tests;
+mod retry_limit_kind_tests;
+mod retry_panic_tests;
 mod retry_policy_error_tests;
+mod retry_timeout_scope_tests;
+mod worker_stop_trigger_tests;

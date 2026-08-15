@@ -7,14 +7,11 @@
 // =============================================================================
 //! Successful retry execution result.
 
-use serde::Deserialize;
-use serde::Serialize;
-
 use crate::RetryContext;
 
 /// Successful retry value together with the final retry context.
 #[must_use]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RetrySuccess<T> {
     value: T,
     context: RetryContext,

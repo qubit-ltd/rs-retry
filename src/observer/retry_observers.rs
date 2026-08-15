@@ -10,12 +10,13 @@
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
-use super::RetryDiagnostic;
-use super::RetryDiagnosticKind;
 use super::RetryObserver;
-use super::RetryOutcomeKind;
+use super::retry_panic_from_payload;
 use crate::AttemptFailure;
 use crate::BackoffStep;
+use crate::RetryCallbackFailure;
+use crate::RetryCallbackKind;
+use crate::RetryCallbackPhase;
 use crate::RetryContext;
 
 /// Ordered observer collection.
@@ -42,75 +43,63 @@ impl<E: 'static> RetryObservers<E> {
         self.observers.push(Arc::new(observer));
     }
 
-    /// Notifies observers before an attempt.
-    pub(crate) fn attempt_started(&self, context: &RetryContext) {
-        self.each(context, |observer| observer.on_attempt_started(context));
+    /// Notifies observers before an attempt and stops on the first panic.
+    pub(crate) fn try_attempt_started(
+        &self,
+        context: &RetryContext,
+    ) -> Result<(), RetryCallbackFailure> {
+        self.try_each(RetryCallbackPhase::AttemptStarted, |observer| {
+            observer.on_attempt_started(context)
+        })
     }
 
-    /// Notifies observers of an attempt failure.
-    pub(crate) fn attempt_failed(
+    /// Notifies observers of an attempt failure and stops on the first panic.
+    pub(crate) fn try_attempt_failed(
         &self,
         failure: &AttemptFailure<E>,
         context: &RetryContext,
-    ) {
-        self.each(context, |observer| {
+    ) -> Result<(), RetryCallbackFailure> {
+        self.try_each(RetryCallbackPhase::AttemptFailed, |observer| {
             observer.on_attempt_failed(failure, context)
-        });
+        })
     }
 
-    /// Notifies observers of a selected retry.
-    pub(crate) fn retry_scheduled(
+    /// Notifies observers of a selected retry and stops on the first panic.
+    pub(crate) fn try_retry_scheduled(
         &self,
         backoff: &BackoffStep,
         context: &RetryContext,
-    ) {
-        self.each(context, |observer| {
+    ) -> Result<(), RetryCallbackFailure> {
+        self.try_each(RetryCallbackPhase::RetryScheduled, |observer| {
             observer.on_retry_scheduled(backoff, context)
-        });
+        })
     }
 
-    /// Notifies observers of the terminal outcome.
-    pub(crate) fn finished(
+    /// Invokes one observer phase in registration order.
+    ///
+    /// Returns a structured failure for the first panicking observer without
+    /// invoking any later observer.
+    fn try_each<F>(
         &self,
-        outcome: RetryOutcomeKind,
-        context: &RetryContext,
-    ) {
-        self.each(context, |observer| observer.on_finished(outcome, context));
-    }
-
-    /// Notifies all observers of callback diagnostics.
-    pub(crate) fn diagnostic(
-        &self,
-        diagnostic: &RetryDiagnostic,
-        context: &RetryContext,
-        failed_index: Option<usize>,
-    ) {
-        for (index, observer) in self.observers.iter().enumerate() {
-            if Some(index) == failed_index {
-                continue;
-            }
-            let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                observer.on_diagnostic(diagnostic, context);
-            }));
-        }
-    }
-
-    fn each<F>(&self, context: &RetryContext, mut callback: F)
+        phase: RetryCallbackPhase,
+        mut callback: F,
+    ) -> Result<(), RetryCallbackFailure>
     where
         F: FnMut(&dyn RetryObserver<E>),
     {
         for (index, observer) in self.observers.iter().enumerate() {
-            if std::panic::catch_unwind(AssertUnwindSafe(|| {
+            std::panic::catch_unwind(AssertUnwindSafe(|| {
                 callback(observer.as_ref())
             }))
-            .is_err()
-            {
-                let diagnostic = RetryDiagnostic::new(
-                    RetryDiagnosticKind::ObserverPanicked,
+            .map_err(|payload| {
+                RetryCallbackFailure::new(
+                    RetryCallbackKind::Observer,
                     index,
-                );
-                self.diagnostic(&diagnostic, context, Some(index));
-            }
+                    phase,
+                    retry_panic_from_payload(payload),
+                )
+            })?;
         }
+        Ok(())
     }
 }

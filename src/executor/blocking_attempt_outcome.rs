@@ -5,35 +5,28 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Result and cleanup status returned from one blocking worker attempt.
+//! Result returned from one blocking worker attempt.
 
 use crate::AttemptFailure;
+use crate::WorkerStopTrigger;
 
-/// Result and cleanup status returned from one blocking worker attempt.
-pub(in crate::executor) struct BlockingAttemptOutcome<T, E> {
-    /// Attempt result after timeout handling.
-    pub(in crate::executor) result: Result<T, AttemptFailure<E>>,
-    /// Worker threads not observed to exit before cancellation grace ended.
-    pub(in crate::executor) unreaped_worker_count: u32,
-}
-
-impl<T, E> BlockingAttemptOutcome<T, E> {
-    /// Creates a worker-attempt outcome.
-    ///
-    /// # Arguments
-    /// - `result`: Attempt result exposed to the retry flow.
-    /// - `unreaped_worker_count`: Count of worker threads not observed to exit.
-    ///
-    /// # Returns
-    /// A blocking-attempt outcome.
-    #[inline(always)]
-    pub(in crate::executor) fn new(
-        result: Result<T, AttemptFailure<E>>,
-        unreaped_worker_count: u32,
-    ) -> Self {
-        Self {
-            result,
-            unreaped_worker_count,
-        }
-    }
+/// Outcome of starting and waiting for one blocking worker attempt.
+pub(in crate::executor) enum BlockingAttemptOutcome<T, E> {
+    /// The worker completed and returned its operation result.
+    Completed(Result<T, AttemptFailure<E>>),
+    /// The operating-system worker thread could not be started.
+    WorkerSpawnFailed {
+        /// Diagnostic supplied by the thread runtime.
+        message: Box<str>,
+    },
+    /// A stop event won and the worker exited during the grace period.
+    Stopped {
+        /// First event that requested the worker to stop.
+        trigger: WorkerStopTrigger,
+    },
+    /// A stop event won but the worker did not exit during the grace period.
+    WorkerStillRunning {
+        /// First event that requested the worker to stop.
+        trigger: WorkerStopTrigger,
+    },
 }
