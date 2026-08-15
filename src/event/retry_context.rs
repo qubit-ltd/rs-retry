@@ -121,24 +121,6 @@ impl RetryContext {
         self.current_attempt
     }
 
-    /// Returns this event's attempt number.
-    ///
-    /// A `before_attempt` listener sees the upcoming one-based ordinal before
-    /// the attempt is admitted into execution. Attempt result listeners and
-    /// terminal errors see the committed attempt count, which remains zero if
-    /// execution stops during the first pre-attempt checks.
-    /// For example, if the first `before_attempt` callback consumes the total
-    /// elapsed budget, that callback sees `1`, the operation runs zero times,
-    /// and the terminal context reports `0`.
-    ///
-    /// # Returns
-    /// The upcoming or committed attempt number appropriate to this event.
-    #[inline(always)]
-    #[must_use]
-    pub fn attempt(&self) -> u32 {
-        self.current_attempt.map_or(self.attempts, NonZeroU32::get)
-    }
-
     /// Returns the maximum number of attempts.
     ///
     /// # Returns
@@ -212,18 +194,6 @@ impl RetryContext {
         self.last_attempt_elapsed
     }
 
-    /// Returns elapsed time spent in the last completed attempt.
-    ///
-    /// This temporary accessor preserves the pre-migration executor API.
-    ///
-    /// # Returns
-    /// The same value as [`Self::last_attempt_elapsed`].
-    #[inline(always)]
-    #[must_use]
-    pub fn attempt_elapsed(&self) -> Duration {
-        self.last_attempt_elapsed
-    }
-
     /// Returns the effective timeout configured for the current attempt.
     ///
     /// # Returns
@@ -235,30 +205,6 @@ impl RetryContext {
     #[must_use]
     pub fn current_attempt_timeout(&self) -> Option<Duration> {
         self.current_attempt_timeout
-    }
-
-    /// Returns the effective timeout configured for the current attempt.
-    ///
-    /// This temporary accessor preserves the pre-migration executor API.
-    ///
-    /// # Returns
-    /// The same value as [`Self::current_attempt_timeout`].
-    #[inline(always)]
-    #[must_use]
-    pub fn attempt_timeout(&self) -> Option<Duration> {
-        self.current_attempt_timeout
-    }
-
-    /// Returns the number of worker attempts not observed to exit after
-    /// cancellation.
-    ///
-    /// # Returns
-    /// Zero. Worker-stop details now belong to the terminal infrastructure
-    /// failure value rather than retry context storage.
-    #[inline(always)]
-    #[must_use]
-    pub fn unreaped_worker_count(&self) -> u32 {
-        0
     }
 
     /// Returns the delay selected before the next attempt.
@@ -312,24 +258,6 @@ impl RetryContext {
         timeout: Option<Duration>,
     ) -> Self {
         self.current_attempt_timeout = timeout;
-        self
-    }
-
-    /// Returns a copy of this context with unreaped worker count.
-    ///
-    /// # Arguments
-    /// - `count`: Number of worker attempts not observed to exit after
-    ///   cancellation.
-    ///
-    /// # Returns
-    /// The unchanged context. Worker-stop details are represented by the
-    /// terminal infrastructure failure value.
-    #[inline(always)]
-    #[allow(
-        dead_code,
-        reason = "legacy context shim remains until the T07 API removal"
-    )]
-    pub(crate) fn with_unreaped_worker_count(self, _count: u32) -> Self {
         self
     }
 }

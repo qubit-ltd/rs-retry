@@ -235,7 +235,11 @@ struct ExhaustsBeforeSecondAttempt(Arc<ManualMonotonicClock>);
 
 impl RetryObserver<TestError> for ExhaustsBeforeSecondAttempt {
     fn on_attempt_started(&self, context: &RetryContext) {
-        if context.attempt() == 2 {
+        let current_attempt = context
+            .current_attempt()
+            .expect("a started attempt must have a current attempt")
+            .get();
+        if current_attempt == 2 {
             self.0
                 .advance(Duration::from_secs(1))
                 .expect("manual clock should advance");
