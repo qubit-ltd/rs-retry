@@ -526,7 +526,7 @@ fn sync_retry_returns_successful_value() {
         .expect("the synchronous operation should succeed");
 
     assert_eq!(*success.value(), 42);
-    assert_eq!(success.context().attempt(), 1);
+    assert_eq!(success.context().attempts(), 1);
 }
 
 /// Verifies the synchronous facade retries a default application failure.
@@ -552,5 +552,5 @@ fn sync_retry_retries_default_failure_before_success() {
         .expect("the second synchronous attempt should succeed");
 
     assert_eq!(*success.value(), 42);
-    assert_eq!(success.context().attempt(), 2);
+    assert_eq!(success.context().attempts(), 2);
 }
