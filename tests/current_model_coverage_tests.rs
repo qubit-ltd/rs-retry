@@ -614,9 +614,16 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
         })
         .unwrap_err();
     assert!(matches!(
-        zero_grace.reason(),
-        RetryErrorReason::WorkerStillRunning
-            | RetryErrorReason::AttemptTimedOut
+        zero_grace.failure(),
+        RetryFailure::Infrastructure {
+            failure: RetryInfrastructureFailure::WorkerStillRunning {
+                trigger: WorkerStopTrigger::AttemptTimeout,
+            },
+            ..
+        } | RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Attempt,
+            ..
+        }
     ));
 
     let attempts_exhausted = Retry::<TestError>::builder(
@@ -1055,7 +1062,13 @@ async fn async_facade_reports_timer_failure_with_injected_components() {
     .run(|| async { Err::<(), _>(TestError("only attempt")) })
     .await
     .unwrap_err();
-    assert_eq!(exhausted.reason(), RetryErrorReason::AttemptsExhausted);
+    assert!(matches!(
+        exhausted.failure(),
+        RetryFailure::Exhausted {
+            limit: RetryLimitKind::Attempts,
+            ..
+        }
+    ));
 
     let mut thread_random = BackoffPolicy::uniform(
         Duration::from_nanos(1),
