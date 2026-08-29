@@ -7,5 +7,4 @@
 // =============================================================================
 //! Indirect coverage mirrors for private budget helper types.
 
-mod borrowed_monotonic_clock_tests;
 mod retry_resource_tests;

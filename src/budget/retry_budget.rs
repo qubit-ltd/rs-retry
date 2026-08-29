@@ -20,7 +20,6 @@ use super::RetryAttempt;
 use super::RetryBudgetError;
 use super::RetryBudgetExhausted;
 use super::RetryBudgetSnapshot;
-use super::internal::BorrowedMonotonicClock;
 use super::internal::RetryResource;
 use crate::RetryLimits;
 
@@ -48,7 +47,7 @@ pub struct RetryBudget<'a> {
     operation_elapsed: Duration,
 
     /// Continuous end-to-end deadline budget.
-    total: Option<TimeBudget<RetryResource, BorrowedMonotonicClock<'a>>>,
+    total: Option<TimeBudget<RetryResource, &'a dyn MonotonicClock>>,
 
     /// Actual duration of the latest completed attempt.
     last_attempt_elapsed: Duration,
@@ -69,7 +68,7 @@ impl<'a> RetryBudget<'a> {
             .map(|duration| {
                 TimeBudget::for_duration(
                     RetryResource::TotalElapsed,
-                    BorrowedMonotonicClock(clock),
+                    clock,
                     duration,
                 )
             })
