@@ -40,7 +40,7 @@ serde = ["dep:serde"]
 tokio = ["dep:tokio", "qubit-clock/tokio"]
 
 [dependencies]
-qubit-budget = { version = "0.4", path = "../rs-budget", features = ["time"] }
+qubit-budget = { version = "0.4", features = ["time"] }
 qubit-clock = { version = "0.13", path = "../rs-clock" }
 rand = "0.10"
 serde = { version = "1.0", features = ["derive"], optional = true }
