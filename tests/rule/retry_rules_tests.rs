@@ -25,11 +25,7 @@ use qubit_retry::RetryRule;
 struct NoopRule;
 
 impl RetryRule<()> for NoopRule {
-    fn decide(
-        &self,
-        _failure: &AttemptFailure<()>,
-        _context: &RetryContext,
-    ) -> RetryDecision {
+    fn decide(&self, _failure: &AttemptFailure<()>, _context: &RetryContext) -> RetryDecision {
         RetryDecision::UseDefault
     }
 }
@@ -51,29 +47,22 @@ fn test_retry_rules_preserve_each_panic_payload() {
     ];
     for (payload, expected) in cases {
         let later_calls = Arc::new(AtomicUsize::new(0));
-        let retry =
-            Retry::<()>::builder(RetryPolicy::builder().build().unwrap())
-                .rule(move |_: &AttemptFailure<()>, _: &RetryContext| {
-                    match payload {
-                        0 => panic!("static panic"),
-                        1 => panic_any(String::from("owned panic")),
-                        _ => panic_any(17_u32),
-                    }
-                })
-                .rule({
-                    let later_calls = Arc::clone(&later_calls);
-                    move |_: &AttemptFailure<()>, _: &RetryContext| {
-                        later_calls.fetch_add(1, Ordering::SeqCst);
-                        RetryDecision::UseDefault
-                    }
-                })
-                .build();
-        let error = retry
-            .sync()
-            .run(|| Err::<(), _>(()))
-            .expect_err("the rule must panic");
-        let RetryFailure::CallbackFailed { callback, .. } = error.failure()
-        else {
+        let retry = Retry::<()>::builder(RetryPolicy::builder().build().unwrap())
+            .rule(move |_: &AttemptFailure<()>, _: &RetryContext| match payload {
+                0 => panic!("static panic"),
+                1 => panic_any(String::from("owned panic")),
+                _ => panic_any(17_u32),
+            })
+            .rule({
+                let later_calls = Arc::clone(&later_calls);
+                move |_: &AttemptFailure<()>, _: &RetryContext| {
+                    later_calls.fetch_add(1, Ordering::SeqCst);
+                    RetryDecision::UseDefault
+                }
+            })
+            .build();
+        let error = retry.sync().run(|| Err::<(), _>(())).expect_err("the rule must panic");
+        let RetryFailure::CallbackFailed { callback, .. } = error.failure() else {
             panic!("expected a callback-failure terminal");
         };
         assert_eq!(callback.callback(), RetryCallbackKind::Rule);

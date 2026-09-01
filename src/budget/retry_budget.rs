@@ -59,43 +59,24 @@ impl<'a> RetryBudget<'a> {
     /// The clock is sampled once for the initial snapshot and, when configured,
     /// for the total elapsed deadline. Returns [`RetryBudgetError::Clock`] if
     /// that deadline cannot be represented by the clock.
-    pub fn new(
-        clock: &'a dyn MonotonicClock,
-        limits: RetryLimits,
-    ) -> Result<Self, RetryBudgetError> {
+    pub fn new(clock: &'a dyn MonotonicClock, limits: RetryLimits) -> Result<Self, RetryBudgetError> {
         let total = limits
             .max_total_elapsed()
-            .map(|duration| {
-                TimeBudget::for_duration(
-                    RetryResource::TotalElapsed,
-                    clock,
-                    duration,
-                )
-            })
+            .map(|duration| TimeBudget::for_duration(RetryResource::TotalElapsed, clock, duration))
             .transpose()
             .map_err(|error| match error {
-                TimeBudgetError::Clock { source, .. } => {
-                    RetryBudgetError::Clock(source)
-                }
-                TimeBudgetError::Expired { .. }
-                | TimeBudgetError::WouldExpire { .. } => {
-                    unreachable!(
-                        "constructing a time budget only adds a deadline"
-                    )
+                TimeBudgetError::Clock { source, .. } => RetryBudgetError::Clock(source),
+                TimeBudgetError::Expired { .. } | TimeBudgetError::WouldExpire { .. } => {
+                    unreachable!("constructing a time budget only adds a deadline")
                 }
             })?;
-        let started_at = total
-            .as_ref()
-            .map_or_else(|| clock.now(), TimeBudget::started_at);
+        let started_at = total.as_ref().map_or_else(|| clock.now(), TimeBudget::started_at);
         Ok(Self {
             started_at,
-            attempts: ResourceBudget::new(
-                RetryResource::Attempts,
-                limits.max_attempts().get(),
-            ),
-            operation: limits.max_operation_elapsed().map(|duration| {
-                DurationBudget::new(RetryResource::OperationElapsed, duration)
-            }),
+            attempts: ResourceBudget::new(RetryResource::Attempts, limits.max_attempts().get()),
+            operation: limits
+                .max_operation_elapsed()
+                .map(|duration| DurationBudget::new(RetryResource::OperationElapsed, duration)),
             operation_elapsed: Duration::ZERO,
             total,
             last_attempt_elapsed: Duration::ZERO,
@@ -119,9 +100,7 @@ impl<'a> RetryBudget<'a> {
     /// Returns the linear token required to finish that attempt, or the first
     /// exhausted limit in stable attempts, operation, total order. This method
     /// mutates only the attempt count when it succeeds.
-    pub fn begin_attempt(
-        &mut self,
-    ) -> Result<RetryAttempt, RetryBudgetExhausted> {
+    pub fn begin_attempt(&mut self) -> Result<RetryAttempt, RetryBudgetExhausted> {
         self.check_continuation()?;
         let number = self.attempts.used() + 1;
         let consumed = self.attempts.consume_available(1);
@@ -137,10 +116,7 @@ impl<'a> RetryBudget<'a> {
     /// The token is consumed exactly once. An overrun exhausts the operation
     /// allowance for future work but is retained exactly in the returned
     /// snapshot and never changes a completed attempt's outcome.
-    pub fn finish_attempt(
-        &mut self,
-        attempt: RetryAttempt,
-    ) -> RetryBudgetSnapshot {
+    pub fn finish_attempt(&mut self, attempt: RetryAttempt) -> RetryBudgetSnapshot {
         debug_assert_eq!(
             attempt.number,
             self.attempts.used(),
@@ -164,10 +140,7 @@ impl<'a> RetryBudget<'a> {
     /// A delay that reaches the total deadline is rejected. The next call to
     /// [`Self::begin_attempt`] rechecks all limits after the delay and any
     /// observer work has elapsed.
-    pub fn check_retry_after(
-        &self,
-        delay: Duration,
-    ) -> Result<(), RetryBudgetExhausted> {
+    pub fn check_retry_after(&self, delay: Duration) -> Result<(), RetryBudgetExhausted> {
         self.check_continuation()?;
         if self
             .total

@@ -27,8 +27,5 @@ fn test_retry_policy_accepts_limits_and_backoff() {
         .build()
         .expect("valid policy should build");
     assert_eq!(policy.limits().max_attempts().get(), 4);
-    assert_eq!(
-        policy.limits().max_operation_elapsed(),
-        Some(Duration::from_secs(2))
-    );
+    assert_eq!(policy.limits().max_operation_elapsed(), Some(Duration::from_secs(2)));
 }

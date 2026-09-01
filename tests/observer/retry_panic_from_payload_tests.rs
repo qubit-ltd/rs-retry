@@ -70,21 +70,13 @@ impl RetryObserver<TestError> for PanickingObserver {
         }
     }
 
-    fn on_attempt_failed(
-        &self,
-        _failure: &AttemptFailure<TestError>,
-        _context: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _failure: &AttemptFailure<TestError>, _context: &RetryContext) {
         if self.phase == RetryCallbackPhase::AttemptFailed {
             self.payload.raise();
         }
     }
 
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        _context: &RetryContext,
-    ) {
+    fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {
         if self.phase == RetryCallbackPhase::RetryScheduled {
             self.payload.raise();
         }
@@ -103,21 +95,13 @@ impl RetryObserver<TestError> for CountingObserver {
         }
     }
 
-    fn on_attempt_failed(
-        &self,
-        _failure: &AttemptFailure<TestError>,
-        _context: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _failure: &AttemptFailure<TestError>, _context: &RetryContext) {
         if self.phase == RetryCallbackPhase::AttemptFailed {
             self.calls.fetch_add(1, Ordering::SeqCst);
         }
     }
 
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        _context: &RetryContext,
-    ) {
+    fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {
         if self.phase == RetryCallbackPhase::RetryScheduled {
             self.calls.fetch_add(1, Ordering::SeqCst);
         }
@@ -161,8 +145,7 @@ fn test_retry_panic_from_payload_stops_later_callbacks_for_each_case() {
             .sync()
             .run(|| Err::<(), _>(TestError("retry")))
             .expect_err("the selected callback should panic");
-        let RetryFailure::CallbackFailed { callback, .. } = error.failure()
-        else {
+        let RetryFailure::CallbackFailed { callback, .. } = error.failure() else {
             panic!("expected a public callback-failure terminal");
         };
         assert_eq!(callback.callback(), RetryCallbackKind::Observer);

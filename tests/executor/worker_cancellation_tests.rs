@@ -79,10 +79,7 @@ impl Future for PendingTimerFuture {
     type Output = Result<(), TimeError>;
 
     /// Completes after the test marks the shared timer state ready.
-    fn poll(
-        self: Pin<&mut Self>,
-        context: &mut Context<'_>,
-    ) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         if self.state.ready.load(Ordering::SeqCst) {
             Poll::Ready(Ok(()))
         } else {
@@ -90,8 +87,7 @@ impl Future for PendingTimerFuture {
                 .state
                 .waker
                 .lock()
-                .expect("pending timer waker lock should remain valid") =
-                Some(context.waker().clone());
+                .expect("pending timer waker lock should remain valid") = Some(context.waker().clone());
             if self.state.ready.load(Ordering::SeqCst) {
                 Poll::Ready(Ok(()))
             } else {
@@ -128,10 +124,7 @@ impl Timer for CancellingFailingTimer {
     }
 
     /// Cancels the retry before returning a deterministic registration error.
-    fn at(
-        &self,
-        _deadline: MonotonicInstant,
-    ) -> Result<TimerFuture, TimeError> {
+    fn at(&self, _deadline: MonotonicInstant) -> Result<TimerFuture, TimeError> {
         self.registrations.fetch_add(1, Ordering::SeqCst);
         self.cancellation.cancel();
         Err(TimeError::InstantOverflow)
@@ -145,10 +138,7 @@ impl Timer for PendingTimer {
     }
 
     /// Registers one pending deadline and notifies the test coordinator.
-    fn at(
-        &self,
-        _deadline: MonotonicInstant,
-    ) -> Result<TimerFuture, TimeError> {
+    fn at(&self, _deadline: MonotonicInstant) -> Result<TimerFuture, TimeError> {
         self.registered
             .send(())
             .expect("test should observe the backoff timer registration");
@@ -160,11 +150,7 @@ impl Timer for PendingTimer {
 
 impl RetryObserver<TestError> for CountAttemptFailed {
     /// Records one failed-attempt callback.
-    fn on_attempt_failed(
-        &self,
-        _failure: &AttemptFailure<TestError>,
-        _context: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _failure: &AttemptFailure<TestError>, _context: &RetryContext) {
         self.calls.fetch_add(1, Ordering::SeqCst);
     }
 }
@@ -194,9 +180,7 @@ fn test_worker_pre_cancellation_does_not_start_operation() {
     .expect_err("pre-cancellation must stop before spawning an operation");
 
     let RetryFailure::Cancelled {
-        phase,
-        last_failure,
-        ..
+        phase, last_failure, ..
     } = error.failure()
     else {
         panic!("expected a cancellation terminal");
@@ -226,10 +210,7 @@ fn test_worker_attempt_cancellation_discards_late_success() {
     .run({
         let observed_token = Arc::clone(&observed_token);
         move |token: AttemptCancellationToken| {
-            *observed_token
-                .lock()
-                .expect("attempt token slot should remain valid") =
-                Some(token.clone());
+            *observed_token.lock().expect("attempt token slot should remain valid") = Some(token.clone());
             operation_cancellation.cancel();
             Ok::<(), TestError>(())
         }
@@ -237,9 +218,7 @@ fn test_worker_attempt_cancellation_discards_late_success() {
     .expect_err("active cancellation must win over a late success");
 
     let RetryFailure::Cancelled {
-        phase,
-        last_failure,
-        ..
+        phase, last_failure, ..
     } = error.failure()
     else {
         panic!("expected a cancellation terminal");
@@ -256,10 +235,7 @@ fn test_worker_attempt_cancellation_discards_late_success() {
     );
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(
-        error
-            .context()
-            .current_attempt()
-            .map(std::num::NonZeroU32::get),
+        error.context().current_attempt().map(std::num::NonZeroU32::get),
         Some(1)
     );
 }
@@ -286,9 +262,7 @@ fn test_worker_attempt_cancellation_supports_maximum_grace() {
     .expect_err("cooperative cancellation must remain a cancellation terminal");
 
     let RetryFailure::Cancelled {
-        phase,
-        last_failure,
-        ..
+        phase, last_failure, ..
     } = error.failure()
     else {
         panic!("expected a cancellation terminal");
@@ -297,10 +271,7 @@ fn test_worker_attempt_cancellation_supports_maximum_grace() {
     assert!(last_failure.is_none());
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(
-        error
-            .context()
-            .current_attempt()
-            .map(std::num::NonZeroU32::get),
+        error.context().current_attempt().map(std::num::NonZeroU32::get),
         Some(1)
     );
 }
@@ -340,9 +311,7 @@ fn test_worker_attempt_cancellation_discards_late_error() {
         .expect_err("active cancellation must win over a late error");
 
     let RetryFailure::Cancelled {
-        phase,
-        last_failure,
-        ..
+        phase, last_failure, ..
     } = error.failure()
     else {
         panic!("expected a cancellation terminal");
@@ -420,10 +389,7 @@ fn test_worker_cancellation_reports_still_running_with_cancellation_trigger() {
     );
     assert_eq!(error.context().attempts(), 2);
     assert_eq!(
-        error
-            .context()
-            .current_attempt()
-            .map(std::num::NonZeroU32::get),
+        error.context().current_attempt().map(std::num::NonZeroU32::get),
         Some(2)
     );
     assert_eq!(operation_calls.load(Ordering::SeqCst), 2);
@@ -454,16 +420,11 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
         let result = Retry::<TestError>::builder(
             RetryPolicy::builder()
                 .max_attempts(2)
-                .backoff(
-                    BackoffPolicy::fixed(Duration::from_secs(1))
-                        .prefer_retry_after(),
-                )
+                .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
                 .build()
                 .expect("backoff cancellation policy should be valid"),
         )
-        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::RetryWithHint(delay)
-        })
+        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
         .build()
         .worker()
         .timer(timer)
@@ -477,9 +438,7 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
             .expect("test should receive the retry result");
     });
 
-    registered_receiver
-        .recv()
-        .expect("backoff timer should be registered");
+    registered_receiver.recv().expect("backoff timer should be registered");
     cancellation.cancel();
     timer_state.complete();
     let error = result_receiver
@@ -489,9 +448,7 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
     runner.join().expect("worker retry runner should not panic");
 
     let RetryFailure::Cancelled {
-        phase,
-        last_failure,
-        ..
+        phase, last_failure, ..
     } = error.failure()
     else {
         panic!("expected a cancellation terminal");
@@ -504,10 +461,7 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(error.context().next_delay(), Some(Duration::from_secs(4)));
-    assert_eq!(
-        error.context().retry_after_hint(),
-        Some(Duration::from_secs(4))
-    );
+    assert_eq!(error.context().retry_after_hint(), Some(Duration::from_secs(4)));
     assert_eq!(operation_calls.load(Ordering::SeqCst), 1);
 }
 
@@ -525,16 +479,11 @@ fn test_worker_backoff_registration_cancellation_wins_over_timer_failure() {
     let error = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .max_attempts(2)
-            .backoff(
-                BackoffPolicy::fixed(Duration::from_secs(1))
-                    .prefer_retry_after(),
-            )
+            .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
             .build()
             .expect("registration cancellation policy should be valid"),
     )
-    .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-        RetryDecision::RetryWithHint(delay)
-    })
+    .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
     .build()
     .worker()
     .timer(timer)
@@ -544,9 +493,7 @@ fn test_worker_backoff_registration_cancellation_wins_over_timer_failure() {
 
     assert_eq!(registrations.load(Ordering::SeqCst), 1);
     let RetryFailure::Cancelled {
-        phase,
-        last_failure,
-        ..
+        phase, last_failure, ..
     } = error.failure()
     else {
         panic!("expected a cancellation terminal");
@@ -565,26 +512,17 @@ fn test_worker_backoff_registration_cancellation_wins_over_timer_failure() {
 /// Verifies a blocked worker retains the attempt-timeout stop trigger.
 #[test]
 fn test_worker_still_running_retains_attempt_timeout_trigger() {
-    assert_blocked_worker_timeout_trigger(
-        RetryTimeoutScope::Attempt,
-        WorkerStopTrigger::AttemptTimeout,
-    );
+    assert_blocked_worker_timeout_trigger(RetryTimeoutScope::Attempt, WorkerStopTrigger::AttemptTimeout);
 }
 
 /// Verifies a blocked worker retains the flow-timeout stop trigger.
 #[test]
 fn test_worker_still_running_retains_flow_timeout_trigger() {
-    assert_blocked_worker_timeout_trigger(
-        RetryTimeoutScope::Flow,
-        WorkerStopTrigger::FlowTimeout,
-    );
+    assert_blocked_worker_timeout_trigger(RetryTimeoutScope::Flow, WorkerStopTrigger::FlowTimeout);
 }
 
 /// Runs one blocked worker and checks its deterministic timeout trigger.
-fn assert_blocked_worker_timeout_trigger(
-    scope: RetryTimeoutScope,
-    expected_trigger: WorkerStopTrigger,
-) {
+fn assert_blocked_worker_timeout_trigger(scope: RetryTimeoutScope, expected_trigger: WorkerStopTrigger) {
     let (release_sender, release_receiver) = std::sync::mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
     let retry = Retry::<TestError>::builder(
@@ -599,9 +537,7 @@ fn assert_blocked_worker_timeout_trigger(
         .timer(clock.new_timer())
         .cancellation_grace(Duration::ZERO);
     let worker = match scope {
-        RetryTimeoutScope::Attempt => {
-            worker.attempt_timeout(Duration::from_nanos(1))
-        }
+        RetryTimeoutScope::Attempt => worker.attempt_timeout(Duration::from_nanos(1)),
         RetryTimeoutScope::Flow => worker.flow_timeout(Duration::from_nanos(1)),
     };
     let error = worker

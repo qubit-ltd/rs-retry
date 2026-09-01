@@ -29,11 +29,8 @@ fn test_backoff_strategy_data_serializes_every_public_variant() {
             }),
         ),
         (
-            BackoffPolicy::uniform(
-                Duration::from_millis(1),
-                Duration::from_secs(2),
-            )
-            .expect("uniform strategy should be valid"),
+            BackoffPolicy::uniform(Duration::from_millis(1), Duration::from_secs(2))
+                .expect("uniform strategy should be valid"),
             json!({
                 "type": "uniform",
                 "minimum": { "seconds": 0, "nanoseconds": 1_000_000 },
@@ -41,12 +38,8 @@ fn test_backoff_strategy_data_serializes_every_public_variant() {
             }),
         ),
         (
-            BackoffPolicy::exponential(
-                Duration::from_millis(50),
-                2.0,
-                Duration::from_secs(2),
-            )
-            .expect("exponential strategy should be valid"),
+            BackoffPolicy::exponential(Duration::from_millis(50), 2.0, Duration::from_secs(2))
+                .expect("exponential strategy should be valid"),
             json!({
                 "type": "exponential",
                 "initial": { "seconds": 0, "nanoseconds": 50_000_000 },
@@ -79,13 +72,11 @@ fn test_backoff_strategy_data_rejects_unknown_fields_and_tags() {
     });
     let mut unknown_field = valid.clone();
     unknown_field["backoff"]["strategy"]["unexpected"] = json!(true);
-    let error = from_value::<RetryPolicy>(unknown_field)
-        .expect_err("strategy data must reject unknown fields");
+    let error = from_value::<RetryPolicy>(unknown_field).expect_err("strategy data must reject unknown fields");
     assert!(error.to_string().contains("unknown field"));
 
     let mut unknown_tag = valid;
     unknown_tag["backoff"]["strategy"]["type"] = json!("decorrelated");
-    let error = from_value::<RetryPolicy>(unknown_tag)
-        .expect_err("strategy data must reject unknown tags");
+    let error = from_value::<RetryPolicy>(unknown_tag).expect_err("strategy data must reject unknown tags");
     assert!(error.to_string().contains("unknown variant"));
 }

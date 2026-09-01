@@ -47,13 +47,8 @@ impl<T, F> BlockingValueOperation<T, F> {
     /// operation result, which would indicate an internal logic error.
     #[inline(always)]
     pub(in crate::executor) fn take_value(&self) -> T {
-        let mut value = self
-            .value
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        value
-            .take()
-            .expect("retry loop succeeded without an operation value")
+        let mut value = self.value.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        value.take().expect("retry loop succeeded without an operation value")
     }
 }
 
@@ -70,16 +65,10 @@ where
     ///
     /// # Returns
     /// `Ok(())` after storing a successful value, or an application failure.
-    fn call(
-        &self,
-        token: AttemptCancellationToken,
-    ) -> Result<(), AttemptFailure<E>> {
+    fn call(&self, token: AttemptCancellationToken) -> Result<(), AttemptFailure<E>> {
         match (self.operation)(token) {
             Ok(result) => {
-                let mut value = self
-                    .value
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let mut value = self.value.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 *value = Some(result);
                 Ok(())
             }

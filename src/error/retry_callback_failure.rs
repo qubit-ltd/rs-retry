@@ -35,12 +35,7 @@ impl RetryCallbackFailure {
     /// - `phase`: Lifecycle phase in which the callback panicked.
     /// - `panic`: Stable representation of the panic payload.
     #[must_use]
-    pub fn new(
-        callback: RetryCallbackKind,
-        index: usize,
-        phase: RetryCallbackPhase,
-        panic: RetryPanic,
-    ) -> Self {
+    pub fn new(callback: RetryCallbackKind, index: usize, phase: RetryCallbackPhase, panic: RetryPanic) -> Self {
         Self {
             callback,
             index,

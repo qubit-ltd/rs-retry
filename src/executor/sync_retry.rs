@@ -56,21 +56,13 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
-    pub fn run<T, F>(
-        &self,
-        mut operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub fn run<T, F>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,
     {
         let clock = self.sleeper.timer().clock();
-        let mut controller = RetryFlowController::new(
-            clock.now(),
-            self.retry,
-            Arc::clone(&self.random_source),
-            None,
-            None,
-        );
+        let mut controller =
+            RetryFlowController::new(clock.now(), self.retry, Arc::clone(&self.random_source), None, None);
 
         loop {
             let _ = controller.before_attempt(clock, None)?;
@@ -83,23 +75,14 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                     return Ok(RetrySuccess::new(value, context));
                 }
                 Err(error) => {
-                    let directive = controller.record_failure(
-                        AttemptFailure::Error(error),
-                        clock,
-                        None,
-                    )?;
-                    if let Err(timer_error) =
-                        self.sleeper.sleep_for(directive.sleep_duration())
-                    {
-                        let error = controller
-                            .record_inactive_infrastructure_failure(
-                                RetryInfrastructureFailure::Timer {
-                                    message: timer_error
-                                        .to_string()
-                                        .into_boxed_str(),
-                                },
-                                clock.now(),
-                            );
+                    let directive = controller.record_failure(AttemptFailure::Error(error), clock, None)?;
+                    if let Err(timer_error) = self.sleeper.sleep_for(directive.sleep_duration()) {
+                        let error = controller.record_inactive_infrastructure_failure(
+                            RetryInfrastructureFailure::Timer {
+                                message: timer_error.to_string().into_boxed_str(),
+                            },
+                            clock.now(),
+                        );
                         return Err(error);
                     }
                 }

@@ -47,11 +47,6 @@ impl TryFrom<DurationData> for Duration {
         }
         Duration::from_secs(data.seconds)
             .checked_add(Duration::from_nanos(u64::from(data.nanoseconds)))
-            .ok_or_else(|| {
-                RetryPolicyError::new(
-                    "duration",
-                    "duration exceeds the supported range",
-                )
-            })
+            .ok_or_else(|| RetryPolicyError::new("duration", "duration exceeds the supported range"))
     }
 }

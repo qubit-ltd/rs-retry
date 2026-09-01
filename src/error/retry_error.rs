@@ -116,7 +116,6 @@ where
 {
     /// Returns the last application error as the standard error source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.last_error()
-            .map(|error| error as &(dyn Error + 'static))
+        self.last_error().map(|error| error as &(dyn Error + 'static))
     }
 }

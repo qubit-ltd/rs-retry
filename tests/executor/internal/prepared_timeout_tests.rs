@@ -18,16 +18,14 @@ use qubit_retry::RetryTimeoutScope;
 /// Verifies a shorter attempt timeout remains the selected boundary.
 #[tokio::test]
 async fn test_prepared_timeout_selects_the_shorter_attempt_timeout() {
-    let error = Retry::<()>::builder(
-        RetryPolicy::builder().max_attempts(1).build().unwrap(),
-    )
-    .build()
-    .asynchronous()
-    .attempt_timeout(Duration::from_millis(1))
-    .flow_timeout(Duration::from_secs(1))
-    .run(pending::<Result<(), ()>>)
-    .await
-    .expect_err("the attempt timeout must terminate the pending operation");
+    let error = Retry::<()>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+        .build()
+        .asynchronous()
+        .attempt_timeout(Duration::from_millis(1))
+        .flow_timeout(Duration::from_secs(1))
+        .run(pending::<Result<(), ()>>)
+        .await
+        .expect_err("the attempt timeout must terminate the pending operation");
     assert!(matches!(
         error.failure(),
         RetryFailure::TimedOut {

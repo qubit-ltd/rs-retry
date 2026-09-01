@@ -34,11 +34,7 @@ impl<E: 'static> Retry<E> {
         RetryBuilder::new(policy)
     }
 
-    pub(crate) fn new(
-        policy: RetryPolicy,
-        rules: RetryRules<E>,
-        observers: RetryObservers<E>,
-    ) -> Self {
+    pub(crate) fn new(policy: RetryPolicy, rules: RetryRules<E>, observers: RetryObservers<E>) -> Self {
         Self {
             policy,
             rules,

@@ -86,9 +86,7 @@ impl<E> RetryFailure<E> {
             | Self::TimedOut { last_failure, .. }
             | Self::Cancelled { last_failure, .. }
             | Self::CallbackFailed { last_failure, .. }
-            | Self::Infrastructure { last_failure, .. } => {
-                last_failure.as_ref()
-            }
+            | Self::Infrastructure { last_failure, .. } => last_failure.as_ref(),
         }
     }
 
@@ -110,51 +108,21 @@ impl<E: fmt::Display> fmt::Display for RetryFailure<E> {
             Self::Aborted { last_failure } => {
                 write!(formatter, "retry aborted: {last_failure}")
             }
-            Self::Exhausted {
-                limit,
-                last_failure,
-            } => write_terminal(
-                formatter,
-                "retry limit exhausted",
-                limit,
-                last_failure.as_ref(),
-            ),
-            Self::TimedOut {
-                scope,
-                last_failure,
-            } => write_terminal(
-                formatter,
-                "retry timed out",
-                scope,
-                last_failure.as_ref(),
-            ),
-            Self::Cancelled {
-                phase,
-                last_failure,
-            } => write_terminal(
-                formatter,
-                "retry cancelled",
-                phase,
-                last_failure.as_ref(),
-            ),
-            Self::CallbackFailed {
-                callback,
-                last_failure,
-            } => write_terminal(
-                formatter,
-                "retry callback failed",
-                callback,
-                last_failure.as_ref(),
-            ),
-            Self::Infrastructure {
-                failure,
-                last_failure,
-            } => write_terminal(
-                formatter,
-                "retry infrastructure failed",
-                failure,
-                last_failure.as_ref(),
-            ),
+            Self::Exhausted { limit, last_failure } => {
+                write_terminal(formatter, "retry limit exhausted", limit, last_failure.as_ref())
+            }
+            Self::TimedOut { scope, last_failure } => {
+                write_terminal(formatter, "retry timed out", scope, last_failure.as_ref())
+            }
+            Self::Cancelled { phase, last_failure } => {
+                write_terminal(formatter, "retry cancelled", phase, last_failure.as_ref())
+            }
+            Self::CallbackFailed { callback, last_failure } => {
+                write_terminal(formatter, "retry callback failed", callback, last_failure.as_ref())
+            }
+            Self::Infrastructure { failure, last_failure } => {
+                write_terminal(formatter, "retry infrastructure failed", failure, last_failure.as_ref())
+            }
         }
     }
 }

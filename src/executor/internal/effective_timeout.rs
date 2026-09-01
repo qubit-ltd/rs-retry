@@ -24,10 +24,7 @@ impl EffectiveTimeout {
     /// Selects the shorter hard timeout while retaining its source.
     ///
     /// An exact tie is attributed to the configured attempt timeout.
-    pub(crate) fn select(
-        attempt_timeout: Option<Duration>,
-        flow_remaining: Option<Duration>,
-    ) -> Option<Self> {
+    pub(crate) fn select(attempt_timeout: Option<Duration>, flow_remaining: Option<Duration>) -> Option<Self> {
         match (attempt_timeout, flow_remaining) {
             (Some(attempt), Some(flow)) if attempt <= flow => Some(Self {
                 duration: attempt,

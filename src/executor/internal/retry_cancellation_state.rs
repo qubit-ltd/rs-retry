@@ -53,29 +53,21 @@ impl RetryCancellationState {
         waker: Waker,
     ) -> (u64, Option<Waker>, Option<Waker>, bool) {
         let mut waiters = self.lock_waiters();
-        let (registration_id, replaced) =
-            waiters.register(registration_id, waker);
+        let (registration_id, replaced) = waiters.register(registration_id, waker);
         let cancelled = self.cancelled.load(Ordering::Acquire);
-        let removed = cancelled
-            .then(|| waiters.unregister(registration_id))
-            .flatten();
+        let removed = cancelled.then(|| waiters.unregister(registration_id)).flatten();
         (registration_id, replaced, removed, cancelled)
     }
 
     /// Unregisters a pending cancellation future.
     ///
     /// The returned waker must be dropped after the registry mutex is released.
-    pub(in crate::executor) fn unregister(
-        &self,
-        registration_id: u64,
-    ) -> Option<Waker> {
+    pub(in crate::executor) fn unregister(&self, registration_id: u64) -> Option<Waker> {
         self.lock_waiters().unregister(registration_id)
     }
 
     /// Locks the waker registry, recovering its contents after poisoning.
     fn lock_waiters(&self) -> std::sync::MutexGuard<'_, WakerRegistry> {
-        self.waiters
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.waiters.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }

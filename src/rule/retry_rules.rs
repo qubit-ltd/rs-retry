@@ -51,17 +51,15 @@ impl<E: 'static> RetryRules<E> {
         context: &RetryContext,
     ) -> Result<RetryDecision, RetryCallbackFailure> {
         for (index, rule) in self.rules.iter().enumerate() {
-            let decision = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                rule.decide(failure, context)
-            }))
-            .map_err(|payload| {
-                RetryCallbackFailure::new(
-                    RetryCallbackKind::Rule,
-                    index,
-                    RetryCallbackPhase::RuleDecision,
-                    retry_panic_from_payload(payload),
-                )
-            })?;
+            let decision =
+                std::panic::catch_unwind(AssertUnwindSafe(|| rule.decide(failure, context))).map_err(|payload| {
+                    RetryCallbackFailure::new(
+                        RetryCallbackKind::Rule,
+                        index,
+                        RetryCallbackPhase::RuleDecision,
+                        retry_panic_from_payload(payload),
+                    )
+                })?;
             if !matches!(decision, RetryDecision::UseDefault) {
                 return Ok(decision);
             }

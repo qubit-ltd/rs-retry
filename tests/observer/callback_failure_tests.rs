@@ -33,17 +33,16 @@ impl RetryObserver<TestError> for PanickingObserver {
 #[test]
 fn test_callback_failure_stops_later_callback_kinds() {
     let rule_calls = Arc::new(AtomicUsize::new(0));
-    let retry =
-        Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
-            .observer(PanickingObserver)
-            .rule({
-                let rule_calls = Arc::clone(&rule_calls);
-                move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-                    rule_calls.fetch_add(1, Ordering::SeqCst);
-                    RetryDecision::UseDefault
-                }
-            })
-            .build();
+    let retry = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
+        .observer(PanickingObserver)
+        .rule({
+            let rule_calls = Arc::clone(&rule_calls);
+            move |_: &AttemptFailure<TestError>, _: &RetryContext| {
+                rule_calls.fetch_add(1, Ordering::SeqCst);
+                RetryDecision::UseDefault
+            }
+        })
+        .build();
     let error = retry
         .sync()
         .run(|| Err::<(), _>(TestError("retry")))

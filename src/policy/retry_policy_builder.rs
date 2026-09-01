@@ -49,10 +49,7 @@ impl RetryPolicyBuilder {
     }
 
     /// Sets or removes the cumulative operation-time budget.
-    pub fn max_operation_elapsed_opt(
-        mut self,
-        elapsed: Option<Duration>,
-    ) -> Self {
+    pub fn max_operation_elapsed_opt(mut self, elapsed: Option<Duration>) -> Self {
         self.max_operation_elapsed = elapsed;
         self
     }
@@ -89,19 +86,10 @@ impl RetryPolicyBuilder {
 
     /// Validates and creates the retry policy.
     pub fn build(self) -> Result<RetryPolicy, RetryPolicyError> {
-        let max_attempts =
-            NonZeroU32::new(self.max_attempts).ok_or_else(|| {
-                RetryPolicyError::new(
-                    "max_attempts",
-                    "maximum attempts must be greater than zero",
-                )
-            })?;
+        let max_attempts = NonZeroU32::new(self.max_attempts)
+            .ok_or_else(|| RetryPolicyError::new("max_attempts", "maximum attempts must be greater than zero"))?;
         Ok(RetryPolicy::new(
-            RetryLimits::new(
-                max_attempts,
-                self.max_operation_elapsed,
-                self.max_total_elapsed,
-            ),
+            RetryLimits::new(max_attempts, self.max_operation_elapsed, self.max_total_elapsed),
             self.backoff,
         ))
     }

@@ -149,9 +149,7 @@ fn sync_retry_success_clock_regression_returns_infrastructure_error() {
 fn sync_retry_abort_survives_post_rule_clock_regression() {
     let policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
     let error = Retry::<TestError>::builder(policy)
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::Abort
-        })
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
         .build()
         .sync()
         .timer(rule_terminal_regressing_timer())
@@ -178,21 +176,13 @@ impl RetryObserver<TestError> for AttemptScopeObserver {
     }
 
     /// Checks the failed-operation callback snapshot.
-    fn on_attempt_failed(
-        &self,
-        _failure: &AttemptFailure<TestError>,
-        context: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _failure: &AttemptFailure<TestError>, context: &RetryContext) {
         assert_eq!(context.attempts(), 1);
         assert_eq!(context.current_attempt().map(|value| value.get()), Some(1));
     }
 
     /// Checks the retry-scheduled callback snapshot.
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        context: &RetryContext,
-    ) {
+    fn on_retry_scheduled(&self, _backoff: &BackoffStep, context: &RetryContext) {
         assert_eq!(context.attempts(), 1);
         assert_eq!(context.current_attempt().map(|value| value.get()), Some(1));
     }
@@ -210,10 +200,7 @@ fn sync_retry_callbacks_retain_current_attempt_scope() {
         .observer(AttemptScopeObserver)
         .rule(|_: &AttemptFailure<TestError>, context: &RetryContext| {
             assert_eq!(context.attempts(), 1);
-            assert_eq!(
-                context.current_attempt().map(|value| value.get()),
-                Some(1)
-            );
+            assert_eq!(context.current_attempt().map(|value| value.get()), Some(1));
             RetryDecision::Retry
         })
         .build()
@@ -273,9 +260,7 @@ fn sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
         error.failure(),
         RetryFailure::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
-            last_failure: Some(AttemptFailure::Error(TestError(
-                "first attempt failed"
-            ))),
+            last_failure: Some(AttemptFailure::Error(TestError("first attempt failed"))),
             ..
         }
     ));
@@ -283,42 +268,29 @@ fn sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
 
 #[test]
 fn sync_retry_matches_shared_terminal_matrix() {
-    let abort = Retry::<TestError>::builder(
-        RetryPolicy::builder().max_attempts(2).build().unwrap(),
-    )
-    .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-        RetryDecision::Abort
-    })
-    .build()
-    .sync()
-    .run(|| Err::<(), _>(TestError("matrix")))
-    .expect_err("the explicit abort rule must terminate after attempt one");
+    let abort = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
+        .build()
+        .sync()
+        .run(|| Err::<(), _>(TestError("matrix")))
+        .expect_err("the explicit abort rule must terminate after attempt one");
     assert_matrix_abort(&abort);
 
-    let attempts = Retry::<TestError>::builder(
-        RetryPolicy::builder().max_attempts(1).build().unwrap(),
-    )
-    .build()
-    .sync()
-    .run(|| Err::<(), _>(TestError("matrix")))
-    .expect_err("one admitted failure must exhaust the attempt limit");
+    let attempts = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+        .build()
+        .sync()
+        .run(|| Err::<(), _>(TestError("matrix")))
+        .expect_err("one admitted failure must exhaust the attempt limit");
     assert_matrix_limit(&attempts, RetryLimitKind::Attempts, 1, true);
 
-    for limit in [
-        RetryLimitKind::OperationElapsed,
-        RetryLimitKind::TotalElapsed,
-    ] {
+    for limit in [RetryLimitKind::OperationElapsed, RetryLimitKind::TotalElapsed] {
         let clock = ManualMonotonicClock::new_shared();
         let mut policy = RetryPolicy::builder()
             .max_attempts(2)
             .backoff(BackoffPolicy::immediate());
         policy = match limit {
-            RetryLimitKind::OperationElapsed => {
-                policy.max_operation_elapsed(Duration::from_secs(1))
-            }
-            RetryLimitKind::TotalElapsed => {
-                policy.max_total_elapsed(Duration::from_secs(1))
-            }
+            RetryLimitKind::OperationElapsed => policy.max_operation_elapsed(Duration::from_secs(1)),
+            RetryLimitKind::TotalElapsed => policy.max_total_elapsed(Duration::from_secs(1)),
             RetryLimitKind::Attempts => unreachable!(),
         };
         let error = Retry::<TestError>::builder(policy.build().unwrap())
@@ -339,23 +311,19 @@ fn sync_retry_matches_shared_terminal_matrix() {
 #[test]
 fn sync_retry_matches_shared_callback_matrix() {
     let later_rule_calls = Arc::new(AtomicUsize::new(0));
-    let rule_error = Retry::<TestError>::builder(
-        RetryPolicy::builder().max_attempts(2).build().unwrap(),
-    )
-    .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-        panic!("matrix rule panic")
-    })
-    .rule({
-        let later_rule_calls = Arc::clone(&later_rule_calls);
-        move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-            later_rule_calls.fetch_add(1, Ordering::SeqCst);
-            RetryDecision::Retry
-        }
-    })
-    .build()
-    .sync()
-    .run(|| Err::<(), _>(TestError("matrix")))
-    .expect_err("the first panicking rule must fail closed");
+    let rule_error = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("matrix rule panic"))
+        .rule({
+            let later_rule_calls = Arc::clone(&later_rule_calls);
+            move |_: &AttemptFailure<TestError>, _: &RetryContext| {
+                later_rule_calls.fetch_add(1, Ordering::SeqCst);
+                RetryDecision::Retry
+            }
+        })
+        .build()
+        .sync()
+        .run(|| Err::<(), _>(TestError("matrix")))
+        .expect_err("the first panicking rule must fail closed");
     assert_matrix_rule_panic(&rule_error, later_rule_calls.as_ref());
 
     for phase in [
@@ -416,9 +384,7 @@ fn sync_retry_refreshes_elapsed_time_between_callback_phases() {
         .expect_err("scheduled callback time should exhaust the flow");
 
     assert_eq!(
-        *records
-            .lock()
-            .expect("callback elapsed records should not be poisoned"),
+        *records.lock().expect("callback elapsed records should not be poisoned"),
         vec![
             (RetryCallbackPhase::AttemptFailed, Duration::ZERO),
             (RetryCallbackPhase::RuleDecision, Duration::from_secs(1)),
@@ -451,23 +417,14 @@ fn sync_retry_refreshes_elapsed_time_after_callback_panics() {
             .expect("callback panic policy should be valid");
         let error = if phase == RetryCallbackPhase::RuleDecision {
             Retry::<TestError>::builder(policy)
-                .rule(ElapsedRuleCallback::new(
-                    Arc::clone(&clock),
-                    records,
-                    true,
-                ))
+                .rule(ElapsedRuleCallback::new(Arc::clone(&clock), records, true))
                 .build()
                 .sync()
                 .timer(clock.new_timer())
                 .run(|| Err::<(), _>(TestError("elapsed")))
         } else {
             Retry::<TestError>::builder(policy)
-                .observer(ElapsedObserverCallback::new(
-                    Arc::clone(&clock),
-                    phase,
-                    records,
-                    true,
-                ))
+                .observer(ElapsedObserverCallback::new(Arc::clone(&clock), phase, records, true))
                 .build()
                 .sync()
                 .timer(clock.new_timer())
@@ -500,13 +457,12 @@ fn sync_retry_matches_shared_infrastructure_matrix() {
     .expect_err("retry sleep registration failure must be terminal");
     assert_matrix_infrastructure(&timer_error, "timer", 1, None, true);
 
-    let clock_error =
-        Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
-            .build()
-            .sync()
-            .timer(completion_regressing_timer())
-            .run(|| Ok::<_, TestError>(()))
-            .expect_err("completion clock regression must be terminal");
+    let clock_error = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
+        .build()
+        .sync()
+        .timer(completion_regressing_timer())
+        .run(|| Ok::<_, TestError>(()))
+        .expect_err("completion clock regression must be terminal");
     assert_matrix_infrastructure(&clock_error, "clock", 1, None, false);
 }
 

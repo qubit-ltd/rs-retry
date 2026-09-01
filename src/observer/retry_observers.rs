@@ -28,9 +28,7 @@ pub(crate) struct RetryObservers<E> {
 
 impl<E> Default for RetryObservers<E> {
     fn default() -> Self {
-        Self {
-            observers: Vec::new(),
-        }
+        Self { observers: Vec::new() }
     }
 }
 
@@ -44,10 +42,7 @@ impl<E: 'static> RetryObservers<E> {
     }
 
     /// Notifies observers before an attempt and stops on the first panic.
-    pub(crate) fn try_attempt_started(
-        &self,
-        context: &RetryContext,
-    ) -> Result<(), RetryCallbackFailure> {
+    pub(crate) fn try_attempt_started(&self, context: &RetryContext) -> Result<(), RetryCallbackFailure> {
         self.try_each(RetryCallbackPhase::AttemptStarted, |observer| {
             observer.on_attempt_started(context)
         })
@@ -79,19 +74,12 @@ impl<E: 'static> RetryObservers<E> {
     ///
     /// Returns a structured failure for the first panicking observer without
     /// invoking any later observer.
-    fn try_each<F>(
-        &self,
-        phase: RetryCallbackPhase,
-        mut callback: F,
-    ) -> Result<(), RetryCallbackFailure>
+    fn try_each<F>(&self, phase: RetryCallbackPhase, mut callback: F) -> Result<(), RetryCallbackFailure>
     where
         F: FnMut(&dyn RetryObserver<E>),
     {
         for (index, observer) in self.observers.iter().enumerate() {
-            std::panic::catch_unwind(AssertUnwindSafe(|| {
-                callback(observer.as_ref())
-            }))
-            .map_err(|payload| {
+            std::panic::catch_unwind(AssertUnwindSafe(|| callback(observer.as_ref()))).map_err(|payload| {
                 RetryCallbackFailure::new(
                     RetryCallbackKind::Observer,
                     index,

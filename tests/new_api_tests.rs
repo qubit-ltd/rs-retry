@@ -88,10 +88,7 @@ fn test_retry_error_terminal_accessors_are_lossless() {
 fn test_public_failure_component_constructors_and_accessors() {
     let context = RetryContext::new(2, 4);
     assert_eq!(context.attempts(), 2);
-    assert_eq!(
-        context.current_attempt().map(std::num::NonZeroU32::get),
-        Some(2)
-    );
+    assert_eq!(context.current_attempt().map(std::num::NonZeroU32::get), Some(2));
     assert_eq!(context.max_attempts(), 4);
 
     let callback = RetryCallbackFailure::new(
@@ -130,12 +127,7 @@ fn test_public_failure_component_constructors_and_accessors() {
 #[test]
 fn policy_validates_limits_and_backoff_state() {
     assert!(RetryPolicy::builder().max_attempts(0).build().is_err());
-    let policy = BackoffPolicy::exponential(
-        Duration::from_millis(10),
-        2.0,
-        Duration::from_millis(25),
-    )
-    .unwrap();
+    let policy = BackoffPolicy::exponential(Duration::from_millis(10), 2.0, Duration::from_millis(25)).unwrap();
     let mut state = policy.start();
     assert_eq!(state.next(BackoffRequest::policy()).retry_index(), 1);
     assert_eq!(
@@ -171,21 +163,13 @@ fn sync_facade_retries_application_failure() {
 fn first_rule_wins_and_failure_kind_is_stable() {
     struct RetryOnly;
     impl RetryRule<TestError> for RetryOnly {
-        fn decide(
-            &self,
-            _: &AttemptFailure<TestError>,
-            _: &RetryContext,
-        ) -> RetryDecision {
+        fn decide(&self, _: &AttemptFailure<TestError>, _: &RetryContext) -> RetryDecision {
             RetryDecision::Retry
         }
     }
     struct AbortRule;
     impl RetryRule<TestError> for AbortRule {
-        fn decide(
-            &self,
-            _: &AttemptFailure<TestError>,
-            _: &RetryContext,
-        ) -> RetryDecision {
+        fn decide(&self, _: &AttemptFailure<TestError>, _: &RetryContext) -> RetryDecision {
             RetryDecision::Abort
         }
     }
@@ -280,9 +264,7 @@ async fn async_shorter_flow_timeout_reports_flow_source() {
     };
     assert_eq!(reached.elapsed_since_origin(), Duration::from_secs(1));
 
-    let error = future
-        .await
-        .expect_err("flow timeout should terminate retry");
+    let error = future.await.expect_err("flow timeout should terminate retry");
     assert!(matches!(
         error.failure(),
         RetryFailure::TimedOut {
@@ -331,9 +313,7 @@ async fn async_flow_timeout_caps_retry_sleep() {
         "the flow deadline, not the full backoff, must drive the timer"
     );
 
-    let error = future
-        .await
-        .expect_err("flow timeout should terminate retry");
+    let error = future.await.expect_err("flow timeout should terminate retry");
     assert!(matches!(
         error.failure(),
         RetryFailure::TimedOut {
