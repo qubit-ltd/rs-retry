@@ -32,9 +32,7 @@ impl RetryDecision {
     /// Returns the caller-provided delay hint carried by this decision.
     pub(crate) fn retry_after_hint(self) -> Option<Duration> {
         match self {
-            Self::RetryWithHint(hint) | Self::RetryWithJitteredHint(hint) => {
-                Some(hint)
-            }
+            Self::RetryWithHint(hint) | Self::RetryWithJitteredHint(hint) => Some(hint),
             Self::UseDefault | Self::Retry | Self::Abort => None,
         }
     }

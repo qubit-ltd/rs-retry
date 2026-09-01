@@ -40,10 +40,7 @@ impl WakerRegistry {
     }
 
     /// Removes a registration and returns the waker that must be dropped.
-    pub(in crate::executor::internal) fn unregister(
-        &mut self,
-        registration_id: u64,
-    ) -> Option<Waker> {
+    pub(in crate::executor::internal) fn unregister(&mut self, registration_id: u64) -> Option<Waker> {
         self.wakers.remove(&registration_id)
     }
 

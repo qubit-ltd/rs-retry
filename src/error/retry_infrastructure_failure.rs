@@ -45,9 +45,7 @@ impl RetryInfrastructureFailure {
     #[must_use]
     pub fn message(&self) -> Option<&str> {
         match self {
-            Self::Clock { message }
-            | Self::Timer { message }
-            | Self::WorkerSpawn { message } => Some(message),
+            Self::Clock { message } | Self::Timer { message } | Self::WorkerSpawn { message } => Some(message),
             Self::WorkerStillRunning { .. } => None,
         }
     }
@@ -61,9 +59,7 @@ impl RetryInfrastructureFailure {
     pub fn worker_stop_trigger(&self) -> Option<WorkerStopTrigger> {
         match self {
             Self::WorkerStillRunning { trigger } => Some(*trigger),
-            Self::Clock { .. }
-            | Self::Timer { .. }
-            | Self::WorkerSpawn { .. } => None,
+            Self::Clock { .. } | Self::Timer { .. } | Self::WorkerSpawn { .. } => None,
         }
     }
 }

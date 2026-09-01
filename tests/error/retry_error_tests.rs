@@ -23,13 +23,9 @@ use crate::support::TestError;
 /// application error as its standard error source.
 #[test]
 fn test_retry_error_preserves_terminal_failure_and_context() {
-    let retry = Retry::<TestError>::builder(
-        RetryPolicy::builder().max_attempts(2).build().unwrap(),
-    )
-    .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-        RetryDecision::Abort
-    })
-    .build();
+    let retry = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
+        .build();
 
     let error = retry
         .sync()
@@ -45,10 +41,7 @@ fn test_retry_error_preserves_terminal_failure_and_context() {
     ));
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.last_error(), Some(&TestError("fatal")));
-    assert_eq!(
-        Error::source(&error).map(ToString::to_string),
-        Some("fatal".to_owned())
-    );
+    assert_eq!(Error::source(&error).map(ToString::to_string), Some("fatal".to_owned()));
     assert_eq!(error.to_string(), "retry aborted: fatal after 1 attempt(s)");
 
     let (failure, context) = error.into_parts();

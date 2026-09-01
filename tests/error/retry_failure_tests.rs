@@ -28,41 +28,31 @@ fn test_retry_failure_external_shape_and_accessor_signatures() {
                 let _: &AttemptFailure<E> = last_failure;
             }
             RetryFailure::Exhausted {
-                limit,
-                last_failure,
-                ..
+                limit, last_failure, ..
             } => {
                 let _: &RetryLimitKind = limit;
                 let _: &Option<AttemptFailure<E>> = last_failure;
             }
             RetryFailure::TimedOut {
-                scope,
-                last_failure,
-                ..
+                scope, last_failure, ..
             } => {
                 let _: &RetryTimeoutScope = scope;
                 let _: &Option<AttemptFailure<E>> = last_failure;
             }
             RetryFailure::Cancelled {
-                phase,
-                last_failure,
-                ..
+                phase, last_failure, ..
             } => {
                 let _: &RetryCancellationPhase = phase;
                 let _: &Option<AttemptFailure<E>> = last_failure;
             }
             RetryFailure::CallbackFailed {
-                callback,
-                last_failure,
-                ..
+                callback, last_failure, ..
             } => {
                 let _: &RetryCallbackFailure = callback;
                 let _: &Option<AttemptFailure<E>> = last_failure;
             }
             RetryFailure::Infrastructure {
-                failure,
-                last_failure,
-                ..
+                failure, last_failure, ..
             } => {
                 let _: &RetryInfrastructureFailure = failure;
                 let _: &Option<AttemptFailure<E>> = last_failure;

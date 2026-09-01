@@ -29,13 +29,8 @@ type RetryHintRecord = Option<(Option<Duration>, Option<Duration>)>;
 struct HintRecordingObserver(Arc<Mutex<RetryHintRecord>>);
 
 impl RetryObserver<TestError> for HintRecordingObserver {
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        context: &RetryContext,
-    ) {
-        *self.0.lock().unwrap() =
-            Some((context.retry_after_hint(), context.next_delay()));
+    fn on_retry_scheduled(&self, _backoff: &BackoffStep, context: &RetryContext) {
+        *self.0.lock().unwrap() = Some((context.retry_after_hint(), context.next_delay()));
     }
 }
 
@@ -50,9 +45,7 @@ fn test_retry_directive_records_retry_hint_and_resolved_delay() {
         .build()
         .unwrap();
     let result = Retry::<TestError>::builder(policy)
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::RetryWithHint(Duration::from_secs(3))
-        })
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(Duration::from_secs(3)))
         .observer(HintRecordingObserver(Arc::clone(&recorded)))
         .build()
         .sync()

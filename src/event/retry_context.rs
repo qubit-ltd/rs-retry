@@ -243,20 +243,14 @@ impl RetryContext {
 
     /// Returns a copy carrying the hint used to select the next delay.
     #[inline(always)]
-    pub(crate) fn with_retry_after_hint(
-        mut self,
-        hint: Option<Duration>,
-    ) -> Self {
+    pub(crate) fn with_retry_after_hint(mut self, hint: Option<Duration>) -> Self {
         self.retry_after_hint = hint;
         self
     }
 
     /// Returns a copy carrying the effective timeout for the current attempt.
     #[inline(always)]
-    pub(crate) fn with_attempt_timeout(
-        mut self,
-        timeout: Option<Duration>,
-    ) -> Self {
+    pub(crate) fn with_attempt_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.current_attempt_timeout = timeout;
         self
     }

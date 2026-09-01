@@ -96,11 +96,7 @@ struct CancelOnRetryScheduled {
 #[cfg(feature = "tokio")]
 impl RetryObserver<TestError> for CancelOnRetryScheduled {
     /// Cancels after the controller has selected the next retry delay.
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        _context: &RetryContext,
-    ) {
+    fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {
         self.token.cancel();
     }
 }
@@ -128,10 +124,7 @@ impl Timer for CancellingFailingRegistrationTimer {
     }
 
     /// Cancels the retry during registration and returns a fixed failure.
-    fn at(
-        &self,
-        _deadline: MonotonicInstant,
-    ) -> Result<TimerFuture, TimeError> {
+    fn at(&self, _deadline: MonotonicInstant) -> Result<TimerFuture, TimeError> {
         self.registrations.fetch_add(1, Ordering::SeqCst);
         self.token.cancel();
         Err(TimeError::InstantOverflow)
@@ -141,11 +134,7 @@ impl Timer for CancellingFailingRegistrationTimer {
 #[cfg(feature = "tokio")]
 impl RetryObserver<TestError> for CountRetryScheduled {
     /// Records one retry-scheduled callback.
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        _context: &RetryContext,
-    ) {
+    fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {
         self.calls.fetch_add(1, Ordering::SeqCst);
     }
 }
@@ -153,20 +142,12 @@ impl RetryObserver<TestError> for CountRetryScheduled {
 #[cfg(feature = "tokio")]
 impl RetryObserver<TestError> for CancelOnAttemptFailed {
     /// Cancels immediately after the first failed operation.
-    fn on_attempt_failed(
-        &self,
-        _failure: &AttemptFailure<TestError>,
-        _context: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _failure: &AttemptFailure<TestError>, _context: &RetryContext) {
         self.token.cancel();
     }
 
     /// Records retry-scheduled callbacks that should be suppressed.
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        _context: &RetryContext,
-    ) {
+    fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {
         self.scheduled_calls.fetch_add(1, Ordering::SeqCst);
     }
 }
@@ -178,15 +159,10 @@ fn assert_cancelled(
     expected_phase: RetryCancellationPhase,
 ) -> Option<&AttemptFailure<TestError>> {
     let RetryFailure::Cancelled {
-        phase,
-        last_failure,
-        ..
+        phase, last_failure, ..
     } = error.failure()
     else {
-        panic!(
-            "expected a cancellation terminal, got {:?}",
-            error.failure()
-        );
+        panic!("expected a cancellation terminal, got {:?}", error.failure());
     };
     assert_eq!(*phase, expected_phase);
     assert_eq!(error.failure().last_failure(), last_failure.as_ref());
@@ -230,10 +206,7 @@ async fn test_cancellation_token_before_attempt_does_not_construct_operation() {
     .await
     .expect_err("pre-cancellation must stop before constructing an operation");
 
-    assert_eq!(
-        assert_cancelled(&error, RetryCancellationPhase::BeforeAttempt),
-        None
-    );
+    assert_eq!(assert_cancelled(&error, RetryCancellationPhase::BeforeAttempt), None);
     assert_eq!(error.context().attempts(), 0);
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(operation_calls.load(Ordering::SeqCst), 0);
@@ -270,22 +243,10 @@ async fn test_cancellation_token_during_attempt_retains_active_attempt_scope() {
     .await
     .expect_err("attempt cancellation must interrupt a pending operation");
 
-    assert_eq!(
-        assert_cancelled(&error, RetryCancellationPhase::Attempt),
-        None
-    );
+    assert_eq!(assert_cancelled(&error, RetryCancellationPhase::Attempt), None);
     assert_eq!(error.context().attempts(), 1);
-    assert_eq!(
-        error
-            .context()
-            .current_attempt()
-            .map(|attempt| attempt.get()),
-        Some(1)
-    );
-    assert_eq!(
-        error.context().current_attempt_timeout(),
-        Some(Duration::from_secs(5))
-    );
+    assert_eq!(error.context().current_attempt().map(|attempt| attempt.get()), Some(1));
+    assert_eq!(error.context().current_attempt_timeout(), Some(Duration::from_secs(5)));
     assert_eq!(operation_polls.load(Ordering::SeqCst), 1);
 }
 
@@ -323,16 +284,11 @@ async fn test_backoff_cancellation_wins_when_timer_is_ready_in_same_poll() {
     let retry = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .max_attempts(2)
-            .backoff(
-                BackoffPolicy::fixed(Duration::from_secs(1))
-                    .prefer_retry_after(),
-            )
+            .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
             .build()
             .expect("backoff cancellation policy should be valid"),
     )
-    .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-        RetryDecision::RetryWithHint(delay)
-    })
+    .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
     .build();
     let executor = retry.asynchronous().cancellation_token(token.clone());
     let future = executor.run({
@@ -378,9 +334,7 @@ async fn test_attempt_started_callback_cancellation_stops_before_operation() {
             .build()
             .expect("started-callback cancellation policy should be valid"),
     )
-    .observer(CancelOnAttemptStarted {
-        token: token.clone(),
-    })
+    .observer(CancelOnAttemptStarted { token: token.clone() })
     .rule({
         let rule_calls = Arc::clone(&rule_calls);
         move |_: &AttemptFailure<TestError>, _: &RetryContext| {
@@ -401,10 +355,7 @@ async fn test_attempt_started_callback_cancellation_stops_before_operation() {
     .await
     .expect_err("callback cancellation must be rechecked before operation");
 
-    assert_eq!(
-        assert_cancelled(&error, RetryCancellationPhase::BeforeAttempt),
-        None
-    );
+    assert_eq!(assert_cancelled(&error, RetryCancellationPhase::BeforeAttempt), None);
     assert_eq!(error.context().attempts(), 0);
     assert_eq!(operation_calls.load(Ordering::SeqCst), 0);
     assert_eq!(rule_calls.load(Ordering::SeqCst), 0);
@@ -446,9 +397,7 @@ async fn test_attempt_failed_callback_cancellation_stops_before_rule() {
         }
     })
     .await
-    .expect_err(
-        "failed-callback cancellation must stop before rule evaluation",
-    );
+    .expect_err("failed-callback cancellation must stop before rule evaluation");
 
     assert_eq!(
         assert_cancelled(&error, RetryCancellationPhase::Backoff),
@@ -518,9 +467,7 @@ async fn test_retry_scheduled_callback_cancellation_stops_before_sleep() {
             .build()
             .expect("scheduled-callback cancellation policy should be valid"),
     )
-    .observer(CancelOnRetryScheduled {
-        token: token.clone(),
-    })
+    .observer(CancelOnRetryScheduled { token: token.clone() })
     .build()
     .asynchronous()
     .cancellation_token(token)
@@ -557,16 +504,11 @@ async fn test_backoff_registration_cancellation_wins_over_timer_failure() {
     let error = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .max_attempts(2)
-            .backoff(
-                BackoffPolicy::fixed(Duration::from_secs(1))
-                    .prefer_retry_after(),
-            )
+            .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
             .build()
             .expect("registration cancellation policy should be valid"),
     )
-    .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-        RetryDecision::RetryWithHint(delay)
-    })
+    .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
     .build()
     .asynchronous()
     .timer(timer)

@@ -104,8 +104,7 @@ impl WorkerAttemptExecutor {
         let (start_sender, start_receiver) = mpsc::sync_channel(0);
         let worker_token = token.clone();
         let worker_sender = sender.clone();
-        let mut builder =
-            std::thread::Builder::new().name(thread_name.to_owned());
+        let mut builder = std::thread::Builder::new().name(thread_name.to_owned());
         if let Some(stack_size) = stack_size {
             builder = builder.stack_size(stack_size);
         }
@@ -116,9 +115,7 @@ impl WorkerAttemptExecutor {
             // Worker mode is the only synchronous mode with a panic
             // isolation boundary. Convert panic payloads into retry
             // failures so policy and listeners can handle them normally.
-            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                operation.call(worker_token)
-            }));
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| operation.call(worker_token)));
             let attempt_result = match result {
                 Ok(result) => result,
                 Err(payload) => Err(AttemptFailure::Panicked {
@@ -135,8 +132,7 @@ impl WorkerAttemptExecutor {
             }
         };
 
-        let mut cancellation_future =
-            cancellation.map(|token| Box::pin(token.cancelled()));
+        let mut cancellation_future = cancellation.map(|token| Box::pin(token.cancelled()));
         if let Some(future) = cancellation_future.as_mut() {
             register_cancellation_waker(future, &sender);
         }
@@ -157,34 +153,22 @@ impl WorkerAttemptExecutor {
             Some(timeout) => match receiver.recv_timeout(timeout.duration()) {
                 Ok(event) => event,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    let trigger = if cancellation
-                        .is_some_and(RetryCancellationToken::is_cancelled)
-                    {
+                    let trigger = if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
                         WorkerStopTrigger::Cancellation
                     } else {
                         timeout_trigger(timeout.scope())
                     };
-                    return Ok(stop_worker(
-                        receiver,
-                        worker,
-                        &token,
-                        worker_cancel_grace,
-                        trigger,
-                    ));
+                    return Ok(stop_worker(receiver, worker, &token, worker_cancel_grace, trigger));
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     panic!("worker event channel disconnected unexpectedly")
                 }
             },
-            None => receiver
-                .recv()
-                .expect("worker event channel must produce one event"),
+            None => receiver.recv().expect("worker event channel must produce one event"),
         };
         let outcome = match first_event {
             WorkerEvent::Completed(result) => {
-                if cancellation
-                    .is_some_and(RetryCancellationToken::is_cancelled)
-                {
+                if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
                     token.cancel();
                     join_finished_worker(worker);
                     BlockingAttemptOutcome::Stopped {
@@ -216,9 +200,7 @@ fn register_cancellation_waker<E: Send + 'static>(
     future: &mut Pin<Box<super::RetryCancelled<'_>>>,
     sender: &mpsc::Sender<WorkerEvent<E>>,
 ) {
-    let waker = Waker::from(Arc::new(CancellationWake {
-        sender: sender.clone(),
-    }));
+    let waker = Waker::from(Arc::new(CancellationWake { sender: sender.clone() }));
     let mut context = Context::from_waker(&waker);
     if future.as_mut().poll(&mut context).is_ready() {
         let _ = sender.send(WorkerEvent::Cancellation);
@@ -262,8 +244,7 @@ where
     E: Send + 'static,
 {
     token.cancel();
-    let worker_exited =
-        wait_for_stopped_worker(&receiver, worker, worker_cancel_grace);
+    let worker_exited = wait_for_stopped_worker(&receiver, worker, worker_cancel_grace);
     if worker_exited {
         BlockingAttemptOutcome::Stopped { trigger }
     } else {
@@ -307,10 +288,7 @@ fn wait_for_stopped_worker<E>(
 /// the fixed grace deadline expires. A grace too large for [`Instant`] is
 /// treated as unbounded and waits until completion or disconnection; unrelated
 /// cancellation events never reset a representable deadline.
-fn observe_worker_exit<E>(
-    receiver: &mpsc::Receiver<WorkerEvent<E>>,
-    grace: Duration,
-) -> bool {
+fn observe_worker_exit<E>(receiver: &mpsc::Receiver<WorkerEvent<E>>, grace: Duration) -> bool {
     let deadline = Instant::now().checked_add(grace);
     loop {
         let event = if grace.is_zero() {
@@ -320,9 +298,7 @@ fn observe_worker_exit<E>(
                 Err(mpsc::TryRecvError::Disconnected) => return true,
             }
         } else if let Some(deadline) = deadline {
-            let Some(remaining) =
-                deadline.checked_duration_since(Instant::now())
-            else {
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
                 return false;
             };
             match receiver.recv_timeout(remaining) {

@@ -36,12 +36,8 @@ impl From<&RetryPolicy> for RetryPolicyData {
         let limits = policy.limits();
         Self {
             max_attempts: limits.max_attempts().get(),
-            max_operation_elapsed: limits
-                .max_operation_elapsed()
-                .map(DurationData::from),
-            max_total_elapsed: limits
-                .max_total_elapsed()
-                .map(DurationData::from),
+            max_operation_elapsed: limits.max_operation_elapsed().map(DurationData::from),
+            max_total_elapsed: limits.max_total_elapsed().map(DurationData::from),
             backoff: policy.backoff().clone(),
         }
     }

@@ -23,13 +23,9 @@ pub(crate) struct PreparedAttemptPlan {
 
 impl PreparedAttemptPlan {
     /// Creates a prepared attempt plan from one admitted timeout transaction.
-    pub(super) fn from_timeout(
-        timeout: Option<(MonotonicInstant, Duration, RetryTimeoutScope)>,
-    ) -> Self {
+    pub(super) fn from_timeout(timeout: Option<(MonotonicInstant, Duration, RetryTimeoutScope)>) -> Self {
         Self {
-            timeout: timeout.map(|(deadline, duration, scope)| {
-                PreparedTimeout::new(deadline, duration, scope)
-            }),
+            timeout: timeout.map(|(deadline, duration, scope)| PreparedTimeout::new(deadline, duration, scope)),
         }
     }
 
@@ -49,10 +45,7 @@ impl PreparedAttemptPlan {
     }
 
     /// Returns the deadline and scope needed while committing an async attempt.
-    pub(super) fn deadline_and_scope(
-        &self,
-    ) -> Option<(MonotonicInstant, RetryTimeoutScope)> {
-        self.timeout
-            .map(|timeout| (timeout.deadline(), timeout.scope()))
+    pub(super) fn deadline_and_scope(&self) -> Option<(MonotonicInstant, RetryTimeoutScope)> {
+        self.timeout.map(|timeout| (timeout.deadline(), timeout.scope()))
     }
 }

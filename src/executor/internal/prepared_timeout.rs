@@ -26,11 +26,7 @@ pub(in crate::executor::internal) struct PreparedTimeout {
 
 impl PreparedTimeout {
     /// Creates immutable timeout data from an admission transaction.
-    pub(super) fn new(
-        deadline: MonotonicInstant,
-        duration: Duration,
-        scope: RetryTimeoutScope,
-    ) -> Self {
+    pub(super) fn new(deadline: MonotonicInstant, duration: Duration, scope: RetryTimeoutScope) -> Self {
         Self {
             deadline,
             duration,

@@ -156,10 +156,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     }
 
     /// Injects the random source used by backoff jitter.
-    pub fn random_source(
-        mut self,
-        random_source: Arc<dyn RetryRandomSource>,
-    ) -> Self {
+    pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
         self.random_source = random_source;
         self
     }
@@ -169,10 +166,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
-    pub fn run<T, F>(
-        &self,
-        operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         T: Send + 'static,
         F: Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static,
@@ -199,8 +193,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                 self.cancellation_grace,
                 cancellation,
                 || {
-                    let plan =
-                        controller.commit_attempt(clock, cancellation)?;
+                    let plan = controller.commit_attempt(clock, cancellation)?;
                     Ok(plan.timeout())
                 },
             )?;
@@ -208,34 +201,25 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             match outcome {
                 BlockingAttemptOutcome::Completed(Ok(())) => {
                     let context = controller.finish_success(clock)?;
-                    return Ok(RetrySuccess::new(
-                        operation.take_value(),
-                        context,
-                    ));
+                    return Ok(RetrySuccess::new(operation.take_value(), context));
                 }
                 BlockingAttemptOutcome::WorkerSpawnFailed { message } => {
-                    let error = controller
-                        .record_inactive_infrastructure_failure(
-                            RetryInfrastructureFailure::WorkerSpawn { message },
-                            clock.now(),
-                        );
+                    let error = controller.record_inactive_infrastructure_failure(
+                        RetryInfrastructureFailure::WorkerSpawn { message },
+                        clock.now(),
+                    );
                     return Err(error);
                 }
                 BlockingAttemptOutcome::WorkerStillRunning { trigger } => {
-                    let error = controller
-                        .record_active_infrastructure_failure(
-                            RetryInfrastructureFailure::WorkerStillRunning {
-                                trigger,
-                            },
-                            clock.now(),
-                        );
+                    let error = controller.record_active_infrastructure_failure(
+                        RetryInfrastructureFailure::WorkerStillRunning { trigger },
+                        clock.now(),
+                    );
                     return Err(error);
                 }
                 BlockingAttemptOutcome::Stopped { trigger } => match trigger {
                     WorkerStopTrigger::Cancellation => {
-                        return Err(
-                            controller.record_attempt_cancellation(clock)
-                        );
+                        return Err(controller.record_attempt_cancellation(clock));
                     }
                     WorkerStopTrigger::AttemptTimeout => {
                         self.finish_failed_attempt(
@@ -257,11 +241,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                     }
                 },
                 BlockingAttemptOutcome::Completed(Err(failure)) => {
-                    self.finish_failed_attempt(
-                        &mut controller,
-                        clock,
-                        failure,
-                    )?;
+                    self.finish_failed_attempt(&mut controller, clock, failure)?;
                 }
             }
         }
@@ -278,11 +258,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         clock: &dyn MonotonicClock,
         failure: AttemptFailure<E>,
     ) -> Result<(), RetryError<E>> {
-        let directive = controller.record_failure(
-            failure,
-            clock,
-            self.cancellation_token.as_ref(),
-        )?;
+        let directive = controller.record_failure(failure, clock, self.cancellation_token.as_ref())?;
         match self.wait_for_backoff(directive.sleep_duration()) {
             BlockingBackoffOutcome::Elapsed => {}
             BlockingBackoffOutcome::Cancelled => {
@@ -335,17 +311,13 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             if cancellation.as_mut().poll(&mut context).is_ready() {
                 return BlockingBackoffOutcome::Cancelled;
             }
-            if let Poll::Ready(result) =
-                timer_future.as_mut().poll(&mut context)
-            {
+            if let Poll::Ready(result) = timer_future.as_mut().poll(&mut context) {
                 return match result {
                     Ok(()) => BlockingBackoffOutcome::Elapsed,
                     Err(error) => BlockingBackoffOutcome::TimerFailed(error),
                 };
             }
-            receiver
-                .recv()
-                .expect("backoff futures must retain their shared waker");
+            receiver.recv().expect("backoff futures must retain their shared waker");
         }
     }
 }
