@@ -30,4 +30,7 @@ pub(crate) struct BackoffPolicyData {
     pub jitter: JitterStrategyData,
     /// Retry-after hint strategy.
     pub retry_after: RetryAfterStrategyData,
+    /// Optional final delay cap; omitted in older wire configurations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay_limit: Option<crate::policy::internal::DurationData>,
 }
