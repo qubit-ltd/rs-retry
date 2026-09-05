@@ -12,8 +12,4 @@
 pub enum RetryResource {
     /// The finite count of admitted attempts.
     Attempts,
-    /// The finite sum of operation durations.
-    OperationElapsed,
-    /// The continuous whole-flow elapsed duration.
-    TotalElapsed,
 }

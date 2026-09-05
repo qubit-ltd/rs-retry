@@ -5,176 +5,108 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Defines the reusable retry continuation-budget state machine.
+//! Reusable sequential retry continuation budgets.
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use qubit_budget::DurationBudget;
-use qubit_budget::ResourceBudget;
-use qubit_budget::TimeBudget;
-use qubit_budget::TimeBudgetError;
 use qubit_clock::MonotonicClock;
-use qubit_clock::MonotonicInstant;
 
 use super::RetryAttempt;
 use super::RetryBudgetError;
 use super::RetryBudgetExhausted;
 use super::RetryBudgetSnapshot;
-use super::internal::RetryResource;
+use super::RetryBudgetState;
+use crate::RetryLimitKind;
 use crate::RetryLimits;
 
-/// The single source of truth for retry continuation limits.
+/// Sequential admission and elapsed-time accounting shared with retry facades.
 ///
-/// `max_attempts`, `max_operation_elapsed`, and `max_total_elapsed` prevent
-/// future attempts or retry sleeps. They never cancel an admitted attempt; a
-/// completed successful attempt therefore wins even when it overran a limit.
-/// Hard cancellation belongs to the executor's attempt and flow timeouts.
+/// Continuation limits never cancel admitted work. Finish every admitted token
+/// before admitting another operation. Tokens are bound to this budget even
+/// when another budget shares its clock and attempt ordinal. Dropping a token
+/// leaves the budget closed to further admissions; start a new budget to
+/// abandon that flow. Clock failures return errors rather than panicking.
 #[must_use]
 pub struct RetryBudget<'a> {
-    /// Clock used for operation duration and snapshot samples.
+    /// Clock sampled once by each public operation.
     clock: &'a dyn MonotonicClock,
-
-    /// First sample of the whole retry flow.
-    started_at: MonotonicInstant,
-
-    /// Admitted attempts budget.
-    attempts: ResourceBudget<RetryResource, u32>,
-
-    /// Explicitly measured operation time budget.
-    operation: Option<DurationBudget<RetryResource>>,
-
-    /// Actual operation time, which can exceed the continuation allowance.
-    operation_elapsed: Duration,
-
-    /// Continuous end-to-end deadline budget.
-    total: Option<TimeBudget<RetryResource, &'a dyn MonotonicClock>>,
-
-    /// Actual duration of the latest completed attempt.
-    last_attempt_elapsed: Duration,
+    /// Shared accounting and continuation checks.
+    state: RetryBudgetState,
+    /// Unique identity retained by this budget and its linear tokens.
+    owner: Arc<()>,
 }
 
 impl<'a> RetryBudget<'a> {
-    /// Creates a retry budget from validated retry limits.
-    ///
-    /// The clock is sampled once for the initial snapshot and, when configured,
-    /// for the total elapsed deadline. Returns [`RetryBudgetError::Clock`] if
-    /// that deadline cannot be represented by the clock.
+    /// Starts a budget at one sample, rejecting a sample from the wrong clock
+    /// domain. Soft elapsed limits do not require a representable absolute
+    /// deadline.
     pub fn new(clock: &'a dyn MonotonicClock, limits: RetryLimits) -> Result<Self, RetryBudgetError> {
-        let total = limits
-            .max_total_elapsed()
-            .map(|duration| TimeBudget::for_duration(RetryResource::TotalElapsed, clock, duration))
-            .transpose()
-            .map_err(|error| match error {
-                TimeBudgetError::Clock { source, .. } => RetryBudgetError::Clock(source),
-                TimeBudgetError::Expired { .. } | TimeBudgetError::WouldExpire { .. } => {
-                    unreachable!("constructing a time budget only adds a deadline")
-                }
-            })?;
-        let started_at = total.as_ref().map_or_else(|| clock.now(), TimeBudget::started_at);
+        let now = clock.now();
+        now.validate_domain(clock.domain())?;
         Ok(Self {
-            started_at,
-            attempts: ResourceBudget::new(RetryResource::Attempts, limits.max_attempts().get()),
-            operation: limits
-                .max_operation_elapsed()
-                .map(|duration| DurationBudget::new(RetryResource::OperationElapsed, duration)),
-            operation_elapsed: Duration::ZERO,
-            total,
-            last_attempt_elapsed: Duration::ZERO,
             clock,
+            state: RetryBudgetState::new(now, limits),
+            owner: Arc::new(()),
         })
     }
 
-    /// Samples and returns the current retry budget state.
-    #[must_use = "inspect the current retry budget snapshot"]
-    pub fn snapshot(&self) -> RetryBudgetSnapshot {
-        RetryBudgetSnapshot::new(
-            self.attempts.used(),
-            self.operation_elapsed,
-            self.elapsed_since_started(),
-            self.last_attempt_elapsed,
-        )
+    /// Returns a current observation or a clock error without changing
+    /// accounting.
+    pub fn snapshot(&self) -> Result<RetryBudgetSnapshot, RetryBudgetError> {
+        Ok(self.state.snapshot_at(self.clock.now())?)
     }
 
-    /// Checks continuation limits and admits one new attempt.
-    ///
-    /// Returns the linear token required to finish that attempt, or the first
-    /// exhausted limit in stable attempts, operation, total order. This method
-    /// mutates only the attempt count when it succeeds.
-    pub fn begin_attempt(&mut self) -> Result<RetryAttempt, RetryBudgetExhausted> {
-        self.check_continuation()?;
-        let number = self.attempts.used() + 1;
-        let consumed = self.attempts.consume_available(1);
-        debug_assert_eq!(consumed, 1, "checked budget must admit one attempt");
+    /// Admits one operation, or returns overlap, clock, or continuation
+    /// exhaustion. Failed admissions never consume an attempt.
+    pub fn begin_attempt(&mut self) -> Result<RetryAttempt, RetryBudgetError> {
+        if self.state.has_active_attempt() {
+            return Err(RetryBudgetError::AttemptInProgress);
+        }
+        let now = self.clock.now();
+        self.state.refresh(now)?;
+        self.check_limit(Duration::ZERO)?;
+        self.state.begin_attempt(now);
         Ok(RetryAttempt {
-            number,
-            started_at: self.clock.now(),
+            number: self.state.attempts(),
+            owner: Arc::clone(&self.owner),
         })
     }
 
-    /// Completes an admitted attempt and records its actual elapsed duration.
-    ///
-    /// The token is consumed exactly once. An overrun exhausts the operation
-    /// allowance for future work but is retained exactly in the returned
-    /// snapshot and never changes a completed attempt's outcome.
-    pub fn finish_attempt(&mut self, attempt: RetryAttempt) -> RetryBudgetSnapshot {
-        debug_assert_eq!(
-            attempt.number,
-            self.attempts.used(),
-            "attempt must be finished in admission order",
-        );
-        let elapsed = self
-            .clock
-            .now()
-            .duration_since(attempt.started_at)
-            .expect("retry clock must stay monotonic");
-        self.last_attempt_elapsed = elapsed;
-        self.operation_elapsed = self.operation_elapsed.saturating_add(elapsed);
-        if let Some(operation) = &mut self.operation {
-            let _ = operation.consume_available(elapsed);
-        }
-        self.snapshot()
-    }
-
-    /// Checks whether the next retry action and its delay may continue.
-    ///
-    /// A delay that reaches the total deadline is rejected. The next call to
-    /// [`Self::begin_attempt`] rechecks all limits after the delay and any
-    /// observer work has elapsed.
-    pub fn check_retry_after(&self, delay: Duration) -> Result<(), RetryBudgetExhausted> {
-        self.check_continuation()?;
-        if self
-            .total
-            .as_ref()
-            .is_some_and(|budget| budget.check_after(delay).is_err())
+    /// Consumes a token and completes its operation, returning actual elapsed
+    /// time. Foreign tokens and invalid clock samples leave accounting
+    /// unchanged. A clock failure consumes the token and closes this flow
+    /// to further admission.
+    pub fn finish_attempt(&mut self, attempt: RetryAttempt) -> Result<RetryBudgetSnapshot, RetryBudgetError> {
+        if !Arc::ptr_eq(&self.owner, &attempt.owner)
+            || !self.state.has_active_attempt()
+            || attempt.number != self.state.attempts()
         {
-            return Err(RetryBudgetExhausted::TotalElapsed);
+            return Err(RetryBudgetError::InvalidAttempt);
         }
-        Ok(())
+        self.state.finish_attempt(self.clock.now())?;
+        Ok(self.state.snapshot())
     }
 
-    /// Applies the stable exhaustion priority to future continuation.
-    fn check_continuation(&self) -> Result<(), RetryBudgetExhausted> {
-        if self.attempts.remaining() == 0 {
-            return Err(RetryBudgetExhausted::Attempts);
+    /// Checks a proposed delay, rejecting overlap, clock errors or exhausted
+    /// limits. The next admission rechecks limits after the actual sleep.
+    pub fn check_retry_after(&mut self, delay: Duration) -> Result<(), RetryBudgetError> {
+        if self.state.has_active_attempt() {
+            return Err(RetryBudgetError::AttemptInProgress);
         }
-        if self
-            .operation
-            .as_ref()
-            .is_some_and(|budget| budget.remaining() == Duration::ZERO)
-        {
-            return Err(RetryBudgetExhausted::OperationElapsed);
-        }
-        if self.total.as_ref().is_some_and(TimeBudget::is_expired) {
-            return Err(RetryBudgetExhausted::TotalElapsed);
-        }
-        Ok(())
+        self.state.refresh(self.clock.now())?;
+        self.check_limit(delay)
     }
 
-    /// Samples total elapsed duration from the initial clock sample.
-    fn elapsed_since_started(&self) -> Duration {
-        self.clock
-            .now()
-            .duration_since(self.started_at)
-            .expect("retry clock must stay monotonic")
+    /// Converts the shared continuation decision to the public budget error.
+    fn check_limit(&self, delay: Duration) -> Result<(), RetryBudgetError> {
+        match self.state.retry_limit(delay) {
+            None => Ok(()),
+            Some(limit) => Err(RetryBudgetError::Exhausted(match limit {
+                RetryLimitKind::Attempts => RetryBudgetExhausted::Attempts,
+                RetryLimitKind::OperationElapsed => RetryBudgetExhausted::OperationElapsed,
+                RetryLimitKind::TotalElapsed => RetryBudgetExhausted::TotalElapsed,
+            })),
+        }
     }
 }

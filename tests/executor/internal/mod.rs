@@ -7,7 +7,6 @@
 // =============================================================================
 //! Shared executor-state coverage mirrors.
 
-mod attempt_plan_tests;
 mod effective_timeout_tests;
 #[cfg(feature = "tokio")]
 mod prepared_attempt_plan_tests;

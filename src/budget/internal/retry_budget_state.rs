@@ -1,0 +1,141 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+//! Shared continuation accounting driven by explicit monotonic samples.
+
+use std::time::Duration;
+
+use qubit_budget::ResourceBudget;
+use qubit_clock::MonotonicInstant;
+use qubit_clock::TimeError;
+
+use super::RetryResource;
+use crate::RetryBudgetSnapshot;
+use crate::RetryLimitKind;
+use crate::RetryLimits;
+
+/// The single accounting state used by public budgets and retry facades.
+pub(crate) struct RetryBudgetState {
+    /// Validated admission limits.
+    limits: RetryLimits,
+    /// Initial sample for whole-flow elapsed time.
+    started_at: MonotonicInstant,
+    /// Latest committed sample; invalid samples never change accounting.
+    sampled_at: MonotonicInstant,
+    /// Number of admitted attempts.
+    attempts: ResourceBudget<RetryResource, u32>,
+    /// Accumulated completed operation duration.
+    operation_elapsed: Duration,
+    /// Most recently completed operation duration.
+    last_attempt_elapsed: Duration,
+    /// Start of the single active attempt, when present.
+    attempt_started_at: Option<MonotonicInstant>,
+}
+
+impl RetryBudgetState {
+    /// Starts accounting at one coherent sample without constructing a hard
+    /// deadline.
+    pub(crate) fn new(started_at: MonotonicInstant, limits: RetryLimits) -> Self {
+        Self {
+            limits,
+            started_at,
+            sampled_at: started_at,
+            attempts: ResourceBudget::new(RetryResource::Attempts, limits.max_attempts().get()),
+            operation_elapsed: Duration::ZERO,
+            last_attempt_elapsed: Duration::ZERO,
+            attempt_started_at: None,
+        }
+    }
+
+    /// Returns the initial sample used by facade hard-flow deadlines.
+    pub(crate) fn started_at(&self) -> MonotonicInstant {
+        self.started_at
+    }
+
+    /// Returns whether an operation is currently admitted and unfinished.
+    pub(crate) fn has_active_attempt(&self) -> bool {
+        self.attempt_started_at.is_some()
+    }
+
+    /// Returns the number of committed operations.
+    pub(crate) fn attempts(&self) -> u32 {
+        self.attempts.used()
+    }
+
+    /// Returns accounting at the latest validated sample.
+    pub(crate) fn snapshot(&self) -> RetryBudgetSnapshot {
+        self.snapshot_at(self.sampled_at)
+            .expect("committed clock sample must remain coherent")
+    }
+
+    /// Samples an observation without mutation, rejecting a clock domain change
+    /// or regression.
+    pub(crate) fn snapshot_at(&self, now: MonotonicInstant) -> Result<RetryBudgetSnapshot, TimeError> {
+        let _ = now.duration_since(self.sampled_at)?;
+        Ok(RetryBudgetSnapshot::new(
+            self.attempts(),
+            self.operation_elapsed,
+            now.duration_since(self.started_at)?,
+            self.last_attempt_elapsed,
+        ))
+    }
+
+    /// Validates and commits a sample; errors preserve all previous accounting.
+    pub(crate) fn refresh(&mut self, now: MonotonicInstant) -> Result<(), TimeError> {
+        let _ = self.snapshot_at(now)?;
+        self.sampled_at = now;
+        Ok(())
+    }
+
+    /// Returns the first exhausted continuation limit, including a proposed
+    /// delay.
+    pub(crate) fn retry_limit(&self, delay: Duration) -> Option<RetryLimitKind> {
+        if self.attempts.remaining() == 0 {
+            return Some(RetryLimitKind::Attempts);
+        }
+        if self
+            .limits
+            .max_operation_elapsed()
+            .is_some_and(|limit| self.operation_elapsed >= limit)
+        {
+            return Some(RetryLimitKind::OperationElapsed);
+        }
+        if self
+            .limits
+            .max_total_elapsed()
+            .is_some_and(|limit| self.snapshot().total_elapsed().saturating_add(delay) >= limit)
+        {
+            return Some(RetryLimitKind::TotalElapsed);
+        }
+        None
+    }
+
+    /// Commits an attempt after the caller checked limits and validated this
+    /// sample.
+    pub(crate) fn begin_attempt(&mut self, now: MonotonicInstant) {
+        debug_assert!(!self.has_active_attempt());
+        let consumed = self.attempts.consume_available(1);
+        debug_assert_eq!(consumed, 1);
+        self.sampled_at = now;
+        self.attempt_started_at = Some(now);
+    }
+
+    /// Completes the active attempt; invalid clock samples preserve its
+    /// accounting.
+    pub(crate) fn finish_attempt(&mut self, now: MonotonicInstant) -> Result<(), TimeError> {
+        let started_at = self
+            .attempt_started_at
+            .expect("an admitted attempt must be active before completion");
+        let _ = self.snapshot_at(now)?;
+        let elapsed = now.duration_since(started_at)?;
+        self.sampled_at = now;
+        self.last_attempt_elapsed = elapsed;
+        self.operation_elapsed = self.operation_elapsed.saturating_add(elapsed);
+        self.attempt_started_at = None;
+        Ok(())
+    }
+}

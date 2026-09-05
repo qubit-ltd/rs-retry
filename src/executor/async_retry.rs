@@ -103,7 +103,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         loop {
             let cancellation = self.cancellation_token.as_ref();
             let admission_sample = controller.before_attempt(clock, cancellation)?;
-            let plan = controller.prepare_async_attempt(admission_sample)?;
+            let plan = controller.prepare_attempt(admission_sample)?;
             let timeout_future = match register_timeout(&timer, plan.deadline()) {
                 Ok(timeout_future) => timeout_future,
                 Err(error) => {

@@ -7,7 +7,7 @@
 // =============================================================================
 //! Defines the linear token for one admitted retry attempt.
 
-use qubit_clock::MonotonicInstant;
+use std::sync::Arc;
 
 /// A single admitted retry attempt.
 ///
@@ -20,8 +20,8 @@ pub struct RetryAttempt {
     /// One-based ordinal assigned when this attempt was admitted.
     pub(super) number: u32,
 
-    /// Monotonic instant sampled immediately after admission.
-    pub(super) started_at: MonotonicInstant,
+    /// Identity of the budget that admitted this operation.
+    pub(super) owner: Arc<()>,
 }
 
 impl RetryAttempt {

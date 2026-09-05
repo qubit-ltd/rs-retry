@@ -501,14 +501,20 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
 
     let (release_sender, release_receiver) = std::sync::mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
+    let clock = ManualMonotonicClock::new_shared();
+    let operation_clock = Arc::clone(&clock);
     let detached = Retry::<TestError>::builder(retry_once_policy())
         .build()
         .worker()
+        .timer(clock.new_timer())
         .attempt_timeout(Duration::from_millis(1))
         .cancellation_grace(Duration::from_millis(1))
         .run({
             let release_receiver = Arc::clone(&release_receiver);
             move |_| {
+                operation_clock
+                    .advance(Duration::from_millis(1))
+                    .expect("expire admitted attempt");
                 release_receiver.lock().unwrap().recv().unwrap();
                 Ok::<_, TestError>(())
             }
@@ -533,12 +539,18 @@ fn worker_facade_reports_timer_panic_and_detached_worker() {
         Some(Duration::from_millis(1))
     );
 
+    let clock = ManualMonotonicClock::new_shared();
+    let operation_clock = Arc::clone(&clock);
     let zero_grace = Retry::<TestError>::builder(retry_once_policy())
         .build()
         .worker()
         .attempt_timeout(Duration::from_millis(1))
+        .timer(clock.new_timer())
         .cancellation_grace(Duration::ZERO)
-        .run(|token| {
+        .run(move |token| {
+            operation_clock
+                .advance(Duration::from_millis(1))
+                .expect("expire admitted attempt");
             while !token.is_cancelled() {
                 std::thread::yield_now();
             }

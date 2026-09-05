@@ -19,16 +19,18 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::task::Context;
+use std::task::Poll;
 use std::task::Wake;
 use std::task::Waker;
 use std::thread::JoinHandle;
 use std::time::Duration;
 use std::time::Instant;
 
+use qubit_clock::TimerFuture;
+
 use super::attempt_cancellation_token::AttemptCancellationToken;
 use super::blocking_attempt::BlockingAttempt;
 use super::blocking_attempt_outcome::BlockingAttemptOutcome;
-use super::internal::EffectiveTimeout;
 use super::retry_cancellation_token::RetryCancellationToken;
 use crate::AttemptFailure;
 use crate::RetryPanic;
@@ -39,25 +41,26 @@ use crate::WorkerStopTrigger;
 enum WorkerEvent<E> {
     /// The worker finished and produced an attempt result.
     Completed(Result<(), AttemptFailure<E>>),
-    /// The retry-flow cancellation token was cancelled.
-    Cancellation,
+    /// A timer or cancellation future needs another poll.
+    Wake,
 }
 
-/// Waker that forwards flow cancellation into the worker event channel.
-struct CancellationWake<E> {
+/// Waker that forwards cancellation and timer readiness into the worker event
+/// channel.
+struct WorkerWake<E> {
     /// Event sender owned by the registered cancellation future.
     sender: mpsc::Sender<WorkerEvent<E>>,
 }
 
-impl<E: Send + 'static> Wake for CancellationWake<E> {
-    /// Sends one cancellation event when the registered future is woken.
+impl<E: Send + 'static> Wake for WorkerWake<E> {
+    /// Sends a readiness notification when a registered future is woken.
     fn wake(self: Arc<Self>) {
-        let _ = self.sender.send(WorkerEvent::Cancellation);
+        let _ = self.sender.send(WorkerEvent::Wake);
     }
 
-    /// Sends one cancellation event without consuming the shared waker.
+    /// Sends readiness without consuming the shared waker.
     fn wake_by_ref(self: &Arc<Self>) {
-        let _ = self.sender.send(WorkerEvent::Cancellation);
+        let _ = self.sender.send(WorkerEvent::Wake);
     }
 }
 
@@ -71,7 +74,9 @@ impl WorkerAttemptExecutor {
     /// - `operation`: Shared blocking operation.
     /// - `prepare`: Callback run after the worker has been spawned but before
     ///   its operation is released. It commits the attempt and returns the
-    ///   effective timeout.
+    ///   successful admission. Timer registration precedes admission.
+    /// - `timeout`: Registered absolute timeout and its source scope, if
+    ///   bounded.
     /// - `worker_cancel_grace`: Maximum time to wait for a timed-out worker
     ///   after cancellation.
     ///
@@ -89,16 +94,17 @@ impl WorkerAttemptExecutor {
         stack_size: Option<usize>,
         worker_cancel_grace: Duration,
         cancellation: Option<&RetryCancellationToken>,
+        mut timeout: Option<(RetryTimeoutScope, TimerFuture)>,
         prepare: P,
     ) -> Result<BlockingAttemptOutcome<(), E>, X>
     where
         E: Send + 'static,
-        P: FnOnce() -> Result<Option<EffectiveTimeout>, X>,
+        P: FnOnce() -> Result<(), X>,
     {
-        // One channel combines the worker result and flow-cancellation wakeup
-        // so whichever event is received first fixes the stop decision. If the
-        // runner stops and drops the receiver, send failure only means the
-        // retry flow has already terminated.
+        // One channel combines completion, cancellation and timer wakeups.
+        // Each iteration checks cancellation before timeout readiness, then
+        // receives the next queued event. Once the runner drops the receiver,
+        // send failure only means the retry flow has already terminated.
         let token = AttemptCancellationToken::new();
         let (sender, receiver) = mpsc::channel();
         let (start_sender, start_receiver) = mpsc::sync_channel(0);
@@ -137,8 +143,8 @@ impl WorkerAttemptExecutor {
             register_cancellation_waker(future, &sender);
         }
 
-        let effective_timeout = match prepare() {
-            Ok(timeout) => timeout,
+        match prepare() {
+            Ok(()) => {}
             Err(error) => {
                 drop(start_sender);
                 join_finished_worker(worker);
@@ -149,43 +155,51 @@ impl WorkerAttemptExecutor {
             .send(())
             .expect("a spawned worker must wait for its start signal");
 
-        let first_event = match effective_timeout {
-            Some(timeout) => match receiver.recv_timeout(timeout.duration()) {
-                Ok(event) => event,
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    let trigger = if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
-                        WorkerStopTrigger::Cancellation
-                    } else {
-                        timeout_trigger(timeout.scope())
-                    };
-                    return Ok(stop_worker(receiver, worker, &token, worker_cancel_grace, trigger));
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    panic!("worker event channel disconnected unexpectedly")
-                }
-            },
-            None => receiver.recv().expect("worker event channel must produce one event"),
-        };
-        let outcome = match first_event {
-            WorkerEvent::Completed(result) => {
-                if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
-                    token.cancel();
-                    join_finished_worker(worker);
-                    BlockingAttemptOutcome::Stopped {
-                        trigger: WorkerStopTrigger::Cancellation,
+        let waker = Waker::from(Arc::new(WorkerWake { sender: sender.clone() }));
+        let mut context = Context::from_waker(&waker);
+        let outcome = loop {
+            if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
+                break stop_worker(
+                    receiver,
+                    worker,
+                    &token,
+                    worker_cancel_grace,
+                    WorkerStopTrigger::Cancellation,
+                );
+            }
+            if let Some((scope, future)) = timeout.as_mut()
+                && let Poll::Ready(result) = future.as_mut().poll(&mut context)
+            {
+                match result {
+                    Ok(()) => {
+                        break stop_worker(receiver, worker, &token, worker_cancel_grace, timeout_trigger(*scope));
                     }
-                } else {
-                    join_finished_worker(worker);
-                    BlockingAttemptOutcome::Completed(result)
+                    Err(error) => {
+                        token.cancel();
+                        break if wait_for_stopped_worker(&receiver, worker, worker_cancel_grace) {
+                            BlockingAttemptOutcome::TimerFailed { error }
+                        } else {
+                            BlockingAttemptOutcome::WorkerStillRunning {
+                                trigger: WorkerStopTrigger::TimerFailure,
+                            }
+                        };
+                    }
                 }
             }
-            WorkerEvent::Cancellation => stop_worker(
-                receiver,
-                worker,
-                &token,
-                worker_cancel_grace,
-                WorkerStopTrigger::Cancellation,
-            ),
+            match receiver.recv().expect("worker events retain their senders") {
+                WorkerEvent::Completed(result) => {
+                    if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
+                        token.cancel();
+                        join_finished_worker(worker);
+                        break BlockingAttemptOutcome::Stopped {
+                            trigger: WorkerStopTrigger::Cancellation,
+                        };
+                    }
+                    join_finished_worker(worker);
+                    break BlockingAttemptOutcome::Completed(result);
+                }
+                WorkerEvent::Wake => {}
+            }
         };
         Ok(outcome)
     }
@@ -200,10 +214,10 @@ fn register_cancellation_waker<E: Send + 'static>(
     future: &mut Pin<Box<super::RetryCancelled<'_>>>,
     sender: &mpsc::Sender<WorkerEvent<E>>,
 ) {
-    let waker = Waker::from(Arc::new(CancellationWake { sender: sender.clone() }));
+    let waker = Waker::from(Arc::new(WorkerWake { sender: sender.clone() }));
     let mut context = Context::from_waker(&waker);
     if future.as_mut().poll(&mut context).is_ready() {
-        let _ = sender.send(WorkerEvent::Cancellation);
+        let _ = sender.send(WorkerEvent::Wake);
     }
 }
 

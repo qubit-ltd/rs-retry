@@ -7,6 +7,8 @@
 // =============================================================================
 //! Result returned from one blocking worker attempt.
 
+use qubit_clock::TimeError;
+
 use crate::AttemptFailure;
 use crate::WorkerStopTrigger;
 
@@ -18,6 +20,11 @@ pub(in crate::executor) enum BlockingAttemptOutcome<T, E> {
     WorkerSpawnFailed {
         /// Diagnostic supplied by the thread runtime.
         message: Box<str>,
+    },
+    /// The attempt timer failed and the worker was reaped safely.
+    TimerFailed {
+        /// Structured timer registration or completion error.
+        error: TimeError,
     },
     /// A stop event won and the worker exited during the grace period.
     Stopped {

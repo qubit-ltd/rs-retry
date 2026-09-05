@@ -21,6 +21,7 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
 use qubit_retry::RetryCallbackPhase;
+use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryFailure;
@@ -317,13 +318,21 @@ fn worker_retry_matches_shared_infrastructure_and_timeout_matrix() {
 
     for scope in [RetryTimeoutScope::Attempt, RetryTimeoutScope::Flow] {
         let retry = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap()).build();
-        let worker = retry.worker().cancellation_grace(Duration::from_secs(1));
+        let clock = ManualMonotonicClock::new_shared();
+        let operation_clock = Arc::clone(&clock);
+        let worker = retry
+            .worker()
+            .timer(clock.new_timer())
+            .cancellation_grace(Duration::from_secs(1));
         let worker = match scope {
             RetryTimeoutScope::Attempt => worker.attempt_timeout(Duration::from_millis(1)),
             RetryTimeoutScope::Flow => worker.flow_timeout(Duration::from_millis(1)),
         };
         let error = worker
-            .run(|token| {
+            .run(move |token| {
+                operation_clock
+                    .advance(Duration::from_millis(1))
+                    .expect("expire admitted attempt");
                 while !token.is_cancelled() {
                     std::thread::yield_now();
                 }
@@ -338,14 +347,20 @@ fn worker_retry_matches_shared_infrastructure_and_timeout_matrix() {
 fn worker_retry_reports_still_running_with_active_scope() {
     let (release_sender, release_receiver) = std::sync::mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
+    let clock = ManualMonotonicClock::new_shared();
+    let operation_clock = Arc::clone(&clock);
     let error = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
         .build()
         .worker()
+        .timer(clock.new_timer())
         .attempt_timeout(Duration::from_millis(1))
         .cancellation_grace(Duration::from_millis(1))
         .run({
             let release_receiver = Arc::clone(&release_receiver);
             move |_| {
+                operation_clock
+                    .advance(Duration::from_millis(1))
+                    .expect("expire admitted attempt");
                 release_receiver
                     .lock()
                     .expect("release receiver lock should remain valid")
@@ -378,4 +393,123 @@ fn worker_retry_reports_still_running_with_active_scope() {
         error.context().current_attempt_timeout(),
         Some(Duration::from_millis(1))
     );
+}
+
+/// Advancing the injected clock, not wall time, must expire a worker attempt.
+#[test]
+fn test_worker_timeout_uses_injected_timer() {
+    let clock = ManualMonotonicClock::new_shared();
+    let worker_clock = Arc::clone(&clock);
+    let cancellation = RetryCancellationToken::new();
+    let worker_cancellation = cancellation.clone();
+    let (started_sender, started_receiver) = std::sync::mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
+            .build()
+            .worker()
+            .timer(worker_clock.new_timer())
+            .attempt_timeout(Duration::from_secs(3600))
+            .cancellation_token(worker_cancellation)
+            .cancellation_grace(Duration::from_secs(1))
+            .run(move |token| {
+                started_sender.send(()).expect("test controller alive");
+                while !token.is_cancelled() {
+                    std::thread::yield_now();
+                }
+                Err::<(), _>(TestError("stopped"))
+            })
+            .map_err(Box::new)
+    });
+    started_receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("operation starts");
+    let deadline = clock.wait_for_next_deadline(Duration::from_secs(1));
+    if deadline.is_some() {
+        clock.advance(Duration::from_secs(3600)).expect("advance to timeout");
+    } else {
+        cancellation.cancel();
+    }
+    let error = handle.join().expect("runner joins").expect_err("worker stops");
+    assert!(deadline.is_some(), "worker timeout must register on its injected timer");
+    assert_matrix_timeout(&error, RetryTimeoutScope::Attempt, 1);
+    assert_eq!(error.context().operation_elapsed(), Duration::from_secs(3600));
+}
+
+/// A failed timeout registration must not release or count an operation.
+#[test]
+fn test_worker_timeout_registration_failure_does_not_admit_operation() {
+    let error = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
+        .build()
+        .worker()
+        .attempt_timeout(Duration::from_secs(1))
+        .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Registration,
+            "attempt",
+            "offline",
+        )))
+        .run(|_| -> Result<(), TestError> { panic!("operation must not be released") })
+        .expect_err("registration fails");
+    assert_matrix_infrastructure(&error, "timer", 0, None, false);
+}
+
+/// A timer poll error asks the operation to stop and retains the infrastructure
+/// cause.
+#[test]
+fn test_worker_timeout_poll_failure_reaps_operation() {
+    let error = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
+        .build()
+        .worker()
+        .attempt_timeout(Duration::from_secs(1))
+        .cancellation_grace(Duration::from_secs(1))
+        .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Completion,
+            "attempt",
+            "offline",
+        )))
+        .run(|token| {
+            while !token.is_cancelled() {
+                std::thread::yield_now();
+            }
+            Ok::<(), TestError>(())
+        })
+        .expect_err("timer failure wins after cleanup");
+    assert_matrix_infrastructure(&error, "timer", 1, None, false);
+}
+
+/// A timer failure cannot permit another attempt while the old worker is still
+/// live.
+#[test]
+fn test_worker_timeout_poll_failure_retains_live_worker_trigger() {
+    let (release_sender, release_receiver) = std::sync::mpsc::channel();
+    let release_receiver = Arc::new(Mutex::new(release_receiver));
+    let error = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
+        .build()
+        .worker()
+        .attempt_timeout(Duration::from_secs(1))
+        .cancellation_grace(Duration::ZERO)
+        .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Completion,
+            "attempt",
+            "offline",
+        )))
+        .run(move |_| {
+            release_receiver
+                .lock()
+                .expect("release lock")
+                .recv()
+                .expect("test releases worker");
+            Ok::<(), TestError>(())
+        })
+        .expect_err("uncooperative worker remains live");
+    release_sender.send(()).expect("release detached worker");
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::Infrastructure {
+            failure: RetryInfrastructureFailure::WorkerStillRunning {
+                trigger: WorkerStopTrigger::TimerFailure
+            },
+            ..
+        }
+    ));
+    assert_eq!(error.context().attempts(), 1);
 }

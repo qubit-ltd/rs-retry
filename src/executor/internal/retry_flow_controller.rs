@@ -16,9 +16,6 @@ use qubit_clock::MonotonicInstant;
 use qubit_clock::TimeError;
 
 use super::super::Retry;
-use super::AttemptPlan;
-use super::EffectiveTimeout;
-#[cfg(feature = "tokio")]
 use super::PreparedAttemptPlan;
 use super::RetryDirective;
 use super::RetryFlowState;
@@ -135,7 +132,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         Ok(admission_sample)
     }
 
-    /// Prepares one async attempt and fixes its absolute timeout deadline.
+    /// Prepares one timed attempt and fixes its absolute timeout deadline.
     ///
     /// # Errors
     /// Returns a terminal retry error when the admission sample observes an
@@ -145,8 +142,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         clippy::result_large_err,
         reason = "the controller constructs the lossless public terminal error"
     )]
-    #[cfg(feature = "tokio")]
-    pub(crate) fn prepare_async_attempt(
+    pub(crate) fn prepare_attempt(
         &mut self,
         admission_sample: MonotonicInstant,
     ) -> Result<PreparedAttemptPlan, RetryError<E>> {
@@ -173,7 +169,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         &mut self,
         clock: &dyn MonotonicClock,
         cancellation: Option<&RetryCancellationToken>,
-    ) -> Result<AttemptPlan, RetryError<E>> {
+    ) -> Result<(), RetryError<E>> {
         let now = clock.now();
         self.refresh_or_error(now)?;
         if self.state.flow_timed_out() {
@@ -186,12 +182,10 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
             return Err(self.exhausted(limit));
         }
         self.state.begin_attempt(now);
-        let timeout = self.state.effective_timeout(self.attempt_timeout);
-        self.current_attempt_timeout = timeout.map(EffectiveTimeout::duration);
-        Ok(AttemptPlan { timeout })
+        Ok(())
     }
 
-    /// Commits an async attempt after its absolute timer was registered.
+    /// Commits a timed attempt after its absolute timer was registered.
     ///
     /// # Errors
     /// Returns a terminal retry error when registration consumed the prepared
@@ -201,7 +195,6 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         clippy::result_large_err,
         reason = "the controller constructs the lossless public terminal error"
     )]
-    #[cfg(feature = "tokio")]
     pub(crate) fn commit_prepared_attempt(
         &mut self,
         plan: PreparedAttemptPlan,
@@ -312,6 +305,13 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         self.retry_after_hint = decision.retry_after_hint();
         let backoff = self.state.next_backoff(decision);
         self.next_delay = Some(backoff.effective_delay());
+        self.refresh_or_error(clock.now())?;
+        if self.state.flow_timed_out() {
+            return Err(self.timed_out(RetryTimeoutScope::Flow));
+        }
+        if let Some(limit) = self.state.retry_limit(backoff.effective_delay()) {
+            return Err(self.exhausted(limit));
+        }
         let scheduled_context = self.snapshot();
         if let Err(callback) = self.observers.try_retry_scheduled(&backoff, &scheduled_context) {
             return Err(self.callback_failed_after_refresh(callback, scheduled_context, clock));
@@ -433,8 +433,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         cancellation.is_some_and(RetryCancellationToken::is_cancelled)
     }
 
-    /// Selects an absolute timeout from the current async admission sample.
-    #[cfg(feature = "tokio")]
+    /// Selects an absolute timeout from the current admission sample.
     fn prepare_timeout(
         &self,
         now: MonotonicInstant,
@@ -453,7 +452,6 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     }
 
     /// Returns whether `now` is at or beyond a prepared same-domain deadline.
-    #[cfg(feature = "tokio")]
     fn deadline_reached(now: MonotonicInstant, deadline: MonotonicInstant) -> Result<bool, TimeError> {
         deadline.validate_domain(now.domain())?;
         Ok(now.elapsed_since_origin() >= deadline.elapsed_since_origin())
