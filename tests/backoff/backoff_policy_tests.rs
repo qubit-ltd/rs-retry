@@ -9,6 +9,7 @@
 use std::time::Duration;
 
 use qubit_retry::BackoffPolicy;
+use qubit_retry::BackoffRequest;
 
 #[test]
 #[cfg(feature = "serde")]
@@ -75,4 +76,55 @@ fn test_exponential_rejects_invalid_values() {
 #[test]
 fn test_uniform_rejects_reversed_bounds() {
     assert!(BackoffPolicy::uniform(Duration::from_secs(2), Duration::from_secs(1),).is_err());
+}
+
+/// A wire-configured final delay limit caps jitter and server hints alike.
+#[test]
+#[cfg(feature = "serde")]
+fn test_final_delay_limit_caps_resolved_delay() {
+    let base = BackoffPolicy::fixed(Duration::from_secs(10))
+        .with_bounded_jitter(0.5)
+        .expect("valid jitter");
+    let mut wire = serde_json::to_value(base).expect("serialize base");
+    wire["delay_limit"] = serde_json::json!({"seconds": 10, "nanoseconds": 0});
+    let policy: BackoffPolicy = serde_json::from_value(wire).expect("final limit is supported");
+    let mut state =
+        policy.start_with_random_source(std::sync::Arc::new(crate::support::FixedRetryRandomSource::new(1.0)));
+    for request in [
+        BackoffRequest::policy(),
+        BackoffRequest::hint(Duration::from_secs(100)),
+        BackoffRequest::jittered_hint(Duration::from_secs(100)),
+    ] {
+        assert_eq!(state.next(request).effective_delay(), Duration::from_secs(10));
+    }
+}
+
+/// Final limits do not change the documented base-policy maximum.
+#[test]
+fn test_delay_limit_is_independent_of_base_maximum() {
+    let policy = BackoffPolicy::fixed(Duration::from_secs(3)).limit_delay(Duration::ZERO);
+    assert_eq!(policy.maximum_delay(), Some(Duration::from_secs(3)));
+    assert_eq!(policy.delay_limit(), Some(Duration::ZERO));
+    assert_eq!(
+        policy
+            .start()
+            .next(BackoffRequest::hint(Duration::MAX))
+            .effective_delay(),
+        Duration::ZERO
+    );
+}
+
+/// Wire limits preserve exact nanoseconds and validate the duration
+/// representation.
+#[test]
+#[cfg(feature = "serde")]
+fn test_delay_limit_serde_roundtrip_and_validation() {
+    let policy = BackoffPolicy::immediate().limit_delay(Duration::from_nanos(7));
+    let mut wire = serde_json::to_value(&policy).expect("serialize cap");
+    assert_eq!(
+        serde_json::from_value::<BackoffPolicy>(wire.clone()).expect("decode cap"),
+        policy
+    );
+    wire["delay_limit"]["nanoseconds"] = serde_json::json!(1_000_000_000);
+    assert!(serde_json::from_value::<BackoffPolicy>(wire).is_err());
 }

@@ -41,6 +41,8 @@ pub struct BackoffPolicy {
     strategy: BackoffStrategy,
     jitter: JitterStrategy,
     retry_after: RetryAfterStrategy,
+    /// Optional cap applied after jitter and hint resolution.
+    delay_limit: Option<Duration>,
 }
 
 impl BackoffPolicy {
@@ -50,6 +52,7 @@ impl BackoffPolicy {
             strategy: BackoffStrategy::Immediate,
             jitter: JitterStrategy::None,
             retry_after: RetryAfterStrategy::AtLeastBackoff,
+            delay_limit: None,
         }
     }
 
@@ -122,7 +125,22 @@ impl BackoffPolicy {
         self
     }
 
-    /// Returns the configured maximum policy delay, when one exists.
+    /// Sets a final upper bound for every resolved delay, including jitter and
+    /// hints. Zero produces immediate retries. By default no final bound is
+    /// applied.
+    pub fn limit_delay(mut self, limit: Duration) -> Self {
+        self.delay_limit = Some(limit);
+        self
+    }
+
+    /// Returns the final resolved-delay cap, or `None` when it is unbounded.
+    pub fn delay_limit(&self) -> Option<Duration> {
+        self.delay_limit
+    }
+
+    /// Returns the maximum base-policy delay, before jitter and server hints.
+    /// This is not a bound on the final sleep; use [`Self::limit_delay`] for
+    /// that.
     #[must_use]
     pub fn maximum_delay(&self) -> Option<Duration> {
         match &self.strategy {
@@ -157,7 +175,24 @@ impl BackoffPolicy {
         }
     }
 
+    /// Resolves the selected delay and applies the final cap after all
+    /// transformations.
     pub(crate) fn resolve(
+        &self,
+        base_delay: Duration,
+        request: BackoffRequest,
+        retry_index: u32,
+        random: &dyn RetryRandomSource,
+    ) -> BackoffStep {
+        let step = self.resolve_uncapped(base_delay, request, retry_index, random);
+        let delay = self
+            .delay_limit
+            .map_or(step.effective_delay(), |limit| step.effective_delay().min(limit));
+        BackoffStep::new(retry_index, base_delay, delay, step.source())
+    }
+
+    /// Applies hint selection and jitter without an end-to-end delay cap.
+    fn resolve_uncapped(
         &self,
         base_delay: Duration,
         request: BackoffRequest,
@@ -284,6 +319,7 @@ impl From<&BackoffPolicy> for BackoffPolicyData {
             strategy: (&policy.strategy).into(),
             jitter: policy.jitter.into(),
             retry_after: policy.retry_after.into(),
+            delay_limit: policy.delay_limit.map(crate::policy::internal::DurationData::from),
         }
     }
 }
@@ -298,6 +334,7 @@ impl TryFrom<BackoffPolicyData> for BackoffPolicy {
             strategy: data.strategy.try_into()?,
             jitter: data.jitter.into(),
             retry_after: data.retry_after.into(),
+            delay_limit: data.delay_limit.map(TryInto::try_into).transpose()?,
         };
         policy.validate()?;
         Ok(policy)
@@ -305,8 +342,11 @@ impl TryFrom<BackoffPolicyData> for BackoffPolicy {
 }
 
 fn exponential_delay(initial: Duration, multiplier: f64, max: Duration, retry_index: u32) -> Duration {
-    let exponent = retry_index.saturating_sub(1) as i32;
-    let seconds = initial.as_secs_f64() * multiplier.powi(exponent);
+    if initial.is_zero() || multiplier == 1.0 {
+        return initial.min(max);
+    }
+    let exponent = f64::from(retry_index.saturating_sub(1));
+    let seconds = initial.as_secs_f64() * multiplier.powf(exponent);
     if !seconds.is_finite() {
         return max;
     }
@@ -329,4 +369,33 @@ fn interpolate(min: Duration, max: Duration, sample: f64) -> Duration {
     let ratio = sample.clamp(0.0, 1.0);
     let span = max.saturating_sub(min);
     min.saturating_add(scale_duration(span, ratio))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::exponential_delay;
+
+    /// Private sequence extremes are infeasible to reach by billions of next
+    /// calls.
+    #[test]
+    fn test_exponential_delay_never_wraps_the_exponent() {
+        for index in [i32::MAX as u32 + 1, i32::MAX as u32 + 2, u32::MAX] {
+            assert_eq!(
+                exponential_delay(Duration::from_secs(1), 2.0, Duration::from_secs(10), index),
+                Duration::from_secs(10)
+            );
+        }
+    }
+
+    /// Zero initial delay remains zero even when the multiplier power
+    /// overflows.
+    #[test]
+    fn test_exponential_delay_zero_initial_remains_zero() {
+        assert_eq!(
+            exponential_delay(Duration::ZERO, 2.0, Duration::from_secs(10), 2048),
+            Duration::ZERO
+        );
+    }
 }
