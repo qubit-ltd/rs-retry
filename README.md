@@ -16,13 +16,13 @@ the flow stopped.
 
 ```toml
 [dependencies]
-qubit-retry = "0.19"
+qubit-retry = "0.20"
 ```
 
 Tokio execution and stable configuration serialization are opt-in:
 
 ```toml
-qubit-retry = { version = "0.19", features = ["tokio", "serde"] }
+qubit-retry = { version = "0.20", features = ["tokio", "serde"] }
 ```
 
 ## Quick start
@@ -216,6 +216,31 @@ trees or built-in deadlines.
 - [Rust API documentation](https://docs.rs/qubit-retry)
 - [中文 README](README.zh_CN.md)
 - [Repository](https://github.com/qubit-ltd/rs-retry)
+
+## Migrating to 0.20
+
+`RetryBudget` and all execution facades now share admission accounting. Its
+`begin_attempt`, `finish_attempt`, `snapshot`, and `check_retry_after` methods
+return `RetryBudgetError`; exhaustion is `RetryBudgetError::Exhausted(kind)`.
+`check_retry_after` requires a mutable budget. Finish each token before starting
+another attempt, and never pass a token to another budget. Invalid clocks return
+errors. Soft elapsed budgets no longer require a representable absolute deadline.
+
+`on_retry_scheduled` runs only when the selected delay currently fits the budgets.
+Callbacks and the eventual admission still recheck limits and cancellation; this
+event does not guarantee another operation. `on_attempt_started` remains a
+pre-admission notification, while terminal `context.attempts()` counts admissions.
+
+`BackoffPolicy::maximum_delay()` describes the base strategy before jitter and
+hints. Use `.limit_delay(duration)` to cap the final delay after both. The optional
+serde field `delay_limit` uses the existing `{seconds, nanoseconds}` duration
+representation; older configurations without that field remain accepted.
+
+Worker attempt and flow timeouts now use the injected timer, including manual
+time. `cancellation_grace` always uses real time to bound OS-thread cleanup. A
+failed active timer requests cancellation; an uncooperative worker reports
+`WorkerStillRunning` with `WorkerStopTrigger::TimerFailure` and is never retried
+within that flow.
 
 ## Testing
 
