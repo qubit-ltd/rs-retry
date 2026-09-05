@@ -14,13 +14,13 @@ Qubit Retry 是面向 Rust 服务、客户端和存储代码的类型安全重�
 
 ```toml
 [dependencies]
-qubit-retry = "0.19"
+qubit-retry = "0.20"
 ```
 
 Tokio 执行与稳定的配置序列化均为可选能力：
 
 ```toml
-qubit-retry = { version = "0.19", features = ["tokio", "serde"] }
+qubit-retry = { version = "0.20", features = ["tokio", "serde"] }
 ```
 
 ## 快速开始
@@ -195,6 +195,27 @@ Rust 无法强制终止不配合的线程。工作线程如果未在宽限期内
 - [Rust API 文档](https://docs.rs/qubit-retry)
 - [English README](README.md)
 - [代码仓库](https://github.com/qubit-ltd/rs-retry)
+
+## 升级到 0.20
+
+`RetryBudget` 与所有执行门面现在共享同一套预算计量。`begin_attempt`、
+`finish_attempt`、`snapshot` 和 `check_retry_after` 返回 `RetryBudgetError`，
+预算耗尽通过 `RetryBudgetError::Exhausted(kind)` 表示。`check_retry_after`
+需要可变借用。必须先完成当前 token，再申请下一次尝试；token 不能交给其他预算。
+异常时钟返回错误，软性耗时预算也不再要求能够表示绝对截止时间。
+
+只有选中的延迟符合当前预算，才会触发 `on_retry_scheduled`。回调执行后和下一次
+准入时仍会检查预算与取消状态，因此该事件不保证下一次操作一定开始。
+`on_attempt_started` 仍在准入之前发出，实际准入次数请读取终态的 `context.attempts()`。
+
+`BackoffPolicy::maximum_delay()` 只描述基础策略，尚未计入抖动和服务端提示。
+需要限制最终等待时间时，调用 `.limit_delay(duration)`。可选的 serde 字段
+`delay_limit` 沿用 `{seconds, nanoseconds}` 格式，没有该字段的旧配置仍可读取。
+
+Worker 的单次和流程超时现在由注入的 timer 驱动，包括手动时间；线程清理宽限期
+`cancellation_grace` 始终使用真实时间。活动 timer 失败时会请求取消；如果线程
+不配合退出，则返回带有 `WorkerStopTrigger::TimerFailure` 的 `WorkerStillRunning`，
+当前流程不会再启动其他尝试。
 
 ## 测试
 
