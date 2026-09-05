@@ -543,7 +543,11 @@ fn assert_blocked_worker_timeout_trigger(scope: RetryTimeoutScope, expected_trig
     let error = worker
         .run({
             let release_receiver = Arc::clone(&release_receiver);
+            let clock = Arc::clone(&clock);
             move |_: AttemptCancellationToken| {
+                clock
+                    .advance(Duration::from_nanos(1))
+                    .expect("expire registered worker deadline");
                 release_receiver
                     .lock()
                     .expect("release receiver lock should remain valid")

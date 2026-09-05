@@ -19,7 +19,12 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     /// Observes one committed attempt failure.
     fn on_attempt_failed(&self, _failure: &AttemptFailure<E>, _context: &RetryContext) {}
 
-    /// Observes one selected retry delay.
+    /// Observes a delay that currently fits the continuation budgets.
+    ///
+    /// This callback is not emitted when the flow is already exhausted. The
+    /// controller checks budgets and cancellation again after callbacks and
+    /// after sleep, so scheduling does not promise another admitted attempt.
+    /// Use terminal context attempts to count actual operations.
     fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {}
 }
 

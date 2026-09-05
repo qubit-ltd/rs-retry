@@ -11,9 +11,7 @@ use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-#[cfg(feature = "tokio")]
 use qubit_clock::ManualMonotonicClock;
-#[cfg(feature = "tokio")]
 use qubit_clock::MonotonicClock;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
@@ -349,11 +347,17 @@ fn worker_facade_retries_with_cooperative_token() {
 fn worker_attempt_timeout_has_a_distinct_terminal_reason() {
     let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
     let retry = Retry::<TestError>::builder(policy).build();
+    let clock = ManualMonotonicClock::new_shared();
+    let operation_clock = Arc::clone(&clock);
     let error = retry
         .worker()
+        .timer(clock.new_timer())
         .attempt_timeout(Duration::from_millis(1))
         .cancellation_grace(Duration::from_millis(50))
-        .run(|token| {
+        .run(move |token| {
+            operation_clock
+                .advance(Duration::from_millis(1))
+                .expect("expire admitted attempt");
             while !token.is_cancelled() {
                 std::thread::yield_now();
             }
@@ -377,12 +381,18 @@ fn worker_attempt_timeout_has_a_distinct_terminal_reason() {
 fn worker_shorter_flow_timeout_reports_flow_source() {
     let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
     let retry = Retry::<TestError>::builder(policy).build();
+    let clock = ManualMonotonicClock::new_shared();
+    let operation_clock = Arc::clone(&clock);
     let error = retry
         .worker()
+        .timer(clock.new_timer())
         .attempt_timeout(Duration::from_secs(1))
         .flow_timeout(Duration::from_millis(10))
         .cancellation_grace(Duration::from_millis(50))
-        .run(|token| {
+        .run(move |token| {
+            operation_clock
+                .advance(Duration::from_millis(10))
+                .expect("expire admitted attempt");
             while !token.is_cancelled() {
                 std::thread::yield_now();
             }
@@ -404,23 +414,53 @@ fn worker_shorter_flow_timeout_reports_flow_source() {
 
 #[test]
 fn worker_flow_timeout_caps_retry_sleep() {
-    let policy = RetryPolicy::builder()
-        .max_attempts(2)
-        .backoff(BackoffPolicy::fixed(Duration::from_millis(500)))
-        .build()
-        .unwrap();
-    let retry = Retry::<TestError>::builder(policy).build();
+    let clock = ManualMonotonicClock::new_shared();
+    let worker_clock = Arc::clone(&clock);
     let attempts = Arc::new(AtomicU32::new(0));
     let operation_attempts = Arc::clone(&attempts);
-    let error = retry
-        .worker()
-        .flow_timeout(Duration::from_millis(10))
-        .run(move |_| {
-            operation_attempts.fetch_add(1, Ordering::SeqCst);
-            Err::<(), _>(TestError)
-        })
-        .expect_err("flow timeout should terminate retry");
-
+    let cancellation = RetryCancellationToken::new();
+    let worker_cancellation = cancellation.clone();
+    let (failed_sender, failed_receiver) = std::sync::mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let policy = RetryPolicy::builder()
+            .max_attempts(2)
+            .backoff(BackoffPolicy::fixed(Duration::from_millis(500)))
+            .build()
+            .unwrap();
+        Retry::<TestError>::builder(policy)
+            .observer(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
+                failed_sender.send(()).expect("test controller alive");
+            })
+            .build()
+            .worker()
+            .timer(worker_clock.new_timer())
+            .flow_timeout(Duration::from_millis(10))
+            .cancellation_token(worker_cancellation)
+            .run(move |_| {
+                operation_attempts.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(TestError)
+            })
+            .map_err(Box::new)
+    });
+    let failed = failed_receiver.recv_timeout(Duration::from_secs(1)).is_ok();
+    let deadline = if failed {
+        clock.wait_for_next_deadline(Duration::from_secs(1))
+    } else {
+        None
+    };
+    if deadline.is_some() {
+        clock.advance(Duration::from_millis(10)).expect("expire capped backoff");
+    } else {
+        cancellation.cancel();
+    }
+    let error = handle
+        .join()
+        .expect("worker controller completed")
+        .expect_err("flow timeout");
+    assert!(
+        failed && deadline.is_some(),
+        "backoff must register its capped deadline"
+    );
     assert!(matches!(
         error.failure(),
         RetryFailure::TimedOut {
@@ -429,9 +469,5 @@ fn worker_flow_timeout_caps_retry_sleep() {
         }
     ));
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
-    assert!(
-        error.context().total_elapsed() < Duration::from_millis(100),
-        "flow timeout should cap the blocking sleep: {:?}",
-        error.context().total_elapsed()
-    );
+    assert_eq!(error.context().total_elapsed(), Duration::from_millis(10));
 }

@@ -18,6 +18,8 @@ pub enum WorkerStopTrigger {
     FlowTimeout,
     /// The retry flow was externally cancelled.
     Cancellation,
+    /// The active attempt timer failed.
+    TimerFailure,
 }
 
 impl fmt::Display for WorkerStopTrigger {
@@ -26,6 +28,7 @@ impl fmt::Display for WorkerStopTrigger {
             Self::AttemptTimeout => "attempt timeout",
             Self::FlowTimeout => "flow timeout",
             Self::Cancellation => "cancellation",
+            Self::TimerFailure => "timer failure",
         };
         formatter.write_str(name)
     }

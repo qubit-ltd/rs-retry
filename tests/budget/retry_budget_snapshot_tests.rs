@@ -24,7 +24,7 @@ fn test_snapshot_samples_total_elapsed_without_mutation() {
     let budget = RetryBudget::new(&clock, *policy.limits()).expect("budget must construct");
 
     clock.advance(Duration::from_secs(2)).expect("clock must advance");
-    let snapshot = budget.snapshot();
+    let snapshot = budget.snapshot().expect("valid clock snapshot");
 
     assert_eq!(snapshot.attempts(), 0);
     assert_eq!(snapshot.total_elapsed(), Duration::from_secs(2));

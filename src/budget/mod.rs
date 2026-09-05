@@ -14,6 +14,7 @@ mod retry_budget_error;
 mod retry_budget_exhausted;
 mod retry_budget_snapshot;
 
+pub(crate) use internal::RetryBudgetState;
 pub use retry_attempt::RetryAttempt;
 pub use retry_budget::RetryBudget;
 pub use retry_budget_error::RetryBudgetError;

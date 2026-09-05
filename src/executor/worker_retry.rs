@@ -107,7 +107,11 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         self
     }
 
-    /// Sets the grace period used after requesting cooperative cancellation.
+    /// Sets the real-time grace period used after requesting cooperative
+    /// cancellation. This OS-thread cleanup bound always uses standard wall
+    /// duration, even when attempts and backoff use an injected manual
+    /// timer. It prevents a stopped virtual clock from retaining an
+    /// uncooperative worker indefinitely.
     pub fn cancellation_grace(mut self, grace: Duration) -> Self {
         self.cancellation_grace = grace;
         self
@@ -149,7 +153,10 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         self
     }
 
-    /// Injects the blocking timer and clock.
+    /// Injects the timer for attempt/flow deadlines, budget accounting and
+    /// backoff. Cancellation grace remains a real-time OS-thread cleanup
+    /// bound. The timer must progress independently while this synchronous
+    /// facade blocks.
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
         self.sleeper = BlockingSleeper::new(timer);
         self
@@ -185,23 +192,41 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
 
         loop {
             let cancellation = self.cancellation_token.as_ref();
-            let _ = controller.before_attempt(clock, cancellation)?;
+            let admission_sample = controller.before_attempt(clock, cancellation)?;
+            let plan = controller.prepare_attempt(admission_sample)?;
+            let timeout_future = match plan.deadline().map(|deadline| timer.at(deadline)).transpose() {
+                Ok(future) => future,
+                Err(error) => {
+                    return Err(controller.record_inactive_infrastructure_failure(
+                        RetryInfrastructureFailure::Timer {
+                            message: error.to_string().into_boxed_str(),
+                        },
+                        clock.now(),
+                    ));
+                }
+            };
             let outcome = WorkerAttemptExecutor::run(
                 Arc::clone(&worker_operation),
                 &self.thread_name,
                 self.stack_size,
                 self.cancellation_grace,
                 cancellation,
-                || {
-                    let plan = controller.commit_attempt(clock, cancellation)?;
-                    Ok(plan.timeout())
-                },
+                timeout_future.map(|future| (plan.scope().expect("registered timeout retains its scope"), future)),
+                || controller.commit_prepared_attempt(plan, clock, cancellation),
             )?;
 
             match outcome {
                 BlockingAttemptOutcome::Completed(Ok(())) => {
                     let context = controller.finish_success(clock)?;
                     return Ok(RetrySuccess::new(operation.take_value(), context));
+                }
+                BlockingAttemptOutcome::TimerFailed { error } => {
+                    return Err(controller.record_inactive_infrastructure_failure(
+                        RetryInfrastructureFailure::Timer {
+                            message: error.to_string().into_boxed_str(),
+                        },
+                        clock.now(),
+                    ));
                 }
                 BlockingAttemptOutcome::WorkerSpawnFailed { message } => {
                     let error = controller.record_inactive_infrastructure_failure(
@@ -218,6 +243,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                     return Err(error);
                 }
                 BlockingAttemptOutcome::Stopped { trigger } => match trigger {
+                    WorkerStopTrigger::TimerFailure => unreachable!("timer failure has a structured outcome"),
                     WorkerStopTrigger::Cancellation => {
                         return Err(controller.record_attempt_cancellation(clock));
                     }

@@ -7,6 +7,8 @@
 // =============================================================================
 //! Private continuation-budget helper types.
 
+mod retry_budget_state;
 mod retry_resource;
 
+pub(crate) use retry_budget_state::RetryBudgetState;
 pub(super) use retry_resource::RetryResource;

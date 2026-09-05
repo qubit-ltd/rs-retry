@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Async admission plan with an immutable timeout deadline.
+//! Timed admission plan with an immutable timeout deadline.
 
 use std::time::Duration;
 
@@ -14,7 +14,7 @@ use qubit_clock::MonotonicInstant;
 use super::prepared_timeout::PreparedTimeout;
 use crate::RetryTimeoutScope;
 
-/// One async attempt prepared against an immutable absolute deadline.
+/// One timed attempt prepared against an immutable absolute deadline.
 #[derive(Clone, Copy)]
 pub(crate) struct PreparedAttemptPlan {
     /// Absolute timeout transaction prepared before timer registration.
@@ -44,7 +44,7 @@ impl PreparedAttemptPlan {
         self.timeout.map(PreparedTimeout::duration)
     }
 
-    /// Returns the deadline and scope needed while committing an async attempt.
+    /// Returns the deadline and scope needed while committing an timed attempt.
     pub(super) fn deadline_and_scope(&self) -> Option<(MonotonicInstant, RetryTimeoutScope)> {
         self.timeout.map(|timeout| (timeout.deadline(), timeout.scope()))
     }
