@@ -226,6 +226,9 @@ returns a coherent `RetryContext` with every success or terminal error.
 - `RetryFailure` distinguishes aborted, exhausted, timed-out, cancelled,
   callback-failed, and infrastructure terminals. `AttemptFailure` retains an
   application error, timeout scope, or stable panic payload.
+- `Retry`, `RetryRules`, and `RetryObservers` can be cloned without requiring
+  the operation error type `E` to implement `Clone`; callbacks remain shared
+  through their internal reference counts.
 - Ordered rules and control observers fail closed on callback panic. Completion
   observers preserve the main result and attach diagnostics. Both retain callback
   kind, registration index, lifecycle phase, and panic payload classification.
@@ -355,7 +358,7 @@ errors. Soft elapsed budgets no longer require a representable absolute deadline
 
 `on_retry_scheduled` runs only when the selected delay currently fits the budgets.
 Callbacks and the eventual admission still recheck limits and cancellation; this
-event does not guarantee another operation. `on_attempt_started` remains a
+event does not guarantee another operation. `on_before_attempt` remains a
 pre-admission notification, while terminal `context.attempts()` counts admissions.
 
 `BackoffPolicy::maximum_delay()` describes the base strategy before jitter and
@@ -368,6 +371,16 @@ time. `cancellation_grace` always uses real time to bound OS-thread cleanup. A
 failed active timer requests cancellation; an uncooperative worker reports
 `WorkerStillRunning` with `WorkerStopTrigger::TimerFailure` and is never retried
 within that flow.
+
+## Migration notes for the next release
+
+- Cloning `Retry` does not require a cloneable error; callback collections are
+  shared and every `run` creates fresh execution state.
+- The observer method and callback phase are now named `on_before_attempt` and
+  `BeforeAttempt`. Their position before admission is unchanged.
+- A secondary panic while dropping a non-string callback payload preserves the
+  `NonString` classification and structured callback terminal. Only that
+  exceptional secondary payload is leaked.
 
 ## Testing
 
