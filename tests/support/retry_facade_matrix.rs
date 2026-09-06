@@ -163,7 +163,9 @@ impl ObserverPhaseCounts {
             RetryCallbackPhase::AttemptStarted => self.started.load(Ordering::SeqCst),
             RetryCallbackPhase::AttemptFailed => self.failed.load(Ordering::SeqCst),
             RetryCallbackPhase::RetryScheduled => self.scheduled.load(Ordering::SeqCst),
-            RetryCallbackPhase::RuleDecision => 0,
+            RetryCallbackPhase::RuleDecision
+            | RetryCallbackPhase::Success
+            | RetryCallbackPhase::TerminalFailure => 0,
         }
     }
 }
@@ -312,6 +314,9 @@ pub(crate) fn assert_matrix_observer_panic(
         RetryCallbackPhase::AttemptFailed | RetryCallbackPhase::RetryScheduled => (true, 1, Some(1)),
         RetryCallbackPhase::RuleDecision => {
             panic!("rule decision is not an observer phase")
+        }
+        RetryCallbackPhase::Success | RetryCallbackPhase::TerminalFailure => {
+            panic!("completion phases do not fail closed")
         }
     };
     assert_matrix_callback(

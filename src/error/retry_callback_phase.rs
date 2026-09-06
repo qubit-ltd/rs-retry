@@ -20,6 +20,10 @@ pub enum RetryCallbackPhase {
     RuleDecision,
     /// A retry-scheduled observer was running.
     RetryScheduled,
+    /// A successful-flow observer was running.
+    Success,
+    /// A terminal-failure observer was running.
+    TerminalFailure,
 }
 
 impl fmt::Display for RetryCallbackPhase {
@@ -29,6 +33,8 @@ impl fmt::Display for RetryCallbackPhase {
             Self::AttemptFailed => "attempt failed",
             Self::RuleDecision => "rule decision",
             Self::RetryScheduled => "retry scheduled",
+            Self::Success => "success",
+            Self::TerminalFailure => "terminal failure",
         };
         formatter.write_str(name)
     }

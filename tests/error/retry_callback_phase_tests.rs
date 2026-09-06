@@ -16,6 +16,8 @@ fn test_retry_callback_phase_display() {
         (RetryCallbackPhase::AttemptFailed, "attempt failed"),
         (RetryCallbackPhase::RuleDecision, "rule decision"),
         (RetryCallbackPhase::RetryScheduled, "retry scheduled"),
+        (RetryCallbackPhase::Success, "success"),
+        (RetryCallbackPhase::TerminalFailure, "terminal failure"),
     ];
     for (phase, expected) in cases {
         assert_eq!(phase.to_string(), expected);

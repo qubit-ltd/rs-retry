@@ -10,9 +10,37 @@
 use crate::AttemptFailure;
 use crate::BackoffStep;
 use crate::RetryContext;
+use crate::RetryFailure;
 
 /// Observes retry lifecycle events without changing retry decisions.
 pub trait RetryObserver<E>: Send + Sync + 'static {
+    /// Observes a successful flow with its frozen terminal context.
+    ///
+    /// Called once in registration order before `run` returns `Ok`. This
+    /// synchronous callback must remain short and nonblocking. Its elapsed
+    /// time is excluded from `context`; a panic becomes an attached completion
+    /// diagnostic and does not replace the successful result.
+    /// Operation panics, dropped async futures and process aborts do not
+    /// guarantee completion notification.
+    fn on_success(&self, _context: &RetryContext) {}
+
+    /// Observes a terminal failure with its frozen context.
+    ///
+    /// Called once in registration order before `run` returns `Err`, including
+    /// failures before any attempt is admitted. A panic is attached as a
+    /// completion diagnostic while later observers still run; it does not
+    /// change `failure` or trigger retries or another terminal notification.
+    /// This synchronous callback must remain short and nonblocking. Its time
+    /// is excluded from `context` and cannot be interrupted by retry timeouts.
+    /// Operation panics, dropped async futures and process aborts do not
+    /// guarantee completion notification.
+    fn on_terminal_failure(
+        &self,
+        _failure: &RetryFailure<E>,
+        _context: &RetryContext,
+    ) {
+    }
+
     /// Observes the context before an attempt is admitted.
     fn on_attempt_started(&self, _context: &RetryContext) {}
 
