@@ -251,8 +251,8 @@ classify permanent failures explicitly when that default is too broad.
 | --- | --- | --- |
 | Application `Err(E)` | Retry within the budgets; exhaustion retains the last error | `Abort`, `Retry`, or `RetryWithHint` |
 | Captured attempt timeout | Stop as `TimedOut` | May request retry while the flow remains eligible |
-| Captured operation panic (worker/async) | Stop as `Aborted` | May request retry while the flow remains eligible |
-| Same-thread operation panic | Unwind to the caller | Not passed to rules |
+| Captured worker operation panic | Stop as `Aborted` | May request retry while the flow remains eligible |
+| Sync/async operation panic | Unwind to the caller or polling task | Not passed to rules |
 | Attempt/elapsed budget exhausted | Stop as `Exhausted` | Cannot bypass admission limits |
 | Flow timeout | Stop as `TimedOut` | Cannot extend the flow deadline |
 | Cancellation | Stop as `Cancelled` at the facade's cancellation boundaries | Cannot reset the token |
@@ -262,6 +262,9 @@ classify permanent failures explicitly when that default is too broad.
 
 Rules run in registration order; the first decision other than `UseDefault`
 wins. If every rule delegates, the defaults above apply.
+Only worker execution captures operation panics as attempt failures. Sync and
+async operation panics propagate, including panics when creating or polling an
+async operation future; these paths do not send a completion notification.
 
 ### Budgets and timeouts
 
