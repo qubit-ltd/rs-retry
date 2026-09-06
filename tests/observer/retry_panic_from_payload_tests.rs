@@ -64,8 +64,8 @@ struct NoopObserver;
 impl RetryObserver<TestError> for NoopObserver {}
 
 impl RetryObserver<TestError> for PanickingObserver {
-    fn on_attempt_started(&self, _context: &RetryContext) {
-        if self.phase == RetryCallbackPhase::AttemptStarted {
+    fn on_before_attempt(&self, _context: &RetryContext) {
+        if self.phase == RetryCallbackPhase::BeforeAttempt {
             self.payload.raise();
         }
     }
@@ -88,9 +88,17 @@ struct CountingObserver {
     calls: Arc<AtomicUsize>,
 }
 
+struct CountedPayload(Arc<AtomicUsize>);
+
+impl Drop for CountedPayload {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
 impl RetryObserver<TestError> for CountingObserver {
-    fn on_attempt_started(&self, _context: &RetryContext) {
-        if self.phase == RetryCallbackPhase::AttemptStarted {
+    fn on_before_attempt(&self, _context: &RetryContext) {
+        if self.phase == RetryCallbackPhase::BeforeAttempt {
             self.calls.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -121,9 +129,9 @@ fn two_attempt_policy() -> RetryPolicy {
 #[test]
 fn test_retry_panic_from_payload_stops_later_callbacks_for_each_case() {
     let cases = [
-        (RetryCallbackPhase::AttemptStarted, PanicPayload::StaticStr),
-        (RetryCallbackPhase::AttemptStarted, PanicPayload::String),
-        (RetryCallbackPhase::AttemptStarted, PanicPayload::NonString),
+        (RetryCallbackPhase::BeforeAttempt, PanicPayload::StaticStr),
+        (RetryCallbackPhase::BeforeAttempt, PanicPayload::String),
+        (RetryCallbackPhase::BeforeAttempt, PanicPayload::NonString),
         (RetryCallbackPhase::AttemptFailed, PanicPayload::StaticStr),
         (RetryCallbackPhase::AttemptFailed, PanicPayload::String),
         (RetryCallbackPhase::AttemptFailed, PanicPayload::NonString),
@@ -158,4 +166,22 @@ fn test_retry_panic_from_payload_stops_later_callbacks_for_each_case() {
             "later callback ran after panic in {phase:?}"
         );
     }
+}
+
+#[test]
+fn control_payload_normal_drop_is_not_leaked() {
+    let drops = Arc::new(AtomicUsize::new(0));
+    let captured = Arc::clone(&drops);
+    let retry = Retry::<&'static str>::builder(RetryPolicy::builder().build().expect("policy should build"))
+        .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
+            panic_any(CountedPayload(Arc::clone(&captured)))
+        })
+        .build();
+
+    let error = retry
+        .sync()
+        .run(|| Err::<(), _>("business"))
+        .expect_err("rule panic should terminate the retry");
+    assert!(matches!(error.failure(), RetryFailure::CallbackFailed { .. }));
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
 }

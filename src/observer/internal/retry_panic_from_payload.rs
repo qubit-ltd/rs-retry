@@ -8,11 +8,28 @@
 //! Stable conversion of unwinding callback payloads.
 
 use std::any::Any;
+use std::panic::AssertUnwindSafe;
 
 use crate::RetryPanic;
 
 /// Converts an unwinding callback payload into its stable representation.
+///
+/// Payload destruction runs inside a second unwind boundary. A destructor
+/// panic therefore keeps the `NonString` classification and leaks only the
+/// secondary panic payload to prevent recursive unwinding.
 pub(crate) fn retry_panic_from_payload(payload: Box<dyn Any + Send>) -> RetryPanic {
+    match std::panic::catch_unwind(AssertUnwindSafe(|| decode_retry_panic_payload(payload))) {
+        Ok(panic) => panic,
+        Err(secondary_payload) => {
+            std::mem::forget(secondary_payload);
+            RetryPanic::NonString
+        }
+    }
+}
+
+/// Classifies a panic payload and releases non-string payloads inside the
+/// caller's unwind boundary.
+fn decode_retry_panic_payload(payload: Box<dyn Any + Send>) -> RetryPanic {
     let payload = match payload.downcast::<&'static str>() {
         Ok(message) => return RetryPanic::StaticStr(*message),
         Err(payload) => payload,

@@ -19,13 +19,20 @@ use crate::RetryCallbackKind;
 use crate::RetryCallbackPhase;
 use crate::RetryContext;
 use crate::RetryFailure;
-use crate::RetryPanic;
 
 /// Ordered observer collection.
-#[derive(Clone)]
 #[allow(dead_code)]
 pub(crate) struct RetryObservers<E> {
     observers: Vec<Arc<dyn RetryObserver<E>>>,
+}
+
+/// Clones the ordered observer references without cloning the operation error.
+impl<E> Clone for RetryObservers<E> {
+    fn clone(&self) -> Self {
+        Self {
+            observers: self.observers.clone(),
+        }
+    }
 }
 
 impl<E> Default for RetryObservers<E> {
@@ -44,9 +51,9 @@ impl<E: 'static> RetryObservers<E> {
     }
 
     /// Notifies observers before an attempt and stops on the first panic.
-    pub(crate) fn try_attempt_started(&self, context: &RetryContext) -> Result<(), RetryCallbackFailure> {
-        self.try_each(RetryCallbackPhase::AttemptStarted, |observer| {
-            observer.on_attempt_started(context)
+    pub(crate) fn try_before_attempt(&self, context: &RetryContext) -> Result<(), RetryCallbackFailure> {
+        self.try_each(RetryCallbackPhase::BeforeAttempt, |observer| {
+            observer.on_before_attempt(context)
         })
     }
 
@@ -105,18 +112,7 @@ impl<E: 'static> RetryObservers<E> {
         let mut failures = Vec::new();
         for (index, observer) in self.observers.iter().enumerate() {
             if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(|| callback(observer.as_ref()))) {
-                // Converting a non-string payload drops user-owned data.
-                // Isolate that destructor too, after the observer has unwound.
-                let panic = match std::panic::catch_unwind(AssertUnwindSafe(|| retry_panic_from_payload(payload))) {
-                    Ok(panic) => panic,
-                    Err(secondary_payload) => {
-                        // This new payload may itself panic on Drop. Retain
-                        // the original NonString classification and leak only
-                        // this exceptional payload to avoid recursive unwinds.
-                        std::mem::forget(secondary_payload);
-                        RetryPanic::NonString
-                    }
-                };
+                let panic = retry_panic_from_payload(payload);
                 failures.push(RetryCallbackFailure::new(
                     RetryCallbackKind::Observer,
                     index,

@@ -65,16 +65,16 @@ use qubit_retry::RetryPolicy;
 #[cfg(feature = "tokio")]
 use crate::support::TestError;
 
-/// Observer that cancels a flow from the attempt-started callback.
+/// Observer that cancels a flow from the before-attempt callback.
 #[cfg(feature = "tokio")]
-struct CancelOnAttemptStarted {
+struct CancelOnBeforeAttempt {
     token: RetryCancellationToken,
 }
 
 #[cfg(feature = "tokio")]
-impl RetryObserver<TestError> for CancelOnAttemptStarted {
+impl RetryObserver<TestError> for CancelOnBeforeAttempt {
     /// Cancels the flow before the operation is committed.
-    fn on_attempt_started(&self, _context: &RetryContext) {
+    fn on_before_attempt(&self, _context: &RetryContext) {
         self.token.cancel();
     }
 }
@@ -324,7 +324,7 @@ async fn test_backoff_cancellation_wins_when_timer_is_ready_in_same_poll() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn test_attempt_started_callback_cancellation_stops_before_operation() {
+async fn test_before_attempt_callback_cancellation_stops_before_operation() {
     let token = RetryCancellationToken::new();
     let operation_calls = Arc::new(AtomicUsize::new(0));
     let rule_calls = Arc::new(AtomicUsize::new(0));
@@ -334,7 +334,7 @@ async fn test_attempt_started_callback_cancellation_stops_before_operation() {
             .build()
             .expect("started-callback cancellation policy should be valid"),
     )
-    .observer(CancelOnAttemptStarted { token: token.clone() })
+    .observer(CancelOnBeforeAttempt { token: token.clone() })
     .rule({
         let rule_calls = Arc::clone(&rule_calls);
         move |_: &AttemptFailure<TestError>, _: &RetryContext| {

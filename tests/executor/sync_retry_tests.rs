@@ -137,14 +137,14 @@ impl Timer for PendingTimer {
 }
 
 /// Cancels one retry flow from its pre-admission observer.
-struct CancelOnAttemptStarted {
+struct CancelOnBeforeAttempt {
     /// Token cancelled before the operation can be admitted.
     cancellation: RetryCancellationToken,
 }
 
-impl RetryObserver<TestError> for CancelOnAttemptStarted {
+impl RetryObserver<TestError> for CancelOnBeforeAttempt {
     /// Cancels the flow during the pre-admission callback.
-    fn on_attempt_started(&self, _context: &RetryContext) {
+    fn on_before_attempt(&self, _context: &RetryContext) {
         self.cancellation.cancel();
     }
 }
@@ -195,7 +195,7 @@ fn test_sync_pre_admission_observer_cancellation_does_not_call_operation() {
             .build()
             .expect("observer cancellation policy should be valid"),
     )
-    .observer(CancelOnAttemptStarted {
+    .observer(CancelOnBeforeAttempt {
         cancellation: cancellation.clone(),
     })
     .build();
@@ -455,7 +455,7 @@ struct AttemptScopeObserver;
 
 impl RetryObserver<TestError> for AttemptScopeObserver {
     /// Checks the pre-operation callback snapshot.
-    fn on_attempt_started(&self, context: &RetryContext) {
+    fn on_before_attempt(&self, context: &RetryContext) {
         assert_eq!(
             context.current_attempt().map(|value| value.get()),
             Some(context.attempts() + 1)
@@ -508,7 +508,7 @@ fn sync_retry_callbacks_retain_current_attempt_scope() {
 struct ExhaustsBeforeSecondAttempt(Arc<ManualMonotonicClock>);
 
 impl RetryObserver<TestError> for ExhaustsBeforeSecondAttempt {
-    fn on_attempt_started(&self, context: &RetryContext) {
+    fn on_before_attempt(&self, context: &RetryContext) {
         let current_attempt = context
             .current_attempt()
             .expect("a started attempt must have a current attempt")
@@ -614,7 +614,7 @@ fn sync_retry_matches_shared_callback_matrix() {
     assert_matrix_rule_panic(&rule_error, later_rule_calls.as_ref());
 
     for phase in [
-        RetryCallbackPhase::AttemptStarted,
+        RetryCallbackPhase::BeforeAttempt,
         RetryCallbackPhase::AttemptFailed,
         RetryCallbackPhase::RetryScheduled,
     ] {

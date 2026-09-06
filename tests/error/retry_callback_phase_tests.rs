@@ -12,7 +12,7 @@ use qubit_retry::RetryCallbackPhase;
 #[test]
 fn test_retry_callback_phase_display() {
     let cases = [
-        (RetryCallbackPhase::AttemptStarted, "attempt started"),
+        (RetryCallbackPhase::BeforeAttempt, "before attempt"),
         (RetryCallbackPhase::AttemptFailed, "attempt failed"),
         (RetryCallbackPhase::RuleDecision, "rule decision"),
         (RetryCallbackPhase::RetryScheduled, "retry scheduled"),

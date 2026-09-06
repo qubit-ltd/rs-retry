@@ -107,7 +107,7 @@ impl CompletionObserver {
 }
 
 impl RetryObserver<TestError> for CompletionObserver {
-    fn on_attempt_started(&self, _context: &RetryContext) {
+    fn on_before_attempt(&self, _context: &RetryContext) {
         self.started_calls.fetch_add(1, Ordering::SeqCst);
         if self.index == 0 {
             assert_ne!(self.scenario, CompletionScenario::StartedPanic, "control panic");
@@ -300,7 +300,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                 | CompletionScenario::ScheduledPanic
                 | CompletionScenario::RulePanic => {
                     let expected = match scenario {
-                        CompletionScenario::StartedPanic => RetryCallbackPhase::AttemptStarted,
+                        CompletionScenario::StartedPanic => RetryCallbackPhase::BeforeAttempt,
                         CompletionScenario::FailedPanic => RetryCallbackPhase::AttemptFailed,
                         CompletionScenario::ScheduledPanic => RetryCallbackPhase::RetryScheduled,
                         _ => RetryCallbackPhase::RuleDecision,

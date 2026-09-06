@@ -78,11 +78,11 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         }
     }
 
-    /// Checks all pre-attempt gates and invokes the attempt-started observers.
+    /// Checks all pre-attempt gates and invokes the before-attempt observers.
     ///
     /// # Errors
     /// Returns a terminal retry error when a timeout, cancellation,
-    /// continuation limit, clock failure, or attempt-started observer
+    /// continuation limit, clock failure, or before-attempt observer
     /// failure stops the flow. The upcoming operation is not counted until
     /// a facade commits it after its runtime-specific preparation succeeds.
     #[allow(
@@ -111,7 +111,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         self.next_delay = None;
         self.retry_after_hint = None;
         let started_context = self.snapshot();
-        if let Err(callback) = self.observers.try_attempt_started(&started_context) {
+        if let Err(callback) = self.observers.try_before_attempt(&started_context) {
             return Err(self.callback_failed_after_refresh(callback, started_context, clock));
         }
         if Self::is_cancelled(cancellation) {
