@@ -19,6 +19,7 @@ use crate::RetryCallbackKind;
 use crate::RetryCallbackPhase;
 use crate::RetryContext;
 use crate::RetryFailure;
+use crate::RetryPanic;
 
 /// Ordered observer collection.
 #[derive(Clone)]
@@ -117,11 +118,25 @@ impl<E: 'static> RetryObservers<E> {
                     callback(observer.as_ref())
                 }))
             {
+                // Converting a non-string payload drops user-owned data.
+                // Isolate that destructor too, after the observer has unwound.
+                let panic = match std::panic::catch_unwind(AssertUnwindSafe(|| {
+                    retry_panic_from_payload(payload)
+                })) {
+                    Ok(panic) => panic,
+                    Err(secondary_payload) => {
+                        // This new payload may itself panic on Drop. Retain
+                        // the original NonString classification and leak only
+                        // this exceptional payload to avoid recursive unwinds.
+                        std::mem::forget(secondary_payload);
+                        RetryPanic::NonString
+                    }
+                };
                 failures.push(RetryCallbackFailure::new(
                     RetryCallbackKind::Observer,
                     index,
                     phase,
-                    retry_panic_from_payload(payload),
+                    panic,
                 ));
             }
         }
