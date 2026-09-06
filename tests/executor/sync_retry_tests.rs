@@ -6,9 +6,16 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::task::Context;
+use std::task::Poll;
+use std::task::Waker;
 use std::time::Duration;
 
 use qubit_clock::ClockDomain;
@@ -25,6 +32,8 @@ use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
 use qubit_retry::RetryCallbackPhase;
+use qubit_retry::RetryCancellationPhase;
+use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryFailure;
@@ -49,11 +58,289 @@ use crate::support::callback_elapsed_records;
 use crate::support::completion_regressing_timer;
 use crate::support::rule_terminal_regressing_timer;
 
+/// Shared state for a manually completed pending timer future.
+struct PendingTimerState {
+    /// Whether the test has completed the pending timer.
+    ready: AtomicBool,
+    /// Latest waker registered by the blocking retry runner.
+    waker: Mutex<Option<Waker>>,
+}
+
+impl PendingTimerState {
+    /// Completes the timer and wakes its registered runner.
+    fn complete(&self) {
+        self.ready.store(true, Ordering::SeqCst);
+        if let Some(waker) = self
+            .waker
+            .lock()
+            .expect("pending timer waker lock should remain valid")
+            .take()
+        {
+            waker.wake();
+        }
+    }
+}
+
+/// Future controlled by [`PendingTimerState`].
+struct PendingTimerFuture {
+    /// State shared with the test thread.
+    state: Arc<PendingTimerState>,
+}
+
+impl Future for PendingTimerFuture {
+    type Output = Result<(), TimeError>;
+
+    /// Completes after the test marks the shared timer state ready.
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.state.ready.load(Ordering::SeqCst) {
+            Poll::Ready(Ok(()))
+        } else {
+            *self
+                .state
+                .waker
+                .lock()
+                .expect("pending timer waker lock should remain valid") = Some(context.waker().clone());
+            if self.state.ready.load(Ordering::SeqCst) {
+                Poll::Ready(Ok(()))
+            } else {
+                Poll::Pending
+            }
+        }
+    }
+}
+
+/// Timer that reports registration and remains pending until explicitly set.
+struct PendingTimer {
+    /// Stable clock used by the retry controller.
+    clock: Arc<ManualMonotonicClock>,
+    /// Registration event sent to the coordinating test thread.
+    registered: std::sync::mpsc::Sender<()>,
+    /// State controlling the returned timer future.
+    state: Arc<PendingTimerState>,
+}
+
+impl Timer for PendingTimer {
+    /// Returns the stable manual clock used by this timer.
+    fn clock(&self) -> &dyn MonotonicClock {
+        self.clock.as_ref()
+    }
+
+    /// Registers one pending deadline and notifies the test coordinator.
+    fn at(&self, _deadline: MonotonicInstant) -> Result<TimerFuture, TimeError> {
+        self.registered
+            .send(())
+            .expect("test should observe the backoff timer registration");
+        Ok(Box::pin(PendingTimerFuture {
+            state: Arc::clone(&self.state),
+        }))
+    }
+}
+
+/// Cancels one retry flow from its pre-admission observer.
+struct CancelOnAttemptStarted {
+    /// Token cancelled before the operation can be admitted.
+    cancellation: RetryCancellationToken,
+}
+
+impl RetryObserver<TestError> for CancelOnAttemptStarted {
+    /// Cancels the flow during the pre-admission callback.
+    fn on_attempt_started(&self, _context: &RetryContext) {
+        self.cancellation.cancel();
+    }
+}
+
 #[test]
 fn sync_facade_is_available() {
     let policy = RetryPolicy::builder().build().unwrap();
     let retry = Retry::<()>::builder(policy).build();
     let _ = retry.sync();
+}
+
+/// Verifies cancellation before the first admission skips the operation.
+#[test]
+fn test_sync_cancellation_before_attempt_does_not_call_operation() {
+    let cancellation = RetryCancellationToken::new();
+    cancellation.cancel();
+    let retry = Retry::<TestError>::builder(
+        RetryPolicy::builder()
+            .build()
+            .expect("pre-cancellation policy should be valid"),
+    )
+    .build();
+
+    let error = retry
+        .sync()
+        .cancellation_token(cancellation)
+        .run(|| -> Result<(), TestError> { panic!("pre-cancelled operation must not run") })
+        .expect_err("pre-cancellation must stop before the first operation");
+
+    let RetryFailure::Cancelled {
+        phase, last_failure, ..
+    } = error.failure()
+    else {
+        panic!("expected a cancellation terminal");
+    };
+    assert_eq!(*phase, RetryCancellationPhase::BeforeAttempt);
+    assert!(last_failure.is_none());
+    assert_eq!(error.context().attempts(), 0);
+    assert_eq!(error.context().current_attempt(), None);
+}
+
+/// Verifies cancellation by the pre-admission observer skips the operation.
+#[test]
+fn test_sync_pre_admission_observer_cancellation_does_not_call_operation() {
+    let cancellation = RetryCancellationToken::new();
+    let retry = Retry::<TestError>::builder(
+        RetryPolicy::builder()
+            .build()
+            .expect("observer cancellation policy should be valid"),
+    )
+    .observer(CancelOnAttemptStarted {
+        cancellation: cancellation.clone(),
+    })
+    .build();
+
+    let error = retry
+        .sync()
+        .cancellation_token(cancellation)
+        .run(|| -> Result<(), TestError> { panic!("observer-cancelled operation must not run") })
+        .expect_err("observer cancellation must stop before admission");
+
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::Cancelled {
+            phase: RetryCancellationPhase::BeforeAttempt,
+            last_failure: None,
+            ..
+        }
+    ));
+    assert_eq!(error.context().attempts(), 0);
+}
+
+/// Verifies a successful admitted operation wins over concurrent cancellation.
+#[test]
+fn test_sync_operation_success_wins_over_cancellation() {
+    let cancellation = RetryCancellationToken::new();
+    let operation_cancellation = cancellation.clone();
+    let runner_thread = std::thread::current().id();
+    let success = Retry::<TestError>::builder(
+        RetryPolicy::builder()
+            .build()
+            .expect("operation cancellation policy should be valid"),
+    )
+    .build()
+    .sync()
+    .cancellation_token(cancellation)
+    .run(move || {
+        assert_eq!(std::thread::current().id(), runner_thread);
+        operation_cancellation.cancel();
+        Ok::<_, TestError>(42_u32)
+    })
+    .expect("an admitted successful operation must retain success priority");
+
+    assert_eq!(*success.value(), 42);
+    assert_eq!(success.context().attempts(), 1);
+}
+
+/// Verifies a cancelled failing operation retains its application error.
+#[test]
+fn test_sync_operation_error_records_failure_before_cancellation() {
+    let cancellation = RetryCancellationToken::new();
+    let operation_cancellation = cancellation.clone();
+    let error = Retry::<TestError>::builder(
+        RetryPolicy::builder()
+            .max_attempts(2)
+            .build()
+            .expect("operation cancellation policy should be valid"),
+    )
+    .build()
+    .sync()
+    .cancellation_token(cancellation)
+    .run(move || {
+        operation_cancellation.cancel();
+        Err::<(), _>(TestError("cancelled operation failure"))
+    })
+    .expect_err("a cancelled failing operation must stop before another attempt");
+
+    let RetryFailure::Cancelled {
+        phase, last_failure, ..
+    } = error.failure()
+    else {
+        panic!("expected a cancellation terminal");
+    };
+    assert_eq!(*phase, RetryCancellationPhase::Backoff);
+    assert_eq!(
+        last_failure.as_ref().and_then(AttemptFailure::as_error),
+        Some(&TestError("cancelled operation failure"))
+    );
+    assert_eq!(error.context().attempts(), 1);
+}
+
+/// Verifies cancellation wakes a pending backoff without advancing its clock.
+#[test]
+fn test_sync_backoff_cancellation_wakes_pending_manual_timer() {
+    let cancellation = RetryCancellationToken::new();
+    let runner_cancellation = cancellation.clone();
+    let operation_calls = Arc::new(AtomicUsize::new(0));
+    let runner_operation_calls = Arc::clone(&operation_calls);
+    let (registered_sender, registered_receiver) = std::sync::mpsc::channel();
+    let timer_state = Arc::new(PendingTimerState {
+        ready: AtomicBool::new(false),
+        waker: Mutex::new(None),
+    });
+    let timer = Arc::new(PendingTimer {
+        clock: ManualMonotonicClock::new_shared(),
+        registered: registered_sender,
+        state: Arc::clone(&timer_state),
+    });
+    let (result_sender, result_receiver) = std::sync::mpsc::channel();
+    let runner = std::thread::spawn(move || {
+        let result = Retry::<TestError>::builder(
+            RetryPolicy::builder()
+                .max_attempts(2)
+                .backoff(BackoffPolicy::fixed(Duration::from_secs(60)))
+                .build()
+                .expect("backoff cancellation policy should be valid"),
+        )
+        .build()
+        .sync()
+        .timer(timer)
+        .cancellation_token(runner_cancellation)
+        .run(move || {
+            runner_operation_calls.fetch_add(1, Ordering::SeqCst);
+            Err::<(), _>(TestError("backoff"))
+        });
+        result_sender
+            .send(result)
+            .expect("test should receive the retry result");
+    });
+
+    registered_receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("backoff timer should be registered before cancellation");
+    cancellation.cancel();
+    let result = result_receiver.recv_timeout(Duration::from_secs(2));
+    if result.is_err() {
+        timer_state.complete();
+    }
+    runner.join().expect("sync retry runner should not panic");
+    let error = result
+        .expect("cancellation should wake the pending backoff")
+        .expect_err("backoff cancellation must terminate the retry");
+
+    let RetryFailure::Cancelled {
+        phase, last_failure, ..
+    } = error.failure()
+    else {
+        panic!("expected a cancellation terminal");
+    };
+    assert_eq!(*phase, RetryCancellationPhase::Backoff);
+    assert_eq!(
+        last_failure.as_ref().and_then(AttemptFailure::as_error),
+        Some(&TestError("backoff"))
+    );
+    assert_eq!(error.context().attempts(), 1);
+    assert_eq!(operation_calls.load(Ordering::SeqCst), 1);
 }
 
 /// Clock that moves backward only when a successful operation is finalized.

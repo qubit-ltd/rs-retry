@@ -9,12 +9,14 @@
 
 use std::sync::Arc;
 
-use qubit_clock::BlockingSleeper;
 use qubit_clock::StdTimer;
 use qubit_clock::Timer;
 
+use super::internal::BlockingBackoffOutcome;
 use super::internal::RetryFlowController;
+use super::internal::wait_for_backoff;
 use super::retry::Retry;
+use super::retry_cancellation_token::RetryCancellationToken;
 use crate::AttemptFailure;
 use crate::RetryError;
 use crate::RetryInfrastructureFailure;
@@ -25,7 +27,8 @@ use crate::random::ThreadRetryRandomSource;
 /// Same-thread retry execution. It intentionally exposes no timeout method.
 pub struct SyncRetry<'a, E> {
     retry: &'a Retry<E>,
-    sleeper: BlockingSleeper,
+    cancellation_token: Option<RetryCancellationToken>,
+    timer: Arc<dyn Timer>,
     random_source: Arc<dyn RetryRandomSource>,
 }
 
@@ -34,14 +37,33 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
     pub(crate) fn new(retry: &'a Retry<E>) -> Self {
         Self {
             retry,
-            sleeper: BlockingSleeper::new(Arc::new(StdTimer::new())),
+            cancellation_token: None,
+            timer: Arc::new(StdTimer::new()),
             random_source: Arc::new(ThreadRetryRandomSource),
         }
     }
 
+    /// Sets the token used to cancel this synchronous retry flow.
+    ///
+    /// Cancellation is observed before an operation starts, after a failed
+    /// operation, and while waiting for backoff. It cannot interrupt an
+    /// operation that is already running on the calling thread.
+    ///
+    /// # Parameters
+    ///
+    /// - `token`: Shared flow cancellation token.
+    ///
+    /// # Returns
+    ///
+    /// A synchronous facade that observes the supplied token.
+    pub fn cancellation_token(mut self, token: RetryCancellationToken) -> Self {
+        self.cancellation_token = Some(token);
+        self
+    }
+
     /// Replaces the blocking timer used by this execution.
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
-        self.sleeper = BlockingSleeper::new(timer);
+        self.timer = timer;
         self
     }
 
@@ -60,13 +82,14 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
     where
         F: FnMut() -> Result<T, E>,
     {
-        let clock = self.sleeper.timer().clock();
+        let clock = self.timer.clock();
         let mut controller =
             RetryFlowController::new(clock.now(), self.retry, Arc::clone(&self.random_source), None, None);
 
         loop {
-            let _ = controller.before_attempt(clock, None)?;
-            controller.commit_attempt(clock, None)?;
+            let cancellation = self.cancellation_token.as_ref();
+            let _ = controller.before_attempt(clock, cancellation)?;
+            controller.commit_attempt(clock, cancellation)?;
             let result = operation();
 
             match result {
@@ -75,15 +98,22 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                     return Ok(RetrySuccess::new(value, context));
                 }
                 Err(error) => {
-                    let directive = controller.record_failure(AttemptFailure::Error(error), clock, None)?;
-                    if let Err(timer_error) = self.sleeper.sleep_for(directive.sleep_duration()) {
-                        let error = controller.record_inactive_infrastructure_failure(
-                            RetryInfrastructureFailure::Timer {
-                                message: timer_error.to_string().into_boxed_str(),
-                            },
-                            clock.now(),
-                        );
-                        return Err(error);
+                    let directive =
+                        controller.record_failure(AttemptFailure::Error(error), clock, cancellation)?;
+                    match wait_for_backoff(&self.timer, directive.sleep_duration(), cancellation) {
+                        BlockingBackoffOutcome::Elapsed => {}
+                        BlockingBackoffOutcome::Cancelled => {
+                            return Err(controller.record_backoff_cancellation(clock));
+                        }
+                        BlockingBackoffOutcome::TimerFailed(timer_error) => {
+                            let error = controller.record_inactive_infrastructure_failure(
+                                RetryInfrastructureFailure::Timer {
+                                    message: timer_error.to_string().into_boxed_str(),
+                                },
+                                clock.now(),
+                            );
+                            return Err(error);
+                        }
                     }
                 }
             }
