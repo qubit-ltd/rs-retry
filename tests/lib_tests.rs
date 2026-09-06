@@ -16,5 +16,6 @@ mod new_api_tests;
 mod observer;
 mod policy;
 mod random;
+mod readme_examples_tests;
 mod rule;
 mod support;
