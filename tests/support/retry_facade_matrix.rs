@@ -160,7 +160,7 @@ impl ObserverPhaseCounts {
     /// Returns the number of calls observed for `phase`.
     pub(crate) fn calls(&self, phase: RetryCallbackPhase) -> usize {
         match phase {
-            RetryCallbackPhase::AttemptStarted => self.started.load(Ordering::SeqCst),
+            RetryCallbackPhase::BeforeAttempt => self.started.load(Ordering::SeqCst),
             RetryCallbackPhase::AttemptFailed => self.failed.load(Ordering::SeqCst),
             RetryCallbackPhase::RetryScheduled => self.scheduled.load(Ordering::SeqCst),
             RetryCallbackPhase::RuleDecision | RetryCallbackPhase::Success | RetryCallbackPhase::TerminalFailure => 0,
@@ -181,9 +181,9 @@ impl PanickingPhaseObserver {
 }
 
 impl RetryObserver<TestError> for PanickingPhaseObserver {
-    /// Panics when attempt-started is the selected phase.
-    fn on_attempt_started(&self, _context: &RetryContext) {
-        if self.phase == RetryCallbackPhase::AttemptStarted {
+    /// Panics when before-attempt is the selected phase.
+    fn on_before_attempt(&self, _context: &RetryContext) {
+        if self.phase == RetryCallbackPhase::BeforeAttempt {
             panic!("matrix observer panic");
         }
     }
@@ -207,8 +207,8 @@ impl RetryObserver<TestError> for PanickingPhaseObserver {
 pub(crate) struct CountingPhaseObserver(pub(crate) Arc<ObserverPhaseCounts>);
 
 impl RetryObserver<TestError> for CountingPhaseObserver {
-    /// Records one attempt-started callback.
-    fn on_attempt_started(&self, _context: &RetryContext) {
+    /// Records one before-attempt callback.
+    fn on_before_attempt(&self, _context: &RetryContext) {
         self.0.started.fetch_add(1, Ordering::SeqCst);
     }
 
@@ -308,7 +308,7 @@ pub(crate) fn assert_matrix_observer_panic(
     later_counts: &ObserverPhaseCounts,
 ) {
     let (has_last_failure, attempts, current_attempt) = match phase {
-        RetryCallbackPhase::AttemptStarted => (false, 0, Some(1)),
+        RetryCallbackPhase::BeforeAttempt => (false, 0, Some(1)),
         RetryCallbackPhase::AttemptFailed | RetryCallbackPhase::RetryScheduled => (true, 1, Some(1)),
         RetryCallbackPhase::RuleDecision => {
             panic!("rule decision is not an observer phase")

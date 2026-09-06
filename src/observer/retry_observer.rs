@@ -37,7 +37,7 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     fn on_terminal_failure(&self, _failure: &RetryFailure<E>, _context: &RetryContext) {}
 
     /// Observes the context before an attempt is admitted.
-    fn on_attempt_started(&self, _context: &RetryContext) {}
+    fn on_before_attempt(&self, _context: &RetryContext) {}
 
     /// Observes one committed attempt failure.
     fn on_attempt_failed(&self, _failure: &AttemptFailure<E>, _context: &RetryContext) {}

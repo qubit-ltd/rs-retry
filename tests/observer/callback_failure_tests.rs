@@ -24,7 +24,7 @@ use crate::support::TestError;
 struct PanickingObserver;
 
 impl RetryObserver<TestError> for PanickingObserver {
-    fn on_attempt_started(&self, _context: &RetryContext) {
+    fn on_before_attempt(&self, _context: &RetryContext) {
         panic!("observer panic");
     }
 }

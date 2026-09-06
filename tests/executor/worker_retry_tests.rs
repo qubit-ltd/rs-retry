@@ -180,7 +180,7 @@ fn worker_retry_matches_shared_callback_matrix() {
     assert_matrix_rule_panic(&rule_error, later_rule_calls.as_ref());
 
     for phase in [
-        RetryCallbackPhase::AttemptStarted,
+        RetryCallbackPhase::BeforeAttempt,
         RetryCallbackPhase::AttemptFailed,
         RetryCallbackPhase::RetryScheduled,
     ] {

@@ -10,6 +10,7 @@
 mod async_cancellation_tests;
 mod async_retry_tests;
 mod attempt_cancellation_token_tests;
+mod before_attempt_tests;
 mod blocking_attempt_outcome_tests;
 mod blocking_attempt_tests;
 mod blocking_value_operation_tests;

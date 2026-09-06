@@ -181,7 +181,7 @@ struct LifecycleCounts {
 struct RecordingObserver(Arc<LifecycleCounts>);
 
 impl RetryObserver<TestError> for RecordingObserver {
-    fn on_attempt_started(&self, _context: &RetryContext) {
+    fn on_before_attempt(&self, _context: &RetryContext) {
         self.0.started.fetch_add(1, Ordering::SeqCst);
     }
 
@@ -197,7 +197,7 @@ impl RetryObserver<TestError> for RecordingObserver {
 struct PanickingObserver;
 
 impl RetryObserver<TestError> for PanickingObserver {
-    fn on_attempt_started(&self, _context: &RetryContext) {
+    fn on_before_attempt(&self, _context: &RetryContext) {
         panic!("observer panic");
     }
 }
@@ -205,7 +205,7 @@ impl RetryObserver<TestError> for PanickingObserver {
 struct AdvancingObserver(Arc<ManualMonotonicClock>);
 
 impl RetryObserver<TestError> for AdvancingObserver {
-    fn on_attempt_started(&self, _context: &RetryContext) {
+    fn on_before_attempt(&self, _context: &RetryContext) {
         self.0.advance(Duration::from_secs(2)).unwrap();
     }
 }
@@ -268,7 +268,7 @@ fn observers_and_rules_cover_current_lifecycle() {
     };
     assert_eq!(callback.callback(), RetryCallbackKind::Observer);
     assert_eq!(callback.index(), 0);
-    assert_eq!(callback.phase(), RetryCallbackPhase::AttemptStarted);
+    assert_eq!(callback.phase(), RetryCallbackPhase::BeforeAttempt);
     assert_eq!(last_failure, &None);
     assert_eq!(observer_error.context().attempts(), 0);
     assert_eq!(

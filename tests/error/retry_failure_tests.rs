@@ -80,7 +80,7 @@ struct StartedPanickingObserver;
 
 impl RetryObserver<String> for StartedPanickingObserver {
     /// Panics before the attempt is admitted.
-    fn on_attempt_started(&self, _context: &RetryContext) {
+    fn on_before_attempt(&self, _context: &RetryContext) {
         panic!("started observer panic");
     }
 }
@@ -201,7 +201,7 @@ fn map_error_preserves_callback_failed_fields() {
     };
     assert_eq!(callback.callback(), RetryCallbackKind::Observer);
     assert_eq!(callback.index(), 0);
-    assert_eq!(callback.phase(), RetryCallbackPhase::AttemptStarted);
+    assert_eq!(callback.phase(), RetryCallbackPhase::BeforeAttempt);
     assert_eq!(callback.panic().message(), Some("started observer panic"));
     assert_eq!(last_failure, None);
 }
