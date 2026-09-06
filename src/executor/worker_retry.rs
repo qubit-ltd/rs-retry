@@ -7,26 +7,20 @@
 // =============================================================================
 //! Worker-thread execution facade for blocking operations.
 
-use std::future::Future;
 use std::sync::Arc;
-use std::sync::mpsc;
-use std::task::Context;
-use std::task::Poll;
-use std::task::Wake;
-use std::task::Waker;
 use std::time::Duration;
 
-use qubit_clock::BlockingSleeper;
 use qubit_clock::MonotonicClock;
 use qubit_clock::StdTimer;
-use qubit_clock::TimeError;
 use qubit_clock::Timer;
 
 use super::attempt_cancellation_token::AttemptCancellationToken;
 use super::blocking_attempt::BlockingAttempt;
 use super::blocking_attempt_outcome::BlockingAttemptOutcome;
 use super::blocking_value_operation::BlockingValueOperation;
+use super::internal::BlockingBackoffOutcome;
 use super::internal::RetryFlowController;
+use super::internal::wait_for_backoff;
 use super::retry::Retry;
 use super::retry_cancellation_token::RetryCancellationToken;
 use super::worker_attempt_executor::WorkerAttemptExecutor;
@@ -39,34 +33,6 @@ use crate::RetryTimeoutScope;
 use crate::WorkerStopTrigger;
 use crate::random::ThreadRetryRandomSource;
 
-/// Result of waiting for one blocking retry delay.
-enum BlockingBackoffOutcome {
-    /// The configured delay elapsed.
-    Elapsed,
-    /// Flow cancellation interrupted the delay.
-    Cancelled,
-    /// Registering or polling the delay timer failed.
-    TimerFailed(TimeError),
-}
-
-/// Waker that forwards timer and cancellation notifications to one channel.
-struct BlockingBackoffWake {
-    /// Notification sender shared by both futures.
-    sender: mpsc::Sender<()>,
-}
-
-impl Wake for BlockingBackoffWake {
-    /// Wakes the blocking retry thread through its notification channel.
-    fn wake(self: Arc<Self>) {
-        let _ = self.sender.send(());
-    }
-
-    /// Wakes the blocking retry thread without consuming the shared waker.
-    fn wake_by_ref(self: &Arc<Self>) {
-        let _ = self.sender.send(());
-    }
-}
-
 /// Worker retry execution with cooperative cancellation.
 pub struct WorkerRetry<'a, E> {
     retry: &'a Retry<E>,
@@ -76,7 +42,7 @@ pub struct WorkerRetry<'a, E> {
     flow_timeout: Option<Duration>,
     cancellation_grace: Duration,
     cancellation_token: Option<RetryCancellationToken>,
-    sleeper: BlockingSleeper,
+    timer: Arc<dyn Timer>,
     random_source: Arc<dyn RetryRandomSource>,
 }
 
@@ -90,7 +56,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             flow_timeout: None,
             cancellation_grace: Duration::from_millis(100),
             cancellation_token: None,
-            sleeper: BlockingSleeper::new(Arc::new(StdTimer::new())),
+            timer: Arc::new(StdTimer::new()),
             random_source: Arc::new(ThreadRetryRandomSource),
         }
     }
@@ -158,7 +124,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     /// bound. The timer must progress independently while this synchronous
     /// facade blocks.
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
-        self.sleeper = BlockingSleeper::new(timer);
+        self.timer = timer;
         self
     }
 
@@ -180,7 +146,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     {
         let operation = Arc::new(BlockingValueOperation::new(operation));
         let worker_operation: Arc<dyn BlockingAttempt<E>> = operation.clone();
-        let timer = self.sleeper.timer();
+        let timer = &self.timer;
         let clock = timer.clock();
         let mut controller = RetryFlowController::new(
             clock.now(),
@@ -291,7 +257,11 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         failure: AttemptFailure<E>,
     ) -> Result<(), RetryError<E>> {
         let directive = controller.record_failure(failure, clock, self.cancellation_token.as_ref())?;
-        match self.wait_for_backoff(directive.sleep_duration()) {
+        match wait_for_backoff(
+            &self.timer,
+            directive.sleep_duration(),
+            self.cancellation_token.as_ref(),
+        ) {
             BlockingBackoffOutcome::Elapsed => {}
             BlockingBackoffOutcome::Cancelled => {
                 return Err(controller.record_backoff_cancellation(clock));
@@ -307,49 +277,5 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             }
         }
         Ok(())
-    }
-
-    /// Waits for one retry delay while observing flow cancellation.
-    ///
-    /// # Parameters
-    /// - `delay`: Selected backoff duration.
-    ///
-    /// # Returns
-    /// Whether the delay elapsed, cancellation won, or the timer failed.
-    /// Cancellation is polled before the timer so it wins when both become
-    /// ready before the same wake cycle.
-    fn wait_for_backoff(&self, delay: Duration) -> BlockingBackoffOutcome {
-        let Some(token) = self.cancellation_token.as_ref() else {
-            return match self.sleeper.sleep_for(delay) {
-                Ok(()) => BlockingBackoffOutcome::Elapsed,
-                Err(error) => BlockingBackoffOutcome::TimerFailed(error),
-            };
-        };
-        if token.is_cancelled() {
-            return BlockingBackoffOutcome::Cancelled;
-        }
-        let mut timer_future = match self.sleeper.timer().after(delay) {
-            Ok(future) => future,
-            Err(_) if token.is_cancelled() => {
-                return BlockingBackoffOutcome::Cancelled;
-            }
-            Err(error) => return BlockingBackoffOutcome::TimerFailed(error),
-        };
-        let mut cancellation = Box::pin(token.cancelled());
-        let (sender, receiver) = mpsc::channel();
-        let waker = Waker::from(Arc::new(BlockingBackoffWake { sender }));
-        let mut context = Context::from_waker(&waker);
-        loop {
-            if cancellation.as_mut().poll(&mut context).is_ready() {
-                return BlockingBackoffOutcome::Cancelled;
-            }
-            if let Poll::Ready(result) = timer_future.as_mut().poll(&mut context) {
-                return match result {
-                    Ok(()) => BlockingBackoffOutcome::Elapsed,
-                    Err(error) => BlockingBackoffOutcome::TimerFailed(error),
-                };
-            }
-            receiver.recv().expect("backoff futures must retain their shared waker");
-        }
     }
 }

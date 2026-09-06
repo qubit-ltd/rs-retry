@@ -155,6 +155,60 @@ impl RetryObserver<TestError> for CountAttemptFailed {
     }
 }
 
+/// Verifies the legacy no-token worker path still waits for its timer.
+#[test]
+fn test_worker_backoff_without_cancellation_token_reaches_next_attempt() {
+    let operation_calls = Arc::new(AtomicUsize::new(0));
+    let runner_operation_calls = Arc::clone(&operation_calls);
+    let (registered_sender, registered_receiver) = std::sync::mpsc::channel();
+    let timer_state = Arc::new(PendingTimerState {
+        ready: AtomicBool::new(false),
+        waker: Mutex::new(None),
+    });
+    let timer = Arc::new(PendingTimer {
+        clock: ManualMonotonicClock::new_shared(),
+        registered: registered_sender,
+        state: Arc::clone(&timer_state),
+    });
+    let (result_sender, result_receiver) = std::sync::mpsc::channel();
+    let runner = std::thread::spawn(move || {
+        let result = Retry::<TestError>::builder(
+            RetryPolicy::builder()
+                .max_attempts(2)
+                .backoff(BackoffPolicy::fixed(Duration::from_secs(60)))
+                .build()
+                .expect("no-token backoff policy should be valid"),
+        )
+        .build()
+        .worker()
+        .timer(timer)
+        .run(move |_: AttemptCancellationToken| {
+            if runner_operation_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(TestError("retry"))
+            } else {
+                Ok(42_u32)
+            }
+        });
+        result_sender
+            .send(result)
+            .expect("test should receive the retry result");
+    });
+
+    registered_receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("worker backoff timer should be registered");
+    timer_state.complete();
+    let result = result_receiver.recv_timeout(Duration::from_secs(2));
+    runner.join().expect("worker retry runner should not panic");
+    let success = result
+        .expect("completed timer should wake the worker backoff")
+        .expect("the second worker attempt should succeed");
+
+    assert_eq!(*success.value(), 42);
+    assert_eq!(success.context().attempts(), 2);
+    assert_eq!(operation_calls.load(Ordering::SeqCst), 2);
+}
+
 /// Verifies pre-cancellation prevents worker construction and operation start.
 #[test]
 fn test_worker_pre_cancellation_does_not_start_operation() {
