@@ -76,13 +76,8 @@ impl<E: 'static> RetryObservers<E> {
     ///
     /// Returns all caught panics in registration order without stopping later
     /// observers or changing the successful result.
-    pub(crate) fn notify_success(
-        &self,
-        context: &RetryContext,
-    ) -> Vec<RetryCallbackFailure> {
-        self.notify_each(RetryCallbackPhase::Success, |observer| {
-            observer.on_success(context)
-        })
+    pub(crate) fn notify_success(&self, context: &RetryContext) -> Vec<RetryCallbackFailure> {
+        self.notify_each(RetryCallbackPhase::Success, |observer| observer.on_success(context))
     }
 
     /// Notifies every observer of the original terminal failure and context.
@@ -103,26 +98,16 @@ impl<E: 'static> RetryObservers<E> {
     ///
     /// The returned vector allocates only when a callback panics. Indices
     /// retain the original observer registration order.
-    fn notify_each<F>(
-        &self,
-        phase: RetryCallbackPhase,
-        mut callback: F,
-    ) -> Vec<RetryCallbackFailure>
+    fn notify_each<F>(&self, phase: RetryCallbackPhase, mut callback: F) -> Vec<RetryCallbackFailure>
     where
         F: FnMut(&dyn RetryObserver<E>),
     {
         let mut failures = Vec::new();
         for (index, observer) in self.observers.iter().enumerate() {
-            if let Err(payload) =
-                std::panic::catch_unwind(AssertUnwindSafe(|| {
-                    callback(observer.as_ref())
-                }))
-            {
+            if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(|| callback(observer.as_ref()))) {
                 // Converting a non-string payload drops user-owned data.
                 // Isolate that destructor too, after the observer has unwound.
-                let panic = match std::panic::catch_unwind(AssertUnwindSafe(|| {
-                    retry_panic_from_payload(payload)
-                })) {
+                let panic = match std::panic::catch_unwind(AssertUnwindSafe(|| retry_panic_from_payload(payload))) {
                     Ok(panic) => panic,
                     Err(secondary_payload) => {
                         // This new payload may itself panic on Drop. Retain

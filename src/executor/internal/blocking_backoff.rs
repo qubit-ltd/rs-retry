@@ -99,8 +99,6 @@ pub(crate) fn wait_for_backoff(
                 Err(error) => BlockingBackoffOutcome::TimerFailed(error),
             };
         }
-        receiver
-            .recv()
-            .expect("backoff futures must retain their shared waker");
+        receiver.recv().expect("backoff futures must retain their shared waker");
     }
 }

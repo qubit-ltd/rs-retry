@@ -41,10 +41,7 @@ impl<T> RetrySuccess<T> {
     }
 
     /// Attaches completion diagnostics after the final result is frozen.
-    pub(crate) fn set_completion_callback_failures(
-        &mut self,
-        failures: Vec<RetryCallbackFailure>,
-    ) {
+    pub(crate) fn set_completion_callback_failures(&mut self, failures: Vec<RetryCallbackFailure>) {
         self.completion_callback_failures = failures;
     }
 
@@ -52,9 +49,7 @@ impl<T> RetrySuccess<T> {
     ///
     /// Returns the (value, context, completion callback failures) triple.
     #[must_use = "consume the terminal result, context and completion diagnostics"]
-    pub fn into_parts_with_diagnostics(
-        self,
-    ) -> (T, RetryContext, Vec<RetryCallbackFailure>) {
+    pub fn into_parts_with_diagnostics(self) -> (T, RetryContext, Vec<RetryCallbackFailure>) {
         (self.value, self.context, self.completion_callback_failures)
     }
 

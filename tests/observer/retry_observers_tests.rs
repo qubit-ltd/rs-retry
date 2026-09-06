@@ -88,20 +88,16 @@ struct CompletionObserver {
 
 impl CompletionObserver {
     /// Records a frozen result, advances virtual time, and optionally panics.
-    fn complete(
-        &self,
-        phase: RetryCallbackPhase,
-        failure: Option<String>,
-        context: &RetryContext,
-    ) {
-        self.records.lock().expect("completion records lock").push(
-            CompletionRecord {
+    fn complete(&self, phase: RetryCallbackPhase, failure: Option<String>, context: &RetryContext) {
+        self.records
+            .lock()
+            .expect("completion records lock")
+            .push(CompletionRecord {
                 index: self.index,
                 phase,
                 failure,
                 context: *context,
-            },
-        );
+            });
         self.clock
             .advance(Duration::from_secs(10))
             .expect("advance completion clock");
@@ -113,42 +109,22 @@ impl RetryObserver<TestError> for CompletionObserver {
     fn on_attempt_started(&self, _context: &RetryContext) {
         self.started_calls.fetch_add(1, Ordering::SeqCst);
         if self.index == 0 {
-            assert_ne!(
-                self.scenario,
-                CompletionScenario::StartedPanic,
-                "control panic"
-            );
+            assert_ne!(self.scenario, CompletionScenario::StartedPanic, "control panic");
         }
     }
 
-    fn on_attempt_failed(
-        &self,
-        _failure: &AttemptFailure<TestError>,
-        _context: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _failure: &AttemptFailure<TestError>, _context: &RetryContext) {
         if self.index == 0 {
             if self.scenario == CompletionScenario::CancelledAfterFailure {
                 self.cancellation.cancel();
             }
-            assert_ne!(
-                self.scenario,
-                CompletionScenario::FailedPanic,
-                "control panic"
-            );
+            assert_ne!(self.scenario, CompletionScenario::FailedPanic, "control panic");
         }
     }
 
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        _context: &RetryContext,
-    ) {
+    fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {
         if self.index == 0 {
-            assert_ne!(
-                self.scenario,
-                CompletionScenario::ScheduledPanic,
-                "control panic"
-            );
+            assert_ne!(self.scenario, CompletionScenario::ScheduledPanic, "control panic");
             if self.scenario == CompletionScenario::TimedOut {
                 self.clock
                     .advance(Duration::from_secs(1))
@@ -161,11 +137,7 @@ impl RetryObserver<TestError> for CompletionObserver {
         self.complete(RetryCallbackPhase::Success, None, context);
     }
 
-    fn on_terminal_failure(
-        &self,
-        failure: &RetryFailure<TestError>,
-        context: &RetryContext,
-    ) {
+    fn on_terminal_failure(&self, failure: &RetryFailure<TestError>, context: &RetryContext) {
         self.complete(
             RetryCallbackPhase::TerminalFailure,
             Some(format!("{failure:?}")),
@@ -184,11 +156,7 @@ enum CompletionFacade {
 }
 
 /// Exercises real public execution and verifies frozen terminal diagnostics.
-async fn assert_completion_case(
-    facade: CompletionFacade,
-    scenario: CompletionScenario,
-    panic_on_completion: bool,
-) {
+async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionScenario, panic_on_completion: bool) {
     let clock = ManualMonotonicClock::new_shared();
     let records = Arc::new(Mutex::new(Vec::new()));
     let started_calls = Arc::new(AtomicUsize::new(0));
@@ -197,22 +165,18 @@ async fn assert_completion_case(
     if scenario == CompletionScenario::CancelledBeforeAttempt {
         cancellation.cancel();
     }
-    let mut policy = RetryPolicy::builder().max_attempts(
-        if scenario == CompletionScenario::Exhausted {
-            1
-        } else {
-            2
-        },
-    );
+    let mut policy = RetryPolicy::builder().max_attempts(if scenario == CompletionScenario::Exhausted {
+        1
+    } else {
+        2
+    });
     if scenario == CompletionScenario::TimerFailure {
         policy = policy.backoff(BackoffPolicy::fixed(Duration::from_millis(1)));
     }
     if scenario == CompletionScenario::ExhaustedBeforeAttempt {
         policy = policy.max_total_elapsed(Duration::ZERO);
     }
-    let mut builder = Retry::<TestError>::builder(
-        policy.build().expect("valid completion policy"),
-    );
+    let mut builder = Retry::<TestError>::builder(policy.build().expect("valid completion policy"));
     for index in 0..3 {
         builder = builder.observer(CompletionObserver {
             index,
@@ -236,8 +200,7 @@ async fn assert_completion_case(
         .build();
     let timer: Arc<dyn Timer> = if matches!(
         scenario,
-        CompletionScenario::TimerFailure
-            | CompletionScenario::TimerFailureBeforeAttempt
+        CompletionScenario::TimerFailure | CompletionScenario::TimerFailureBeforeAttempt
     ) {
         Arc::new(FaultInjectingTimer::backend_unavailable(
             TimerFailurePoint::Registration,
@@ -265,12 +228,10 @@ async fn assert_completion_case(
             .cancellation_token(cancellation)
             .run(operation),
         CompletionFacade::Worker => {
-            let mut worker =
-                retry.worker().timer(timer).cancellation_token(cancellation);
+            let mut worker = retry.worker().timer(timer).cancellation_token(cancellation);
             if matches!(
                 scenario,
-                CompletionScenario::TimedOut
-                    | CompletionScenario::TimerFailureBeforeAttempt
+                CompletionScenario::TimedOut | CompletionScenario::TimerFailureBeforeAttempt
             ) {
                 worker = worker.flow_timeout(Duration::from_secs(1));
             }
@@ -278,14 +239,10 @@ async fn assert_completion_case(
         }
         #[cfg(feature = "tokio")]
         CompletionFacade::Async => {
-            let mut executor = retry
-                .asynchronous()
-                .timer(timer)
-                .cancellation_token(cancellation);
+            let mut executor = retry.asynchronous().timer(timer).cancellation_token(cancellation);
             if matches!(
                 scenario,
-                CompletionScenario::TimedOut
-                    | CompletionScenario::TimerFailureBeforeAttempt
+                CompletionScenario::TimedOut | CompletionScenario::TimerFailureBeforeAttempt
             ) {
                 executor = executor.flow_timeout(Duration::from_secs(1));
             }
@@ -300,8 +257,7 @@ async fn assert_completion_case(
                 success.completion_callback_failures().len(),
                 if panic_on_completion { 2 } else { 0 }
             );
-            let (value, context, failures) =
-                success.into_parts_with_diagnostics();
+            let (value, context, failures) = success.into_parts_with_diagnostics();
             assert_eq!(value, 42);
             (context, failures, RetryCallbackPhase::Success, None)
         }
@@ -321,54 +277,38 @@ async fn assert_completion_case(
                 "{facade:?} {scenario:?}"
             );
             match scenario {
-                CompletionScenario::Abort => assert!(matches!(
-                    error.failure(),
-                    RetryFailure::Aborted { .. }
-                )),
-                CompletionScenario::Exhausted
-                | CompletionScenario::ExhaustedBeforeAttempt => {
+                CompletionScenario::Abort => assert!(matches!(error.failure(), RetryFailure::Aborted { .. })),
+                CompletionScenario::Exhausted | CompletionScenario::ExhaustedBeforeAttempt => {
                     let expected = if zero_attempts {
                         RetryLimitKind::TotalElapsed
                     } else {
                         RetryLimitKind::Attempts
                     };
-                    assert!(
-                        matches!(error.failure(), RetryFailure::Exhausted { limit, .. } if *limit == expected)
-                    );
+                    assert!(matches!(error.failure(), RetryFailure::Exhausted { limit, .. } if *limit == expected));
                 }
-                CompletionScenario::CancelledBeforeAttempt
-                | CompletionScenario::CancelledAfterFailure => {
+                CompletionScenario::CancelledBeforeAttempt | CompletionScenario::CancelledAfterFailure => {
                     let expected = if zero_attempts {
                         RetryCancellationPhase::BeforeAttempt
                     } else {
                         RetryCancellationPhase::Backoff
                     };
-                    assert!(
-                        matches!(error.failure(), RetryFailure::Cancelled { phase, .. } if *phase == expected)
-                    );
+                    assert!(matches!(error.failure(), RetryFailure::Cancelled { phase, .. } if *phase == expected));
                 }
                 CompletionScenario::StartedPanic
                 | CompletionScenario::FailedPanic
                 | CompletionScenario::ScheduledPanic
                 | CompletionScenario::RulePanic => {
                     let expected = match scenario {
-                        CompletionScenario::StartedPanic => {
-                            RetryCallbackPhase::AttemptStarted
-                        }
-                        CompletionScenario::FailedPanic => {
-                            RetryCallbackPhase::AttemptFailed
-                        }
-                        CompletionScenario::ScheduledPanic => {
-                            RetryCallbackPhase::RetryScheduled
-                        }
+                        CompletionScenario::StartedPanic => RetryCallbackPhase::AttemptStarted,
+                        CompletionScenario::FailedPanic => RetryCallbackPhase::AttemptFailed,
+                        CompletionScenario::ScheduledPanic => RetryCallbackPhase::RetryScheduled,
                         _ => RetryCallbackPhase::RuleDecision,
                     };
                     assert!(
                         matches!(error.failure(), RetryFailure::CallbackFailed { callback, .. } if callback.phase() == expected && callback.index() == 0)
                     );
                 }
-                CompletionScenario::TimerFailure
-                | CompletionScenario::TimerFailureBeforeAttempt => {
+                CompletionScenario::TimerFailure | CompletionScenario::TimerFailureBeforeAttempt => {
                     assert!(matches!(
                         error.failure(),
                         RetryFailure::Infrastructure {
@@ -391,8 +331,7 @@ async fn assert_completion_case(
                 error.completion_callback_failures().len(),
                 if panic_on_completion { 2 } else { 0 }
             );
-            let (failure, context, failures) =
-                error.into_parts_with_diagnostics();
+            let (failure, context, failures) = error.into_parts_with_diagnostics();
             assert_eq!(format!("{failure:?}"), original_failure);
             (
                 context,
@@ -402,10 +341,7 @@ async fn assert_completion_case(
             )
         }
     };
-    assert_eq!(
-        operation_calls.load(Ordering::SeqCst),
-        context.attempts() as usize
-    );
+    assert_eq!(operation_calls.load(Ordering::SeqCst), context.attempts() as usize);
     if scenario == CompletionScenario::StartedPanic {
         assert_eq!(started_calls.load(Ordering::SeqCst), 1);
     }
@@ -416,11 +352,7 @@ async fn assert_completion_case(
         assert_eq!(failure.panic().message(), Some("completion panic"));
     }
     let records = records.lock().expect("completion records lock");
-    assert_eq!(
-        records.len(),
-        3,
-        "each observer receives exactly one terminal callback"
-    );
+    assert_eq!(records.len(), 3, "each observer receives exactly one terminal callback");
     for (index, record) in records.iter().enumerate() {
         assert_eq!(record.index, index);
         assert_eq!(record.phase, phase);
@@ -463,29 +395,25 @@ async fn test_completion_matrix_preserves_result_context_and_observer_order() {
             if matches!(facade, CompletionFacade::Sync)
                 && matches!(
                     scenario,
-                    CompletionScenario::TimerFailureBeforeAttempt
-                        | CompletionScenario::TimedOut
+                    CompletionScenario::TimerFailureBeforeAttempt | CompletionScenario::TimedOut
                 )
             {
                 continue;
             }
             for panic_on_completion in [false, true] {
-                assert_completion_case(facade, scenario, panic_on_completion)
-                    .await;
+                assert_completion_case(facade, scenario, panic_on_completion).await;
             }
         }
     }
 }
 
-/// Sync closures retain local borrows and may return a borrowed, non-Send value.
+/// Sync closures retain local borrows and may return a borrowed, non-Send
+/// value.
 #[test]
 fn test_completion_sync_preserves_borrowed_non_send_operation() {
     let value = std::rc::Rc::new(42);
     let mut calls = 0;
-    let retry = Retry::<()>::builder(
-        RetryPolicy::builder().build().expect("valid policy"),
-    )
-    .build();
+    let retry = Retry::<()>::builder(RetryPolicy::builder().build().expect("valid policy")).build();
     let success = retry
         .sync()
         .run(|| {
@@ -503,10 +431,7 @@ fn test_completion_sync_preserves_borrowed_non_send_operation() {
 #[tokio::test]
 async fn test_completion_async_preserves_borrowed_non_send_future() {
     let value = std::rc::Rc::new(42);
-    let retry = Retry::<()>::builder(
-        RetryPolicy::builder().build().expect("valid policy"),
-    )
-    .build();
+    let retry = Retry::<()>::builder(RetryPolicy::builder().build().expect("valid policy")).build();
     let success = retry
         .asynchronous()
         .run(|| async {
@@ -528,11 +453,7 @@ impl RetryObserver<TestError> for CompletionCounter {
         self.0.fetch_add(1, Ordering::SeqCst);
     }
 
-    fn on_terminal_failure(
-        &self,
-        _failure: &RetryFailure<TestError>,
-        _context: &RetryContext,
-    ) {
+    fn on_terminal_failure(&self, _failure: &RetryFailure<TestError>, _context: &RetryContext) {
         self.0.fetch_add(1, Ordering::SeqCst);
     }
 }
@@ -541,11 +462,9 @@ impl RetryObserver<TestError> for CompletionCounter {
 #[test]
 fn test_completion_sync_operation_panic_does_not_notify() {
     let calls = Arc::new(AtomicUsize::new(0));
-    let retry = Retry::<TestError>::builder(
-        RetryPolicy::builder().build().expect("valid policy"),
-    )
-    .observer(CompletionCounter(Arc::clone(&calls)))
-    .build();
+    let retry = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
+        .observer(CompletionCounter(Arc::clone(&calls)))
+        .build();
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = retry
             .sync()
@@ -566,20 +485,16 @@ async fn test_completion_dropped_async_future_does_not_notify() {
 
     let calls = Arc::new(AtomicUsize::new(0));
     let operation_calls = AtomicUsize::new(0);
-    let retry = Retry::<TestError>::builder(
-        RetryPolicy::builder().build().expect("valid policy"),
-    )
-    .observer(CompletionCounter(Arc::clone(&calls)))
-    .build();
+    let retry = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
+        .observer(CompletionCounter(Arc::clone(&calls)))
+        .build();
     let executor = retry.asynchronous();
     let mut future = Box::pin(executor.run(|| {
         operation_calls.fetch_add(1, Ordering::SeqCst);
         std::future::pending::<Result<(), TestError>>()
     }));
     assert!(matches!(
-        future
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop())),
+        future.as_mut().poll(&mut Context::from_waker(Waker::noop())),
         Poll::Pending
     ));
     assert_eq!(operation_calls.load(Ordering::SeqCst), 1);
@@ -596,11 +511,9 @@ async fn test_completion_async_operation_panic_does_not_notify() {
     use std::task::Waker;
 
     let calls = Arc::new(AtomicUsize::new(0));
-    let retry = Retry::<TestError>::builder(
-        RetryPolicy::builder().build().expect("valid policy"),
-    )
-    .observer(CompletionCounter(Arc::clone(&calls)))
-    .build();
+    let retry = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
+        .observer(CompletionCounter(Arc::clone(&calls)))
+        .build();
     let executor = retry.asynchronous();
     let mut future = Box::pin(executor.run(|| async {
         panic!("operation panic");
@@ -608,9 +521,7 @@ async fn test_completion_async_operation_panic_does_not_notify() {
         Ok::<(), TestError>(())
     }));
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = future
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()));
+        let _ = future.as_mut().poll(&mut Context::from_waker(Waker::noop()));
     }));
     assert!(panic.is_err());
     drop(future);
@@ -625,11 +536,7 @@ impl RetryObserver<TestError> for CompletionPanic {
         panic!("completion panic");
     }
 
-    fn on_terminal_failure(
-        &self,
-        _failure: &RetryFailure<TestError>,
-        _context: &RetryContext,
-    ) {
+    fn on_terminal_failure(&self, _failure: &RetryFailure<TestError>, _context: &RetryContext) {
         panic!("completion panic");
     }
 }
@@ -637,15 +544,10 @@ impl RetryObserver<TestError> for CompletionPanic {
 /// Legacy consuming methods retain their signatures and discard diagnostics.
 #[test]
 fn test_completion_legacy_result_consumers_discard_diagnostics() {
-    let retry = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .max_attempts(1)
-            .build()
-            .expect("valid policy"),
-    )
-    .observer(|_: &AttemptFailure<TestError>, _: &RetryContext| {})
-    .observer(CompletionPanic)
-    .build();
+    let retry = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().expect("valid policy"))
+        .observer(|_: &AttemptFailure<TestError>, _: &RetryContext| {})
+        .observer(CompletionPanic)
+        .build();
     let success = retry.sync().run(|| Ok(42)).expect("successful operation");
     assert_eq!(success.completion_callback_failures().len(), 1);
     assert_eq!(success.completion_callback_failures()[0].index(), 1);
@@ -670,10 +572,7 @@ fn test_completion_legacy_result_consumers_discard_diagnostics() {
         .run(|| Err::<(), _>(TestError("original error")))
         .expect_err("exhausted");
     assert_eq!(error.completion_callback_failures().len(), 1);
-    assert_eq!(
-        error.into_failure().last_error(),
-        Some(&TestError("original error"))
-    );
+    assert_eq!(error.into_failure().last_error(), Some(&TestError("original error")));
 }
 
 /// Non-string panic payload whose destructor raises another panic payload.
@@ -716,11 +615,7 @@ impl RetryObserver<TestError> for CompletionDropPanicObserver {
         self.raise();
     }
 
-    fn on_terminal_failure(
-        &self,
-        _failure: &RetryFailure<TestError>,
-        _context: &RetryContext,
-    ) {
+    fn on_terminal_failure(&self, _failure: &RetryFailure<TestError>, _context: &RetryContext) {
         self.raise();
     }
 }
@@ -728,8 +623,7 @@ impl RetryObserver<TestError> for CompletionDropPanicObserver {
 /// Payload destruction cannot discard either terminal outcome or stop later
 /// observers, even when the secondary panic payload has another panicking Drop.
 #[tokio::test]
-async fn test_completion_payload_drop_panic_preserves_result_and_later_observers()
- {
+async fn test_completion_payload_drop_panic_preserves_result_and_later_observers() {
     use std::future::Future;
     use std::task::Context;
     use std::task::Poll;
@@ -746,18 +640,14 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 let drops = Arc::new(AtomicUsize::new(0));
                 let calls = Arc::new(AtomicUsize::new(0));
                 let clock = ManualMonotonicClock::new_shared();
-                let retry = Retry::<TestError>::builder(
-                    RetryPolicy::builder()
-                        .max_attempts(1)
-                        .build()
-                        .expect("valid policy"),
-                )
-                .observer(CompletionDropPanicObserver {
-                    drops: Arc::clone(&drops),
-                    recursive,
-                })
-                .observer(CompletionCounter(Arc::clone(&calls)))
-                .build();
+                let retry =
+                    Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().expect("valid policy"))
+                        .observer(CompletionDropPanicObserver {
+                            drops: Arc::clone(&drops),
+                            recursive,
+                        })
+                        .observer(CompletionCounter(Arc::clone(&calls)))
+                        .build();
                 let operation = move || {
                     if successful {
                         Ok(42)
@@ -767,13 +657,8 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 };
                 let mut future = Box::pin(async {
                     match facade {
-                        CompletionFacade::Sync => {
-                            retry.sync().timer(clock.new_timer()).run(operation)
-                        }
-                        CompletionFacade::Worker => retry
-                            .worker()
-                            .timer(clock.new_timer())
-                            .run(move |_| operation()),
+                        CompletionFacade::Sync => retry.sync().timer(clock.new_timer()).run(operation),
+                        CompletionFacade::Worker => retry.worker().timer(clock.new_timer()).run(move |_| operation()),
                         #[cfg(feature = "tokio")]
                         CompletionFacade::Async => {
                             retry
@@ -787,13 +672,9 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 // Polling these immediate operations finishes in one poll. The
                 // outer catch turns a leaked panic into a normal test failure;
                 // forget its payload to avoid recursive Drop aborting the suite.
-                let outcome = std::panic::catch_unwind(
-                    std::panic::AssertUnwindSafe(|| {
-                        future
-                            .as_mut()
-                            .poll(&mut Context::from_waker(Waker::noop()))
-                    }),
-                );
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    future.as_mut().poll(&mut Context::from_waker(Waker::noop()))
+                }));
                 let result = match outcome {
                     Ok(Poll::Ready(result)) => result,
                     Ok(Poll::Pending) => {
@@ -807,15 +688,13 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 let (context, failures, phase) = match result {
                     Ok(success) => {
                         assert!(successful);
-                        let (value, context, failures) =
-                            success.into_parts_with_diagnostics();
+                        let (value, context, failures) = success.into_parts_with_diagnostics();
                         assert_eq!(value, 42);
                         (context, failures, RetryCallbackPhase::Success)
                     }
                     Err(error) => {
                         assert!(!successful);
-                        let (failure, context, failures) =
-                            error.into_parts_with_diagnostics();
+                        let (failure, context, failures) = error.into_parts_with_diagnostics();
                         assert!(matches!(
                             failure,
                             RetryFailure::Exhausted {
@@ -823,10 +702,7 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                                 ..
                             }
                         ));
-                        assert_eq!(
-                            failure.last_error(),
-                            Some(&TestError("original error"))
-                        );
+                        assert_eq!(failure.last_error(), Some(&TestError("original error")));
                         (context, failures, RetryCallbackPhase::TerminalFailure)
                     }
                 };
@@ -836,10 +712,7 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 assert_eq!(failures[0].callback(), RetryCallbackKind::Observer);
                 assert_eq!(failures[0].index(), 0);
                 assert_eq!(failures[0].phase(), phase);
-                assert_eq!(
-                    failures[0].panic(),
-                    &qubit_retry::RetryPanic::NonString
-                );
+                assert_eq!(failures[0].panic(), &qubit_retry::RetryPanic::NonString);
                 assert_eq!(drops.load(Ordering::SeqCst), 1);
                 assert_eq!(calls.load(Ordering::SeqCst), 1);
             }
