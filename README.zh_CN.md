@@ -209,6 +209,8 @@ Rust 无法强制终止不配合的线程。工作线程如果未在宽限期内
 - `Retry::worker()` 捕获 panic、保留停止触发源，并且在旧工作线程仍可能运行时绝不启动新工作线程。
 - `RetryFailure` 区分主动中止、预算耗尽、超时、取消、回调失败和基础设施失败；
   `AttemptFailure` 保留业务错误、超时范围或稳定的 panic 载荷。
+- `Retry`、`RetryRules` 和 `RetryObservers` 可以克隆，不要求操作错误类型 `E` 实现
+  `Clone`；回调通过内部引用计数共享。
 - 规则和控制阶段观察者 panic 会终止流程；完成观察者 panic 则保留主结果并附加诊断。
   两者均保留回调类型、注册索引、阶段和 panic 载荷分类。
 - `BackoffState` 可用于普通重试与 SSE 重连，支持服务端提示、抖动和防溢出的指数增长。
@@ -318,7 +320,7 @@ Tokio 和 serde 仍须显式启用，默认 feature 集为空。
 
 只有选中的延迟符合当前预算，才会触发 `on_retry_scheduled`。回调执行后和下一次
 准入时仍会检查预算与取消状态，因此该事件不保证下一次操作一定开始。
-`on_attempt_started` 仍在准入之前发出，实际准入次数请读取终态的 `context.attempts()`。
+`on_before_attempt` 仍在准入之前发出，实际准入次数请读取终态的 `context.attempts()`。
 
 `BackoffPolicy::maximum_delay()` 只描述基础策略，尚未计入抖动和服务端提示。
 需要限制最终等待时间时，调用 `.limit_delay(duration)`。可选的 serde 字段
@@ -328,6 +330,15 @@ Worker 的单次和流程超时现在由注入的 timer 驱动，包括手动时
 `cancellation_grace` 始终使用真实时间。活动 timer 失败时会请求取消；如果线程
 不配合退出，则返回带有 `WorkerStopTrigger::TimerFailure` 的 `WorkerStillRunning`，
 当前流程不会再启动其他尝试。
+
+## 下一版本迁移说明
+
+- 克隆 `Retry` 不要求业务错误类型实现 `Clone`；回调集合会共享，而每次 `run`
+  都会创建独立的执行状态。
+- 观察者方法和回调阶段更名为 `on_before_attempt` 与 `BeforeAttempt`，其准入前的
+  执行位置保持不变。
+- 非字符串回调 payload 的析构再次 panic 时，仍保留 `NonString` 分类和结构化回调终态；
+  只有这个异常路径中的二次 payload 会被遗忘。
 
 ## 测试
 
