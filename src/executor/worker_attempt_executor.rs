@@ -9,14 +9,16 @@
 //!
 //! This module owns the boundary between retry-flow code and operating-system
 //! threads. A runner asks for exactly one attempt outcome; this executor spawns
-//! the worker, captures panics, waits for the result or timeout, requests
-//! cooperative cancellation, and reports whether a timed-out worker could not
-//! be reaped during the grace period.
+//! the worker and a detached reaper, captures panics, and waits for both the
+//! result and completed join. Cancellation and timeouts remain observable
+//! throughout thread-local destruction; an expired grace may leave both
+//! threads running, but the calling thread never joins either thread.
 
 use std::future::Future;
 use std::panic;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::Weak;
 use std::sync::mpsc;
 use std::task::Context;
 use std::task::Poll;
@@ -39,8 +41,10 @@ use crate::WorkerStopTrigger;
 
 /// Event observed while waiting for one worker attempt.
 enum WorkerEvent<E> {
-    /// The worker finished and produced an attempt result.
+    /// The operation returned; thread-local destruction may still be running.
     Completed(Result<(), AttemptFailure<E>>),
+    /// The reaper joined the worker, including thread-local destruction.
+    Joined(Result<(), RetryPanic>),
     /// A timer or cancellation future needs another poll.
     Wake,
 }
@@ -48,19 +52,23 @@ enum WorkerEvent<E> {
 /// Waker that forwards cancellation and timer readiness into the worker event
 /// channel.
 struct WorkerWake<E> {
-    /// Event sender owned by the registered cancellation future.
-    sender: mpsc::Sender<WorkerEvent<E>>,
+    /// Weak sender that cannot conceal loss of both worker and reaper.
+    sender: Weak<mpsc::Sender<WorkerEvent<E>>>,
 }
 
 impl<E: Send + 'static> Wake for WorkerWake<E> {
     /// Sends a readiness notification when a registered future is woken.
     fn wake(self: Arc<Self>) {
-        let _ = self.sender.send(WorkerEvent::Wake);
+        if let Some(sender) = self.sender.upgrade() {
+            let _ = sender.send(WorkerEvent::Wake);
+        }
     }
 
     /// Sends readiness without consuming the shared waker.
     fn wake_by_ref(self: &Arc<Self>) {
-        let _ = self.sender.send(WorkerEvent::Wake);
+        if let Some(sender) = self.sender.upgrade() {
+            let _ = sender.send(WorkerEvent::Wake);
+        }
     }
 }
 
@@ -86,15 +94,15 @@ impl WorkerAttemptExecutor {
     ///
     /// # Worker Behavior
     /// Operation panics are converted into [`AttemptFailure::Panicked`]. The
-    /// worker waits behind a start gate so a spawn failure is never counted as
-    /// an operation attempt.
+    /// worker waits behind a start gate until both threads exist, so either
+    /// spawn failure is never counted as an operation attempt.
     pub(in crate::executor) fn run<E, X, P>(
         operation: Arc<dyn BlockingAttempt<E>>,
         thread_name: &str,
         stack_size: Option<usize>,
         worker_cancel_grace: Duration,
         cancellation: Option<&RetryCancellationToken>,
-        mut timeout: Option<(RetryTimeoutScope, TimerFuture)>,
+        timeout: Option<(RetryTimeoutScope, TimerFuture)>,
         prepare: P,
     ) -> Result<BlockingAttemptOutcome<(), E>, X>
     where
@@ -107,10 +115,12 @@ impl WorkerAttemptExecutor {
         // send failure only means the retry flow has already terminated.
         let token = AttemptCancellationToken::new();
         let (sender, receiver) = mpsc::channel();
+        let sender = Arc::new(sender);
         let (start_sender, start_receiver) = mpsc::sync_channel(0);
         let worker_token = token.clone();
         let worker_sender = sender.clone();
-        let mut builder = std::thread::Builder::new().name(thread_name.to_owned());
+        let mut builder =
+            std::thread::Builder::new().name(thread_name.to_owned());
         if let Some(stack_size) = stack_size {
             builder = builder.stack_size(stack_size);
         }
@@ -121,7 +131,9 @@ impl WorkerAttemptExecutor {
             // Worker mode is the only synchronous mode with a panic
             // isolation boundary. Convert panic payloads into retry
             // failures so policy and listeners can handle them normally.
-            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| operation.call(worker_token)));
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                operation.call(worker_token)
+            }));
             let attempt_result = match result {
                 Ok(result) => result,
                 Err(payload) => Err(AttemptFailure::Panicked {
@@ -138,7 +150,18 @@ impl WorkerAttemptExecutor {
             }
         };
 
-        let mut cancellation_future = cancellation.map(|token| Box::pin(token.cancelled()));
+        // Transfer the only join handle before admission. A failed reaper
+        // spawn drops its closure and handle; closing the start gate lets the
+        // unadmitted worker exit without ever calling user code.
+        if let Err(error) = spawn_reaper(worker, Arc::clone(&sender)) {
+            drop(start_sender);
+            return Ok(BlockingAttemptOutcome::WorkerSpawnFailed {
+                message: format!("reaper: {error}").into_boxed_str(),
+            });
+        }
+
+        let mut cancellation_future =
+            cancellation.map(|token| Box::pin(token.cancelled()));
         if let Some(future) = cancellation_future.as_mut() {
             register_cancellation_waker(future, &sender);
         }
@@ -147,74 +170,135 @@ impl WorkerAttemptExecutor {
             Ok(()) => {}
             Err(error) => {
                 drop(start_sender);
-                join_finished_worker(worker);
                 return Err(error);
             }
         };
-        start_sender
-            .send(())
-            .expect("a spawned worker must wait for its start signal");
+        if start_sender.send(()).is_err() {
+            return Ok(BlockingAttemptOutcome::WorkerChannelClosed);
+        }
 
-        let waker = Waker::from(Arc::new(WorkerWake { sender: sender.clone() }));
-        let mut context = Context::from_waker(&waker);
-        let outcome = loop {
-            if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
-                break stop_worker(
-                    receiver,
-                    worker,
-                    &token,
-                    worker_cancel_grace,
-                    WorkerStopTrigger::Cancellation,
-                );
-            }
-            if let Some((scope, future)) = timeout.as_mut()
-                && let Poll::Ready(result) = future.as_mut().poll(&mut context)
-            {
-                match result {
-                    Ok(()) => {
-                        break stop_worker(receiver, worker, &token, worker_cancel_grace, timeout_trigger(*scope));
-                    }
-                    Err(error) => {
-                        token.cancel();
-                        break if wait_for_stopped_worker(&receiver, worker, worker_cancel_grace) {
+        // Wakers must not keep a broken protocol alive by retaining a sender.
+        let waker = Waker::from(Arc::new(WorkerWake {
+            sender: Arc::downgrade(&sender),
+        }));
+        drop(sender);
+        Ok(wait_for_worker(
+            receiver,
+            &token,
+            worker_cancel_grace,
+            cancellation,
+            timeout,
+            &waker,
+        ))
+    }
+}
+
+/// Waits for both the operation result and proof of thread exit while keeping
+/// the original cancellation and absolute timeout active.
+fn wait_for_worker<E: Send + 'static>(
+    receiver: mpsc::Receiver<WorkerEvent<E>>,
+    token: &AttemptCancellationToken,
+    grace: Duration,
+    cancellation: Option<&RetryCancellationToken>,
+    mut timeout: Option<(RetryTimeoutScope, TimerFuture)>,
+    waker: &Waker,
+) -> BlockingAttemptOutcome<(), E> {
+    let mut context = Context::from_waker(waker);
+    let mut completed = None;
+    let mut joined = false;
+    loop {
+        if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
+            return stop_worker(
+                &receiver,
+                token,
+                grace,
+                WorkerStopTrigger::Cancellation,
+                joined,
+            );
+        }
+        if let Some((scope, future)) = timeout.as_mut()
+            && let Poll::Ready(result) = future.as_mut().poll(&mut context)
+        {
+            match result {
+                Ok(()) => {
+                    return stop_worker(
+                        &receiver,
+                        token,
+                        grace,
+                        timeout_trigger(*scope),
+                        joined,
+                    );
+                }
+                Err(error) => {
+                    token.cancel();
+                    return match observe_worker_exit(&receiver, grace, joined) {
+                        Ok(true) => {
                             BlockingAttemptOutcome::TimerFailed { error }
-                        } else {
+                        }
+                        Ok(false) => {
                             BlockingAttemptOutcome::WorkerStillRunning {
                                 trigger: WorkerStopTrigger::TimerFailure,
                             }
-                        };
-                    }
+                        }
+                        Err(_) => BlockingAttemptOutcome::WorkerChannelClosed,
+                    };
                 }
             }
-            match receiver.recv().expect("worker events retain their senders") {
-                WorkerEvent::Completed(result) => {
-                    if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
-                        token.cancel();
-                        join_finished_worker(worker);
-                        break BlockingAttemptOutcome::Stopped {
-                            trigger: WorkerStopTrigger::Cancellation,
-                        };
-                    }
-                    join_finished_worker(worker);
-                    break BlockingAttemptOutcome::Completed(result);
-                }
-                WorkerEvent::Wake => {}
+        }
+        if joined && let Some(result) = completed.take() {
+            return BlockingAttemptOutcome::Completed(result);
+        }
+        match receiver.recv() {
+            Ok(WorkerEvent::Completed(result)) => completed = Some(result),
+            Ok(WorkerEvent::Joined(Ok(()))) => joined = true,
+            Ok(WorkerEvent::Joined(Err(panic))) => {
+                // A failed join may have no Completed event. Its panic is the
+                // attempt result, but observed cancellation still takes priority.
+                joined = true;
+                completed = Some(Err(AttemptFailure::Panicked { panic }));
             }
-        };
-        Ok(outcome)
+            Ok(WorkerEvent::Wake) => {}
+            Err(_) => return BlockingAttemptOutcome::WorkerChannelClosed,
+        }
     }
+}
+
+/// Starts the detached reaper, which exclusively owns the blocking join.
+/// A spawn error leaves the worker unadmitted behind its start gate.
+fn spawn_reaper<E: Send + 'static>(
+    worker: JoinHandle<()>,
+    sender: Arc<mpsc::Sender<WorkerEvent<E>>>,
+) -> std::io::Result<()> {
+    #[cfg(test)]
+    if FAIL_REAPER_SPAWN.with(|fail| fail.replace(false)) {
+        return Err(std::io::Error::other("injected reaper spawn failure"));
+    }
+    std::thread::Builder::new()
+        .name("retry-reaper".into())
+        .spawn(move || {
+            let joined = worker.join().map_err(retry_panic);
+            let _ = sender.send(WorkerEvent::Joined(joined));
+        })?;
+    Ok(())
+}
+
+#[cfg(test)]
+thread_local! {
+    static FAIL_REAPER_SPAWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Polls a cancellation future once with an event-channel waker.
 ///
 /// # Arguments
 /// - `future`: Cancellation future to register.
-/// - `sender`: Worker event sender cloned into the waker.
+/// - `sender`: Worker event sender weakly referenced by the waker.
 fn register_cancellation_waker<E: Send + 'static>(
     future: &mut Pin<Box<super::RetryCancelled<'_>>>,
-    sender: &mpsc::Sender<WorkerEvent<E>>,
+    sender: &Arc<mpsc::Sender<WorkerEvent<E>>>,
 ) {
-    let waker = Waker::from(Arc::new(WorkerWake { sender: sender.clone() }));
+    let waker = Waker::from(Arc::new(WorkerWake {
+        sender: Arc::downgrade(sender),
+    }));
     let mut context = Context::from_waker(&waker);
     if future.as_mut().poll(&mut context).is_ready() {
         let _ = sender.send(WorkerEvent::Wake);
@@ -235,109 +319,64 @@ fn timeout_trigger(scope: RetryTimeoutScope) -> WorkerStopTrigger {
     }
 }
 
-/// Cancels a worker after one fixed stop trigger and waits for its exit.
-///
-/// # Arguments
-/// - `receiver`: Event receiver used to observe worker completion.
-/// - `worker`: Worker handle joined only after completion is observed.
-/// - `token`: Attempt token marked before the grace wait begins.
-/// - `worker_cancel_grace`: Maximum cooperative cancellation grace period.
-/// - `trigger`: First event that requested the worker to stop.
-///
-/// # Returns
-/// A stopped outcome retaining the supplied trigger and whether the worker was
-/// reaped during its grace period.
+/// Cancels after a fixed trigger and waits only for proof of thread exit.
+/// Channel loss terminates the flow as an infrastructure failure.
 fn stop_worker<E>(
-    receiver: mpsc::Receiver<WorkerEvent<E>>,
-    worker: JoinHandle<()>,
-    token: &AttemptCancellationToken,
-    worker_cancel_grace: Duration,
-    trigger: WorkerStopTrigger,
-) -> BlockingAttemptOutcome<(), E>
-where
-    E: Send + 'static,
-{
-    token.cancel();
-    let worker_exited = wait_for_stopped_worker(&receiver, worker, worker_cancel_grace);
-    if worker_exited {
-        BlockingAttemptOutcome::Stopped { trigger }
-    } else {
-        BlockingAttemptOutcome::WorkerStillRunning { trigger }
-    }
-}
-
-/// Waits briefly for a cancelled worker to exit.
-///
-/// # Arguments
-/// - `receiver`: Worker result receiver used only to observe whether the worker
-///   exited.
-/// - `worker`: Worker thread handle, joined when exit is observed.
-/// - `grace`: Maximum time to wait after cancellation. Zero performs only a
-///   non-blocking check.
-///
-/// # Returns
-/// `true` when the worker was observed to exit before the grace period ended,
-/// otherwise `false`. When this returns `false`, the worker handle is dropped
-/// and the thread may continue running detached.
-fn wait_for_stopped_worker<E>(
     receiver: &mpsc::Receiver<WorkerEvent<E>>,
-    worker: JoinHandle<()>,
+    token: &AttemptCancellationToken,
     grace: Duration,
-) -> bool {
-    let exited = observe_worker_exit(receiver, grace);
-    if exited {
-        join_finished_worker(worker);
+    trigger: WorkerStopTrigger,
+    joined: bool,
+) -> BlockingAttemptOutcome<(), E> {
+    token.cancel();
+    match observe_worker_exit(receiver, grace, joined) {
+        Ok(true) => BlockingAttemptOutcome::Stopped { trigger },
+        Ok(false) => BlockingAttemptOutcome::WorkerStillRunning { trigger },
+        Err(_) => BlockingAttemptOutcome::WorkerChannelClosed,
     }
-    exited
 }
 
-/// Observes worker completion without allowing unrelated events to reset grace.
-///
-/// # Arguments
-/// - `receiver`: Worker event receiver.
-/// - `grace`: Maximum total time to wait.
-///
-/// # Returns
-/// `true` after a completion or channel disconnection, otherwise `false` when
-/// the fixed grace deadline expires. A grace too large for [`Instant`] is
-/// treated as unbounded and waits until completion or disconnection; unrelated
-/// cancellation events never reset a representable deadline.
-fn observe_worker_exit<E>(receiver: &mpsc::Receiver<WorkerEvent<E>>, grace: Duration) -> bool {
+/// Observes Joined without allowing unrelated events to reset grace.
+/// Returns true only for a joined worker, false on expiry, and Err for a
+/// broken channel. An unrepresentable Instant deadline means unbounded grace.
+fn observe_worker_exit<E>(
+    receiver: &mpsc::Receiver<WorkerEvent<E>>,
+    grace: Duration,
+    joined: bool,
+) -> Result<bool, mpsc::RecvError> {
+    if joined {
+        return Ok(true);
+    }
     let deadline = Instant::now().checked_add(grace);
     loop {
         let event = if grace.is_zero() {
             match receiver.try_recv() {
                 Ok(event) => event,
-                Err(mpsc::TryRecvError::Empty) => return false,
-                Err(mpsc::TryRecvError::Disconnected) => return true,
+                Err(mpsc::TryRecvError::Empty) => return Ok(false),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    return Err(mpsc::RecvError);
+                }
             }
         } else if let Some(deadline) = deadline {
-            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
-                return false;
+            let Some(remaining) =
+                deadline.checked_duration_since(Instant::now())
+            else {
+                return Ok(false);
             };
             match receiver.recv_timeout(remaining) {
                 Ok(event) => event,
-                Err(mpsc::RecvTimeoutError::Timeout) => return false,
-                Err(mpsc::RecvTimeoutError::Disconnected) => return true,
+                Err(mpsc::RecvTimeoutError::Timeout) => return Ok(false),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(mpsc::RecvError);
+                }
             }
         } else {
-            match receiver.recv() {
-                Ok(event) => event,
-                Err(mpsc::RecvError) => return true,
-            }
+            receiver.recv()?
         };
-        if matches!(event, WorkerEvent::Completed(_)) {
-            return true;
+        if matches!(event, WorkerEvent::Joined(_)) {
+            return Ok(true);
         }
     }
-}
-
-/// Joins a worker thread that has already been observed to finish.
-///
-/// # Arguments
-/// - `worker`: Worker thread handle.
-fn join_finished_worker(worker: JoinHandle<()>) {
-    let _ = worker.join();
 }
 
 /// Converts a dynamically typed panic payload into its stable public form.
@@ -348,5 +387,180 @@ fn retry_panic(payload: Box<dyn std::any::Any + Send>) -> RetryPanic {
             Ok(message) => RetryPanic::String(*message),
             Err(_) => RetryPanic::NonString,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::mpsc;
+    use std::task::Waker;
+    use std::time::Duration;
+
+    use super::FAIL_REAPER_SPAWN;
+    use super::WorkerEvent;
+    use super::WorkerWake;
+    use super::observe_worker_exit;
+    use super::stop_worker;
+    use super::wait_for_worker;
+    use crate::AttemptCancellationToken;
+    use crate::AttemptFailure;
+    use crate::Retry;
+    use crate::RetryFailure;
+    use crate::RetryInfrastructureFailure;
+    use crate::RetryPanic;
+    use crate::RetryPolicy;
+    use crate::WorkerStopTrigger;
+    use crate::executor::blocking_attempt_outcome::BlockingAttemptOutcome;
+
+    /// Exercises private protocol ordering without relying on OS scheduling.
+    #[test]
+    fn test_worker_events_accept_both_completion_orders() {
+        for joined_first in [false, true] {
+            let (sender, receiver) = mpsc::channel::<WorkerEvent<()>>();
+            let completed = WorkerEvent::Completed(Ok(()));
+            let joined = WorkerEvent::Joined(Ok(()));
+            let events = if joined_first {
+                [joined, completed]
+            } else {
+                [completed, joined]
+            };
+            for event in events {
+                sender.send(event).expect("receiver alive");
+            }
+            drop(sender);
+            let result = wait_for_worker(
+                receiver,
+                &AttemptCancellationToken::new(),
+                Duration::ZERO,
+                None,
+                None,
+                Waker::noop(),
+            );
+            assert!(matches!(
+                result,
+                BlockingAttemptOutcome::Completed(Ok(()))
+            ));
+        }
+    }
+
+    /// A join panic supplies its own result when no Completed event exists.
+    #[test]
+    fn test_worker_join_panic_needs_no_completed_event() {
+        let (sender, receiver) = mpsc::channel::<WorkerEvent<()>>();
+        sender
+            .send(WorkerEvent::Joined(Err(RetryPanic::StaticStr(
+                "join panic",
+            ))))
+            .expect("receiver alive");
+        drop(sender);
+        let result = wait_for_worker(
+            receiver,
+            &AttemptCancellationToken::new(),
+            Duration::ZERO,
+            None,
+            None,
+            Waker::noop(),
+        );
+        assert!(matches!(
+            result,
+            BlockingAttemptOutcome::Completed(Err(AttemptFailure::Panicked {
+                panic: RetryPanic::StaticStr("join panic")
+            }))
+        ));
+    }
+
+    /// Neither a partial result nor an exit marker makes an incomplete protocol valid.
+    #[test]
+    fn test_worker_channel_closure_terminates_incomplete_protocol() {
+        for event in [
+            WorkerEvent::Completed(Ok(())),
+            WorkerEvent::Joined(Ok(())),
+            WorkerEvent::Wake,
+        ] {
+            let (sender, receiver) = mpsc::channel::<WorkerEvent<()>>();
+            let sender = Arc::new(sender);
+            let waker = Waker::from(Arc::new(WorkerWake {
+                sender: Arc::downgrade(&sender),
+            }));
+            sender.send(event).expect("receiver alive");
+            drop(sender);
+            waker.wake_by_ref();
+            let result = wait_for_worker(
+                receiver,
+                &AttemptCancellationToken::new(),
+                Duration::ZERO,
+                None,
+                None,
+                &waker,
+            );
+            assert!(matches!(
+                result,
+                BlockingAttemptOutcome::WorkerChannelClosed
+            ));
+        }
+    }
+
+    /// Grace consumes the same events, but only Joined proves thread exit.
+    #[test]
+    fn test_worker_grace_ignores_completed_and_wake() {
+        let (sender, receiver) = mpsc::channel::<WorkerEvent<()>>();
+        sender
+            .send(WorkerEvent::Completed(Ok(())))
+            .expect("receiver alive");
+        sender.send(WorkerEvent::Wake).expect("receiver alive");
+        assert!(
+            !observe_worker_exit(&receiver, Duration::ZERO, false)
+                .expect("channel open")
+        );
+        sender
+            .send(WorkerEvent::Joined(Ok(())))
+            .expect("receiver alive");
+        assert!(
+            observe_worker_exit(&receiver, Duration::ZERO, false)
+                .expect("channel open")
+        );
+    }
+
+    /// Disconnection during any grace mode is infrastructure failure, never exit proof.
+    #[test]
+    fn test_worker_grace_channel_closure_is_not_exit() {
+        for grace in [Duration::ZERO, Duration::from_secs(1), Duration::MAX] {
+            let (sender, receiver) = mpsc::channel::<WorkerEvent<()>>();
+            drop(sender);
+            let token = AttemptCancellationToken::new();
+            let result = stop_worker(
+                &receiver,
+                &token,
+                grace,
+                WorkerStopTrigger::Cancellation,
+                false,
+            );
+            assert!(matches!(
+                result,
+                BlockingAttemptOutcome::WorkerChannelClosed
+            ));
+            assert!(token.is_cancelled());
+        }
+    }
+
+    /// The private seam fails reaper creation before admission or user code.
+    #[test]
+    fn test_worker_reaper_spawn_failure_has_zero_attempts() {
+        FAIL_REAPER_SPAWN.with(|fail| fail.set(true));
+        let error = Retry::<()>::builder(
+            RetryPolicy::builder().build().expect("valid policy"),
+        )
+        .build()
+        .worker()
+        .run(|_| -> Result<(), ()> {
+            panic!("operation must remain behind gate")
+        })
+        .expect_err("reaper spawn fails");
+        assert_eq!(error.context().attempts(), 0);
+        assert_eq!(error.context().current_attempt(), None);
+        assert!(matches!(error.failure(), RetryFailure::Infrastructure {
+            failure: RetryInfrastructureFailure::WorkerSpawn { message }, last_failure: None, ..
+        } if message.contains("reaper")));
     }
 }

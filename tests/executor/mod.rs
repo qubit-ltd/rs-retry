@@ -23,4 +23,5 @@ mod retry_tests;
 mod sync_retry_tests;
 mod worker_attempt_executor_tests;
 mod worker_cancellation_tests;
+mod worker_exit_tests;
 mod worker_retry_tests;
