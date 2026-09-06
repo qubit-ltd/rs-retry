@@ -10,19 +10,25 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
+use std::sync::mpsc::{self};
 use std::time::Duration;
 
-use qubit_clock::{
-    ManualMonotonicClock, MonotonicClock, MonotonicInstant, TimeError, Timer,
-    TimerFuture,
-};
-
-use qubit_retry::{
-    Retry, RetryCancellationToken, RetryFailure, RetryInfrastructureFailure,
-    RetryPolicy, WorkerStopTrigger,
-};
+use qubit_clock::ManualMonotonicClock;
+use qubit_clock::MonotonicClock;
+use qubit_clock::MonotonicInstant;
+use qubit_clock::TimeError;
+use qubit_clock::Timer;
+use qubit_clock::TimerFuture;
+use qubit_retry::Retry;
+use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryFailure;
+use qubit_retry::RetryInfrastructureFailure;
+use qubit_retry::RetryPolicy;
+use qubit_retry::WorkerStopTrigger;
 
 struct ExitGate {
     entered: Sender<()>,
@@ -40,7 +46,8 @@ thread_local! {
     static EXIT_GATE: RefCell<Option<ExitGate>> = const { RefCell::new(None) };
 }
 
-/// Cancels after the operation has returned but before TLS destruction finishes.
+/// Cancels after the operation has returned but before TLS destruction
+/// finishes.
 #[test]
 fn test_worker_exit_cancellation_bounds_tls_destructor() {
     assert_tls_exit_is_bounded(false, WorkerStopTrigger::Cancellation);
@@ -65,10 +72,7 @@ fn test_worker_exit_timer_failure_bounds_tls_destructor() {
 }
 
 /// Installs a controlled destructor and always releases it before asserting.
-fn assert_tls_exit_is_bounded(
-    operation_fails: bool,
-    trigger: WorkerStopTrigger,
-) {
+fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger) {
     let (entered_sender, entered_receiver) = mpsc::channel();
     let (release_sender, release_receiver) = mpsc::channel();
     let (result_sender, result_receiver) = mpsc::channel();
@@ -86,10 +90,7 @@ fn assert_tls_exit_is_bounded(
         fail: trigger == WorkerStopTrigger::TimerFailure,
     });
     let runner = std::thread::spawn(move || {
-        let retry = Retry::<&'static str>::builder(
-            RetryPolicy::builder().build().expect("valid policy"),
-        )
-        .build();
+        let retry = Retry::<&'static str>::builder(RetryPolicy::builder().build().expect("valid policy")).build();
         let mut worker = retry
             .worker()
             .timer(timer)
@@ -100,9 +101,7 @@ fn assert_tls_exit_is_bounded(
         }
         let result = worker.run(move |_| {
             operation_calls.fetch_add(1, Ordering::SeqCst);
-            EXIT_GATE.with(|slot| {
-                *slot.borrow_mut() = gate.lock().expect("gate lock").take()
-            });
+            EXIT_GATE.with(|slot| *slot.borrow_mut() = gate.lock().expect("gate lock").take());
             if operation_fails {
                 Err("operation failed")
             } else {
@@ -121,9 +120,7 @@ fn assert_tls_exit_is_bounded(
     }
     let result = result_receiver.recv_timeout(Duration::from_secs(2));
     let _ = release_sender.send(());
-    runner
-        .join()
-        .expect("retry runner joins after gate release");
+    runner.join().expect("retry runner joins after gate release");
     entered.expect("worker entered TLS destruction");
     let error = result
         .expect("retry must return before TLS gate release")
@@ -151,16 +148,13 @@ impl Timer for ExitTimer {
         let fail = self.fail;
         Ok(Box::pin(async move {
             future.await?;
-            if fail {
-                Err(TimeError::InstantOverflow)
-            } else {
-                Ok(())
-            }
+            if fail { Err(TimeError::InstantOverflow) } else { Ok(()) }
         }))
     }
 }
 
-/// Existing downstream matches can route the new infrastructure cause to their fallback.
+/// Existing downstream matches can route the new infrastructure cause to their
+/// fallback.
 #[test]
 fn test_worker_channel_closed_preserves_downstream_fallback() {
     let failure = RetryInfrastructureFailure::WorkerChannelClosed;

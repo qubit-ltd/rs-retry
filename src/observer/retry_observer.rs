@@ -34,12 +34,7 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     /// is excluded from `context` and cannot be interrupted by retry timeouts.
     /// Operation panics, dropped async futures and process aborts do not
     /// guarantee completion notification.
-    fn on_terminal_failure(
-        &self,
-        _failure: &RetryFailure<E>,
-        _context: &RetryContext,
-    ) {
-    }
+    fn on_terminal_failure(&self, _failure: &RetryFailure<E>, _context: &RetryContext) {}
 
     /// Observes the context before an attempt is admitted.
     fn on_attempt_started(&self, _context: &RetryContext) {}

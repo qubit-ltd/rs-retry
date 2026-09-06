@@ -90,19 +90,14 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
-    pub async fn run<T, F, Fut>(
-        &self,
-        operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub async fn run<T, F, Fut>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
         let mut result = self.run_inner(operation).await;
         let failures = match &result {
-            Ok(success) => {
-                self.retry.observers().notify_success(success.context())
-            }
+            Ok(success) => self.retry.observers().notify_success(success.context()),
             Err(error) => self
                 .retry
                 .observers()
@@ -121,10 +116,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         clippy::result_large_err,
         reason = "the internal helper propagates the lossless public terminal error"
     )]
-    async fn run_inner<T, F, Fut>(
-        &self,
-        mut operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    async fn run_inner<T, F, Fut>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,

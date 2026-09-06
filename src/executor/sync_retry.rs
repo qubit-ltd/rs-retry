@@ -82,18 +82,13 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
-    pub fn run<T, F>(
-        &self,
-        operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,
     {
         let mut result = self.run_inner(operation);
         let failures = match &result {
-            Ok(success) => {
-                self.retry.observers().notify_success(success.context())
-            }
+            Ok(success) => self.retry.observers().notify_success(success.context()),
             Err(error) => self
                 .retry
                 .observers()
@@ -112,10 +107,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
         clippy::result_large_err,
         reason = "the internal helper propagates the lossless public terminal error"
     )]
-    fn run_inner<T, F>(
-        &self,
-        mut operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    fn run_inner<T, F>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,
     {
@@ -135,8 +127,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                     return Ok(RetrySuccess::new(value, context));
                 }
                 Err(error) => {
-                    let directive =
-                        controller.record_failure(AttemptFailure::Error(error), clock, cancellation)?;
+                    let directive = controller.record_failure(AttemptFailure::Error(error), clock, cancellation)?;
                     match wait_for_backoff(&self.timer, directive.sleep_duration(), cancellation) {
                         BlockingBackoffOutcome::Elapsed => {}
                         BlockingBackoffOutcome::Cancelled => {

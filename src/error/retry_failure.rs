@@ -84,45 +84,25 @@ impl<E> RetryFailure<E> {
             Self::Aborted { last_failure } => RetryFailure::Aborted {
                 last_failure: last_failure.map_error(map),
             },
-            Self::Exhausted {
+            Self::Exhausted { limit, last_failure } => RetryFailure::Exhausted {
                 limit,
-                last_failure,
-            } => RetryFailure::Exhausted {
-                limit,
-                last_failure: last_failure
-                    .map(|failure| failure.map_error(map)),
+                last_failure: last_failure.map(|failure| failure.map_error(map)),
             },
-            Self::TimedOut {
+            Self::TimedOut { scope, last_failure } => RetryFailure::TimedOut {
                 scope,
-                last_failure,
-            } => RetryFailure::TimedOut {
-                scope,
-                last_failure: last_failure
-                    .map(|failure| failure.map_error(map)),
+                last_failure: last_failure.map(|failure| failure.map_error(map)),
             },
-            Self::Cancelled {
+            Self::Cancelled { phase, last_failure } => RetryFailure::Cancelled {
                 phase,
-                last_failure,
-            } => RetryFailure::Cancelled {
-                phase,
-                last_failure: last_failure
-                    .map(|failure| failure.map_error(map)),
+                last_failure: last_failure.map(|failure| failure.map_error(map)),
             },
-            Self::CallbackFailed {
+            Self::CallbackFailed { callback, last_failure } => RetryFailure::CallbackFailed {
                 callback,
-                last_failure,
-            } => RetryFailure::CallbackFailed {
-                callback,
-                last_failure: last_failure
-                    .map(|failure| failure.map_error(map)),
+                last_failure: last_failure.map(|failure| failure.map_error(map)),
             },
-            Self::Infrastructure {
+            Self::Infrastructure { failure, last_failure } => RetryFailure::Infrastructure {
                 failure,
-                last_failure,
-            } => RetryFailure::Infrastructure {
-                failure,
-                last_failure: last_failure
-                    .map(|failure| failure.map_error(map)),
+                last_failure: last_failure.map(|failure| failure.map_error(map)),
             },
         }
     }

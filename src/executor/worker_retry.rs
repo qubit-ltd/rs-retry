@@ -142,19 +142,14 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
-    pub fn run<T, F>(
-        &self,
-        operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         T: Send + 'static,
         F: Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static,
     {
         let mut result = self.run_inner(operation);
         let failures = match &result {
-            Ok(success) => {
-                self.retry.observers().notify_success(success.context())
-            }
+            Ok(success) => self.retry.observers().notify_success(success.context()),
             Err(error) => self
                 .retry
                 .observers()
@@ -173,10 +168,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         clippy::result_large_err,
         reason = "the internal helper propagates the lossless public terminal error"
     )]
-    fn run_inner<T, F>(
-        &self,
-        operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    fn run_inner<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         T: Send + 'static,
         F: Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static,

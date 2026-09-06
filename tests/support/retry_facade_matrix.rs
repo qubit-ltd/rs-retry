@@ -163,9 +163,7 @@ impl ObserverPhaseCounts {
             RetryCallbackPhase::AttemptStarted => self.started.load(Ordering::SeqCst),
             RetryCallbackPhase::AttemptFailed => self.failed.load(Ordering::SeqCst),
             RetryCallbackPhase::RetryScheduled => self.scheduled.load(Ordering::SeqCst),
-            RetryCallbackPhase::RuleDecision
-            | RetryCallbackPhase::Success
-            | RetryCallbackPhase::TerminalFailure => 0,
+            RetryCallbackPhase::RuleDecision | RetryCallbackPhase::Success | RetryCallbackPhase::TerminalFailure => 0,
         }
     }
 }
