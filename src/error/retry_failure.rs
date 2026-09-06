@@ -73,6 +73,60 @@ pub enum RetryFailure<E> {
 }
 
 impl<E> RetryFailure<E> {
+    /// Maps the retained application error without changing terminal data.
+    ///
+    /// The mapper is called exactly once when the last attempt failure is an
+    /// [`AttemptFailure::Error`], and is not called when no application error
+    /// is retained. A mapper panic propagates to the caller.
+    #[must_use]
+    pub fn map_error<U, F: FnOnce(E) -> U>(self, map: F) -> RetryFailure<U> {
+        match self {
+            Self::Aborted { last_failure } => RetryFailure::Aborted {
+                last_failure: last_failure.map_error(map),
+            },
+            Self::Exhausted {
+                limit,
+                last_failure,
+            } => RetryFailure::Exhausted {
+                limit,
+                last_failure: last_failure
+                    .map(|failure| failure.map_error(map)),
+            },
+            Self::TimedOut {
+                scope,
+                last_failure,
+            } => RetryFailure::TimedOut {
+                scope,
+                last_failure: last_failure
+                    .map(|failure| failure.map_error(map)),
+            },
+            Self::Cancelled {
+                phase,
+                last_failure,
+            } => RetryFailure::Cancelled {
+                phase,
+                last_failure: last_failure
+                    .map(|failure| failure.map_error(map)),
+            },
+            Self::CallbackFailed {
+                callback,
+                last_failure,
+            } => RetryFailure::CallbackFailed {
+                callback,
+                last_failure: last_failure
+                    .map(|failure| failure.map_error(map)),
+            },
+            Self::Infrastructure {
+                failure,
+                last_failure,
+            } => RetryFailure::Infrastructure {
+                failure,
+                last_failure: last_failure
+                    .map(|failure| failure.map_error(map)),
+            },
+        }
+    }
+
     /// Returns the last attempt failure retained by this terminal value.
     ///
     /// # Returns

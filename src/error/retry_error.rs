@@ -50,6 +50,21 @@ impl<E> RetryError<E> {
         }
     }
 
+    /// Maps the retained application error while preserving terminal data.
+    ///
+    /// The mapper is called exactly once when the terminal failure retains an
+    /// [`AttemptFailure::Error`], and is not called when no application error
+    /// is retained. The context and completion callback diagnostics are moved
+    /// into the returned error unchanged. A mapper panic propagates to the
+    /// caller.
+    pub fn map_error<U, F: FnOnce(E) -> U>(self, map: F) -> RetryError<U> {
+        RetryError {
+            failure: self.failure.map_error(map),
+            context: self.context,
+            completion_callback_failures: self.completion_callback_failures,
+        }
+    }
+
     /// Returns completion observer panics in registration order.
     ///
     /// An empty slice means no completion callback panicked. These diagnostics
