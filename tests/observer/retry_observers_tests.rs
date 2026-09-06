@@ -675,3 +675,174 @@ fn test_completion_legacy_result_consumers_discard_diagnostics() {
         Some(&TestError("original error"))
     );
 }
+
+/// Non-string panic payload whose destructor raises another panic payload.
+struct CompletionDropPanicPayload {
+    drops: Arc<AtomicUsize>,
+    recursive: bool,
+}
+
+impl Drop for CompletionDropPanicPayload {
+    fn drop(&mut self) {
+        self.drops.fetch_add(1, Ordering::SeqCst);
+        if self.recursive {
+            std::panic::panic_any(Self {
+                drops: Arc::clone(&self.drops),
+                recursive: true,
+            });
+        }
+        panic!("completion payload drop panic");
+    }
+}
+
+/// Observer that panics with a payload carrying a panicking destructor.
+struct CompletionDropPanicObserver {
+    drops: Arc<AtomicUsize>,
+    recursive: bool,
+}
+
+impl CompletionDropPanicObserver {
+    /// Raises a real non-string panic with a destructor that also panics.
+    fn raise(&self) {
+        std::panic::panic_any(CompletionDropPanicPayload {
+            drops: Arc::clone(&self.drops),
+            recursive: self.recursive,
+        });
+    }
+}
+
+impl RetryObserver<TestError> for CompletionDropPanicObserver {
+    fn on_success(&self, _context: &RetryContext) {
+        self.raise();
+    }
+
+    fn on_terminal_failure(
+        &self,
+        _failure: &RetryFailure<TestError>,
+        _context: &RetryContext,
+    ) {
+        self.raise();
+    }
+}
+
+/// Payload destruction cannot discard either terminal outcome or stop later
+/// observers, even when the secondary panic payload has another panicking Drop.
+#[tokio::test]
+async fn test_completion_payload_drop_panic_preserves_result_and_later_observers()
+ {
+    use std::future::Future;
+    use std::task::Context;
+    use std::task::Poll;
+    use std::task::Waker;
+
+    for facade in [
+        CompletionFacade::Sync,
+        CompletionFacade::Worker,
+        #[cfg(feature = "tokio")]
+        CompletionFacade::Async,
+    ] {
+        for successful in [true, false] {
+            for recursive in [false, true] {
+                let drops = Arc::new(AtomicUsize::new(0));
+                let calls = Arc::new(AtomicUsize::new(0));
+                let clock = ManualMonotonicClock::new_shared();
+                let retry = Retry::<TestError>::builder(
+                    RetryPolicy::builder()
+                        .max_attempts(1)
+                        .build()
+                        .expect("valid policy"),
+                )
+                .observer(CompletionDropPanicObserver {
+                    drops: Arc::clone(&drops),
+                    recursive,
+                })
+                .observer(CompletionCounter(Arc::clone(&calls)))
+                .build();
+                let operation = move || {
+                    if successful {
+                        Ok(42)
+                    } else {
+                        Err(TestError("original error"))
+                    }
+                };
+                let mut future = Box::pin(async {
+                    match facade {
+                        CompletionFacade::Sync => {
+                            retry.sync().timer(clock.new_timer()).run(operation)
+                        }
+                        CompletionFacade::Worker => retry
+                            .worker()
+                            .timer(clock.new_timer())
+                            .run(move |_| operation()),
+                        #[cfg(feature = "tokio")]
+                        CompletionFacade::Async => {
+                            retry
+                                .asynchronous()
+                                .timer(clock.new_timer())
+                                .run(|| std::future::ready(operation()))
+                                .await
+                        }
+                    }
+                });
+                // Polling these immediate operations finishes in one poll. The
+                // outer catch turns a leaked panic into a normal test failure;
+                // forget its payload to avoid recursive Drop aborting the suite.
+                let outcome = std::panic::catch_unwind(
+                    std::panic::AssertUnwindSafe(|| {
+                        future
+                            .as_mut()
+                            .poll(&mut Context::from_waker(Waker::noop()))
+                    }),
+                );
+                let result = match outcome {
+                    Ok(Poll::Ready(result)) => result,
+                    Ok(Poll::Pending) => {
+                        panic!("immediate completion must be ready")
+                    }
+                    Err(payload) => {
+                        std::mem::forget(payload);
+                        panic!("completion panic payload destructor escaped");
+                    }
+                };
+                let (context, failures, phase) = match result {
+                    Ok(success) => {
+                        assert!(successful);
+                        let (value, context, failures) =
+                            success.into_parts_with_diagnostics();
+                        assert_eq!(value, 42);
+                        (context, failures, RetryCallbackPhase::Success)
+                    }
+                    Err(error) => {
+                        assert!(!successful);
+                        let (failure, context, failures) =
+                            error.into_parts_with_diagnostics();
+                        assert!(matches!(
+                            failure,
+                            RetryFailure::Exhausted {
+                                limit: RetryLimitKind::Attempts,
+                                ..
+                            }
+                        ));
+                        assert_eq!(
+                            failure.last_error(),
+                            Some(&TestError("original error"))
+                        );
+                        (context, failures, RetryCallbackPhase::TerminalFailure)
+                    }
+                };
+                assert_eq!(context.attempts(), 1);
+                assert_eq!(context.total_elapsed(), Duration::ZERO);
+                assert_eq!(failures.len(), 1);
+                assert_eq!(failures[0].callback(), RetryCallbackKind::Observer);
+                assert_eq!(failures[0].index(), 0);
+                assert_eq!(failures[0].phase(), phase);
+                assert_eq!(
+                    failures[0].panic(),
+                    &qubit_retry::RetryPanic::NonString
+                );
+                assert_eq!(drops.load(Ordering::SeqCst), 1);
+                assert_eq!(calls.load(Ordering::SeqCst), 1);
+            }
+        }
+    }
+}
