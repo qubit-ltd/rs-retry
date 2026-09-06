@@ -8,6 +8,7 @@
 //! Shared implementation state for retry executors.
 
 mod blocking_backoff;
+mod blocking_backoff_outcome;
 mod effective_timeout;
 mod prepared_attempt_plan;
 mod prepared_timeout;
@@ -17,8 +18,8 @@ mod retry_flow_controller;
 mod retry_flow_state;
 mod waker_registry;
 
-pub(crate) use blocking_backoff::BlockingBackoffOutcome;
 pub(crate) use blocking_backoff::wait_for_backoff;
+pub(crate) use blocking_backoff_outcome::BlockingBackoffOutcome;
 pub(crate) use effective_timeout::EffectiveTimeout;
 pub(crate) use prepared_attempt_plan::PreparedAttemptPlan;
 pub(in crate::executor) use retry_cancellation_state::RetryCancellationState;

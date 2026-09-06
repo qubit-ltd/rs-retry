@@ -17,20 +17,10 @@ use std::task::Waker;
 use std::time::Duration;
 
 use qubit_clock::BlockingSleeper;
-use qubit_clock::TimeError;
 use qubit_clock::Timer;
 
+use super::BlockingBackoffOutcome;
 use crate::RetryCancellationToken;
-
-/// Result of waiting for one blocking retry delay.
-pub(crate) enum BlockingBackoffOutcome {
-    /// The configured delay elapsed.
-    Elapsed,
-    /// Flow cancellation interrupted the delay.
-    Cancelled,
-    /// Registering or polling the delay timer failed.
-    TimerFailed(TimeError),
-}
 
 /// Waker that forwards timer and cancellation notifications to one channel.
 struct BlockingBackoffWake {

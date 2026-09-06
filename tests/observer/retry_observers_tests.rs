@@ -44,6 +44,7 @@ use qubit_retry::RetryDecision;
 use qubit_retry::RetryFailure;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
+use qubit_retry::RetryPanic;
 use qubit_retry::RetryTimeoutScope;
 
 use crate::support::TestError;
@@ -712,7 +713,7 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 assert_eq!(failures[0].callback(), RetryCallbackKind::Observer);
                 assert_eq!(failures[0].index(), 0);
                 assert_eq!(failures[0].phase(), phase);
-                assert_eq!(failures[0].panic(), &qubit_retry::RetryPanic::NonString);
+                assert_eq!(failures[0].panic(), &RetryPanic::NonString);
                 assert_eq!(drops.load(Ordering::SeqCst), 1);
                 assert_eq!(calls.load(Ordering::SeqCst), 1);
             }
