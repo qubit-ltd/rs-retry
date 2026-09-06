@@ -32,6 +32,18 @@ pub enum AttemptFailure<E> {
 }
 
 impl<E> AttemptFailure<E> {
+    /// Maps the contained application error while preserving other failures.
+    ///
+    /// The mapper is called exactly once for [`Self::Error`] and is not called
+    /// for timeout or panic failures. A mapper panic propagates to the caller.
+    pub fn map_error<U, F: FnOnce(E) -> U>(self, map: F) -> AttemptFailure<U> {
+        match self {
+            Self::Error(error) => AttemptFailure::Error(map(error)),
+            Self::TimedOut { scope } => AttemptFailure::TimedOut { scope },
+            Self::Panicked { panic } => AttemptFailure::Panicked { panic },
+        }
+    }
+
     /// Returns whether this failure was caused by a timeout.
     #[must_use]
     pub fn is_timeout(&self) -> bool {
