@@ -16,13 +16,13 @@ the flow stopped.
 
 ```toml
 [dependencies]
-qubit-retry = "0.20"
+qubit-retry = "0.21"
 ```
 
 Tokio execution and stable configuration serialization are opt-in:
 
 ```toml
-qubit-retry = { version = "0.20", features = ["tokio", "serde"] }
+qubit-retry = { version = "0.21", features = ["tokio", "serde"] }
 ```
 
 ## Quick start
@@ -86,6 +86,29 @@ assert!(!response.is_empty());
 `RetryDecision::RetryWithHint(delay)` can carry a server `Retry-After` value.
 The configured backoff policy decides whether that hint is preferred, used as
 a minimum, or ignored.
+
+### Synchronous cancellation
+
+The same-thread facade checks cancellation before admission, after a failed
+operation, and during backoff. It cannot interrupt a running closure. Keep each
+operation bounded; an `Ok` returned by that operation still wins over cancellation.
+This example cancels during a failed operation and therefore admits no retry:
+
+```rust
+use qubit_retry::{Retry, RetryCancellationToken, RetryFailure, RetryPolicy};
+
+let token = RetryCancellationToken::new();
+let policy = RetryPolicy::builder().build().expect("valid policy");
+let retry = Retry::<&'static str>::builder(policy).build();
+let mut calls = 0;
+let error = retry.sync().cancellation_token(token.clone()).run(|| {
+    calls += 1;
+    token.cancel();
+    Err::<(), _>("temporarily unavailable")
+}).expect_err("cancellation stops further attempts");
+assert_eq!(calls, 1);
+assert!(matches!(error.failure(), RetryFailure::Cancelled { .. }));
+```
 
 ### Async cancellation
 
@@ -175,6 +198,12 @@ assert!(matches!(
 Rust cannot forcibly kill an uncooperative thread. If it does not exit within
 the configured grace period, the flow fails closed with
 `WorkerStillRunning` and the precise timeout or cancellation trigger.
+Each attempt uses a worker and a reaper thread. The reaper joins the worker;
+the calling thread waits for confirmed thread exit, including thread-local
+storage (TLS) destructors, under the timeout/cancellation protocol. Returning an
+operation result alone does not prove exit. An uncooperative operation or TLS
+destructor may leave both threads alive after the grace period. No next attempt
+starts in that flow. Without a timeout or cancellation, this wait can be unbounded.
 
 ## Why this project exists
 
@@ -188,9 +217,8 @@ returns a coherent `RetryContext` with every success or terminal error.
 
 - `RetryPolicy` combines validated attempt, operation-time, and total-time
   budgets with reusable immediate, fixed, uniform, or exponential backoff.
-- `Retry::sync()` runs same-thread closures and deliberately exposes no
-  timeout or cancellation promise, because arbitrary synchronous code cannot
-  be interrupted safely.
+- `Retry::sync()` runs same-thread closures with cooperative cancellation at
+  safe boundaries. It exposes no hard timeout for a running closure.
 - `Retry::asynchronous()` supports attempt/flow timeouts and cancellation when
   the `tokio` feature is enabled; Tokio is the only async runtime integration.
 - `Retry::worker()` captures panics, preserves the stop trigger, and never
@@ -198,8 +226,9 @@ returns a coherent `RetryContext` with every success or terminal error.
 - `RetryFailure` distinguishes aborted, exhausted, timed-out, cancelled,
   callback-failed, and infrastructure terminals. `AttemptFailure` retains an
   application error, timeout scope, or stable panic payload.
-- Ordered rules and observers fail closed on callback panic and retain callback
-  kind, registration index, lifecycle phase, and string panic payloads.
+- Ordered rules and control observers fail closed on callback panic. Completion
+  observers preserve the main result and attach diagnostics. Both retain callback
+  kind, registration index, lifecycle phase, and panic payload classification.
 - `BackoffState` is reusable for reconnect loops such as SSE and supports
   server hints, jitter, and overflow-safe exponential growth.
 - The optional `serde` feature serializes configuration types only; runtime
@@ -211,13 +240,108 @@ policy never forcefully kills a synchronous operation or an uncooperative
 worker thread. Cancellation tokens are not resettable and do not provide parent
 trees or built-in deadlines.
 
+### Defaults and failure classification
+
+`RetryPolicy::builder().build()` allows **three attempts in total**: the initial attempt
+and at most two immediate retries, with no elapsed budget. It does not mean
+three additional retries. Without a rule, any application `Err(E)` is retryable;
+classify permanent failures explicitly when that default is too broad.
+
+| Event | Default behavior | Rule override |
+| --- | --- | --- |
+| Application `Err(E)` | Retry within the budgets; exhaustion retains the last error | `Abort`, `Retry`, or `RetryWithHint` |
+| Captured attempt timeout | Stop as `TimedOut` | May request retry while the flow remains eligible |
+| Captured operation panic (worker/async) | Stop as `Aborted` | May request retry while the flow remains eligible |
+| Same-thread operation panic | Unwind to the caller | Not passed to rules |
+| Attempt/elapsed budget exhausted | Stop as `Exhausted` | Cannot bypass admission limits |
+| Flow timeout | Stop as `TimedOut` | Cannot extend the flow deadline |
+| Cancellation | Stop as `Cancelled` at the facade's cancellation boundaries | Cannot reset the token |
+| Rule or control-observer panic | Stop as `CallbackFailed` | Later control callbacks do not recover it |
+| Clock, timer, spawn, channel, or active-worker failure | Stop as `Infrastructure` | Not retried |
+| Completion-observer panic | Keep the success or terminal error; attach diagnostics | All later completion observers still run |
+
+Rules run in registration order; the first decision other than `UseDefault`
+wins. If every rule delegates, the defaults above apply.
+
+### Budgets and timeouts
+
+| Setting | What it measures | Effect |
+| --- | --- | --- |
+| `max_operation_elapsed` | Cumulative admitted-operation time | Soft continuation budget; cannot interrupt an admitted operation |
+| `max_total_elapsed` | Monotonic flow time, including backoff and control callbacks | Soft continuation budget; a completed success remains successful |
+| `attempt_timeout` (async/worker) | One admitted attempt | Stops waiting/drops the async attempt or asks the worker to exit |
+| `flow_timeout` (async/worker) | The whole execution flow | Bounds active-attempt and backoff waits; worker cleanup may add `cancellation_grace` |
+
+Timeouts cannot preempt synchronous callback work or an async future that blocks
+its polling thread. Worker cleanup uses real time even with an injected timer.
+Completion callbacks run after the terminal context is frozen; their time is
+excluded from that context and is not bounded by retry timeouts.
+
+### Completion diagnostics and error mapping
+
+Implement `RetryObserver::on_success` and `on_terminal_failure` for one completion
+notification per `run` result, including failures before the first admission.
+Observers run synchronously in registration order and must remain short and
+nonblocking. Their panics do not change the frozen result, schedule a retry, or
+cause a second terminal notification. Read `completion_callback_failures()` on
+either `RetrySuccess` or `RetryError` before consuming it:
+
+```rust
+use qubit_retry::{Retry, RetryCallbackPhase, RetryContext, RetryFailure};
+use qubit_retry::{RetryObserver, RetryPolicy};
+
+struct CompletionAudit;
+impl RetryObserver<&'static str> for CompletionAudit {
+    fn on_terminal_failure(&self, _: &RetryFailure<&'static str>, _: &RetryContext) {
+        panic!("audit sink unavailable");
+    }
+}
+
+let policy = RetryPolicy::builder().build().expect("valid policy");
+let retry = Retry::<&'static str>::builder(policy)
+    .observer(CompletionAudit)
+    .build();
+let error = retry.sync().run(|| Err::<(), _>("offline")).unwrap_err();
+let mapped = error.map_error(String::from);
+assert_eq!(mapped.last_error().map(String::as_str), Some("offline"));
+assert_eq!(mapped.completion_callback_failures().len(), 1);
+assert_eq!(mapped.completion_callback_failures()[0].phase(), RetryCallbackPhase::TerminalFailure);
+let (_failure, context, diagnostics) = mapped.into_parts_with_diagnostics();
+assert_eq!(context.attempts(), 3);
+assert_eq!(diagnostics.len(), 1);
+```
+
+`AttemptFailure::map_error`, `RetryFailure::map_error`, and `RetryError::map_error`
+consume only the retained application error. An `FnOnce` mapper runs once when
+that error exists, otherwise zero times; it needs no `Clone`, `Send`, or `'static`
+bound. Classification and terminal data are preserved; `RetryError::map_error`
+also preserves context and completion diagnostics. A mapper panic propagates.
+`into_parts()` discards completion diagnostics; `into_parts_with_diagnostics()`
+retains them. `RetrySuccess::into_value()` and `RetryError::into_failure()` also
+discard the extra diagnostics. Operation unwinding, dropping an async `run`
+future, and process abort do not guarantee a completion notification.
+
 ## Learn more
 
 - [Rust API documentation](https://docs.rs/qubit-retry)
 - [中文 README](README.zh_CN.md)
 - [Repository](https://github.com/qubit-ltd/rs-retry)
 
-## Migrating to 0.20
+## Migrating from 0.20 to 0.21
+
+Update direct `qubit-retry` dependencies to `0.21` and regenerate the affected
+lockfile entries together with the HTTP, CAS, and EventBus adapters. Existing
+observer implementations compile unchanged because completion methods default
+to no-ops. Exhaustive matches on `RetryCallbackPhase` must now handle `Success`
+and `TerminalFailure`. Keep a fallback when matching non-exhaustive error types
+from adapters. Tokio and serde remain opt-in; the default feature set is empty.
+
+Review result consumption where diagnostics matter: replace `into_parts()` with
+`into_parts_with_diagnostics()`, or inspect `completion_callback_failures()`
+first. Prefer `map_error` for pure application-error conversion; adapters that
+also change terminal semantics still need their domain conversion.
+
+### Contracts retained from 0.20
 
 `RetryBudget` and all execution facades now share admission accounting. Its
 `begin_attempt`, `finish_attempt`, `snapshot`, and `check_retry_after` methods
