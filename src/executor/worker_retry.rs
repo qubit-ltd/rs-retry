@@ -235,6 +235,12 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                     );
                     return Err(error);
                 }
+                BlockingAttemptOutcome::WorkerChannelClosed => {
+                    return Err(controller.record_active_infrastructure_failure(
+                        RetryInfrastructureFailure::WorkerChannelClosed,
+                        clock.now(),
+                    ));
+                }
                 BlockingAttemptOutcome::WorkerStillRunning { trigger } => {
                     let error = controller.record_active_infrastructure_failure(
                         RetryInfrastructureFailure::WorkerStillRunning { trigger },

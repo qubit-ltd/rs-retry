@@ -21,6 +21,8 @@ pub(in crate::executor) enum BlockingAttemptOutcome<T, E> {
         /// Diagnostic supplied by the thread runtime.
         message: Box<str>,
     },
+    /// The event channel closed without the complete worker exit protocol.
+    WorkerChannelClosed,
     /// The attempt timer failed and the worker was reaped safely.
     TimerFailed {
         /// Structured timer registration or completion error.

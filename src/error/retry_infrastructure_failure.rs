@@ -29,6 +29,8 @@ pub enum RetryInfrastructureFailure {
         /// Diagnostic supplied by the worker runtime.
         message: Box<str>,
     },
+    /// The worker event channel closed before its exit protocol completed.
+    WorkerChannelClosed,
     /// A stopped worker did not exit within its grace period.
     WorkerStillRunning {
         /// Event that requested the worker to stop.
@@ -41,12 +43,12 @@ impl RetryInfrastructureFailure {
     ///
     /// # Returns
     /// `Some(&str)` for clock, timer, and worker-spawn failures, or `None` for
-    /// a worker that remained running.
+    /// a worker that remained running or whose event channel closed.
     #[must_use]
     pub fn message(&self) -> Option<&str> {
         match self {
             Self::Clock { message } | Self::Timer { message } | Self::WorkerSpawn { message } => Some(message),
-            Self::WorkerStillRunning { .. } => None,
+            Self::WorkerStillRunning { .. } | Self::WorkerChannelClosed => None,
         }
     }
 
@@ -59,7 +61,7 @@ impl RetryInfrastructureFailure {
     pub fn worker_stop_trigger(&self) -> Option<WorkerStopTrigger> {
         match self {
             Self::WorkerStillRunning { trigger } => Some(*trigger),
-            Self::Clock { .. } | Self::Timer { .. } | Self::WorkerSpawn { .. } => None,
+            Self::Clock { .. } | Self::Timer { .. } | Self::WorkerSpawn { .. } | Self::WorkerChannelClosed => None,
         }
     }
 }
@@ -75,6 +77,9 @@ impl fmt::Display for RetryInfrastructureFailure {
             }
             Self::WorkerSpawn { message } => {
                 write!(formatter, "worker spawn failed: {message}")
+            }
+            Self::WorkerChannelClosed => {
+                write!(formatter, "worker event channel closed before exit was confirmed")
             }
             Self::WorkerStillRunning { trigger } => {
                 write!(formatter, "worker still running after {trigger}")
