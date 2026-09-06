@@ -17,6 +17,7 @@ use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryFailure;
+use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
 
@@ -96,7 +97,7 @@ fn map_error_preserves_context_and_completion_diagnostics() {
     else {
         panic!("expected an exhausted failure");
     };
-    assert_eq!(*limit, qubit_retry::RetryLimitKind::Attempts);
+    assert_eq!(*limit, RetryLimitKind::Attempts);
     assert_eq!(last_failure, &Some(AttemptFailure::Error(String::from("retry!"))));
     let [diagnostic] = mapped.completion_callback_failures() else {
         panic!("expected one completion diagnostic");
