@@ -18,6 +18,7 @@ use crate::RetryCallbackFailure;
 use crate::RetryCallbackKind;
 use crate::RetryCallbackPhase;
 use crate::RetryContext;
+use crate::RetryFailure;
 
 /// Ordered observer collection.
 #[derive(Clone)]
@@ -68,6 +69,63 @@ impl<E: 'static> RetryObservers<E> {
         self.try_each(RetryCallbackPhase::RetryScheduled, |observer| {
             observer.on_retry_scheduled(backoff, context)
         })
+    }
+
+    /// Notifies every observer of success using the frozen context.
+    ///
+    /// Returns all caught panics in registration order without stopping later
+    /// observers or changing the successful result.
+    pub(crate) fn notify_success(
+        &self,
+        context: &RetryContext,
+    ) -> Vec<RetryCallbackFailure> {
+        self.notify_each(RetryCallbackPhase::Success, |observer| {
+            observer.on_success(context)
+        })
+    }
+
+    /// Notifies every observer of the original terminal failure and context.
+    ///
+    /// Returns all caught panics in registration order without replacing the
+    /// failure or invoking any retry controls.
+    pub(crate) fn notify_terminal_failure(
+        &self,
+        failure: &RetryFailure<E>,
+        context: &RetryContext,
+    ) -> Vec<RetryCallbackFailure> {
+        self.notify_each(RetryCallbackPhase::TerminalFailure, |observer| {
+            observer.on_terminal_failure(failure, context)
+        })
+    }
+
+    /// Invokes all completion callbacks, collecting each panic independently.
+    ///
+    /// The returned vector allocates only when a callback panics. Indices
+    /// retain the original observer registration order.
+    fn notify_each<F>(
+        &self,
+        phase: RetryCallbackPhase,
+        mut callback: F,
+    ) -> Vec<RetryCallbackFailure>
+    where
+        F: FnMut(&dyn RetryObserver<E>),
+    {
+        let mut failures = Vec::new();
+        for (index, observer) in self.observers.iter().enumerate() {
+            if let Err(payload) =
+                std::panic::catch_unwind(AssertUnwindSafe(|| {
+                    callback(observer.as_ref())
+                }))
+            {
+                failures.push(RetryCallbackFailure::new(
+                    RetryCallbackKind::Observer,
+                    index,
+                    phase,
+                    retry_panic_from_payload(payload),
+                ));
+            }
+        }
+        failures
     }
 
     /// Invokes one observer phase in registration order.

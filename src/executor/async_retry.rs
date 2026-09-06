@@ -81,11 +81,50 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     }
 
     /// Executes one future per attempt.
+    ///
+    /// Completion observers run synchronously with the frozen result; their
+    /// panics are attached as diagnostics and do not change the outcome.
+    /// Dropping this future or an operation panic does not guarantee completion
+    /// notification. The operation future need not be `Send` or static.
     #[allow(
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
-    pub async fn run<T, F, Fut>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub async fn run<T, F, Fut>(
+        &self,
+        operation: F,
+    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        let mut result = self.run_inner(operation).await;
+        let failures = match &result {
+            Ok(success) => {
+                self.retry.observers().notify_success(success.context())
+            }
+            Err(error) => self
+                .retry
+                .observers()
+                .notify_terminal_failure(error.failure(), error.context()),
+        };
+        match &mut result {
+            Ok(success) => success.set_completion_callback_failures(failures),
+            Err(error) => error.set_completion_callback_failures(failures),
+        }
+        result
+    }
+
+    /// Executes retry controls and freezes the final result before completion
+    /// observers run. Returns the original terminal error on control failure.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the internal helper propagates the lossless public terminal error"
+    )]
+    async fn run_inner<T, F, Fut>(
+        &self,
+        mut operation: F,
+    ) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,

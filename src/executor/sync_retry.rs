@@ -74,11 +74,48 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
     }
 
     /// Runs a same-thread operation until success or a terminal retry error.
+    ///
+    /// Completion observers run synchronously with the frozen result; their
+    /// panics are attached as diagnostics and do not change the outcome.
+    /// Operation panics propagate without completion notification.
     #[allow(
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
-    pub fn run<T, F>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub fn run<T, F>(
+        &self,
+        operation: F,
+    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    where
+        F: FnMut() -> Result<T, E>,
+    {
+        let mut result = self.run_inner(operation);
+        let failures = match &result {
+            Ok(success) => {
+                self.retry.observers().notify_success(success.context())
+            }
+            Err(error) => self
+                .retry
+                .observers()
+                .notify_terminal_failure(error.failure(), error.context()),
+        };
+        match &mut result {
+            Ok(success) => success.set_completion_callback_failures(failures),
+            Err(error) => error.set_completion_callback_failures(failures),
+        }
+        result
+    }
+
+    /// Executes retry controls and freezes the final result before completion
+    /// observers run. Returns the original terminal error on control failure.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the internal helper propagates the lossless public terminal error"
+    )]
+    fn run_inner<T, F>(
+        &self,
+        mut operation: F,
+    ) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,
     {

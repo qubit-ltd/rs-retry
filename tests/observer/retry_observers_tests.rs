@@ -20,3 +20,658 @@ fn observers_are_registered_by_retry_builder() {
     let retry = Retry::<()>::builder(policy).observer(NoopObserver).build();
     let _ = retry;
 }
+
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+
+use qubit_clock::ManualMonotonicClock;
+use qubit_clock::MonotonicClock;
+use qubit_clock::Timer;
+use qubit_clock::test_util::FaultInjectingTimer;
+use qubit_clock::test_util::TimerFailurePoint;
+use qubit_retry::AttemptFailure;
+use qubit_retry::BackoffPolicy;
+use qubit_retry::BackoffStep;
+use qubit_retry::RetryCallbackKind;
+use qubit_retry::RetryCallbackPhase;
+use qubit_retry::RetryCancellationPhase;
+use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryContext;
+use qubit_retry::RetryDecision;
+use qubit_retry::RetryFailure;
+use qubit_retry::RetryInfrastructureFailure;
+use qubit_retry::RetryLimitKind;
+use qubit_retry::RetryTimeoutScope;
+
+use crate::support::TestError;
+
+/// Completion observations captured before each callback advances the clock.
+#[derive(Debug)]
+struct CompletionRecord {
+    index: usize,
+    phase: RetryCallbackPhase,
+    failure: Option<String>,
+    context: RetryContext,
+}
+
+/// Independent terminal outcomes exercised through every applicable facade.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CompletionScenario {
+    Success,
+    Abort,
+    Exhausted,
+    ExhaustedBeforeAttempt,
+    CancelledBeforeAttempt,
+    CancelledAfterFailure,
+    StartedPanic,
+    FailedPanic,
+    ScheduledPanic,
+    RulePanic,
+    TimerFailure,
+    TimerFailureBeforeAttempt,
+    TimedOut,
+}
+
+/// Observer that records completions and can panic in a control phase.
+struct CompletionObserver {
+    index: usize,
+    panic_on_completion: bool,
+    scenario: CompletionScenario,
+    records: Arc<Mutex<Vec<CompletionRecord>>>,
+    clock: Arc<ManualMonotonicClock>,
+    started_calls: Arc<AtomicUsize>,
+    cancellation: RetryCancellationToken,
+}
+
+impl CompletionObserver {
+    /// Records a frozen result, advances virtual time, and optionally panics.
+    fn complete(
+        &self,
+        phase: RetryCallbackPhase,
+        failure: Option<String>,
+        context: &RetryContext,
+    ) {
+        self.records.lock().expect("completion records lock").push(
+            CompletionRecord {
+                index: self.index,
+                phase,
+                failure,
+                context: *context,
+            },
+        );
+        self.clock
+            .advance(Duration::from_secs(10))
+            .expect("advance completion clock");
+        assert!(!self.panic_on_completion, "completion panic");
+    }
+}
+
+impl RetryObserver<TestError> for CompletionObserver {
+    fn on_attempt_started(&self, _context: &RetryContext) {
+        self.started_calls.fetch_add(1, Ordering::SeqCst);
+        if self.index == 0 {
+            assert_ne!(
+                self.scenario,
+                CompletionScenario::StartedPanic,
+                "control panic"
+            );
+        }
+    }
+
+    fn on_attempt_failed(
+        &self,
+        _failure: &AttemptFailure<TestError>,
+        _context: &RetryContext,
+    ) {
+        if self.index == 0 {
+            if self.scenario == CompletionScenario::CancelledAfterFailure {
+                self.cancellation.cancel();
+            }
+            assert_ne!(
+                self.scenario,
+                CompletionScenario::FailedPanic,
+                "control panic"
+            );
+        }
+    }
+
+    fn on_retry_scheduled(
+        &self,
+        _backoff: &BackoffStep,
+        _context: &RetryContext,
+    ) {
+        if self.index == 0 {
+            assert_ne!(
+                self.scenario,
+                CompletionScenario::ScheduledPanic,
+                "control panic"
+            );
+            if self.scenario == CompletionScenario::TimedOut {
+                self.clock
+                    .advance(Duration::from_secs(1))
+                    .expect("expire flow deadline");
+            }
+        }
+    }
+
+    fn on_success(&self, context: &RetryContext) {
+        self.complete(RetryCallbackPhase::Success, None, context);
+    }
+
+    fn on_terminal_failure(
+        &self,
+        failure: &RetryFailure<TestError>,
+        context: &RetryContext,
+    ) {
+        self.complete(
+            RetryCallbackPhase::TerminalFailure,
+            Some(format!("{failure:?}")),
+            context,
+        );
+    }
+}
+
+/// Facades sharing the completion contract; sync has no hard timeout.
+#[derive(Clone, Copy, Debug)]
+enum CompletionFacade {
+    Sync,
+    Worker,
+    #[cfg(feature = "tokio")]
+    Async,
+}
+
+/// Exercises real public execution and verifies frozen terminal diagnostics.
+async fn assert_completion_case(
+    facade: CompletionFacade,
+    scenario: CompletionScenario,
+    panic_on_completion: bool,
+) {
+    let clock = ManualMonotonicClock::new_shared();
+    let records = Arc::new(Mutex::new(Vec::new()));
+    let started_calls = Arc::new(AtomicUsize::new(0));
+    let operation_calls = Arc::new(AtomicUsize::new(0));
+    let cancellation = RetryCancellationToken::new();
+    if scenario == CompletionScenario::CancelledBeforeAttempt {
+        cancellation.cancel();
+    }
+    let mut policy = RetryPolicy::builder().max_attempts(
+        if scenario == CompletionScenario::Exhausted {
+            1
+        } else {
+            2
+        },
+    );
+    if scenario == CompletionScenario::TimerFailure {
+        policy = policy.backoff(BackoffPolicy::fixed(Duration::from_millis(1)));
+    }
+    if scenario == CompletionScenario::ExhaustedBeforeAttempt {
+        policy = policy.max_total_elapsed(Duration::ZERO);
+    }
+    let mut builder = Retry::<TestError>::builder(
+        policy.build().expect("valid completion policy"),
+    );
+    for index in 0..3 {
+        builder = builder.observer(CompletionObserver {
+            index,
+            panic_on_completion: panic_on_completion && index < 2,
+            scenario,
+            records: Arc::clone(&records),
+            clock: Arc::clone(&clock),
+            started_calls: Arc::clone(&started_calls),
+            cancellation: cancellation.clone(),
+        });
+    }
+    let retry = builder
+        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
+            assert_ne!(scenario, CompletionScenario::RulePanic, "rule panic");
+            if scenario == CompletionScenario::Abort {
+                RetryDecision::Abort
+            } else {
+                RetryDecision::UseDefault
+            }
+        })
+        .build();
+    let timer: Arc<dyn Timer> = if matches!(
+        scenario,
+        CompletionScenario::TimerFailure
+            | CompletionScenario::TimerFailureBeforeAttempt
+    ) {
+        Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Registration,
+            "completion",
+            "offline",
+        ))
+    } else {
+        clock.new_timer()
+    };
+    let operation = {
+        let operation_calls = Arc::clone(&operation_calls);
+        move || {
+            operation_calls.fetch_add(1, Ordering::SeqCst);
+            if scenario == CompletionScenario::Success {
+                Ok(42)
+            } else {
+                Err(TestError("original error"))
+            }
+        }
+    };
+    let result = match facade {
+        CompletionFacade::Sync => retry
+            .sync()
+            .timer(timer)
+            .cancellation_token(cancellation)
+            .run(operation),
+        CompletionFacade::Worker => {
+            let mut worker =
+                retry.worker().timer(timer).cancellation_token(cancellation);
+            if matches!(
+                scenario,
+                CompletionScenario::TimedOut
+                    | CompletionScenario::TimerFailureBeforeAttempt
+            ) {
+                worker = worker.flow_timeout(Duration::from_secs(1));
+            }
+            worker.run(move |_| operation())
+        }
+        #[cfg(feature = "tokio")]
+        CompletionFacade::Async => {
+            let mut executor = retry
+                .asynchronous()
+                .timer(timer)
+                .cancellation_token(cancellation);
+            if matches!(
+                scenario,
+                CompletionScenario::TimedOut
+                    | CompletionScenario::TimerFailureBeforeAttempt
+            ) {
+                executor = executor.flow_timeout(Duration::from_secs(1));
+            }
+            executor.run(|| std::future::ready(operation())).await
+        }
+    };
+    let (context, failures, phase, original_failure) = match result {
+        Ok(success) => {
+            assert_eq!(scenario, CompletionScenario::Success);
+            assert_eq!(*success.value(), 42);
+            assert_eq!(
+                success.completion_callback_failures().len(),
+                if panic_on_completion { 2 } else { 0 }
+            );
+            let (value, context, failures) =
+                success.into_parts_with_diagnostics();
+            assert_eq!(value, 42);
+            (context, failures, RetryCallbackPhase::Success, None)
+        }
+        Err(error) => {
+            assert_ne!(scenario, CompletionScenario::Success);
+            let zero_attempts = matches!(
+                scenario,
+                CompletionScenario::CancelledBeforeAttempt
+                    | CompletionScenario::ExhaustedBeforeAttempt
+                    | CompletionScenario::StartedPanic
+                    | CompletionScenario::TimerFailureBeforeAttempt
+            );
+            assert_eq!(error.context().attempts(), u32::from(!zero_attempts));
+            assert_eq!(
+                error.last_error(),
+                (!zero_attempts).then_some(&TestError("original error")),
+                "{facade:?} {scenario:?}"
+            );
+            match scenario {
+                CompletionScenario::Abort => assert!(matches!(
+                    error.failure(),
+                    RetryFailure::Aborted { .. }
+                )),
+                CompletionScenario::Exhausted
+                | CompletionScenario::ExhaustedBeforeAttempt => {
+                    let expected = if zero_attempts {
+                        RetryLimitKind::TotalElapsed
+                    } else {
+                        RetryLimitKind::Attempts
+                    };
+                    assert!(
+                        matches!(error.failure(), RetryFailure::Exhausted { limit, .. } if *limit == expected)
+                    );
+                }
+                CompletionScenario::CancelledBeforeAttempt
+                | CompletionScenario::CancelledAfterFailure => {
+                    let expected = if zero_attempts {
+                        RetryCancellationPhase::BeforeAttempt
+                    } else {
+                        RetryCancellationPhase::Backoff
+                    };
+                    assert!(
+                        matches!(error.failure(), RetryFailure::Cancelled { phase, .. } if *phase == expected)
+                    );
+                }
+                CompletionScenario::StartedPanic
+                | CompletionScenario::FailedPanic
+                | CompletionScenario::ScheduledPanic
+                | CompletionScenario::RulePanic => {
+                    let expected = match scenario {
+                        CompletionScenario::StartedPanic => {
+                            RetryCallbackPhase::AttemptStarted
+                        }
+                        CompletionScenario::FailedPanic => {
+                            RetryCallbackPhase::AttemptFailed
+                        }
+                        CompletionScenario::ScheduledPanic => {
+                            RetryCallbackPhase::RetryScheduled
+                        }
+                        _ => RetryCallbackPhase::RuleDecision,
+                    };
+                    assert!(
+                        matches!(error.failure(), RetryFailure::CallbackFailed { callback, .. } if callback.phase() == expected && callback.index() == 0)
+                    );
+                }
+                CompletionScenario::TimerFailure
+                | CompletionScenario::TimerFailureBeforeAttempt => {
+                    assert!(matches!(
+                        error.failure(),
+                        RetryFailure::Infrastructure {
+                            failure: RetryInfrastructureFailure::Timer { .. },
+                            ..
+                        }
+                    ))
+                }
+                CompletionScenario::TimedOut => assert!(matches!(
+                    error.failure(),
+                    RetryFailure::TimedOut {
+                        scope: RetryTimeoutScope::Flow,
+                        ..
+                    }
+                )),
+                CompletionScenario::Success => unreachable!(),
+            }
+            let original_failure = format!("{:?}", error.failure());
+            assert_eq!(
+                error.completion_callback_failures().len(),
+                if panic_on_completion { 2 } else { 0 }
+            );
+            let (failure, context, failures) =
+                error.into_parts_with_diagnostics();
+            assert_eq!(format!("{failure:?}"), original_failure);
+            (
+                context,
+                failures,
+                RetryCallbackPhase::TerminalFailure,
+                Some(original_failure),
+            )
+        }
+    };
+    assert_eq!(
+        operation_calls.load(Ordering::SeqCst),
+        context.attempts() as usize
+    );
+    if scenario == CompletionScenario::StartedPanic {
+        assert_eq!(started_calls.load(Ordering::SeqCst), 1);
+    }
+    for (index, failure) in failures.iter().enumerate() {
+        assert_eq!(failure.callback(), RetryCallbackKind::Observer);
+        assert_eq!(failure.index(), index);
+        assert_eq!(failure.phase(), phase);
+        assert_eq!(failure.panic().message(), Some("completion panic"));
+    }
+    let records = records.lock().expect("completion records lock");
+    assert_eq!(
+        records.len(),
+        3,
+        "each observer receives exactly one terminal callback"
+    );
+    for (index, record) in records.iter().enumerate() {
+        assert_eq!(record.index, index);
+        assert_eq!(record.phase, phase);
+        assert_eq!(record.failure, original_failure);
+        assert_eq!(
+            record.context, context,
+            "completion callbacks must see the frozen context"
+        );
+    }
+    assert!(
+        context.total_elapsed() < Duration::from_secs(10),
+        "completion time must not enter the terminal context"
+    );
+}
+
+/// All ordinary Result returns share the completion contract in every facade.
+#[tokio::test]
+async fn test_completion_matrix_preserves_result_context_and_observer_order() {
+    for facade in [
+        CompletionFacade::Sync,
+        CompletionFacade::Worker,
+        #[cfg(feature = "tokio")]
+        CompletionFacade::Async,
+    ] {
+        for scenario in [
+            CompletionScenario::Success,
+            CompletionScenario::Abort,
+            CompletionScenario::Exhausted,
+            CompletionScenario::ExhaustedBeforeAttempt,
+            CompletionScenario::CancelledBeforeAttempt,
+            CompletionScenario::CancelledAfterFailure,
+            CompletionScenario::StartedPanic,
+            CompletionScenario::FailedPanic,
+            CompletionScenario::ScheduledPanic,
+            CompletionScenario::RulePanic,
+            CompletionScenario::TimerFailure,
+            CompletionScenario::TimerFailureBeforeAttempt,
+            CompletionScenario::TimedOut,
+        ] {
+            if matches!(facade, CompletionFacade::Sync)
+                && matches!(
+                    scenario,
+                    CompletionScenario::TimerFailureBeforeAttempt
+                        | CompletionScenario::TimedOut
+                )
+            {
+                continue;
+            }
+            for panic_on_completion in [false, true] {
+                assert_completion_case(facade, scenario, panic_on_completion)
+                    .await;
+            }
+        }
+    }
+}
+
+/// Sync closures retain local borrows and may return a borrowed, non-Send value.
+#[test]
+fn test_completion_sync_preserves_borrowed_non_send_operation() {
+    let value = std::rc::Rc::new(42);
+    let mut calls = 0;
+    let retry = Retry::<()>::builder(
+        RetryPolicy::builder().build().expect("valid policy"),
+    )
+    .build();
+    let success = retry
+        .sync()
+        .run(|| {
+            calls += 1;
+            Ok(&value)
+        })
+        .expect("borrowed success");
+    assert_eq!(calls, 1);
+    assert!(std::ptr::eq(*success.value(), &value));
+    assert!(success.completion_callback_failures().is_empty());
+}
+
+/// Async operation futures remain non-Send and may borrow caller-owned data.
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn test_completion_async_preserves_borrowed_non_send_future() {
+    let value = std::rc::Rc::new(42);
+    let retry = Retry::<()>::builder(
+        RetryPolicy::builder().build().expect("valid policy"),
+    )
+    .build();
+    let success = retry
+        .asynchronous()
+        .run(|| async {
+            let borrowed = &value;
+            tokio::task::yield_now().await;
+            Ok(borrowed)
+        })
+        .await
+        .expect("non-Send borrowed success");
+    assert!(std::ptr::eq(*success.value(), &value));
+    assert!(success.completion_callback_failures().is_empty());
+}
+
+/// Counts completion callbacks without observing control callbacks.
+struct CompletionCounter(Arc<AtomicUsize>);
+
+impl RetryObserver<TestError> for CompletionCounter {
+    fn on_success(&self, _context: &RetryContext) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn on_terminal_failure(
+        &self,
+        _failure: &RetryFailure<TestError>,
+        _context: &RetryContext,
+    ) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// Operation panics propagate from sync without synthesizing a Result.
+#[test]
+fn test_completion_sync_operation_panic_does_not_notify() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let retry = Retry::<TestError>::builder(
+        RetryPolicy::builder().build().expect("valid policy"),
+    )
+    .observer(CompletionCounter(Arc::clone(&calls)))
+    .build();
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = retry
+            .sync()
+            .run(|| -> Result<(), TestError> { panic!("operation panic") });
+    }));
+    assert!(panic.is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+/// A started async operation remains unobserved when its future is dropped.
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn test_completion_dropped_async_future_does_not_notify() {
+    use std::future::Future;
+    use std::task::Context;
+    use std::task::Poll;
+    use std::task::Waker;
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let operation_calls = AtomicUsize::new(0);
+    let retry = Retry::<TestError>::builder(
+        RetryPolicy::builder().build().expect("valid policy"),
+    )
+    .observer(CompletionCounter(Arc::clone(&calls)))
+    .build();
+    let executor = retry.asynchronous();
+    let mut future = Box::pin(executor.run(|| {
+        operation_calls.fetch_add(1, Ordering::SeqCst);
+        std::future::pending::<Result<(), TestError>>()
+    }));
+    assert!(matches!(
+        future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop())),
+        Poll::Pending
+    ));
+    assert_eq!(operation_calls.load(Ordering::SeqCst), 1);
+    drop(future);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+/// Async operation panics propagate without synthesizing a terminal Result.
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn test_completion_async_operation_panic_does_not_notify() {
+    use std::future::Future;
+    use std::task::Context;
+    use std::task::Waker;
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let retry = Retry::<TestError>::builder(
+        RetryPolicy::builder().build().expect("valid policy"),
+    )
+    .observer(CompletionCounter(Arc::clone(&calls)))
+    .build();
+    let executor = retry.asynchronous();
+    let mut future = Box::pin(executor.run(|| async {
+        panic!("operation panic");
+        #[allow(unreachable_code)]
+        Ok::<(), TestError>(())
+    }));
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()));
+    }));
+    assert!(panic.is_err());
+    drop(future);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+/// Panics at either completion boundary to exercise consuming result methods.
+struct CompletionPanic;
+
+impl RetryObserver<TestError> for CompletionPanic {
+    fn on_success(&self, _context: &RetryContext) {
+        panic!("completion panic");
+    }
+
+    fn on_terminal_failure(
+        &self,
+        _failure: &RetryFailure<TestError>,
+        _context: &RetryContext,
+    ) {
+        panic!("completion panic");
+    }
+}
+
+/// Legacy consuming methods retain their signatures and discard diagnostics.
+#[test]
+fn test_completion_legacy_result_consumers_discard_diagnostics() {
+    let retry = Retry::<TestError>::builder(
+        RetryPolicy::builder()
+            .max_attempts(1)
+            .build()
+            .expect("valid policy"),
+    )
+    .observer(|_: &AttemptFailure<TestError>, _: &RetryContext| {})
+    .observer(CompletionPanic)
+    .build();
+    let success = retry.sync().run(|| Ok(42)).expect("successful operation");
+    assert_eq!(success.completion_callback_failures().len(), 1);
+    assert_eq!(success.completion_callback_failures()[0].index(), 1);
+    let cloned = success.clone();
+    assert_eq!(success, cloned);
+    assert_eq!(cloned.into_value(), 42);
+    let (value, context) = success.into_parts();
+    assert_eq!(value, 42);
+    assert_eq!(context.attempts(), 1);
+
+    let error = retry
+        .sync()
+        .run(|| Err::<(), _>(TestError("original error")))
+        .expect_err("exhausted");
+    assert_eq!(error.completion_callback_failures().len(), 1);
+    assert_eq!(error.completion_callback_failures()[0].index(), 1);
+    let (failure, context) = error.into_parts();
+    assert_eq!(failure.last_error(), Some(&TestError("original error")));
+    assert_eq!(context.attempts(), 1);
+    let error = retry
+        .sync()
+        .run(|| Err::<(), _>(TestError("original error")))
+        .expect_err("exhausted");
+    assert_eq!(error.completion_callback_failures().len(), 1);
+    assert_eq!(
+        error.into_failure().last_error(),
+        Some(&TestError("original error"))
+    );
+}
