@@ -20,10 +20,18 @@ use crate::RetryContext;
 use crate::observer::retry_panic_from_payload;
 
 /// Ordered rules. The first concrete decision wins.
-#[derive(Clone)]
 #[allow(dead_code)]
 pub(crate) struct RetryRules<E> {
     rules: Vec<Arc<dyn RetryRule<E>>>,
+}
+
+/// Clones the ordered callback references without cloning the operation error.
+impl<E> Clone for RetryRules<E> {
+    fn clone(&self) -> Self {
+        Self {
+            rules: self.rules.clone(),
+        }
+    }
 }
 
 impl<E> Default for RetryRules<E> {

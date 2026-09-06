@@ -21,11 +21,24 @@ use crate::rule::RetryRules;
 /// A [`Retry`] contains only pure policy data and ordered callbacks. Runtime
 /// resources such as clocks, timers, and random sources belong to the selected
 /// execution facade, so cloning a retry definition is cheap and deterministic.
-#[derive(Clone)]
 pub struct Retry<E> {
     policy: RetryPolicy,
     rules: RetryRules<E>,
     observers: RetryObservers<E>,
+}
+
+/// Clones the immutable definition without constraining the operation error.
+///
+/// Callback collections are reference-counted; each execution still creates
+/// fresh runtime state.
+impl<E> Clone for Retry<E> {
+    fn clone(&self) -> Self {
+        Self {
+            policy: self.policy.clone(),
+            rules: self.rules.clone(),
+            observers: self.observers.clone(),
+        }
+    }
 }
 
 impl<E: 'static> Retry<E> {
