@@ -24,6 +24,14 @@ impl EffectiveTimeout {
     /// Selects the shorter hard timeout while retaining its source.
     ///
     /// An exact tie is attributed to the configured attempt timeout.
+    ///
+    /// # Parameters
+    /// - `attempt_timeout`: Per-attempt limit, or None for no limit.
+    /// - `flow_remaining`: Remaining hard-flow time, or None for no limit.
+    ///
+    /// # Returns
+    /// Some shorter enabled limit; None when neither is configured.
+    #[must_use]
     pub(crate) fn select(attempt_timeout: Option<Duration>, flow_remaining: Option<Duration>) -> Option<Self> {
         match (attempt_timeout, flow_remaining) {
             (Some(attempt), Some(flow)) if attempt <= flow => Some(Self {
@@ -47,13 +55,21 @@ impl EffectiveTimeout {
     }
 
     /// Returns the selected duration.
+    ///
+    /// # Returns
+    /// The selected hard timeout duration.
     #[must_use]
+    #[inline(always)]
     pub(crate) fn duration(self) -> Duration {
         self.duration
     }
 
     /// Returns the boundary responsible for cancellation.
+    ///
+    /// # Returns
+    /// The boundary that wins, with Attempt winning exact ties.
     #[must_use]
+    #[inline(always)]
     pub(crate) fn scope(self) -> RetryTimeoutScope {
         self.scope
     }

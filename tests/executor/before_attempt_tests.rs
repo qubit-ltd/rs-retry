@@ -1,3 +1,10 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -30,7 +37,7 @@ impl RetryObserver<&'static str> for CancelBefore {
 }
 
 #[test]
-fn before_attempt_cancellation_does_not_admit_operation() {
+fn test_before_attempt_cancellation_does_not_admit_operation() {
     let token = RetryCancellationToken::new();
     let callbacks = Arc::new(AtomicUsize::new(0));
     let operations = AtomicUsize::new(0);
@@ -74,7 +81,7 @@ impl RetryObserver<&'static str> for ExpireBefore {
 }
 
 #[test]
-fn before_attempt_elapsed_time_can_reject_candidate() {
+fn test_before_attempt_elapsed_time_can_reject_candidate() {
     let clock = ManualMonotonicClock::new_shared();
     let retry = Retry::<&'static str>::builder(
         RetryPolicy::builder()

@@ -23,7 +23,7 @@ use qubit_retry::RetryPolicy;
 struct NonCloneError;
 
 #[test]
-fn retry_clone_does_not_require_a_cloneable_error() {
+fn test_retry_clone_does_not_require_a_cloneable_error() {
     let retry = Retry::<io::Error>::builder(
         RetryPolicy::builder()
             .max_attempts(2)
@@ -37,7 +37,7 @@ fn retry_clone_does_not_require_a_cloneable_error() {
 }
 
 #[test]
-fn retry_clone_shares_callbacks_but_not_attempt_state() {
+fn test_retry_clone_shares_callbacks_but_not_attempt_state() {
     let rules = Arc::new(AtomicUsize::new(0));
     let observers = Arc::new(AtomicUsize::new(0));
     let rule_counter = Arc::clone(&rules);

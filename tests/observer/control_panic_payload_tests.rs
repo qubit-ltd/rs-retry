@@ -3,11 +3,11 @@
 //
 //    SPDX-License-Identifier: Apache-2.0
 //
-//    Licensed under the Apache License, Version 2.0 (the "License");
-//    you may not use this file except in compliance with the License.
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Control callback payload destruction must not mask the callback terminal.
 
+use std::panic::panic_any;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -34,7 +34,7 @@ impl Drop for DropPanicPayload {
     fn drop(&mut self) {
         self.drops.fetch_add(1, Ordering::SeqCst);
         if self.recursive {
-            std::panic::panic_any(Self {
+            panic_any(Self {
                 drops: Arc::clone(&self.drops),
                 recursive: true,
             });
@@ -52,7 +52,7 @@ struct PayloadObserver {
 impl PayloadObserver {
     fn raise_if(&self, phase: RetryCallbackPhase) {
         if self.target == phase {
-            std::panic::panic_any(DropPanicPayload {
+            panic_any(DropPanicPayload {
                 drops: Arc::clone(&self.drops),
                 recursive: self.recursive,
             });
@@ -152,7 +152,7 @@ async fn run_matrix(recursive: bool) {
                     .rule(|_: &AttemptFailure<&'static str>, _: &RetryContext| RetryDecision::UseDefault)
                     .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
                         if phase == RetryCallbackPhase::RuleDecision {
-                            std::panic::panic_any(DropPanicPayload {
+                            panic_any(DropPanicPayload {
                                 drops: Arc::clone(&rule_drops),
                                 recursive,
                             });
@@ -200,11 +200,11 @@ async fn run_matrix(recursive: bool) {
 }
 
 #[tokio::test]
-async fn control_payload_nonrecursive_drop_panic() {
+async fn test_control_payload_nonrecursive_drop_panic() {
     run_matrix(false).await;
 }
 
 #[tokio::test]
-async fn control_payload_recursive_drop_panic() {
+async fn test_control_payload_recursive_drop_panic() {
     run_matrix(true).await;
 }

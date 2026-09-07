@@ -12,7 +12,6 @@ use std::sync::Arc;
 use std::sync::mpsc;
 use std::task::Context;
 use std::task::Poll;
-use std::task::Wake;
 use std::task::Waker;
 use std::time::Duration;
 
@@ -20,25 +19,8 @@ use qubit_clock::BlockingSleeper;
 use qubit_clock::Timer;
 
 use super::BlockingBackoffOutcome;
+use super::blocking_backoff_wake::BlockingBackoffWake;
 use crate::RetryCancellationToken;
-
-/// Waker that forwards timer and cancellation notifications to one channel.
-struct BlockingBackoffWake {
-    /// Notification sender shared by both futures.
-    sender: mpsc::Sender<()>,
-}
-
-impl Wake for BlockingBackoffWake {
-    /// Wakes the blocking retry thread through its notification channel.
-    fn wake(self: Arc<Self>) {
-        let _ = self.sender.send(());
-    }
-
-    /// Wakes the blocking retry thread without consuming the shared waker.
-    fn wake_by_ref(self: &Arc<Self>) {
-        let _ = self.sender.send(());
-    }
-}
 
 /// Waits for one retry delay while optionally observing flow cancellation.
 ///
@@ -54,6 +36,10 @@ impl Wake for BlockingBackoffWake {
 /// Cancellation is polled before the timer so it wins when both become ready
 /// before the same wake cycle. Without a token, this function delegates to
 /// [`BlockingSleeper`] to preserve the existing blocking path.
+///
+/// # Panics
+/// Panics if all notification senders disappear while a pending future is
+/// retained, which indicates an internal waker-lifetime invariant violation.
 pub(crate) fn wait_for_backoff(
     timer: &Arc<dyn Timer>,
     delay: Duration,

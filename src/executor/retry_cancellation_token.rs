@@ -17,6 +17,29 @@ use super::internal::RetryCancellationState;
 /// Clones share cancellation state. A cancellation request is permanent and
 /// wakes every future currently returned by
 /// [`RetryCancellationToken::cancelled`].
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::Retry;
+/// use qubit_retry::RetryCancellationPhase;
+/// use qubit_retry::RetryCancellationToken;
+/// use qubit_retry::RetryFailure;
+/// use qubit_retry::RetryPolicy;
+///
+/// fn main() {
+///     let token = RetryCancellationToken::new();
+///     let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
+///     let error = retry.sync().cancellation_token(token.clone()).run(|| {
+///         token.cancel();
+///         Err::<(), _>("temporary read failure")
+///     }).unwrap_err();
+///     assert_eq!(error.context().attempts(), 1);
+///     assert!(matches!(error.failure(), RetryFailure::Cancelled {
+///         phase: RetryCancellationPhase::Backoff, ..
+///     }));
+/// }
+/// ```
 #[derive(Clone, Debug, Default)]
 pub struct RetryCancellationToken {
     /// State shared with cloned tokens and cancellation futures.
@@ -29,10 +52,21 @@ impl RetryCancellationToken {
     /// # Returns
     /// A token whose cancellation flag is initially `false`.
     #[must_use]
+    #[inline(always)]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Creates a future that completes when cancellation is requested.
+    ///
+    /// # Returns
+    /// A future borrowing this token. Dropping a pending future unregisters its
+    /// waker.
+    #[must_use]
+    #[inline(always)]
+    pub fn cancelled(&self) -> RetryCancelled<'_> {
+        RetryCancelled::new(self)
+    }
     /// Returns whether this token and `other` share one cancellation source.
     ///
     /// Tokens cloned from one another share a source, so cancellation requested
@@ -55,32 +89,24 @@ impl RetryCancellationToken {
         Arc::ptr_eq(&self.state, &other.state)
     }
 
+    /// Returns whether cancellation has been requested.
+    ///
+    /// # Returns
+    /// `true` after this token or any of its clones has been cancelled.
+    #[must_use]
+    #[inline(always)]
+    pub fn is_cancelled(&self) -> bool {
+        self.state.is_cancelled()
+    }
+
     /// Requests cancellation and wakes all currently registered waiters.
     ///
     /// # Side Effects
     /// The first call permanently marks this token and all its clones as
     /// cancelled. Wakers are invoked after the internal registry lock has been
     /// released. Later calls have no effect.
+    #[inline(always)]
     pub fn cancel(&self) {
         self.state.cancel();
-    }
-
-    /// Returns whether cancellation has been requested.
-    ///
-    /// # Returns
-    /// `true` after this token or any of its clones has been cancelled.
-    #[must_use]
-    pub fn is_cancelled(&self) -> bool {
-        self.state.is_cancelled()
-    }
-
-    /// Creates a future that completes when cancellation is requested.
-    ///
-    /// # Returns
-    /// A future borrowing this token. Dropping a pending future unregisters its
-    /// waker.
-    #[must_use]
-    pub fn cancelled(&self) -> RetryCancelled<'_> {
-        RetryCancelled::new(self)
     }
 }

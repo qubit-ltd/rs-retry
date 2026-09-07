@@ -44,6 +44,14 @@ pub(crate) enum BackoffStrategyData {
 
 impl From<&BackoffStrategy> for BackoffStrategyData {
     /// Converts a runtime strategy to its stable wire representation.
+    ///
+    /// # Parameters
+    /// - `strategy`: Runtime strategy to encode.
+    ///
+    /// # Returns
+    /// The corresponding representation; enclosing policy validation enforces
+    /// invariants.
+    #[inline]
     fn from(strategy: &BackoffStrategy) -> Self {
         match strategy {
             BackoffStrategy::Immediate => Self::Immediate,
@@ -66,9 +74,19 @@ impl From<&BackoffStrategy> for BackoffStrategyData {
 }
 
 impl TryFrom<BackoffStrategyData> for BackoffStrategy {
+    /// Invalid encoded duration or policy invariant.
     type Error = crate::RetryPolicyError;
 
     /// Converts a wire strategy while checking all encoded durations.
+    ///
+    /// # Parameters
+    /// - `data`: Stable wire strategy with encoded durations.
+    ///
+    /// # Returns
+    /// A runtime strategy for subsequent enclosing-policy validation.
+    ///
+    /// # Errors
+    /// Rejects non-normalized duration fields.
     fn try_from(data: BackoffStrategyData) -> Result<Self, Self::Error> {
         match data {
             BackoffStrategyData::Immediate => Ok(Self::Immediate),

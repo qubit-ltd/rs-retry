@@ -30,6 +30,13 @@ pub(crate) struct RetryLimitsData {
 
 impl From<&RetryLimits> for RetryLimitsData {
     /// Copies validated runtime limits to their stable wire representation.
+    ///
+    /// # Parameters
+    /// - `limits`: Validated runtime value to represent on the wire.
+    ///
+    /// # Returns
+    /// Wire limits preserving optional elapsed budgets.
+    #[inline]
     fn from(limits: &RetryLimits) -> Self {
         Self {
             max_attempts: limits.max_attempts().get(),
@@ -40,9 +47,19 @@ impl From<&RetryLimits> for RetryLimitsData {
 }
 
 impl TryFrom<RetryLimitsData> for RetryLimits {
+    /// Invalid policy input or encoded duration.
     type Error = RetryPolicyError;
 
     /// Converts wire limits after validating nonzero attempts and durations.
+    ///
+    /// # Parameters
+    /// - `data`: Unvalidated wire value consumed by conversion.
+    ///
+    /// # Returns
+    /// The validated runtime value without borrowing the wire input.
+    ///
+    /// # Errors
+    /// Rejects zero attempts and invalid encoded durations.
     fn try_from(data: RetryLimitsData) -> Result<Self, Self::Error> {
         let max_attempts = NonZeroU32::new(data.max_attempts)
             .ok_or_else(|| RetryPolicyError::new("max_attempts", "maximum attempts must be greater than zero"))?;

@@ -6,12 +6,14 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::time::Duration;
+
 use qubit_retry::BackoffPolicy;
 use qubit_retry::RetryPolicy;
 
 #[test]
-fn builder_accepts_backoff_policy() {
-    let delay = std::time::Duration::from_millis(1);
+fn test_builder_accepts_backoff_policy() {
+    let delay = Duration::from_millis(1);
     let policy = RetryPolicy::builder()
         .backoff(BackoffPolicy::fixed(delay))
         .build()

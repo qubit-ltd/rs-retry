@@ -15,15 +15,12 @@ use qubit_clock::StdTimer;
 use qubit_clock::Timer;
 
 use super::attempt_cancellation_token::AttemptCancellationToken;
-use super::blocking_attempt::BlockingAttempt;
-use super::blocking_attempt_outcome::BlockingAttemptOutcome;
-use super::blocking_value_operation::BlockingValueOperation;
 use super::internal::BlockingBackoffOutcome;
 use super::internal::RetryFlowController;
+use super::internal::WorkerAttemptExecutor;
 use super::internal::wait_for_backoff;
 use super::retry::Retry;
 use super::retry_cancellation_token::RetryCancellationToken;
-use super::worker_attempt_executor::WorkerAttemptExecutor;
 use crate::AttemptFailure;
 use crate::RetryError;
 use crate::RetryInfrastructureFailure;
@@ -31,22 +28,67 @@ use crate::RetryRandomSource;
 use crate::RetrySuccess;
 use crate::RetryTimeoutScope;
 use crate::WorkerStopTrigger;
+use crate::executor::internal::BlockingAttempt;
+use crate::executor::internal::BlockingAttemptOutcome;
+use crate::executor::internal::BlockingValueOperation;
 use crate::random::ThreadRetryRandomSource;
 
 /// Worker retry execution with cooperative cancellation.
+///
+/// # Type Parameters
+/// - `'a`: Lifetime of the borrowed retry definition.
+/// - `E`: Owned application error transferred from the worker thread; execution
+///   requires Send and static.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::Retry;
+/// use qubit_retry::RetryPolicy;
+/// use qubit_retry::WorkerRetry;
+///
+/// let retry = Retry::<&str>::builder(RetryPolicy::builder().build()?).build();
+/// let execution: WorkerRetry<'_, &str> = retry.worker();
+/// let value = execution.run(|token| {
+///     assert!(!token.is_cancelled());
+///     Ok(7)
+/// }).expect("worker returns and exits");
+/// assert_eq!(*value.value(), 7);
+/// # Ok::<(), qubit_retry::RetryPolicyError>(())
+/// ```
+#[must_use]
 pub struct WorkerRetry<'a, E> {
+    /// Borrowed immutable policy and callbacks.
     retry: &'a Retry<E>,
+    /// OS-visible name assigned to each attempt thread.
     thread_name: Box<str>,
+    /// Optional requested stack size; None uses the OS default.
     stack_size: Option<usize>,
+    /// Optional hard limit for each admitted attempt.
     attempt_timeout: Option<Duration>,
+    /// Optional hard limit measured from execution start.
     flow_timeout: Option<Duration>,
+    /// Real-time bound for joining a worker after requesting its cancellation.
     cancellation_grace: Duration,
+    /// Optional shared cancellation source; None disables external
+    /// cancellation.
     cancellation_token: Option<RetryCancellationToken>,
+    /// Timer and monotonic clock used by this execution.
     timer: Arc<dyn Timer>,
+    /// Shared random source for uniform delays and jitter.
     random_source: Arc<dyn RetryRandomSource>,
 }
 
 impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
+    ///
+    /// Creates a facade borrowing the immutable retry definition.
+    ///
+    /// # Parameters
+    /// - `retry`: Definition that must outlive this facade.
+    ///
+    /// # Returns
+    /// An execution facade with default runtime controls.
+    #[inline]
     pub(crate) fn new(retry: &'a Retry<E>) -> Self {
         Self {
             retry,
@@ -62,12 +104,28 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     }
 
     /// Sets the maximum duration of one worker attempt.
+    ///
+    /// # Parameters
+    /// - `timeout`: Duration measured by the configured monotonic clock; zero
+    ///   prevents admission.
+    ///
+    /// # Returns
+    /// This facade with the selected hard timeout enabled.
+    #[inline(always)]
     pub fn attempt_timeout(mut self, timeout: Duration) -> Self {
         self.attempt_timeout = Some(timeout);
         self
     }
 
     /// Sets the wall-clock timeout for the complete flow.
+    ///
+    /// # Parameters
+    /// - `timeout`: Duration measured by the configured monotonic clock; zero
+    ///   prevents admission.
+    ///
+    /// # Returns
+    /// This facade with the selected hard timeout enabled.
+    #[inline(always)]
     pub fn flow_timeout(mut self, timeout: Duration) -> Self {
         self.flow_timeout = Some(timeout);
         self
@@ -78,6 +136,14 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     /// duration, even when attempts and backoff use an injected manual
     /// timer. It prevents a stopped virtual clock from retaining an
     /// uncooperative worker indefinitely.
+    ///
+    /// # Parameters
+    /// - `grace`: Maximum real-time cleanup wait; zero performs only an
+    ///   immediate join check.
+    ///
+    /// # Returns
+    /// This facade with the supplied cleanup bound.
+    #[inline(always)]
     pub fn cancellation_grace(mut self, grace: Duration) -> Self {
         self.cancellation_grace = grace;
         self
@@ -90,6 +156,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Returns
     /// A worker facade that observes the supplied token.
+    #[inline(always)]
     pub fn cancellation_token(mut self, token: RetryCancellationToken) -> Self {
         self.cancellation_token = Some(token);
         self
@@ -102,6 +169,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Returns
     /// A worker facade using the supplied thread name.
+    #[inline(always)]
     pub fn thread_name(mut self, name: &str) -> Self {
         self.thread_name = name.into();
         self
@@ -114,6 +182,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Returns
     /// A worker facade using the supplied stack size.
+    #[inline(always)]
     pub fn worker_stack_size(mut self, stack_size: usize) -> Self {
         self.stack_size = Some(stack_size);
         self
@@ -123,12 +192,26 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     /// backoff. Cancellation grace remains a real-time OS-thread cleanup
     /// bound. The timer must progress independently while this synchronous
     /// facade blocks.
+    ///
+    /// # Parameters
+    /// - `timer`: Shared timer and monotonic clock.
+    ///
+    /// # Returns
+    /// This facade using the supplied runtime resource.
+    #[inline(always)]
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
         self.timer = timer;
         self
     }
 
-    /// Injects the random source used by backoff jitter.
+    /// Injects the random source used by uniform backoff delays and jitter.
+    ///
+    /// # Parameters
+    /// - `random_source`: Shared sampler for uniform delays and jitter.
+    ///
+    /// # Returns
+    /// This facade using the supplied runtime resource.
+    #[inline(always)]
     pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
         self.random_source = random_source;
         self
@@ -138,32 +221,60 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// Completion observers run synchronously with the frozen result; their
     /// panics are attached as diagnostics and do not change the outcome.
+    ///
+    /// # Type Parameters
+    /// - `T`: Successful value returned to the caller.
+    /// - `F`: Operation invoked once per admitted attempt.
+    ///
+    /// # Parameters
+    /// - `operation`: Operation whose errors are classified by the registered
+    ///   rules.
+    ///
+    /// # Returns
+    /// The successful value with its frozen context and completion diagnostics.
+    ///
+    /// # Errors
+    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
+    /// or infrastructure failure with its context.
+    ///
+    /// # Panics
+    /// Custom timer, random source, or clock panics are not intercepted. Worker
+    /// operation panics become structured attempt failures.
     #[allow(
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
+    #[inline(always)]
     pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         T: Send + 'static,
         F: Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static,
     {
-        let mut result = self.run_inner(operation);
-        let failures = match &result {
-            Ok(success) => self.retry.observers().notify_success(success.context()),
-            Err(error) => self
-                .retry
-                .observers()
-                .notify_terminal_failure(error.failure(), error.context()),
-        };
-        match &mut result {
-            Ok(success) => success.set_completion_callback_failures(failures),
-            Err(error) => error.set_completion_callback_failures(failures),
-        }
-        result
+        self.retry.complete(self.run_inner(operation))
     }
 
     /// Executes retry controls and freezes the final result before completion
     /// observers run. Returns the original terminal error on control failure.
+    ///
+    /// # Type Parameters
+    /// - `T`: Successful value returned to the caller.
+    /// - `F`: Operation invoked once per admitted attempt.
+    ///
+    /// # Parameters
+    /// - `operation`: Operation whose errors are classified by the registered
+    ///   rules.
+    ///
+    /// # Returns
+    /// The successful value with its frozen context and initially empty
+    /// diagnostics.
+    ///
+    /// # Errors
+    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
+    /// or infrastructure failure with its context.
+    ///
+    /// # Panics
+    /// Custom timer, random source, or clock panics are not intercepted. Worker
+    /// operation panics become structured attempt failures.
     #[allow(
         clippy::result_large_err,
         reason = "the internal helper propagates the lossless public terminal error"
@@ -275,6 +386,18 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     }
 
     /// Records one attempt failure and performs the selected blocking delay.
+    ///
+    /// # Parameters
+    /// - `controller`: Mutable state of this execution.
+    /// - `clock`: Clock used for elapsed-time accounting.
+    /// - `failure`: Failure owned by the completed attempt.
+    ///
+    /// # Returns
+    /// Unit when another admission may be attempted.
+    ///
+    /// # Errors
+    /// Returns a terminal control failure, cancellation, or backoff timer
+    /// error.
     #[allow(
         clippy::result_large_err,
         reason = "the internal helper propagates the lossless public terminal error"

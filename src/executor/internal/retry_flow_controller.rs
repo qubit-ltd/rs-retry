@@ -20,6 +20,7 @@ use super::PreparedAttemptPlan;
 use super::RetryDirective;
 use super::RetryFlowState;
 use crate::AttemptFailure;
+use crate::RetryCallbackFailure;
 use crate::RetryCancellationPhase;
 use crate::RetryCancellationToken;
 use crate::RetryContext;
@@ -34,6 +35,10 @@ use crate::observer::RetryObservers;
 use crate::rule::RetryRules;
 
 /// Owns all runtime-independent decisions and terminal error construction.
+/// # Type Parameters
+/// - `'a`: Lifetime of the immutable retry definition.
+/// - `E`: Owned application error retained until success or terminal
+///   conversion.
 pub(crate) struct RetryFlowController<'a, E> {
     /// Attempt, elapsed-budget, and backoff state.
     state: RetryFlowState<'a>,
@@ -58,6 +63,19 @@ pub(crate) struct RetryFlowController<'a, E> {
 impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// Creates a controller from one immutable retry definition and clock
     /// sample.
+    ///
+    /// # Parameters
+    /// - `started_at`: Initial coherent monotonic sample.
+    /// - `retry`: Borrowed policy and callback definition.
+    /// - `random_source`: Sampler for uniform delays and jitter shared with
+    ///   backoff state.
+    /// - `attempt_timeout`: Optional hard per-attempt duration.
+    /// - `flow_timeout`: Optional hard whole-flow duration.
+    ///
+    /// # Returns
+    /// A controller with no admitted attempts or retained failures.
+    #[inline]
+    #[must_use = "use the prepared value or inspect the result"]
     pub(crate) fn new(
         started_at: MonotonicInstant,
         retry: &'a Retry<E>,
@@ -85,6 +103,13 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// continuation limit, clock failure, or before-attempt observer
     /// failure stops the flow. The upcoming operation is not counted until
     /// a facade commits it after its runtime-specific preparation succeeds.
+    ///
+    /// # Parameters
+    /// - `clock`: Flow clock sampled at the control boundary.
+    /// - `cancellation`: Optional shared flow cancellation source.
+    ///
+    /// # Returns
+    /// The post-callback sample for immutable timeout preparation.
     #[allow(
         clippy::result_large_err,
         reason = "the controller constructs the lossless public terminal error"
@@ -114,12 +139,8 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         if let Err(callback) = self.observers.try_before_attempt(&started_context) {
             return Err(self.callback_failed_after_refresh(callback, started_context, clock));
         }
-        if Self::is_cancelled(cancellation) {
-            return Err(self.cancelled(RetryCancellationPhase::BeforeAttempt));
-        }
-
-        let admission_sample = clock.now();
-        self.refresh_or_error(admission_sample)?;
+        let admission_sample =
+            self.refresh_after_control_callback(clock, cancellation, RetryCancellationPhase::BeforeAttempt)?;
         if self.state.flow_timed_out() {
             return Err(self.timed_out(RetryTimeoutScope::Flow));
         }
@@ -136,12 +157,20 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     ///
     /// # Errors
     /// Returns a terminal retry error when the admission sample observes an
-    /// expired timeout, cancellation, continuation limit, or invalid clock
-    /// arithmetic. The attempt remains uncommitted on every error path.
+    /// invalid clock arithmetic. Admission gates run before this preparation;
+    /// runtime preparation is checked again before committing the attempt.
+    ///
+    /// # Parameters
+    /// - `admission_sample`: Coherent sample returned by before-attempt
+    ///   processing.
+    ///
+    /// # Returns
+    /// A plan whose deadline does not move during timer registration.
     #[allow(
         clippy::result_large_err,
         reason = "the controller constructs the lossless public terminal error"
     )]
+    #[inline]
     pub(crate) fn prepare_attempt(
         &mut self,
         admission_sample: MonotonicInstant,
@@ -161,6 +190,13 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// Returns a terminal retry error when a post-preparation clock sample,
     /// timeout, cancellation, or continuation limit prevents the operation
     /// from starting.
+    ///
+    /// # Parameters
+    /// - `clock`: Flow clock sampled at the control boundary.
+    /// - `cancellation`: Optional shared flow cancellation source.
+    ///
+    /// # Returns
+    /// Unit after incrementing the admitted attempt count.
     #[allow(
         clippy::result_large_err,
         reason = "the controller constructs the lossless public terminal error"
@@ -191,6 +227,14 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// Returns a terminal retry error when registration consumed the prepared
     /// deadline or a post-registration clock, cancellation, or limit gate
     /// prevents the operation from starting.
+    ///
+    /// # Parameters
+    /// - `plan`: Immutable deadline registered before this commit.
+    /// - `clock`: Flow clock sampled at the control boundary.
+    /// - `cancellation`: Optional shared flow cancellation source.
+    ///
+    /// # Returns
+    /// Unit after admitting the prepared attempt.
     #[allow(
         clippy::result_large_err,
         reason = "the controller constructs the lossless public terminal error"
@@ -232,6 +276,19 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// # Errors
     /// Returns a terminal retry error when clock refresh, an observer, a rule,
     /// cancellation, an abort decision, or a continuation limit stops the flow.
+    ///
+    /// # Parameters
+    /// - `failure`: Owned failure of the admitted operation.
+    /// - `clock`: Flow clock sampled at the control boundary.
+    /// - `cancellation`: Optional shared flow cancellation source.
+    ///
+    /// # Returns
+    /// The selected sleep directive when another attempt remains possible.
+    ///
+    /// # Panics
+    /// Panics only if the retained failure disappears before callback
+    /// processing, violating controller ownership invariants; custom
+    /// random-source panics propagate.
     #[allow(
         clippy::result_large_err,
         reason = "the controller constructs the lossless public terminal error"
@@ -256,11 +313,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         if let Err(callback) = self.observers.try_attempt_failed(failure, &failed_context) {
             return Err(self.callback_failed_after_refresh(callback, failed_context, clock));
         }
-        if Self::is_cancelled(cancellation) {
-            return Err(self.cancelled(RetryCancellationPhase::Backoff));
-        }
-        let now = clock.now();
-        self.refresh_or_error(now)?;
+        let _ = self.refresh_after_control_callback(clock, cancellation, RetryCancellationPhase::Backoff)?;
 
         let rule_context = self.snapshot();
         let failure = self
@@ -273,9 +326,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
                 return Err(self.callback_failed_after_refresh(callback, rule_context, clock));
             }
         };
-        if Self::is_cancelled(cancellation) {
-            return Err(self.cancelled(RetryCancellationPhase::Backoff));
-        }
+        let _ = self.refresh_after_control_callback(clock, cancellation, RetryCancellationPhase::Backoff)?;
         let failure = self
             .last_failure
             .as_ref()
@@ -287,11 +338,9 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         };
         let default_panic = matches!(decision, RetryDecision::UseDefault) && failure.panic().is_some();
         if let Some(scope) = default_timeout {
-            self.refresh_best_effort(clock);
             return Err(self.timed_out(scope));
         }
         if matches!(decision, RetryDecision::Abort) || default_panic {
-            self.refresh_best_effort(clock);
             return Err(self.aborted());
         }
         let decision = if matches!(decision, RetryDecision::UseDefault) {
@@ -299,9 +348,6 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         } else {
             decision
         };
-        let now = clock.now();
-        self.refresh_or_error(now)?;
-
         self.retry_after_hint = decision.retry_after_hint();
         let backoff = self.state.next_backoff(decision);
         self.next_delay = Some(backoff.effective_delay());
@@ -317,11 +363,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
             return Err(self.callback_failed_after_refresh(callback, scheduled_context, clock));
         }
         self.clear_current_attempt();
-        if Self::is_cancelled(cancellation) {
-            return Err(self.cancelled(RetryCancellationPhase::Backoff));
-        }
-        let now = clock.now();
-        self.refresh_or_error(now)?;
+        let _ = self.refresh_after_control_callback(clock, cancellation, RetryCancellationPhase::Backoff)?;
         if self.state.flow_timed_out() {
             return Err(self.timed_out(RetryTimeoutScope::Flow));
         }
@@ -342,10 +384,17 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// # Errors
     /// Returns a clock infrastructure failure when the completion sample is
     /// from another domain or precedes the flow or attempt start.
+    ///
+    /// # Parameters
+    /// - `clock`: Flow clock sampled at the control boundary.
+    ///
+    /// # Returns
+    /// The frozen success context with inactive attempt overlay cleared.
     #[allow(
         clippy::result_large_err,
         reason = "the controller constructs the lossless public terminal error"
     )]
+    #[inline]
     pub(crate) fn finish_success(&mut self, clock: &dyn MonotonicClock) -> Result<RetryContext, RetryError<E>> {
         let now = clock.now();
         if let Err(error) = self.state.finish_attempt(now) {
@@ -359,6 +408,14 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     ///
     /// The terminal context retains the active attempt ordinal and timeout so
     /// callers can identify the runtime work whose completion was not observed.
+    ///
+    /// # Parameters
+    /// - `failure`: Runtime failure to retain when clock accounting succeeds.
+    /// - `now`: Best available monotonic sample.
+    ///
+    /// # Returns
+    /// An owned terminal error; invalid clock accounting takes precedence over
+    /// the supplied failure.
     pub(crate) fn record_active_infrastructure_failure(
         &mut self,
         failure: RetryInfrastructureFailure,
@@ -383,6 +440,14 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// The pending or completed attempt scope is removed from the terminal
     /// context. Scheduling metadata remains available when the failure occurs
     /// during backoff.
+    ///
+    /// # Parameters
+    /// - `failure`: Runtime failure to retain when clock accounting succeeds.
+    /// - `now`: Best available monotonic sample.
+    ///
+    /// # Returns
+    /// An owned terminal error; invalid clock accounting takes precedence over
+    /// the supplied failure.
     pub(crate) fn record_inactive_infrastructure_failure(
         &mut self,
         failure: RetryInfrastructureFailure,
@@ -409,6 +474,14 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// If the completion clock sample is invalid, the clock infrastructure
     /// failure takes precedence because no coherent cancellation context can
     /// be constructed.
+    ///
+    /// # Parameters
+    /// - `clock`: Flow clock sampled at the control boundary.
+    ///
+    /// # Returns
+    /// A cancellation error with coherent context, or a clock infrastructure
+    /// failure.
+    #[inline]
     pub(crate) fn record_attempt_cancellation(&mut self, clock: &dyn MonotonicClock) -> RetryError<E> {
         if let Err(error) = self.state.finish_attempt(clock.now()) {
             return self.inactive_clock_failure(error);
@@ -421,6 +494,14 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// The terminal context retains the last attempt failure and scheduling
     /// metadata. If the clock cannot be refreshed coherently, a clock
     /// infrastructure failure is returned instead.
+    ///
+    /// # Parameters
+    /// - `clock`: Flow clock sampled at the control boundary.
+    ///
+    /// # Returns
+    /// A cancellation error with coherent context, or a clock infrastructure
+    /// failure.
+    #[inline]
     pub(crate) fn record_backoff_cancellation(&mut self, clock: &dyn MonotonicClock) -> RetryError<E> {
         if let Err(error) = self.state.refresh(clock.now()) {
             return self.inactive_clock_failure(error);
@@ -428,12 +509,43 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         self.cancelled_with_context(RetryCancellationPhase::Backoff, self.snapshot())
     }
 
+    /// Builds a context from state and the controller's event metadata.
+    ///
+    /// # Returns
+    /// A copy of coherent timing state with current event overlays.
+    #[inline(always)]
+    #[must_use = "use the prepared value or inspect the result"]
+    fn snapshot(&self) -> RetryContext {
+        self.decorate(self.state.context(self.current_attempt))
+    }
+
     /// Returns whether the optional cancellation token has been cancelled.
+    ///
+    /// # Parameters
+    /// - `cancellation`: Optional shared flow cancellation source.
+    ///
+    /// # Returns
+    /// True only for a supplied, cancelled token.
+    #[inline(always)]
+    #[must_use]
     fn is_cancelled(cancellation: Option<&RetryCancellationToken>) -> bool {
         cancellation.is_some_and(RetryCancellationToken::is_cancelled)
     }
 
     /// Selects an absolute timeout from the current admission sample.
+    ///
+    /// # Parameters
+    /// - `now`: Admission sample for per-attempt deadline arithmetic.
+    ///
+    /// # Returns
+    /// Some deadline, effective duration, and scope; None without an enabled
+    /// hard timeout.
+    ///
+    /// # Errors
+    /// Returns clock-domain arithmetic or duration overflow errors.
+    ///
+    /// # Panics
+    /// Panics only if a flow-scoped selection has no configured flow deadline.
     fn prepare_timeout(
         &self,
         now: MonotonicInstant,
@@ -452,16 +564,38 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     }
 
     /// Returns whether `now` is at or beyond a prepared same-domain deadline.
+    ///
+    /// # Parameters
+    /// - `now`: Sample to compare.
+    /// - `deadline`: Prepared absolute deadline.
+    ///
+    /// # Returns
+    /// True at or beyond the deadline, false before it.
+    ///
+    /// # Errors
+    /// Returns a clock-domain mismatch error.
+    #[inline]
     fn deadline_reached(now: MonotonicInstant, deadline: MonotonicInstant) -> Result<bool, TimeError> {
         deadline.validate_domain(now.domain())?;
         Ok(now.elapsed_since_origin() >= deadline.elapsed_since_origin())
     }
 
     /// Refreshes total elapsed time or returns a structured clock failure.
+    ///
+    /// # Parameters
+    /// - `now`: Sample used for total elapsed accounting.
+    ///
+    /// # Returns
+    /// Unit after successful refresh.
+    ///
+    /// # Errors
+    /// Returns an inactive clock terminal failure when accounting rejects the
+    /// sample.
     #[allow(
         clippy::result_large_err,
         reason = "the controller constructs the lossless public terminal error"
     )]
+    #[inline]
     fn refresh_or_error(&mut self, now: MonotonicInstant) -> Result<(), RetryError<E>> {
         if let Err(error) = self.state.refresh(now) {
             return Err(self.inactive_clock_failure(error));
@@ -469,12 +603,45 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         Ok(())
     }
 
-    /// Builds a context from state and the controller's event metadata.
-    fn snapshot(&self) -> RetryContext {
-        self.decorate(self.state.context(self.current_attempt))
+    /// Samples completed control work before observing its cancellation.
+    ///
+    /// # Parameters
+    /// - `clock`: Flow clock sampled exactly once at this boundary.
+    /// - `cancellation`: Optional shared cancellation request.
+    /// - `phase`: Cancellation attribution when the request is observed.
+    ///
+    /// # Returns
+    /// The coherent sample, reusable for timed-attempt preparation.
+    ///
+    /// # Errors
+    /// Clock failure takes precedence over cancellation after a normally
+    /// returned callback. Callback panics use their separate best-effort path.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the controller retains lossless terminal context"
+    )]
+    fn refresh_after_control_callback(
+        &mut self,
+        clock: &dyn MonotonicClock,
+        cancellation: Option<&RetryCancellationToken>,
+        phase: RetryCancellationPhase,
+    ) -> Result<MonotonicInstant, RetryError<E>> {
+        let now = clock.now();
+        self.refresh_or_error(now)?;
+        if Self::is_cancelled(cancellation) {
+            return Err(self.cancelled(phase));
+        }
+        Ok(now)
     }
 
     /// Attaches timeout and retry-scheduling metadata to a state context.
+    ///
+    /// # Parameters
+    /// - `context`: Coherent timing snapshot to decorate.
+    ///
+    /// # Returns
+    /// The supplied snapshot with current timeout, hint, and selected delay.
+    #[inline]
     fn decorate(&self, context: RetryContext) -> RetryContext {
         let context = context
             .with_attempt_timeout(self.current_attempt_timeout)
@@ -483,6 +650,14 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     }
 
     /// Constructs an aborted terminal error and consumes the last failure.
+    ///
+    /// # Returns
+    /// An Abort failure owning the last operation failure and inactive context.
+    ///
+    /// # Panics
+    /// Panics if called without a recorded attempt failure, violating the Abort
+    /// invariant.
+    #[inline]
     fn aborted(&mut self) -> RetryError<E> {
         let last_failure = self
             .last_failure
@@ -493,6 +668,13 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     }
 
     /// Constructs an exhausted terminal error from the current snapshot.
+    ///
+    /// # Parameters
+    /// - `limit`: First exhausted continuation budget.
+    ///
+    /// # Returns
+    /// An owned terminal error after clearing the inactive attempt overlay.
+    #[inline]
     fn exhausted(&mut self, limit: RetryLimitKind) -> RetryError<E> {
         self.clear_current_attempt();
         RetryError::new(
@@ -505,6 +687,13 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     }
 
     /// Constructs a timeout terminal error from the current snapshot.
+    ///
+    /// # Parameters
+    /// - `scope`: Hard timeout boundary responsible for stopping.
+    ///
+    /// # Returns
+    /// An owned terminal error after clearing the inactive attempt overlay.
+    #[inline]
     fn timed_out(&mut self, scope: RetryTimeoutScope) -> RetryError<E> {
         self.clear_current_attempt();
         RetryError::new(
@@ -517,6 +706,13 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     }
 
     /// Constructs a cancellation terminal error from the current snapshot.
+    ///
+    /// # Parameters
+    /// - `phase`: Execution phase where cancellation was observed.
+    ///
+    /// # Returns
+    /// An owned terminal error after clearing the inactive attempt overlay.
+    #[inline]
     fn cancelled(&mut self, phase: RetryCancellationPhase) -> RetryError<E> {
         self.clear_current_attempt();
         self.cancelled_with_context(phase, self.snapshot())
@@ -524,6 +720,14 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
 
     /// Constructs cancellation from an exact context without changing its
     /// active-attempt overlay.
+    ///
+    /// # Parameters
+    /// - `phase`: Phase where cancellation won.
+    /// - `context`: Exact snapshot, including any active-attempt overlay.
+    ///
+    /// # Returns
+    /// An owned cancellation error retaining the last failed attempt.
+    #[inline]
     fn cancelled_with_context(&mut self, phase: RetryCancellationPhase, context: RetryContext) -> RetryError<E> {
         RetryError::new(
             RetryFailure::Cancelled {
@@ -535,7 +739,15 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     }
 
     /// Constructs a callback terminal error from its exact callback context.
-    fn callback_failed(&mut self, callback: crate::RetryCallbackFailure, context: RetryContext) -> RetryError<E> {
+    ///
+    /// # Parameters
+    /// - `callback`: Structured panic diagnostic.
+    /// - `context`: Exact callback snapshot.
+    ///
+    /// # Returns
+    /// A terminal callback failure owning any last attempt failure.
+    #[inline]
+    fn callback_failed(&mut self, callback: RetryCallbackFailure, context: RetryContext) -> RetryError<E> {
         RetryError::new(
             RetryFailure::CallbackFailed {
                 callback,
@@ -550,9 +762,18 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// A callback panic remains the primary terminal cause even when its
     /// post-panic clock sample is invalid. In that case, `fallback_context` is
     /// the last coherent snapshot retained by the controller.
+    ///
+    /// # Parameters
+    /// - `callback`: Structured callback panic.
+    /// - `fallback_context`: Last coherent context before the callback.
+    /// - `clock`: Flow clock sampled at the control boundary.
+    ///
+    /// # Returns
+    /// A callback-primary terminal error with refreshed or fallback timing.
+    #[inline]
     fn callback_failed_after_refresh(
         &mut self,
-        callback: crate::RetryCallbackFailure,
+        callback: RetryCallbackFailure,
         fallback_context: RetryContext,
         clock: &dyn MonotonicClock,
     ) -> RetryError<E> {
@@ -563,13 +784,15 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         self.callback_failed(callback, context)
     }
 
-    /// Refreshes elapsed time without replacing an already-selected terminal
-    /// cause when the new clock sample is invalid.
-    fn refresh_best_effort(&mut self, clock: &dyn MonotonicClock) {
-        let _ = self.state.refresh(clock.now());
-    }
-
     /// Constructs an infrastructure terminal error from its exact context.
+    ///
+    /// # Parameters
+    /// - `failure`: Structured runtime failure.
+    /// - `context`: Exact terminal snapshot.
+    ///
+    /// # Returns
+    /// An owned infrastructure error retaining the last attempt failure.
+    #[inline]
     fn infrastructure(&mut self, failure: RetryInfrastructureFailure, context: RetryContext) -> RetryError<E> {
         RetryError::new(
             RetryFailure::Infrastructure {
@@ -581,12 +804,20 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     }
 
     /// Clears the event overlay after callback processing has completed.
+    #[inline(always)]
     fn clear_current_attempt(&mut self) {
         self.current_attempt = None;
         self.current_attempt_timeout = None;
     }
 
     /// Converts an invalid clock sample into an inactive terminal failure.
+    ///
+    /// # Parameters
+    /// - `error`: Clock error whose message is retained.
+    ///
+    /// # Returns
+    /// An inactive infrastructure terminal error with the last coherent timing.
+    #[inline]
     fn inactive_clock_failure(&mut self, error: TimeError) -> RetryError<E> {
         self.clear_current_attempt();
         self.infrastructure(

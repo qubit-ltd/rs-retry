@@ -9,3 +9,4 @@
 mod retry_decision_tests;
 mod retry_rule_tests;
 mod retry_rules_tests;
+mod rule_order_contract_tests;

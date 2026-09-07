@@ -48,7 +48,8 @@ fn test_retry_error_preserves_terminal_failure_and_context() {
     assert_eq!(Error::source(&error).map(ToString::to_string), Some("fatal".to_owned()));
     assert_eq!(error.to_string(), "retry aborted: fatal after 1 attempt(s)");
 
-    let (failure, context) = error.into_parts();
+    let (failure, context, diagnostics) = error.into_parts();
+    assert!(diagnostics.is_empty());
     assert!(matches!(
         failure,
         RetryFailure::Aborted {
@@ -75,7 +76,7 @@ impl RetryObserver<NonCloneError> for TerminalPanickingObserver {
 
 /// Verifies retry-error mapping preserves context and completion diagnostics.
 #[test]
-fn map_error_preserves_context_and_completion_diagnostics() {
+fn test_map_error_preserves_context_and_completion_diagnostics() {
     let error = Retry::<NonCloneError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
         .observer(TerminalPanickingObserver)
         .build()

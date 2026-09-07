@@ -32,6 +32,13 @@ pub(crate) struct RetryPolicyData {
 
 impl From<&RetryPolicy> for RetryPolicyData {
     /// Copies a policy into its stable public wire-field layout.
+    ///
+    /// # Parameters
+    /// - `policy`: Validated runtime value to represent on the wire.
+    ///
+    /// # Returns
+    /// Wire policy preserving validated backoff and continuation budgets.
+    #[inline]
     fn from(policy: &RetryPolicy) -> Self {
         let limits = policy.limits();
         Self {
@@ -44,9 +51,19 @@ impl From<&RetryPolicy> for RetryPolicyData {
 }
 
 impl TryFrom<RetryPolicyData> for RetryPolicy {
+    /// Invalid policy input or encoded duration.
     type Error = RetryPolicyError;
 
     /// Converts wire data through the same limits validation as the builder.
+    ///
+    /// # Parameters
+    /// - `data`: Unvalidated wire value consumed by conversion.
+    ///
+    /// # Returns
+    /// The validated runtime value without borrowing the wire input.
+    ///
+    /// # Errors
+    /// Rejects zero attempts and invalid encoded elapsed durations.
     fn try_from(data: RetryPolicyData) -> Result<Self, Self::Error> {
         let limits = RetryLimits::try_from(super::RetryLimitsData {
             max_attempts: data.max_attempts,

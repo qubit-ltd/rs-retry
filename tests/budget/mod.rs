@@ -7,7 +7,6 @@
 // =============================================================================
 //! Tests for public retry budget value types.
 
-mod internal;
 mod retry_attempt_tests;
 mod retry_budget_error_tests;
 mod retry_budget_exhausted_tests;

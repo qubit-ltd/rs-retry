@@ -15,15 +15,27 @@ use crate::rule::RetryRule;
 use crate::rule::RetryRules;
 
 /// Builds a [`Retry`] from a policy, ordered rules, and observers.
+/// # Type Parameters
+/// - `E`: Application error classified by registered rules and observers.
 #[must_use]
 pub struct RetryBuilder<E> {
+    /// Validated limits and backoff shared by executions.
     policy: RetryPolicy,
+    /// Ordered decision callbacks shared across executions.
     rules: RetryRules<E>,
+    /// Ordered lifecycle callbacks shared across executions.
     observers: RetryObservers<E>,
 }
 
 impl<E: 'static> RetryBuilder<E> {
     /// Creates a builder from a validated policy.
+    ///
+    /// # Parameters
+    /// - `policy`: Validated policy shared by future executions.
+    ///
+    /// # Returns
+    /// A builder with empty callback collections.
+    #[inline(always)]
     pub(crate) fn new(policy: RetryPolicy) -> Self {
         Self {
             policy,
@@ -34,6 +46,16 @@ impl<E: 'static> RetryBuilder<E> {
 
     /// Appends a rule. Rules are evaluated in registration order; the first
     /// non-`UseDefault` decision wins.
+    ///
+    /// # Type Parameters
+    /// - `R`: Thread-safe callback stored for repeated execution.
+    ///
+    /// # Parameters
+    /// - `rule`: Callback appended after previously registered callbacks.
+    ///
+    /// # Returns
+    /// This builder retaining ownership of the callback.
+    #[inline(always)]
     pub fn rule<R>(mut self, rule: R) -> Self
     where
         R: RetryRule<E>,
@@ -42,8 +64,19 @@ impl<E: 'static> RetryBuilder<E> {
         self
     }
 
-    /// Appends an observer. An observer panic terminates execution with a
-    /// structured `RetryFailure::CallbackFailed` value.
+    /// Appends an observer. A control callback panic terminates execution with
+    /// `RetryFailure::CallbackFailed`; completion callback panics are retained
+    /// as diagnostics without changing the frozen result.
+    ///
+    /// # Type Parameters
+    /// - `O`: Thread-safe callback stored for repeated execution.
+    ///
+    /// # Parameters
+    /// - `observer`: Callback appended after previously registered callbacks.
+    ///
+    /// # Returns
+    /// This builder retaining ownership of the callback.
+    #[inline(always)]
     pub fn observer<O>(mut self, observer: O) -> Self
     where
         O: RetryObserver<E>,
@@ -53,7 +86,11 @@ impl<E: 'static> RetryBuilder<E> {
     }
 
     /// Finishes the immutable retry definition.
-    #[must_use]
+    ///
+    /// # Returns
+    /// An immutable definition; each run creates fresh flow state.
+    #[must_use = "run or retain the configured retry definition"]
+    #[inline(always)]
     pub fn build(self) -> Retry<E> {
         Retry::new(self.policy, self.rules, self.observers)
     }

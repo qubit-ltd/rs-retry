@@ -29,3 +29,10 @@ pub(super) use jitter_strategy_data::JitterStrategyData;
 pub(super) use retry_after_strategy::RetryAfterStrategy;
 #[cfg(feature = "serde")]
 pub(super) use retry_after_strategy_data::RetryAfterStrategyData;
+
+#[cfg(feature = "serde")]
+mod jitter_strategy_data_raw;
+#[cfg(feature = "serde")]
+mod jitter_strategy_tag;
+#[cfg(feature = "serde")]
+mod ratio_field;

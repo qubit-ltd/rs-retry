@@ -169,7 +169,7 @@ fn test_retry_panic_from_payload_stops_later_callbacks_for_each_case() {
 }
 
 #[test]
-fn control_payload_normal_drop_is_not_leaked() {
+fn test_control_payload_normal_drop_is_not_leaked() {
     let drops = Arc::new(AtomicUsize::new(0));
     let captured = Arc::clone(&drops);
     let retry = Retry::<&'static str>::builder(RetryPolicy::builder().build().expect("policy should build"))

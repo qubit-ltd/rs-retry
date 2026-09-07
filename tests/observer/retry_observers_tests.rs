@@ -6,25 +6,22 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_retry::Retry;
-use qubit_retry::RetryObserver;
-use qubit_retry::RetryPolicy;
-
-struct NoopObserver;
-
-impl RetryObserver<()> for NoopObserver {}
-
-#[test]
-fn observers_are_registered_by_retry_builder() {
-    let policy = RetryPolicy::builder().build().unwrap();
-    let retry = Retry::<()>::builder(policy).observer(NoopObserver).build();
-    let _ = retry;
-}
-
+#[cfg(feature = "tokio")]
+use std::future;
+use std::future::Future;
+use std::mem::forget;
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+use std::panic::panic_any;
+use std::ptr;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::task::Context;
+use std::task::Poll;
+use std::task::Waker;
 use std::time::Duration;
 
 use qubit_clock::ManualMonotonicClock;
@@ -35,6 +32,7 @@ use qubit_clock::test_util::TimerFailurePoint;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffStep;
+use qubit_retry::Retry;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationPhase;
@@ -44,10 +42,23 @@ use qubit_retry::RetryDecision;
 use qubit_retry::RetryFailure;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
+use qubit_retry::RetryObserver;
 use qubit_retry::RetryPanic;
+use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
 
 use crate::support::TestError;
+
+struct NoopObserver;
+
+impl RetryObserver<()> for NoopObserver {}
+
+#[test]
+fn test_observers_are_registered_by_retry_builder() {
+    let policy = RetryPolicy::builder().build().unwrap();
+    let retry = Retry::<()>::builder(policy).observer(NoopObserver).build();
+    let _ = retry;
+}
 
 /// Completion observations captured before each callback advances the clock.
 #[derive(Debug)]
@@ -247,7 +258,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
             ) {
                 executor = executor.flow_timeout(Duration::from_secs(1));
             }
-            executor.run(|| std::future::ready(operation())).await
+            executor.run(|| future::ready(operation())).await
         }
     };
     let (context, failures, phase, original_failure) = match result {
@@ -258,7 +269,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                 success.completion_callback_failures().len(),
                 if panic_on_completion { 2 } else { 0 }
             );
-            let (value, context, failures) = success.into_parts_with_diagnostics();
+            let (value, context, failures) = success.into_parts();
             assert_eq!(value, 42);
             (context, failures, RetryCallbackPhase::Success, None)
         }
@@ -332,7 +343,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                 error.completion_callback_failures().len(),
                 if panic_on_completion { 2 } else { 0 }
             );
-            let (failure, context, failures) = error.into_parts_with_diagnostics();
+            let (failure, context, failures) = error.into_parts();
             assert_eq!(format!("{failure:?}"), original_failure);
             (
                 context,
@@ -363,10 +374,21 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
             "completion callbacks must see the frozen context"
         );
     }
-    assert!(
-        context.total_elapsed() < Duration::from_secs(10),
-        "completion time must not enter the terminal context"
-    );
+    if !matches!(
+        scenario,
+        CompletionScenario::TimerFailure | CompletionScenario::TimerFailureBeforeAttempt
+    ) {
+        let expected_elapsed = if scenario == CompletionScenario::TimedOut {
+            Duration::from_secs(1)
+        } else {
+            Duration::ZERO
+        };
+        assert_eq!(
+            context.total_elapsed(),
+            expected_elapsed,
+            "completion time must not enter the terminal context"
+        );
+    }
 }
 
 /// All ordinary Result returns share the completion contract in every facade.
@@ -412,7 +434,7 @@ async fn test_completion_matrix_preserves_result_context_and_observer_order() {
 /// value.
 #[test]
 fn test_completion_sync_preserves_borrowed_non_send_operation() {
-    let value = std::rc::Rc::new(42);
+    let value = Rc::new(42);
     let mut calls = 0;
     let retry = Retry::<()>::builder(RetryPolicy::builder().build().expect("valid policy")).build();
     let success = retry
@@ -423,7 +445,7 @@ fn test_completion_sync_preserves_borrowed_non_send_operation() {
         })
         .expect("borrowed success");
     assert_eq!(calls, 1);
-    assert!(std::ptr::eq(*success.value(), &value));
+    assert!(ptr::eq(*success.value(), &value));
     assert!(success.completion_callback_failures().is_empty());
 }
 
@@ -431,7 +453,7 @@ fn test_completion_sync_preserves_borrowed_non_send_operation() {
 #[cfg(feature = "tokio")]
 #[tokio::test]
 async fn test_completion_async_preserves_borrowed_non_send_future() {
-    let value = std::rc::Rc::new(42);
+    let value = Rc::new(42);
     let retry = Retry::<()>::builder(RetryPolicy::builder().build().expect("valid policy")).build();
     let success = retry
         .asynchronous()
@@ -442,7 +464,7 @@ async fn test_completion_async_preserves_borrowed_non_send_future() {
         })
         .await
         .expect("non-Send borrowed success");
-    assert!(std::ptr::eq(*success.value(), &value));
+    assert!(ptr::eq(*success.value(), &value));
     assert!(success.completion_callback_failures().is_empty());
 }
 
@@ -466,7 +488,7 @@ fn test_completion_sync_operation_panic_does_not_notify() {
     let retry = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
         .observer(CompletionCounter(Arc::clone(&calls)))
         .build();
-    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let panic = catch_unwind(AssertUnwindSafe(|| {
         let _ = retry
             .sync()
             .run(|| -> Result<(), TestError> { panic!("operation panic") });
@@ -479,11 +501,6 @@ fn test_completion_sync_operation_panic_does_not_notify() {
 #[cfg(feature = "tokio")]
 #[tokio::test]
 async fn test_completion_dropped_async_future_does_not_notify() {
-    use std::future::Future;
-    use std::task::Context;
-    use std::task::Poll;
-    use std::task::Waker;
-
     let calls = Arc::new(AtomicUsize::new(0));
     let operation_calls = AtomicUsize::new(0);
     let retry = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
@@ -492,7 +509,7 @@ async fn test_completion_dropped_async_future_does_not_notify() {
     let executor = retry.asynchronous();
     let mut future = Box::pin(executor.run(|| {
         operation_calls.fetch_add(1, Ordering::SeqCst);
-        std::future::pending::<Result<(), TestError>>()
+        future::pending::<Result<(), TestError>>()
     }));
     assert!(matches!(
         future.as_mut().poll(&mut Context::from_waker(Waker::noop())),
@@ -507,10 +524,6 @@ async fn test_completion_dropped_async_future_does_not_notify() {
 #[cfg(feature = "tokio")]
 #[tokio::test]
 async fn test_completion_async_operation_panic_does_not_notify() {
-    use std::future::Future;
-    use std::task::Context;
-    use std::task::Waker;
-
     let calls = Arc::new(AtomicUsize::new(0));
     let retry = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
         .observer(CompletionCounter(Arc::clone(&calls)))
@@ -521,7 +534,7 @@ async fn test_completion_async_operation_panic_does_not_notify() {
         #[allow(unreachable_code)]
         Ok::<(), TestError>(())
     }));
-    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let panic = catch_unwind(AssertUnwindSafe(|| {
         let _ = future.as_mut().poll(&mut Context::from_waker(Waker::noop()));
     }));
     assert!(panic.is_err());
@@ -542,9 +555,9 @@ impl RetryObserver<TestError> for CompletionPanic {
     }
 }
 
-/// Legacy consuming methods retain their signatures and discard diagnostics.
+/// Default decomposition preserves diagnostics; discarding uses explicit names.
 #[test]
-fn test_completion_legacy_result_consumers_discard_diagnostics() {
+fn test_completion_result_consumers_preserve_or_explicitly_discard_diagnostics() {
     let retry = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().expect("valid policy"))
         .observer(|_: &AttemptFailure<TestError>, _: &RetryContext| {})
         .observer(CompletionPanic)
@@ -554,8 +567,10 @@ fn test_completion_legacy_result_consumers_discard_diagnostics() {
     assert_eq!(success.completion_callback_failures()[0].index(), 1);
     let cloned = success.clone();
     assert_eq!(success, cloned);
-    assert_eq!(cloned.into_value(), 42);
-    let (value, context) = success.into_parts();
+    assert_eq!(cloned.into_value_discarding_diagnostics(), 42);
+    let (value, context, diagnostics) = success.into_parts();
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].index(), 1);
     assert_eq!(value, 42);
     assert_eq!(context.attempts(), 1);
 
@@ -565,7 +580,9 @@ fn test_completion_legacy_result_consumers_discard_diagnostics() {
         .expect_err("exhausted");
     assert_eq!(error.completion_callback_failures().len(), 1);
     assert_eq!(error.completion_callback_failures()[0].index(), 1);
-    let (failure, context) = error.into_parts();
+    let (failure, context, diagnostics) = error.into_parts();
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].index(), 1);
     assert_eq!(failure.last_error(), Some(&TestError("original error")));
     assert_eq!(context.attempts(), 1);
     let error = retry
@@ -573,7 +590,10 @@ fn test_completion_legacy_result_consumers_discard_diagnostics() {
         .run(|| Err::<(), _>(TestError("original error")))
         .expect_err("exhausted");
     assert_eq!(error.completion_callback_failures().len(), 1);
-    assert_eq!(error.into_failure().last_error(), Some(&TestError("original error")));
+    assert_eq!(
+        error.into_failure_discarding_diagnostics().last_error(),
+        Some(&TestError("original error"))
+    );
 }
 
 /// Non-string panic payload whose destructor raises another panic payload.
@@ -586,7 +606,7 @@ impl Drop for CompletionDropPanicPayload {
     fn drop(&mut self) {
         self.drops.fetch_add(1, Ordering::SeqCst);
         if self.recursive {
-            std::panic::panic_any(Self {
+            panic_any(Self {
                 drops: Arc::clone(&self.drops),
                 recursive: true,
             });
@@ -604,7 +624,7 @@ struct CompletionDropPanicObserver {
 impl CompletionDropPanicObserver {
     /// Raises a real non-string panic with a destructor that also panics.
     fn raise(&self) {
-        std::panic::panic_any(CompletionDropPanicPayload {
+        panic_any(CompletionDropPanicPayload {
             drops: Arc::clone(&self.drops),
             recursive: self.recursive,
         });
@@ -625,11 +645,6 @@ impl RetryObserver<TestError> for CompletionDropPanicObserver {
 /// observers, even when the secondary panic payload has another panicking Drop.
 #[tokio::test]
 async fn test_completion_payload_drop_panic_preserves_result_and_later_observers() {
-    use std::future::Future;
-    use std::task::Context;
-    use std::task::Poll;
-    use std::task::Waker;
-
     for facade in [
         CompletionFacade::Sync,
         CompletionFacade::Worker,
@@ -665,7 +680,7 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                             retry
                                 .asynchronous()
                                 .timer(clock.new_timer())
-                                .run(|| std::future::ready(operation()))
+                                .run(|| future::ready(operation()))
                                 .await
                         }
                     }
@@ -673,7 +688,7 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 // Polling these immediate operations finishes in one poll. The
                 // outer catch turns a leaked panic into a normal test failure;
                 // forget its payload to avoid recursive Drop aborting the suite.
-                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let outcome = catch_unwind(AssertUnwindSafe(|| {
                     future.as_mut().poll(&mut Context::from_waker(Waker::noop()))
                 }));
                 let result = match outcome {
@@ -682,20 +697,20 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                         panic!("immediate completion must be ready")
                     }
                     Err(payload) => {
-                        std::mem::forget(payload);
+                        forget(payload);
                         panic!("completion panic payload destructor escaped");
                     }
                 };
                 let (context, failures, phase) = match result {
                     Ok(success) => {
                         assert!(successful);
-                        let (value, context, failures) = success.into_parts_with_diagnostics();
+                        let (value, context, failures) = success.into_parts();
                         assert_eq!(value, 42);
                         (context, failures, RetryCallbackPhase::Success)
                     }
                     Err(error) => {
                         assert!(!successful);
-                        let (failure, context, failures) = error.into_parts_with_diagnostics();
+                        let (failure, context, failures) = error.into_parts();
                         assert!(matches!(
                             failure,
                             RetryFailure::Exhausted {

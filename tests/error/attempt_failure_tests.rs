@@ -17,7 +17,7 @@ struct NonCloneError(String);
 
 /// Verifies mapping consumes a non-clone application error with an `FnOnce`.
 #[test]
-fn map_error_consumes_application_error_once() {
+fn test_map_error_consumes_application_error_once() {
     let suffix = String::from("!");
     let original = AttemptFailure::Error(NonCloneError(String::from("retry")));
 
@@ -31,7 +31,7 @@ fn map_error_consumes_application_error_once() {
 
 /// Verifies timeout metadata is retained without evaluating the mapper.
 #[test]
-fn map_error_does_not_call_mapper_for_timeout() {
+fn test_map_error_does_not_call_mapper_for_timeout() {
     let failure = AttemptFailure::<String>::TimedOut {
         scope: RetryTimeoutScope::Attempt,
     };
@@ -48,7 +48,7 @@ fn map_error_does_not_call_mapper_for_timeout() {
 
 /// Verifies panic metadata is retained without evaluating the mapper.
 #[test]
-fn map_error_does_not_call_mapper_for_panic() {
+fn test_map_error_does_not_call_mapper_for_panic() {
     let failure = AttemptFailure::<String>::Panicked {
         panic: RetryPanic::String(String::from("operation panic")),
     };

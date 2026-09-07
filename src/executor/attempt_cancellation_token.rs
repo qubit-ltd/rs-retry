@@ -29,18 +29,9 @@ impl AttemptCancellationToken {
     /// # Returns
     /// A token whose cancellation flag is initially `false`.
     #[inline(always)]
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Marks this token as cancelled.
-    ///
-    /// # Side Effects
-    /// Sets the shared cancellation flag. Clones of this token observe the same
-    /// flag.
-    #[inline(always)]
-    pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::SeqCst);
     }
 
     /// Returns whether cancellation has been requested.
@@ -52,5 +43,15 @@ impl AttemptCancellationToken {
     #[must_use]
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
+    }
+
+    /// Marks this token as cancelled.
+    ///
+    /// # Side Effects
+    /// Sets the shared cancellation flag. Clones of this token observe the same
+    /// flag.
+    #[inline(always)]
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
     }
 }

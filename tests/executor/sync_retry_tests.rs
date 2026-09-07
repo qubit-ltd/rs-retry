@@ -13,9 +13,11 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
+use std::thread;
 use std::time::Duration;
 
 use qubit_clock::ClockDomain;
@@ -114,7 +116,7 @@ struct PendingTimer {
     /// Stable clock used by the retry controller.
     clock: Arc<ManualMonotonicClock>,
     /// Registration event sent to the coordinating test thread.
-    registered: std::sync::mpsc::Sender<()>,
+    registered: mpsc::Sender<()>,
     /// State controlling the returned timer future.
     state: Arc<PendingTimerState>,
 }
@@ -150,7 +152,7 @@ impl RetryObserver<TestError> for CancelOnBeforeAttempt {
 }
 
 #[test]
-fn sync_facade_is_available() {
+fn test_sync_facade_is_available() {
     let policy = RetryPolicy::builder().build().unwrap();
     let retry = Retry::<()>::builder(policy).build();
     let _ = retry.sync();
@@ -222,7 +224,7 @@ fn test_sync_pre_admission_observer_cancellation_does_not_call_operation() {
 fn test_sync_operation_success_wins_over_cancellation() {
     let cancellation = RetryCancellationToken::new();
     let operation_cancellation = cancellation.clone();
-    let runner_thread = std::thread::current().id();
+    let runner_thread = thread::current().id();
     let success = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .build()
@@ -232,7 +234,7 @@ fn test_sync_operation_success_wins_over_cancellation() {
     .sync()
     .cancellation_token(cancellation)
     .run(move || {
-        assert_eq!(std::thread::current().id(), runner_thread);
+        assert_eq!(thread::current().id(), runner_thread);
         operation_cancellation.cancel();
         Ok::<_, TestError>(42_u32)
     })
@@ -283,7 +285,7 @@ fn test_sync_backoff_cancellation_wakes_pending_manual_timer() {
     let runner_cancellation = cancellation.clone();
     let operation_calls = Arc::new(AtomicUsize::new(0));
     let runner_operation_calls = Arc::clone(&operation_calls);
-    let (registered_sender, registered_receiver) = std::sync::mpsc::channel();
+    let (registered_sender, registered_receiver) = mpsc::channel();
     let timer_state = Arc::new(PendingTimerState {
         ready: AtomicBool::new(false),
         waker: Mutex::new(None),
@@ -293,8 +295,8 @@ fn test_sync_backoff_cancellation_wakes_pending_manual_timer() {
         registered: registered_sender,
         state: Arc::clone(&timer_state),
     });
-    let (result_sender, result_receiver) = std::sync::mpsc::channel();
-    let runner = std::thread::spawn(move || {
+    let (result_sender, result_receiver) = mpsc::channel();
+    let runner = thread::spawn(move || {
         let result = Retry::<TestError>::builder(
             RetryPolicy::builder()
                 .max_attempts(2)
@@ -410,7 +412,7 @@ impl Timer for SuccessCompletionRegressingTimer {
 }
 
 #[test]
-fn sync_retry_success_clock_regression_returns_infrastructure_error() {
+fn test_sync_retry_success_clock_regression_returns_infrastructure_error() {
     let policy = RetryPolicy::builder().build().unwrap();
     let error = Retry::<TestError>::builder(policy)
         .build()
@@ -433,7 +435,7 @@ fn sync_retry_success_clock_regression_returns_infrastructure_error() {
 }
 
 #[test]
-fn sync_retry_abort_survives_post_rule_clock_regression() {
+fn test_sync_retry_clock_failure_precedes_a_returned_abort_decision() {
     let policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
     let error = Retry::<TestError>::builder(policy)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
@@ -441,10 +443,15 @@ fn sync_retry_abort_survives_post_rule_clock_regression() {
         .sync()
         .timer(rule_terminal_regressing_timer())
         .run(|| Err::<(), _>(TestError("abort")))
-        .expect_err("the abort decision must remain the terminal cause");
+        .expect_err("normal rule return requires coherent terminal accounting");
 
-    let RetryFailure::Aborted { last_failure, .. } = error.failure() else {
-        panic!("expected abort instead of post-rule clock failure");
+    let RetryFailure::Infrastructure {
+        failure: RetryInfrastructureFailure::Clock { .. },
+        last_failure: Some(last_failure),
+        ..
+    } = error.failure()
+    else {
+        panic!("expected post-rule clock failure with the retained operation error");
     };
     assert_eq!(last_failure, &AttemptFailure::Error(TestError("abort")));
     assert_eq!(error.context().total_elapsed(), Duration::ZERO);
@@ -476,7 +483,7 @@ impl RetryObserver<TestError> for AttemptScopeObserver {
 }
 
 #[test]
-fn sync_retry_callbacks_retain_current_attempt_scope() {
+fn test_sync_retry_callbacks_retain_current_attempt_scope() {
     let attempts = AtomicUsize::new(0);
     let policy = RetryPolicy::builder()
         .max_attempts(2)
@@ -522,7 +529,7 @@ impl RetryObserver<TestError> for ExhaustsBeforeSecondAttempt {
 }
 
 #[test]
-fn sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
+fn test_sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
     let clock = ManualMonotonicClock::new_shared();
     let policy = RetryPolicy::builder()
         .max_attempts(2)
@@ -554,7 +561,7 @@ fn sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
 }
 
 #[test]
-fn sync_retry_matches_shared_terminal_matrix() {
+fn test_sync_retry_matches_shared_terminal_matrix() {
     let abort = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
         .build()
@@ -596,7 +603,7 @@ fn sync_retry_matches_shared_terminal_matrix() {
 }
 
 #[test]
-fn sync_retry_matches_shared_callback_matrix() {
+fn test_sync_retry_matches_shared_callback_matrix() {
     let later_rule_calls = Arc::new(AtomicUsize::new(0));
     let rule_error = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("matrix rule panic"))
@@ -637,7 +644,7 @@ fn sync_retry_matches_shared_callback_matrix() {
 }
 
 #[test]
-fn sync_retry_refreshes_elapsed_time_between_callback_phases() {
+fn test_sync_retry_refreshes_elapsed_time_between_callback_phases() {
     let clock = ManualMonotonicClock::new_shared();
     let records = callback_elapsed_records();
     let policy = RetryPolicy::builder()
@@ -689,7 +696,7 @@ fn sync_retry_refreshes_elapsed_time_between_callback_phases() {
 }
 
 #[test]
-fn sync_retry_refreshes_elapsed_time_after_callback_panics() {
+fn test_sync_retry_refreshes_elapsed_time_after_callback_panics() {
     for phase in [
         RetryCallbackPhase::AttemptFailed,
         RetryCallbackPhase::RuleDecision,
@@ -723,7 +730,7 @@ fn sync_retry_refreshes_elapsed_time_after_callback_panics() {
 }
 
 #[test]
-fn sync_retry_matches_shared_infrastructure_matrix() {
+fn test_sync_retry_matches_shared_infrastructure_matrix() {
     // Attempt and flow timeout cases are intentionally absent: SyncRetry does
     // not expose a timeout API and cannot preempt a same-thread operation.
     let timer_error = Retry::<TestError>::builder(
@@ -755,7 +762,7 @@ fn sync_retry_matches_shared_infrastructure_matrix() {
 
 /// Verifies the synchronous facade returns a successful value and context.
 #[test]
-fn sync_retry_returns_successful_value() {
+fn test_sync_retry_returns_successful_value() {
     let policy = RetryPolicy::builder()
         .max_attempts(1)
         .backoff(BackoffPolicy::immediate())
@@ -774,7 +781,7 @@ fn sync_retry_returns_successful_value() {
 
 /// Verifies the synchronous facade retries a default application failure.
 #[test]
-fn sync_retry_retries_default_failure_before_success() {
+fn test_sync_retry_retries_default_failure_before_success() {
     let policy = RetryPolicy::builder()
         .max_attempts(2)
         .backoff(BackoffPolicy::immediate())

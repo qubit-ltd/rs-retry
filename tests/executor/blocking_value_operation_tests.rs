@@ -35,5 +35,5 @@ fn test_blocking_value_operation_is_observable_through_non_clone_success_value()
         .run(|_token: AttemptCancellationToken| Ok::<_, TestError>(NonCloneValue { text: "ok" }))
         .expect("worker operation should succeed");
 
-    assert_eq!(value.into_value(), NonCloneValue { text: "ok" });
+    assert_eq!(value.into_value_discarding_diagnostics(), NonCloneValue { text: "ok" });
 }

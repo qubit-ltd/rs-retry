@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
@@ -424,10 +425,7 @@ pub(crate) fn rule_terminal_regressing_timer() -> Arc<dyn Timer> {
 /// Asserts shared terminal context fields used throughout the facade matrix.
 fn assert_terminal_context(context: &RetryContext, attempts: u32, current_attempt: Option<u32>) {
     assert_eq!(context.attempts(), attempts);
-    assert_eq!(
-        context.current_attempt().map(std::num::NonZeroU32::get),
-        current_attempt
-    );
+    assert_eq!(context.current_attempt().map(NonZeroU32::get), current_attempt);
     if current_attempt.is_none() {
         assert_eq!(context.current_attempt_timeout(), None);
     }

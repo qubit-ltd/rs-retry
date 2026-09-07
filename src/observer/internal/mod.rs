@@ -5,8 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Private observer support.
+//! Internal observer collection.
 
-mod retry_panic_from_payload;
-
-pub(crate) use retry_panic_from_payload::retry_panic_from_payload;
+mod retry_observers;
+pub(crate) use retry_observers::RetryObservers;

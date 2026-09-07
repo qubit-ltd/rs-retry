@@ -7,5 +7,4 @@
 // =============================================================================
 //! Random source coverage mirrors.
 
-mod internal;
 mod retry_random_source_tests;

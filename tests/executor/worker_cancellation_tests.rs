@@ -7,15 +7,18 @@
 // =============================================================================
 
 use std::future::Future;
+use std::num::NonZeroU32;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
+use std::thread;
 use std::time::Duration;
 
 use qubit_clock::ManualMonotonicClock;
@@ -102,7 +105,7 @@ struct PendingTimer {
     /// Stable clock used by the retry controller.
     clock: Arc<ManualMonotonicClock>,
     /// Registration event sent to the coordinating test thread.
-    registered: std::sync::mpsc::Sender<()>,
+    registered: mpsc::Sender<()>,
     /// State controlling the returned timer future.
     state: Arc<PendingTimerState>,
 }
@@ -160,7 +163,7 @@ impl RetryObserver<TestError> for CountAttemptFailed {
 fn test_worker_backoff_without_cancellation_token_reaches_next_attempt() {
     let operation_calls = Arc::new(AtomicUsize::new(0));
     let runner_operation_calls = Arc::clone(&operation_calls);
-    let (registered_sender, registered_receiver) = std::sync::mpsc::channel();
+    let (registered_sender, registered_receiver) = mpsc::channel();
     let timer_state = Arc::new(PendingTimerState {
         ready: AtomicBool::new(false),
         waker: Mutex::new(None),
@@ -170,8 +173,8 @@ fn test_worker_backoff_without_cancellation_token_reaches_next_attempt() {
         registered: registered_sender,
         state: Arc::clone(&timer_state),
     });
-    let (result_sender, result_receiver) = std::sync::mpsc::channel();
-    let runner = std::thread::spawn(move || {
+    let (result_sender, result_receiver) = mpsc::channel();
+    let runner = thread::spawn(move || {
         let result = Retry::<TestError>::builder(
             RetryPolicy::builder()
                 .max_attempts(2)
@@ -288,10 +291,7 @@ fn test_worker_attempt_cancellation_discards_late_success() {
             .is_cancelled()
     );
     assert_eq!(error.context().attempts(), 1);
-    assert_eq!(
-        error.context().current_attempt().map(std::num::NonZeroU32::get),
-        Some(1)
-    );
+    assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
 }
 
 /// Verifies an unbounded grace still reaps a cooperatively exiting worker.
@@ -324,10 +324,7 @@ fn test_worker_attempt_cancellation_supports_maximum_grace() {
     assert_eq!(*phase, RetryCancellationPhase::Attempt);
     assert!(last_failure.is_none());
     assert_eq!(error.context().attempts(), 1);
-    assert_eq!(
-        error.context().current_attempt().map(std::num::NonZeroU32::get),
-        Some(1)
-    );
+    assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
 }
 
 /// Verifies a late application error cannot invoke failure callbacks or rules.
@@ -384,7 +381,7 @@ fn test_worker_cancellation_reports_still_running_with_cancellation_trigger() {
     let operation_calls = Arc::new(AtomicUsize::new(0));
     let failed_observer_calls = Arc::new(AtomicUsize::new(0));
     let rule_calls = Arc::new(AtomicUsize::new(0));
-    let (release_sender, release_receiver) = std::sync::mpsc::channel();
+    let (release_sender, release_receiver) = mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
     let error = Retry::<TestError>::builder(
         RetryPolicy::builder()
@@ -442,10 +439,7 @@ fn test_worker_cancellation_reports_still_running_with_cancellation_trigger() {
         Some(&TestError("previous failure"))
     );
     assert_eq!(error.context().attempts(), 2);
-    assert_eq!(
-        error.context().current_attempt().map(std::num::NonZeroU32::get),
-        Some(2)
-    );
+    assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(2));
     assert_eq!(operation_calls.load(Ordering::SeqCst), 2);
     assert_eq!(failed_observer_calls.load(Ordering::SeqCst), 1);
     assert_eq!(rule_calls.load(Ordering::SeqCst), 1);
@@ -458,7 +452,7 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
     let runner_cancellation = cancellation.clone();
     let operation_calls = Arc::new(AtomicUsize::new(0));
     let runner_operation_calls = Arc::clone(&operation_calls);
-    let (registered_sender, registered_receiver) = std::sync::mpsc::channel();
+    let (registered_sender, registered_receiver) = mpsc::channel();
     let timer_state = Arc::new(PendingTimerState {
         ready: AtomicBool::new(false),
         waker: Mutex::new(None),
@@ -468,8 +462,8 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
         registered: registered_sender,
         state: Arc::clone(&timer_state),
     });
-    let (result_sender, result_receiver) = std::sync::mpsc::channel();
-    let runner = std::thread::spawn(move || {
+    let (result_sender, result_receiver) = mpsc::channel();
+    let runner = thread::spawn(move || {
         let delay = Duration::from_secs(4);
         let result = Retry::<TestError>::builder(
             RetryPolicy::builder()
@@ -577,7 +571,7 @@ fn test_worker_still_running_retains_flow_timeout_trigger() {
 
 /// Runs one blocked worker and checks its deterministic timeout trigger.
 fn assert_blocked_worker_timeout_trigger(scope: RetryTimeoutScope, expected_trigger: WorkerStopTrigger) {
-    let (release_sender, release_receiver) = std::sync::mpsc::channel();
+    let (release_sender, release_receiver) = mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
     let retry = Retry::<TestError>::builder(
         RetryPolicy::builder()

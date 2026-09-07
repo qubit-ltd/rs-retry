@@ -26,6 +26,14 @@ pub(crate) enum RetryAfterStrategyData {
 
 impl From<RetryAfterStrategy> for RetryAfterStrategyData {
     /// Converts runtime retry-after behavior to its stable wire representation.
+    ///
+    /// # Parameters
+    /// - `strategy`: Runtime strategy to encode.
+    ///
+    /// # Returns
+    /// The corresponding representation; enclosing policy validation enforces
+    /// invariants.
+    #[inline]
     fn from(strategy: RetryAfterStrategy) -> Self {
         match strategy {
             RetryAfterStrategy::PreferHint => Self::PreferHint,
@@ -37,6 +45,14 @@ impl From<RetryAfterStrategy> for RetryAfterStrategyData {
 
 impl From<RetryAfterStrategyData> for RetryAfterStrategy {
     /// Converts the stable retry-after representation to runtime behavior.
+    ///
+    /// # Parameters
+    /// - `data`: Decoded wire strategy to represent at runtime.
+    ///
+    /// # Returns
+    /// The corresponding representation; enclosing policy validation enforces
+    /// invariants.
+    #[inline]
     fn from(data: RetryAfterStrategyData) -> Self {
         match data {
             RetryAfterStrategyData::PreferHint => Self::PreferHint,

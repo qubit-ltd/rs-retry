@@ -32,6 +32,16 @@ pub struct RetryBudgetSnapshot {
 
 impl RetryBudgetSnapshot {
     /// Creates a snapshot from state owned by the retry budget.
+    ///
+    /// # Parameters
+    /// - `attempts`: Number of committed admissions.
+    /// - `operation_elapsed`: Sum of completed operation durations.
+    /// - `total_elapsed`: Total time at the observation sample.
+    /// - `attempt_elapsed`: Latest completed duration, zero before completion.
+    ///
+    /// # Returns
+    /// An immutable copy of the supplied accounting values.
+    #[inline]
     pub(super) const fn new(
         attempts: u32,
         operation_elapsed: Duration,
@@ -47,6 +57,9 @@ impl RetryBudgetSnapshot {
     }
 
     /// Returns the number of admitted attempts.
+    ///
+    /// # Returns
+    /// Committed admissions, including any still-active operation.
     #[inline(always)]
     #[must_use]
     pub const fn attempts(&self) -> u32 {
@@ -54,6 +67,9 @@ impl RetryBudgetSnapshot {
     }
 
     /// Returns elapsed time accumulated across completed operations.
+    ///
+    /// # Returns
+    /// Cumulative completed-operation duration, excluding callbacks and waits.
     #[inline(always)]
     #[must_use]
     pub const fn operation_elapsed(&self) -> Duration {
@@ -61,6 +77,9 @@ impl RetryBudgetSnapshot {
     }
 
     /// Returns the total elapsed time sampled with this snapshot.
+    ///
+    /// # Returns
+    /// Flow duration at the sample, including callbacks and waits.
     #[inline(always)]
     #[must_use]
     pub const fn total_elapsed(&self) -> Duration {
@@ -68,6 +87,9 @@ impl RetryBudgetSnapshot {
     }
 
     /// Returns elapsed time for the most recently completed attempt.
+    ///
+    /// # Returns
+    /// Most recent completed-operation duration, or zero before completion.
     #[inline(always)]
     #[must_use]
     pub const fn attempt_elapsed(&self) -> Duration {

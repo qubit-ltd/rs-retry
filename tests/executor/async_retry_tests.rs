@@ -145,7 +145,7 @@ impl Timer for AdvancingAtTimer {
 
 #[cfg(feature = "tokio")]
 #[test]
-fn async_facade_is_available() {
+fn test_async_facade_is_available() {
     let policy = RetryPolicy::builder().build().unwrap();
     let retry = Retry::<()>::builder(policy).build();
     let _ = retry.asynchronous();
@@ -153,7 +153,7 @@ fn async_facade_is_available() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn async_retry_matches_shared_terminal_matrix() {
+async fn test_async_retry_matches_shared_terminal_matrix() {
     let abort = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
         .build()
@@ -199,7 +199,7 @@ async fn async_retry_matches_shared_terminal_matrix() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn async_retry_matches_shared_callback_matrix() {
+async fn test_async_retry_matches_shared_callback_matrix() {
     let later_rule_calls = Arc::new(AtomicUsize::new(0));
     let rule_error = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("matrix rule panic"))
@@ -243,7 +243,7 @@ async fn async_retry_matches_shared_callback_matrix() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn async_retry_refreshes_elapsed_time_between_callback_phases() {
+async fn test_async_retry_refreshes_elapsed_time_between_callback_phases() {
     let clock = ManualMonotonicClock::new_shared();
     let records = callback_elapsed_records();
     let policy = RetryPolicy::builder()
@@ -297,7 +297,7 @@ async fn async_retry_refreshes_elapsed_time_between_callback_phases() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn async_retry_refreshes_elapsed_time_after_callback_panics() {
+async fn test_async_retry_refreshes_elapsed_time_after_callback_panics() {
     for phase in [
         RetryCallbackPhase::AttemptFailed,
         RetryCallbackPhase::RuleDecision,
@@ -333,8 +333,8 @@ async fn async_retry_refreshes_elapsed_time_after_callback_panics() {
 }
 
 #[cfg(feature = "tokio")]
-#[tokio::test]
-async fn async_retry_matches_shared_infrastructure_and_timeout_matrix() {
+#[tokio::test(start_paused = true)]
+async fn test_async_retry_matches_shared_infrastructure_and_timeout_matrix() {
     let timer_error = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .max_attempts(2)
@@ -384,7 +384,7 @@ async fn async_retry_matches_shared_infrastructure_and_timeout_matrix() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn async_timeout_registration_failure_does_not_start_attempt() {
+async fn test_async_timeout_registration_failure_does_not_start_attempt() {
     let poll_count = Arc::new(AtomicUsize::new(0));
     let error = Retry::<TestError>::builder(
         RetryPolicy::builder()
@@ -429,7 +429,7 @@ async fn async_timeout_registration_failure_does_not_start_attempt() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn async_timeout_uses_fixed_deadline_and_preserves_selected_scope() {
+async fn test_async_timeout_uses_fixed_deadline_and_preserves_selected_scope() {
     for (attempt_timeout, flow_timeout, expected_scope) in [
         (Duration::from_secs(10), Duration::from_secs(5), RetryTimeoutScope::Flow),
         (
@@ -502,7 +502,7 @@ async fn async_timeout_uses_fixed_deadline_and_preserves_selected_scope() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn async_registration_reaching_deadline_does_not_start_operation() {
+async fn test_async_registration_reaching_deadline_does_not_start_operation() {
     let clock = ManualMonotonicClock::new_shared();
     let timer = Arc::new(AdvancingAtTimer::new(Arc::clone(&clock), Duration::from_secs(1)));
     let poll_count = Arc::new(AtomicUsize::new(0));
@@ -545,7 +545,7 @@ async fn async_registration_reaching_deadline_does_not_start_operation() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn async_timeout_polling_failure_retains_active_attempt_scope() {
+async fn test_async_timeout_polling_failure_retains_active_attempt_scope() {
     let error = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .max_attempts(1)
@@ -579,7 +579,7 @@ async fn async_timeout_polling_failure_retains_active_attempt_scope() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn async_success_counts_one_started_attempt_with_or_without_timeout() {
+async fn test_async_success_counts_one_started_attempt_with_or_without_timeout() {
     let without_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
         .build()
         .asynchronous()

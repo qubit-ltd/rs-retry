@@ -27,6 +27,14 @@ pub struct RetryCancelled<'a> {
 
 impl<'a> RetryCancelled<'a> {
     /// Creates a future observing cancellation of `token`.
+    ///
+    /// # Parameters
+    /// - `token`: Borrowed cancellation source.
+    ///
+    /// # Returns
+    /// An unregistered future; its first pending poll registers the waker.
+    #[inline(always)]
+    #[must_use = "use the prepared value or inspect the result"]
     pub(super) fn new(token: &'a RetryCancellationToken) -> Self {
         Self {
             token,
@@ -36,8 +44,17 @@ impl<'a> RetryCancelled<'a> {
 }
 
 impl Future for RetryCancelled<'_> {
+    /// Cancellation carries no payload.
     type Output = ();
 
+    ///
+    /// Observes cancellation and atomically registers the current task waker.
+    ///
+    /// # Parameters
+    /// - `context`: Task context supplying the current waker.
+    ///
+    /// # Returns
+    /// Ready when cancelled; Pending after registering the waker otherwise.
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<()> {
         let this = self.get_mut();
         if this.token.is_cancelled() {
@@ -60,6 +77,9 @@ impl Future for RetryCancelled<'_> {
 }
 
 impl Drop for RetryCancelled<'_> {
+    ///
+    /// Unregisters a pending waker and drops it outside the registry lock.
+    #[inline]
     fn drop(&mut self) {
         if let Some(registration_id) = self.registration_id.take() {
             let removed_waker = self.token.state.unregister(registration_id);

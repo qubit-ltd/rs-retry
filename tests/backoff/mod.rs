@@ -12,3 +12,5 @@ mod backoff_request_tests;
 mod backoff_state_tests;
 mod backoff_step_tests;
 mod internal;
+mod policy_state_contract_tests;
+mod policy_variants_tests;

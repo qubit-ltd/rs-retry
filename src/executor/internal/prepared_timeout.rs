@@ -26,6 +26,16 @@ pub(in crate::executor::internal) struct PreparedTimeout {
 
 impl PreparedTimeout {
     /// Creates immutable timeout data from an admission transaction.
+    ///
+    /// # Parameters
+    /// - `deadline`: Absolute deadline in the execution clock domain.
+    /// - `duration`: Effective duration at admission.
+    /// - `scope`: Boundary responsible for the deadline.
+    ///
+    /// # Returns
+    /// An immutable timeout transaction.
+    #[inline(always)]
+    #[must_use]
     pub(super) fn new(deadline: MonotonicInstant, duration: Duration, scope: RetryTimeoutScope) -> Self {
         Self {
             deadline,
@@ -35,16 +45,31 @@ impl PreparedTimeout {
     }
 
     /// Returns the fixed deadline.
+    ///
+    /// # Returns
+    /// The original absolute deadline, unchanged during registration.
+    #[inline(always)]
+    #[must_use = "inspect the prepared absolute deadline"]
     pub(super) fn deadline(self) -> MonotonicInstant {
         self.deadline
     }
 
     /// Returns the selected duration.
+    ///
+    /// # Returns
+    /// The duration selected at admission.
+    #[inline(always)]
+    #[must_use]
     pub(super) fn duration(self) -> Duration {
         self.duration
     }
 
     /// Returns the boundary responsible for the deadline.
+    ///
+    /// # Returns
+    /// The selected hard-timeout source.
+    #[inline(always)]
+    #[must_use]
     pub(super) fn scope(self) -> RetryTimeoutScope {
         self.scope
     }

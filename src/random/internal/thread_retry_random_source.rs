@@ -27,6 +27,10 @@ impl RetryRandomSource for ThreadRetryRandomSource {
     /// # Returns
     ///
     /// A uniformly distributed floating-point sample.
+    ///
+    /// # Panics
+    /// Panics when callers supply an invalid or nonfinite range; retry policies
+    /// only request validated finite bounds.
     #[inline]
     fn random_f64_inclusive(&self, min: f64, max: f64) -> f64 {
         rng().random_range(min..=max)
