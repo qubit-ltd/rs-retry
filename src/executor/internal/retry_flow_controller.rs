@@ -17,7 +17,7 @@ use qubit_clock::TimeError;
 
 use super::super::Retry;
 use super::PreparedAttemptPlan;
-use super::RetryDirective;
+use super::PreparedBackoffPlan;
 use super::RetryFlowState;
 use crate::AttemptFailure;
 use crate::RetryCallbackFailure;
@@ -298,7 +298,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         failure: AttemptFailure<E>,
         clock: &dyn MonotonicClock,
         cancellation: Option<&RetryCancellationToken>,
-    ) -> Result<RetryDirective, RetryError<E>> {
+    ) -> Result<PreparedBackoffPlan, RetryError<E>> {
         self.last_failure = Some(failure);
         let now = clock.now();
         if let Err(error) = self.state.finish_attempt(now) {
@@ -374,9 +374,11 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
             return Err(self.exhausted(limit));
         }
 
-        Ok(RetryDirective {
-            sleep_duration: self.state.sleep_duration(backoff.effective_delay()),
-        })
+        let deadline = self
+            .state
+            .backoff_deadline(clock.now(), backoff.effective_delay())
+            .map_err(|error| self.inactive_clock_failure(error))?;
+        Ok(PreparedBackoffPlan::new(deadline))
     }
 
     /// Finishes a successful operation and builds its terminal context.
