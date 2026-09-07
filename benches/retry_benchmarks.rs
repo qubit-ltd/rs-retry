@@ -21,7 +21,7 @@ use qubit_retry::Retry;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
 
@@ -31,7 +31,7 @@ struct NoopObserver;
 impl RetryObserver<&'static str> for NoopObserver {
     fn on_success(&self, _context: &RetryContext) {}
 
-    fn on_terminal_failure(&self, _failure: &RetryFailure<&'static str>, _context: &RetryContext) {}
+    fn on_terminal_failure(&self, _reason: &RetryErrorReason, _context: &RetryContext) {}
 }
 
 /// No-op failure listener used to measure listener dispatch overhead.
@@ -184,20 +184,25 @@ fn benchmark_completion_observer(c: &mut Criterion) {
 
 /// Measures one successful no-op worker attempt, including spawn and reaping.
 fn benchmark_worker_noop(c: &mut Criterion) {
-    let policy = RetryPolicy::builder()
-        .max_attempts(1)
-        .backoff(BackoffPolicy::immediate())
-        .build()
-        .expect("benchmark retry policy should be valid");
-    let retry = Retry::<&'static str>::builder(policy).build();
-    let facade = retry.worker();
+    #[cfg(feature = "worker")]
+    {
+        let policy = RetryPolicy::builder()
+            .max_attempts(1)
+            .backoff(BackoffPolicy::immediate())
+            .build()
+            .expect("benchmark retry policy should be valid");
+        let retry = Retry::<&'static str>::builder(policy).build();
+        let facade = retry.worker();
 
-    c.bench_function("worker_noop_success", |b| {
-        b.iter(|| {
-            let result = facade.run(|_| Ok::<u64, &'static str>(black_box(42)));
-            let _ = black_box(result);
+        c.bench_function("worker_noop_success", |b| {
+            b.iter(|| {
+                let result = facade.run(|_| Ok::<u64, &'static str>(black_box(42)));
+                let _ = black_box(result);
+            });
         });
-    });
+    }
+    #[cfg(not(feature = "worker"))]
+    let _ = c;
 }
 
 /// Measures a no-delay flow that retries two operation failures before success.

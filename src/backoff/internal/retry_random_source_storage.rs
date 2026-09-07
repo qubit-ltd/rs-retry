@@ -9,8 +9,8 @@
 
 use std::sync::Arc;
 
-use crate::random::ThreadRetryRandomSource;
 use crate::RetryRandomSource;
+use crate::random::ThreadRetryRandomSource;
 
 /// Random source retained by one mutable backoff sequence.
 #[derive(Clone)]

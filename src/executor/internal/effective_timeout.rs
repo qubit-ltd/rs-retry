@@ -7,6 +7,8 @@
 // =============================================================================
 //! Source-aware effective timeout selection.
 
+#![cfg_attr(not(any(feature = "tokio", feature = "worker")), allow(dead_code))]
+
 use std::time::Duration;
 
 use crate::RetryTimeoutScope;

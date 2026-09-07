@@ -46,38 +46,43 @@ impl<E> RetryError<E> {
         }
     }
 
-    #[must_use]
+    /// Returns the reason that terminated the retry flow.
+    #[must_use = "inspect the terminal reason"]
     pub const fn reason(&self) -> &RetryErrorReason {
         &self.reason
     }
 
     /// Returns the frozen context at which the retry flow terminated.
-    #[must_use]
+    #[must_use = "inspect the terminal context"]
     pub const fn context(&self) -> &RetryContext {
         &self.context
     }
 
     /// Returns the most recent attempt failure, when one exists.
-    #[must_use]
+    #[must_use = "inspect the last attempt failure"]
     pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
         self.last_failure.as_ref()
     }
 
-    /// Returns the application error from the most recent attempt, when one exists.
-    #[must_use]
+    /// Returns the application error from the most recent attempt, when one
+    /// exists.
+    #[must_use = "inspect the application error"]
     pub fn last_error(&self) -> Option<&E> {
         self.last_failure.as_ref().and_then(AttemptFailure::as_error)
     }
 
-    /// Returns completion callback failures captured after the terminal result was frozen.
-    #[must_use]
+    /// Returns completion callback failures captured after the terminal result
+    /// was frozen.
+    #[must_use = "inspect completion callback diagnostics"]
     pub fn completion_callback_failures(&self) -> &[RetryCallbackFailure] {
         &self.completion_callback_failures
     }
 
-    /// Maps an application error while preserving terminal metadata and failure classification.
+    /// Maps an application error while preserving terminal metadata and failure
+    /// classification.
     ///
-    /// The mapper runs only when the last failure contains an application error.
+    /// The mapper runs only when the last failure contains an application
+    /// error.
     pub fn map_error<U, F: FnOnce(E) -> U>(self, map: F) -> RetryError<U> {
         RetryError {
             reason: self.reason,
@@ -87,8 +92,9 @@ impl<E> RetryError<E> {
         }
     }
 
-    /// Consumes the error into its reason, last failure, context, and callback diagnostics.
-    #[must_use]
+    /// Consumes the error into its reason, last failure, context, and callback
+    /// diagnostics.
+    #[must_use = "inspect the decomposed terminal error"]
     pub fn into_parts(
         self,
     ) -> (
@@ -105,7 +111,8 @@ impl<E> RetryError<E> {
         )
     }
 
-    /// Consumes the error into non-generic metadata and an optional application error.
+    /// Consumes the error into non-generic metadata and an optional application
+    /// error.
     #[must_use]
     pub fn into_metadata_and_error(self) -> (RetryErrorMetadata, Option<E>) {
         let (reason, last_failure, context, completion_callback_failures) = self.into_parts();

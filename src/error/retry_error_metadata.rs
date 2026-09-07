@@ -30,25 +30,25 @@ pub struct RetryErrorMetadata {
 
 impl RetryErrorMetadata {
     /// Returns the terminal reason.
-    #[must_use]
+    #[must_use = "inspect the terminal reason"]
     pub const fn reason(&self) -> &RetryErrorReason {
         &self.reason
     }
 
     /// Returns the classification of the last attempt, when present.
-    #[must_use]
+    #[must_use = "inspect the last attempt classification"]
     pub const fn last_attempt(&self) -> Option<&AttemptFailureMetadata> {
         self.last_attempt.as_ref()
     }
 
     /// Returns the frozen retry context.
-    #[must_use]
+    #[must_use = "inspect the terminal context"]
     pub const fn context(&self) -> &RetryContext {
         &self.context
     }
 
     /// Returns completion callback failures captured for this result.
-    #[must_use]
+    #[must_use = "inspect completion callback diagnostics"]
     pub fn completion_callback_failures(&self) -> &[RetryCallbackFailure] {
         &self.completion_callback_failures
     }

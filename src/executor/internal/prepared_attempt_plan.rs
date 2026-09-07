@@ -7,6 +7,8 @@
 // =============================================================================
 //! Timed admission plan with an immutable timeout deadline.
 
+#![cfg_attr(not(any(feature = "tokio", feature = "worker")), allow(dead_code))]
+
 use std::time::Duration;
 
 use qubit_clock::MonotonicInstant;
