@@ -1,5 +1,6 @@
 # Rust
 /target/
+tests/fixtures/worker_disabled/target/
 **/*.rs.bk
 *.pdb
 
