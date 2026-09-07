@@ -10,13 +10,13 @@
 #[cfg(feature = "serde")]
 mod duration_data;
 #[cfg(feature = "serde")]
-mod retry_limits_data;
+mod retry_admission_limits_data;
 #[cfg(feature = "serde")]
 mod retry_policy_data;
 
 #[cfg(feature = "serde")]
 pub(crate) use duration_data::DurationData;
 #[cfg(feature = "serde")]
-pub(crate) use retry_limits_data::RetryAdmissionLimitsData;
+pub(crate) use retry_admission_limits_data::RetryAdmissionLimitsData;
 #[cfg(feature = "serde")]
 pub(crate) use retry_policy_data::RetryPolicyData;

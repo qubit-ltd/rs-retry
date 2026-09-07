@@ -75,6 +75,11 @@ impl<E: 'static> RetryRules<E> {
         self.rules = rules.into();
     }
 
+    /// Appends an already shared rule in evaluation order.
+    ///
+    /// # Parameters
+    /// - `rule`: Shared callback appended after all existing registrations.
+    #[inline]
     pub(crate) fn push_shared(&mut self, rule: Arc<dyn RetryRule<E>>) {
         let mut rules: Vec<_> = self.rules.iter().cloned().collect();
         rules.push(rule);

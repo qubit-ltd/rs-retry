@@ -79,6 +79,11 @@ impl<E: 'static> RetryObservers<E> {
         self.observers = observers.into();
     }
 
+    /// Appends an already shared observer in notification order.
+    ///
+    /// # Parameters
+    /// - `observer`: Shared callback appended after all existing registrations.
+    #[inline]
     pub(crate) fn push_shared(&mut self, observer: Arc<dyn RetryObserver<E>>) {
         let mut observers: Vec<_> = self.observers.iter().cloned().collect();
         observers.push(observer);

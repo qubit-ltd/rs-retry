@@ -1,3 +1,12 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+//! Terminal retry errors and their result alias.
+
 use std::error::Error;
 use std::fmt;
 
@@ -23,6 +32,7 @@ pub struct RetryError<E> {
 pub type RetryResult<T, E> = Result<RetrySuccess<T>, RetryError<E>>;
 
 impl<E> RetryError<E> {
+    /// Creates a terminal error before completion callbacks are notified.
     pub(crate) fn new(
         reason: RetryErrorReason,
         last_failure: Option<AttemptFailure<E>>,
@@ -41,26 +51,33 @@ impl<E> RetryError<E> {
         &self.reason
     }
 
+    /// Returns the frozen context at which the retry flow terminated.
     #[must_use]
     pub const fn context(&self) -> &RetryContext {
         &self.context
     }
 
+    /// Returns the most recent attempt failure, when one exists.
     #[must_use]
     pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
         self.last_failure.as_ref()
     }
 
+    /// Returns the application error from the most recent attempt, when one exists.
     #[must_use]
     pub fn last_error(&self) -> Option<&E> {
         self.last_failure.as_ref().and_then(AttemptFailure::as_error)
     }
 
+    /// Returns completion callback failures captured after the terminal result was frozen.
     #[must_use]
     pub fn completion_callback_failures(&self) -> &[RetryCallbackFailure] {
         &self.completion_callback_failures
     }
 
+    /// Maps an application error while preserving terminal metadata and failure classification.
+    ///
+    /// The mapper runs only when the last failure contains an application error.
     pub fn map_error<U, F: FnOnce(E) -> U>(self, map: F) -> RetryError<U> {
         RetryError {
             reason: self.reason,
@@ -70,6 +87,7 @@ impl<E> RetryError<E> {
         }
     }
 
+    /// Consumes the error into its reason, last failure, context, and callback diagnostics.
     #[must_use]
     pub fn into_parts(
         self,
@@ -87,6 +105,7 @@ impl<E> RetryError<E> {
         )
     }
 
+    /// Consumes the error into non-generic metadata and an optional application error.
     #[must_use]
     pub fn into_metadata_and_error(self) -> (RetryErrorMetadata, Option<E>) {
         let (reason, last_failure, context, completion_callback_failures) = self.into_parts();
@@ -107,12 +126,14 @@ impl<E> RetryError<E> {
         )
     }
 
+    /// Stores completion callback diagnostics on the frozen terminal error.
     pub(crate) fn set_completion_callback_failures(&mut self, failures: Vec<RetryCallbackFailure>) {
         self.completion_callback_failures = failures.into_boxed_slice();
     }
 }
 
 impl<E: fmt::Display> fmt::Display for RetryError<E> {
+    /// Formats the terminal reason and number of admitted attempts.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
@@ -124,6 +145,7 @@ impl<E: fmt::Display> fmt::Display for RetryError<E> {
 }
 
 impl<E: Error + 'static> Error for RetryError<E> {
+    /// Exposes the last application error as the standard error source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         self.last_error().map(|error| error as &(dyn Error + 'static))
     }

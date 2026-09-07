@@ -47,6 +47,7 @@ pub(crate) struct RetryFlowController<'a, E> {
     rules: &'a RetryRules<E>,
     /// Ordered retry observers.
     observers: &'a RetryObservers<E>,
+    /// Action used when all retry rules delegate the failure.
     fallback: RetryFallback,
     /// Last failed attempt retained until success or terminal failure.
     last_failure: Option<AttemptFailure<E>>,

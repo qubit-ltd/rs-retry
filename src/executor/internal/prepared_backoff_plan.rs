@@ -9,15 +9,18 @@ use qubit_clock::MonotonicInstant;
 
 /// Backoff registration data shared by all executor facades.
 pub(crate) struct PreparedBackoffPlan {
+    /// Absolute deadline at which the selected backoff ends.
     deadline: MonotonicInstant,
 }
 
 impl PreparedBackoffPlan {
+    /// Creates a plan with an absolute deadline.
     #[inline]
     pub(crate) fn new(deadline: MonotonicInstant) -> Self {
         Self { deadline }
     }
 
+    /// Returns the absolute deadline that was prepared for backoff.
     #[inline]
     pub(crate) fn deadline(&self) -> MonotonicInstant {
         self.deadline
