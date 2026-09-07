@@ -17,6 +17,11 @@ pub(crate) struct RetryDirective {
 
 impl RetryDirective {
     /// Returns the duration the executor should wait before retrying.
+    ///
+    /// # Returns
+    /// The selected delay capped by remaining hard-flow time.
+    #[inline(always)]
+    #[must_use]
     pub(crate) fn sleep_duration(&self) -> Duration {
         self.sleep_duration
     }

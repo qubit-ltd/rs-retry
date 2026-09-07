@@ -21,6 +21,16 @@ pub(super) struct WakerRegistry {
 
 impl WakerRegistry {
     /// Registers a waker and returns its identifier and any replaced waker.
+    ///
+    /// # Parameters
+    /// - `registration_id`: Existing identifier, or None to allocate an unused
+    ///   one.
+    /// - `waker`: Task waker transferred into this registry.
+    ///
+    /// # Returns
+    /// The assigned identifier and Some previous waker, or None for a new
+    /// entry. The caller drops the previous waker after releasing its outer
+    /// lock.
     pub(in crate::executor::internal) fn register(
         &mut self,
         registration_id: Option<u64>,
@@ -40,11 +50,22 @@ impl WakerRegistry {
     }
 
     /// Removes a registration and returns the waker that must be dropped.
+    ///
+    /// # Parameters
+    /// - `registration_id`: Identifier whose registration is removed.
+    ///
+    /// # Returns
+    /// Some owned waker if present, or None if already removed.
+    #[inline(always)]
     pub(in crate::executor::internal) fn unregister(&mut self, registration_id: u64) -> Option<Waker> {
         self.wakers.remove(&registration_id)
     }
 
     /// Removes every registered waker before any of them are invoked.
+    ///
+    /// # Returns
+    /// All owned wakers for invocation outside the outer lock; the registry is
+    /// empty afterward.
     pub(in crate::executor::internal) fn take_all(&mut self) -> Vec<Waker> {
         self.wakers.drain().map(|(_, waker)| waker).collect()
     }

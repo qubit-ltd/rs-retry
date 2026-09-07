@@ -9,8 +9,5 @@
 
 mod backoff_policy_data_tests;
 mod backoff_strategy_data_tests;
-mod backoff_strategy_tests;
 mod jitter_strategy_data_tests;
-mod jitter_strategy_tests;
 mod retry_after_strategy_data_tests;
-mod retry_after_strategy_tests;

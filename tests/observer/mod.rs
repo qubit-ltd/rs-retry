@@ -7,6 +7,7 @@
 // =============================================================================
 
 mod callback_failure_tests;
+mod control_lifecycle_tests;
 mod control_panic_payload_tests;
 mod retry_observer_tests;
 mod retry_observers_tests;

@@ -8,11 +8,9 @@
 
 mod backoff;
 mod budget;
-mod current_model_coverage_tests;
 mod error;
 mod event;
 mod executor;
-mod new_api_tests;
 mod observer;
 mod policy;
 mod random;

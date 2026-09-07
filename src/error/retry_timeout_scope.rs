@@ -19,6 +19,18 @@ pub enum RetryTimeoutScope {
 }
 
 impl fmt::Display for RetryTimeoutScope {
+    ///
+    /// Formats the stable human-readable label of this classification.
+    ///
+    /// # Parameters
+    /// - `formatter`: Destination supplied by the formatting machinery.
+    ///
+    /// # Returns
+    /// The result of writing this diagnostic representation.
+    ///
+    /// # Errors
+    /// Returns a formatting error if the destination rejects a write.
+    #[inline]
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
             Self::Attempt => "attempt",

@@ -6,14 +6,16 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-/// Executes the README's bounded synchronous cancellation example.
+use qubit_retry::Retry;
+use qubit_retry::RetryCallbackPhase;
+use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryContext;
+use qubit_retry::RetryFailure;
+use qubit_retry::RetryObserver;
+use qubit_retry::RetryPolicy;
+/// Executes the guide's synchronous cancellation contract.
 #[test]
 fn test_readme_synchronous_cancellation() {
-    use qubit_retry::Retry;
-    use qubit_retry::RetryCancellationToken;
-    use qubit_retry::RetryFailure;
-    use qubit_retry::RetryPolicy;
-
     let token = RetryCancellationToken::new();
     let policy = RetryPolicy::builder().build().expect("valid policy");
     let retry = Retry::<&'static str>::builder(policy).build();
@@ -31,16 +33,9 @@ fn test_readme_synchronous_cancellation() {
     assert!(matches!(error.failure(), RetryFailure::Cancelled { .. }));
 }
 
-/// Executes the README's completion diagnostic and consuming error map example.
+/// Executes the guide's completion diagnostic and consuming error map contract.
 #[test]
 fn test_readme_completion_diagnostics_and_error_mapping() {
-    use qubit_retry::Retry;
-    use qubit_retry::RetryCallbackPhase;
-    use qubit_retry::RetryContext;
-    use qubit_retry::RetryFailure;
-    use qubit_retry::RetryObserver;
-    use qubit_retry::RetryPolicy;
-
     struct CompletionAudit;
     impl RetryObserver<&'static str> for CompletionAudit {
         fn on_terminal_failure(&self, _: &RetryFailure<&'static str>, _: &RetryContext) {
@@ -58,7 +53,7 @@ fn test_readme_completion_diagnostics_and_error_mapping() {
         mapped.completion_callback_failures()[0].phase(),
         RetryCallbackPhase::TerminalFailure
     );
-    let (_failure, context, diagnostics) = mapped.into_parts_with_diagnostics();
+    let (_failure, context, diagnostics) = mapped.into_parts();
     assert_eq!(context.attempts(), 3);
     assert_eq!(diagnostics.len(), 1);
 }

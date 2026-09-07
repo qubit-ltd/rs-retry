@@ -15,6 +15,7 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
+use std::thread;
 use std::time::Duration;
 
 use qubit_clock::ManualMonotonicClock;
@@ -89,7 +90,7 @@ fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger)
         timer: clock.new_timer(),
         fail: trigger == WorkerStopTrigger::TimerFailure,
     });
-    let runner = std::thread::spawn(move || {
+    let runner = thread::spawn(move || {
         let retry = Retry::<&'static str>::builder(RetryPolicy::builder().build().expect("valid policy")).build();
         let mut worker = retry
             .worker()

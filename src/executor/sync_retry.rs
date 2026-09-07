@@ -25,15 +25,47 @@ use crate::RetrySuccess;
 use crate::random::ThreadRetryRandomSource;
 
 /// Same-thread retry execution. It intentionally exposes no timeout method.
+///
+/// # Type Parameters
+/// - `'a`: Lifetime of the borrowed retry definition.
+/// - `E`: Application error; synchronous operations may capture non-Send state.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::Retry;
+/// use qubit_retry::RetryPolicy;
+/// use qubit_retry::executor::SyncRetry;
+///
+/// let retry = Retry::<&str>::builder(RetryPolicy::builder().build()?).build();
+/// let execution: SyncRetry<'_, &str> = retry.sync();
+/// let value = execution.run(|| Ok(7)).expect("operation succeeds");
+/// assert_eq!(*value.value(), 7);
+/// assert_eq!(value.context().attempts(), 1);
+/// # Ok::<(), qubit_retry::RetryPolicyError>(())
+/// ```
+#[must_use]
 pub struct SyncRetry<'a, E> {
+    /// Borrowed immutable policy and callbacks.
     retry: &'a Retry<E>,
+    /// Optional shared cancellation source; None disables external
+    /// cancellation.
     cancellation_token: Option<RetryCancellationToken>,
+    /// Timer and monotonic clock used by this execution.
     timer: Arc<dyn Timer>,
+    /// Shared random source for uniform delays and jitter.
     random_source: Arc<dyn RetryRandomSource>,
 }
 
 impl<'a, E: 'static> SyncRetry<'a, E> {
     /// Creates a synchronous facade from one retry policy.
+    ///
+    /// # Parameters
+    /// - `retry`: Definition that must outlive this facade.
+    ///
+    /// # Returns
+    /// An execution facade with default runtime controls.
+    #[inline]
     pub(crate) fn new(retry: &'a Retry<E>) -> Self {
         Self {
             retry,
@@ -56,18 +88,33 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
     /// # Returns
     ///
     /// A synchronous facade that observes the supplied token.
+    #[inline(always)]
     pub fn cancellation_token(mut self, token: RetryCancellationToken) -> Self {
         self.cancellation_token = Some(token);
         self
     }
 
     /// Replaces the blocking timer used by this execution.
+    ///
+    /// # Parameters
+    /// - `timer`: Shared timer and monotonic clock.
+    ///
+    /// # Returns
+    /// This facade using the supplied runtime resource.
+    #[inline(always)]
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
         self.timer = timer;
         self
     }
 
     /// Replaces the random source used by this execution.
+    ///
+    /// # Parameters
+    /// - `random`: Shared sampler for uniform delays and jitter.
+    ///
+    /// # Returns
+    /// This facade using the supplied runtime resource.
+    #[inline(always)]
     pub fn random_source(mut self, random: Arc<dyn RetryRandomSource>) -> Self {
         self.random_source = random;
         self
@@ -78,31 +125,59 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
     /// Completion observers run synchronously with the frozen result; their
     /// panics are attached as diagnostics and do not change the outcome.
     /// Operation panics propagate without completion notification.
+    ///
+    /// # Type Parameters
+    /// - `T`: Successful value returned to the caller.
+    /// - `F`: Operation invoked once per admitted attempt.
+    ///
+    /// # Parameters
+    /// - `operation`: Operation whose errors are classified by the registered
+    ///   rules.
+    ///
+    /// # Returns
+    /// The successful value with its frozen context and completion diagnostics.
+    ///
+    /// # Errors
+    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
+    /// or infrastructure failure with its context.
+    ///
+    /// # Panics
+    /// Operation panics unwind through the caller; custom timer, random source,
+    /// or clock panics are not intercepted.
     #[allow(
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
+    #[inline(always)]
     pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,
     {
-        let mut result = self.run_inner(operation);
-        let failures = match &result {
-            Ok(success) => self.retry.observers().notify_success(success.context()),
-            Err(error) => self
-                .retry
-                .observers()
-                .notify_terminal_failure(error.failure(), error.context()),
-        };
-        match &mut result {
-            Ok(success) => success.set_completion_callback_failures(failures),
-            Err(error) => error.set_completion_callback_failures(failures),
-        }
-        result
+        self.retry.complete(self.run_inner(operation))
     }
 
     /// Executes retry controls and freezes the final result before completion
     /// observers run. Returns the original terminal error on control failure.
+    ///
+    /// # Type Parameters
+    /// - `T`: Successful value returned to the caller.
+    /// - `F`: Operation invoked once per admitted attempt.
+    ///
+    /// # Parameters
+    /// - `operation`: Operation whose errors are classified by the registered
+    ///   rules.
+    ///
+    /// # Returns
+    /// The successful value with its frozen context and initially empty
+    /// diagnostics.
+    ///
+    /// # Errors
+    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
+    /// or infrastructure failure with its context.
+    ///
+    /// # Panics
+    /// Operation panics unwind through the caller; custom timer, random source,
+    /// or clock panics are not intercepted.
     #[allow(
         clippy::result_large_err,
         reason = "the internal helper propagates the lossless public terminal error"

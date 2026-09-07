@@ -7,8 +7,8 @@
 // =============================================================================
 //! Internal location for the retry context value.
 
+mod internal;
 mod retry_context;
-mod retry_context_parts;
 
+pub(crate) use internal::RetryContextParts;
 pub use retry_context::RetryContext;
-pub(crate) use retry_context_parts::RetryContextParts;

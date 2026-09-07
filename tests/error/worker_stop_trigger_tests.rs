@@ -15,6 +15,7 @@ fn test_worker_stop_trigger_display() {
         (WorkerStopTrigger::AttemptTimeout, "attempt timeout"),
         (WorkerStopTrigger::FlowTimeout, "flow timeout"),
         (WorkerStopTrigger::Cancellation, "cancellation"),
+        (WorkerStopTrigger::TimerFailure, "timer failure"),
     ];
     for (trigger, expected) in cases {
         assert_eq!(trigger.to_string(), expected);

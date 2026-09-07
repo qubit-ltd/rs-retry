@@ -46,20 +46,21 @@ pub struct RetryContext {
     current_attempt_timeout: Option<Duration>,
     /// Delay selected before the next attempt, when known.
     next_delay: Option<Duration>,
-    /// Optional retry-after hint extracted before failure policy runs.
+    /// Optional retry-after hint selected by a retry rule.
     retry_after_hint: Option<Duration>,
 }
 
 impl RetryContext {
     /// Creates a public retry context snapshot with default timing metadata.
     ///
-    /// # Arguments
+    /// # Parameters
     /// - `attempts`: Number of operations that actually started.
     /// - `max_attempts`: Configured maximum attempts.
     ///
     /// # Returns
     /// A retry context with no elapsed budgets, elapsed values, selected next
     /// delay, retry-after hint, or attempt timeout.
+    #[inline]
     pub fn new(attempts: u32, max_attempts: u32) -> Self {
         Self::from_parts(RetryContextParts {
             attempts,
@@ -78,11 +79,12 @@ impl RetryContext {
 
     /// Creates a retry context snapshot from internal parts.
     ///
-    /// # Arguments
+    /// # Parameters
     /// - `parts`: Internal context payload.
     ///
     /// # Returns
     /// A retry context containing exactly the supplied snapshot fields.
+    #[inline]
     pub(crate) fn from_parts(parts: RetryContextParts) -> Self {
         Self {
             attempts: parts.attempts,
@@ -200,7 +202,8 @@ impl RetryContext {
     /// `Some(Duration)` when this attempt is bounded by an explicit attempt
     /// timeout or by the remaining hard flow timeout. Operation and total
     /// continuation budgets only decide whether an attempt may start and are
-    /// not represented as an attempt timeout.
+    /// not represented as an attempt timeout. `None` means no current hard
+    /// timeout is attached to this snapshot.
     #[inline(always)]
     #[must_use]
     pub fn current_attempt_timeout(&self) -> Option<Duration> {
@@ -210,18 +213,18 @@ impl RetryContext {
     /// Returns the delay selected before the next attempt.
     ///
     /// # Returns
-    /// `Some(Duration)` in retry-scheduled events after a next delay has been
-    /// selected; otherwise `None`.
+    /// `Some(Duration)` while a selected delay is retained, including terminal
+    /// snapshots; `None` before selection or after the next attempt resets it.
     #[inline(always)]
     #[must_use]
     pub fn next_delay(&self) -> Option<Duration> {
         self.next_delay
     }
 
-    /// Returns a retry-after hint extracted from the failure.
+    /// Returns the retry-after hint selected by a retry rule.
     ///
     /// # Returns
-    /// `Some(Duration)` when a configured hint extractor produced a value.
+    /// `Some(Duration)` when a retry rule supplied a hint; `None` otherwise.
     #[inline(always)]
     #[must_use]
     pub fn retry_after_hint(&self) -> Option<Duration> {
@@ -230,7 +233,7 @@ impl RetryContext {
 
     /// Returns a copy of this context with a selected retry delay.
     ///
-    /// # Arguments
+    /// # Parameters
     /// - `delay`: Delay selected before the next attempt.
     ///
     /// # Returns
@@ -242,6 +245,12 @@ impl RetryContext {
     }
 
     /// Returns a copy carrying the hint used to select the next delay.
+    ///
+    /// # Parameters
+    /// - `hint`: Some rule-selected retry-after hint, or None to clear it.
+    ///
+    /// # Returns
+    /// A copy with only the selected overlay field changed.
     #[inline(always)]
     pub(crate) fn with_retry_after_hint(mut self, hint: Option<Duration>) -> Self {
         self.retry_after_hint = hint;
@@ -249,6 +258,12 @@ impl RetryContext {
     }
 
     /// Returns a copy carrying the effective timeout for the current attempt.
+    ///
+    /// # Parameters
+    /// - `timeout`: Some effective hard timeout, or None to clear it.
+    ///
+    /// # Returns
+    /// A copy with only the selected overlay field changed.
     #[inline(always)]
     pub(crate) fn with_attempt_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.current_attempt_timeout = timeout;

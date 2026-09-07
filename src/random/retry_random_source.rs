@@ -23,5 +23,6 @@ pub trait RetryRandomSource: Send + Sync {
     /// # Returns
     ///
     /// A finite value in the inclusive range `min..=max`.
+    #[must_use]
     fn random_f64_inclusive(&self, min: f64, max: f64) -> f64;
 }

@@ -7,10 +7,10 @@
 // =============================================================================
 //! Ordered retry decision rules.
 
+mod internal;
 mod retry_decision;
 mod retry_rule;
-mod retry_rules;
 
+pub(crate) use internal::RetryRules;
 pub use retry_decision::RetryDecision;
 pub use retry_rule::RetryRule;
-pub(crate) use retry_rules::RetryRules;

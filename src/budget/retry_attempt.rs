@@ -26,7 +26,11 @@ pub struct RetryAttempt {
 
 impl RetryAttempt {
     /// Returns the one-based ordinal of this admitted attempt.
+    ///
+    /// # Returns
+    /// The committed one-based admission ordinal, independent of callbacks.
     #[inline(always)]
+    #[must_use]
     pub const fn number(&self) -> u32 {
         self.number
     }

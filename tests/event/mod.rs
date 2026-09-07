@@ -7,5 +7,4 @@
 // =============================================================================
 //! Event behavior coverage mirrors.
 
-mod retry_context_parts_tests;
 mod retry_context_tests;

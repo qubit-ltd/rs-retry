@@ -9,10 +9,8 @@
 
 mod internal;
 mod retry_observer;
-mod retry_observers;
 
-pub(crate) use internal::retry_panic_from_payload;
+pub(crate) use internal::RetryObservers;
 pub use retry_observer::RetryObserver;
-pub(crate) use retry_observers::RetryObservers;
 
 pub use crate::event::RetryContext;

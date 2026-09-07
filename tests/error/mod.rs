@@ -7,7 +7,9 @@
 // =============================================================================
 //! Error behavior coverage mirrors.
 
+mod attempt_failure_contract_tests;
 mod attempt_failure_tests;
+mod failure_components_tests;
 mod retry_callback_failure_tests;
 mod retry_callback_kind_tests;
 mod retry_callback_phase_tests;
@@ -19,4 +21,5 @@ mod retry_limit_kind_tests;
 mod retry_panic_tests;
 mod retry_policy_error_tests;
 mod retry_timeout_scope_tests;
+mod terminal_accessors_tests;
 mod worker_stop_trigger_tests;

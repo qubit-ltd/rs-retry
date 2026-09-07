@@ -6,10 +6,14 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::num::NonZeroU32;
+use std::panic::panic_any;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
 use qubit_clock::ManualMonotonicClock;
@@ -27,6 +31,8 @@ use qubit_retry::RetryDecision;
 use qubit_retry::RetryFailure;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
+use qubit_retry::RetryObserver;
+use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
 use qubit_retry::WorkerStopTrigger;
@@ -48,21 +54,77 @@ use crate::support::callback_elapsed_records;
 use crate::support::completion_regressing_timer;
 use crate::support::rule_terminal_regressing_timer;
 
+/// A destructor panic must not replace the original payload classification.
 #[test]
-fn worker_facade_is_available() {
+fn test_regression_worker_preserves_non_string_payload_after_drop_panic() {
+    struct PanickingDrop {
+        drops: Arc<AtomicUsize>,
+        recursive: bool,
+    }
+    impl Drop for PanickingDrop {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::SeqCst);
+            if self.recursive {
+                panic_any(Self {
+                    drops: Arc::clone(&self.drops),
+                    recursive: true,
+                });
+            }
+            panic!("secondary payload destructor panic");
+        }
+    }
+    struct CompletionCount(Arc<AtomicUsize>);
+    impl RetryObserver<()> for CompletionCount {
+        fn on_terminal_failure(&self, _: &RetryFailure<()>, _: &RetryContext) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    for recursive in [false, true] {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let completed = Arc::new(AtomicUsize::new(0));
+        let worker_drops = Arc::clone(&drops);
+        let error = Retry::<()>::builder(RetryPolicy::builder().build().expect("valid policy"))
+            .observer(CompletionCount(Arc::clone(&completed)))
+            .build()
+            .worker()
+            .run(move |_| -> Result<(), ()> {
+                panic_any(PanickingDrop {
+                    drops: Arc::clone(&worker_drops),
+                    recursive,
+                });
+            })
+            .expect_err("worker panic is terminal by default");
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+        assert_eq!(completed.load(Ordering::SeqCst), 1);
+        assert_eq!(error.context().attempts(), 1);
+        assert!(error.completion_callback_failures().is_empty());
+        assert!(matches!(
+            error.failure(),
+            RetryFailure::Aborted {
+                last_failure: AttemptFailure::Panicked {
+                    panic: RetryPanic::NonString
+                },
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn test_worker_facade_is_available() {
     let policy = RetryPolicy::builder().build().unwrap();
     let retry = Retry::<()>::builder(policy).build();
     let _ = retry.worker();
 }
 
 #[test]
-fn worker_spawn_failure_preserves_infrastructure_diagnostic() {
-    let operation_calls = std::sync::Arc::new(AtomicUsize::new(0));
-    let rule_calls = std::sync::Arc::new(AtomicUsize::new(0));
+fn test_worker_spawn_failure_preserves_infrastructure_diagnostic() {
+    let operation_calls = Arc::new(AtomicUsize::new(0));
+    let rule_calls = Arc::new(AtomicUsize::new(0));
     let policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
     let retry = Retry::<TestError>::builder(policy)
         .rule({
-            let rule_calls = std::sync::Arc::clone(&rule_calls);
+            let rule_calls = Arc::clone(&rule_calls);
             move |_: &AttemptFailure<TestError>, _: &RetryContext| {
                 rule_calls.fetch_add(1, Ordering::SeqCst);
                 RetryDecision::Retry
@@ -74,7 +136,7 @@ fn worker_spawn_failure_preserves_infrastructure_diagnostic() {
         .worker()
         .worker_stack_size(usize::MAX)
         .run({
-            let operation_calls = std::sync::Arc::clone(&operation_calls);
+            let operation_calls = Arc::clone(&operation_calls);
             move |_: AttemptCancellationToken| {
                 operation_calls.fetch_add(1, Ordering::SeqCst);
                 Err::<(), _>(TestError("operation should not run"))
@@ -100,16 +162,21 @@ fn worker_spawn_failure_preserves_infrastructure_diagnostic() {
 }
 
 #[test]
-fn worker_retry_default_panic_survives_post_rule_clock_regression() {
+fn test_worker_retry_clock_failure_retains_the_captured_operation_panic() {
     let error = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
         .build()
         .worker()
         .timer(rule_terminal_regressing_timer())
         .run(|_| -> Result<(), TestError> { panic!("operation panic") })
-        .expect_err("the operation panic must remain the terminal cause");
+        .expect_err("normal rule return requires coherent terminal accounting");
 
-    let RetryFailure::Aborted { last_failure, .. } = error.failure() else {
-        panic!("expected abort instead of post-rule clock failure");
+    let RetryFailure::Infrastructure {
+        failure: RetryInfrastructureFailure::Clock { .. },
+        last_failure: Some(last_failure),
+        ..
+    } = error.failure()
+    else {
+        panic!("expected post-rule clock failure with the retained operation panic");
     };
     let AttemptFailure::Panicked { panic } = last_failure else {
         panic!("expected the operation panic as the last attempt failure");
@@ -119,7 +186,7 @@ fn worker_retry_default_panic_survives_post_rule_clock_regression() {
 }
 
 #[test]
-fn worker_retry_matches_shared_terminal_matrix() {
+fn test_worker_retry_matches_shared_terminal_matrix() {
     let abort = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
         .build()
@@ -162,7 +229,7 @@ fn worker_retry_matches_shared_terminal_matrix() {
 }
 
 #[test]
-fn worker_retry_matches_shared_callback_matrix() {
+fn test_worker_retry_matches_shared_callback_matrix() {
     let later_rule_calls = Arc::new(AtomicUsize::new(0));
     let rule_error = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("matrix rule panic"))
@@ -203,7 +270,7 @@ fn worker_retry_matches_shared_callback_matrix() {
 }
 
 #[test]
-fn worker_retry_refreshes_elapsed_time_between_callback_phases() {
+fn test_worker_retry_refreshes_elapsed_time_between_callback_phases() {
     let clock = ManualMonotonicClock::new_shared();
     let records = callback_elapsed_records();
     let policy = RetryPolicy::builder()
@@ -255,7 +322,7 @@ fn worker_retry_refreshes_elapsed_time_between_callback_phases() {
 }
 
 #[test]
-fn worker_retry_refreshes_elapsed_time_after_callback_panics() {
+fn test_worker_retry_refreshes_elapsed_time_after_callback_panics() {
     for phase in [
         RetryCallbackPhase::AttemptFailed,
         RetryCallbackPhase::RuleDecision,
@@ -289,7 +356,7 @@ fn worker_retry_refreshes_elapsed_time_after_callback_panics() {
 }
 
 #[test]
-fn worker_retry_matches_shared_infrastructure_and_timeout_matrix() {
+fn test_worker_retry_matches_shared_infrastructure_and_timeout_matrix() {
     let timer_error = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .max_attempts(2)
@@ -334,7 +401,7 @@ fn worker_retry_matches_shared_infrastructure_and_timeout_matrix() {
                     .advance(Duration::from_millis(1))
                     .expect("expire admitted attempt");
                 while !token.is_cancelled() {
-                    std::thread::yield_now();
+                    thread::yield_now();
                 }
                 Err::<(), _>(TestError("ignored after timeout"))
             })
@@ -344,8 +411,8 @@ fn worker_retry_matches_shared_infrastructure_and_timeout_matrix() {
 }
 
 #[test]
-fn worker_retry_reports_still_running_with_active_scope() {
-    let (release_sender, release_receiver) = std::sync::mpsc::channel();
+fn test_worker_retry_reports_still_running_with_active_scope() {
+    let (release_sender, release_receiver) = mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
     let clock = ManualMonotonicClock::new_shared();
     let operation_clock = Arc::clone(&clock);
@@ -385,10 +452,7 @@ fn worker_retry_reports_still_running_with_active_scope() {
     assert_eq!(*trigger, WorkerStopTrigger::AttemptTimeout);
     assert_eq!(last_failure, &None);
     assert_eq!(error.context().attempts(), 1);
-    assert_eq!(
-        error.context().current_attempt().map(std::num::NonZeroU32::get),
-        Some(1)
-    );
+    assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
     assert_eq!(
         error.context().current_attempt_timeout(),
         Some(Duration::from_millis(1))
@@ -402,8 +466,8 @@ fn test_worker_timeout_uses_injected_timer() {
     let worker_clock = Arc::clone(&clock);
     let cancellation = RetryCancellationToken::new();
     let worker_cancellation = cancellation.clone();
-    let (started_sender, started_receiver) = std::sync::mpsc::channel();
-    let handle = std::thread::spawn(move || {
+    let (started_sender, started_receiver) = mpsc::channel();
+    let handle = thread::spawn(move || {
         Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
             .build()
             .worker()
@@ -414,7 +478,7 @@ fn test_worker_timeout_uses_injected_timer() {
             .run(move |token| {
                 started_sender.send(()).expect("test controller alive");
                 while !token.is_cancelled() {
-                    std::thread::yield_now();
+                    thread::yield_now();
                 }
                 Err::<(), _>(TestError("stopped"))
             })
@@ -468,7 +532,7 @@ fn test_worker_timeout_poll_failure_reaps_operation() {
         )))
         .run(|token| {
             while !token.is_cancelled() {
-                std::thread::yield_now();
+                thread::yield_now();
             }
             Ok::<(), TestError>(())
         })
@@ -480,7 +544,7 @@ fn test_worker_timeout_poll_failure_reaps_operation() {
 /// live.
 #[test]
 fn test_worker_timeout_poll_failure_retains_live_worker_trigger() {
-    let (release_sender, release_receiver) = std::sync::mpsc::channel();
+    let (release_sender, release_receiver) = mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
     let error = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
         .build()

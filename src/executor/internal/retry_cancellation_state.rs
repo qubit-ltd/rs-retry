@@ -8,6 +8,7 @@
 //! Shared state for retry-cancellation tokens and pending futures.
 
 use std::sync::Mutex;
+use std::sync::MutexGuard;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::task::Waker;
@@ -24,6 +25,16 @@ pub(in crate::executor) struct RetryCancellationState {
 }
 
 impl RetryCancellationState {
+    /// Returns whether cancellation has been requested.
+    ///
+    /// # Returns
+    /// True after the first release of a cancellation request.
+    #[inline(always)]
+    #[must_use]
+    pub(in crate::executor) fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
     /// Requests cancellation and wakes every currently registered waiter.
     ///
     /// Wakers leave the registry before invocation, so re-entrant callbacks
@@ -38,15 +49,21 @@ impl RetryCancellationState {
         }
     }
 
-    /// Returns whether cancellation has been requested.
-    pub(in crate::executor) fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::Acquire)
-    }
-
     /// Registers a future waker and returns its stable registration identifier.
     ///
     /// Returned wakers must be dropped after this method returns, when the
     /// registry mutex has been released.
+    ///
+    /// # Parameters
+    /// - `registration_id`: Existing future entry, or None for its first
+    ///   pending poll.
+    /// - `waker`: Current task waker transferred into the registry.
+    ///
+    /// # Returns
+    /// The stable identifier, Some replaced waker or None on first
+    /// registration, Some removed waker if cancellation raced with
+    /// registration or None otherwise, and whether cancellation has been
+    /// observed.
     pub(in crate::executor) fn register(
         &self,
         registration_id: Option<u64>,
@@ -62,12 +79,23 @@ impl RetryCancellationState {
     /// Unregisters a pending cancellation future.
     ///
     /// The returned waker must be dropped after the registry mutex is released.
+    ///
+    /// # Parameters
+    /// - `registration_id`: Entry owned by the dropping future.
+    ///
+    /// # Returns
+    /// Some removed waker, or None if cancellation already drained it.
+    #[inline(always)]
     pub(in crate::executor) fn unregister(&self, registration_id: u64) -> Option<Waker> {
         self.lock_waiters().unregister(registration_id)
     }
 
     /// Locks the waker registry, recovering its contents after poisoning.
-    fn lock_waiters(&self) -> std::sync::MutexGuard<'_, WakerRegistry> {
+    ///
+    /// # Returns
+    /// An exclusive guard; poisoning preserves the registry for cleanup.
+    #[inline]
+    fn lock_waiters(&self) -> MutexGuard<'_, WakerRegistry> {
         self.waiters.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }

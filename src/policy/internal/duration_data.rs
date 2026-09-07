@@ -26,6 +26,13 @@ pub(crate) struct DurationData {
 
 impl From<Duration> for DurationData {
     /// Converts a runtime duration to its fixed wire representation.
+    ///
+    /// # Parameters
+    /// - `duration`: Validated runtime value to represent on the wire.
+    ///
+    /// # Returns
+    /// A wire representation with normalized seconds and nanoseconds.
+    #[inline]
     fn from(duration: Duration) -> Self {
         Self {
             seconds: duration.as_secs(),
@@ -35,9 +42,19 @@ impl From<Duration> for DurationData {
 }
 
 impl TryFrom<DurationData> for Duration {
+    /// Invalid policy input or encoded duration.
     type Error = RetryPolicyError;
 
     /// Converts wire data after validating nanoseconds and checked addition.
+    ///
+    /// # Parameters
+    /// - `data`: Unvalidated wire value consumed by conversion.
+    ///
+    /// # Returns
+    /// The validated runtime value without borrowing the wire input.
+    ///
+    /// # Errors
+    /// Rejects nanoseconds at least one billion or unrepresentable duration.
     fn try_from(data: DurationData) -> Result<Self, Self::Error> {
         if data.nanoseconds >= 1_000_000_000 {
             return Err(RetryPolicyError::new(

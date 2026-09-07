@@ -7,6 +7,9 @@
 // =============================================================================
 //! Tests for retry budget construction errors.
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use qubit_clock::ClockDomain;
@@ -15,6 +18,7 @@ use qubit_clock::MonotonicClock;
 use qubit_clock::MonotonicInstant;
 use qubit_clock::Timer;
 use qubit_retry::RetryBudget;
+use qubit_retry::RetryBudgetError;
 use qubit_retry::RetryPolicy;
 
 /// Soft budgets remain valid even when an absolute deadline would overflow.
@@ -37,12 +41,12 @@ fn test_new_accepts_soft_budget_without_representable_deadline() {
 /// A controllable clock permits contract violations without real-time races.
 struct BrokenClock {
     origin: MonotonicInstant,
-    nanos: std::sync::atomic::AtomicU64,
+    nanos: AtomicU64,
 }
 
 impl MonotonicClock for BrokenClock {
     /// No timer is needed for direct budget accounting.
-    fn new_timer(&self) -> std::sync::Arc<dyn Timer> {
+    fn new_timer(&self) -> Arc<dyn Timer> {
         panic!("budget must not create a timer")
     }
     fn domain(&self) -> ClockDomain {
@@ -50,9 +54,7 @@ impl MonotonicClock for BrokenClock {
     }
     fn now(&self) -> MonotonicInstant {
         self.origin
-            .checked_add(Duration::from_nanos(
-                self.nanos.load(std::sync::atomic::Ordering::Relaxed),
-            ))
+            .checked_add(Duration::from_nanos(self.nanos.load(Ordering::Relaxed)))
             .expect("small test sample")
     }
 }
@@ -60,11 +62,6 @@ impl MonotonicClock for BrokenClock {
 /// Clock regressions are errors and cannot corrupt the latest valid accounting.
 #[test]
 fn test_clock_regression_returns_structured_error() {
-    use std::sync::atomic::AtomicU64;
-    use std::sync::atomic::Ordering;
-
-    use qubit_retry::RetryBudgetError;
-
     let clock = BrokenClock {
         origin: ManualMonotonicClock::new().now(),
         nanos: AtomicU64::new(10),

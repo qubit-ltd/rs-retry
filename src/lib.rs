@@ -11,14 +11,16 @@
 //! Build a [`RetryPolicy`] once, attach ordered [`RetryRule`] values and
 //! [`RetryObserver`] values through [`Retry::builder`], then select the
 //! execution facade that matches the operation. A policy only decides whether
-//! another attempt may be admitted; success always wins, even when an attempt
-//! completes after a budget boundary.
+//! another attempt may be admitted; an admitted success is not revoked by a
+//! soft budget. Cancellation and hard-timeout priorities depend on the selected
+//! facade, and completion requires valid clock accounting.
 
 pub mod backoff;
 pub mod budget;
 pub mod error;
 mod event;
 pub mod executor;
+mod internal;
 pub mod observer;
 pub mod policy;
 pub mod random;

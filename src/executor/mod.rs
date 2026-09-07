@@ -10,9 +10,6 @@
 #[cfg(feature = "tokio")]
 mod async_retry;
 mod attempt_cancellation_token;
-mod blocking_attempt;
-mod blocking_attempt_outcome;
-mod blocking_value_operation;
 mod internal;
 mod retry;
 mod retry_builder;
@@ -20,7 +17,6 @@ mod retry_cancellation_token;
 mod retry_cancelled;
 mod retry_success;
 mod sync_retry;
-mod worker_attempt_executor;
 mod worker_retry;
 
 #[cfg(feature = "tokio")]

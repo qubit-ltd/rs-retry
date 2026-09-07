@@ -21,15 +21,30 @@ pub enum RetryDecision {
     /// Schedule the next retry using the policy backoff.
     Retry,
     /// Schedule the next retry with an unjittered server or application hint.
-    RetryWithHint(Duration),
+    RetryWithHint(
+        /// Caller delay protected from hint jitter, but subject to final
+        /// capping.
+        Duration,
+    ),
     /// Schedule the next retry with a jittered server or application hint.
-    RetryWithJitteredHint(Duration),
+    RetryWithJitteredHint(
+        /// Caller delay explicitly permitting configured jitter and final
+        /// capping.
+        Duration,
+    ),
     /// Stop the retry flow immediately.
     Abort,
 }
 
 impl RetryDecision {
     /// Returns the caller-provided delay hint carried by this decision.
+    ///
+    /// # Returns
+    /// Some delay for either hint-carrying retry decision, or None for
+    /// delegate, plain retry, and abort. Hint presence alone does not
+    /// authorize admission.
+    #[inline(always)]
+    #[must_use]
     pub(crate) fn retry_after_hint(self) -> Option<Duration> {
         match self {
             Self::RetryWithHint(hint) | Self::RetryWithJitteredHint(hint) => Some(hint),

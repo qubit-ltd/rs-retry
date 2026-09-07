@@ -11,12 +11,13 @@
 ///
 /// This is not an execution error: a currently running attempt is never
 /// cancelled by this value, and a successful completed attempt always wins.
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryBudgetExhausted {
     /// No further attempts may be admitted.
     Attempts,
     /// The cumulative operation duration cannot admit another attempt.
     OperationElapsed,
-    /// The end-to-end monotonic deadline cannot admit another action.
+    /// The end-to-end monotonic elapsed budget cannot admit another action.
     TotalElapsed,
 }

@@ -21,13 +21,35 @@ use super::RetryTimeoutScope;
 /// Field-carrying variants cannot be constructed exhaustively outside this
 /// crate. Retry executors create them while enforcing the relationship between
 /// the terminal reason and the retained attempt failure.
+///
+/// # Type Parameters
+/// - `E`: Owned application error; terminal inspection does not require
+///   cloning.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::Retry;
+/// use qubit_retry::RetryFailure;
+/// use qubit_retry::RetryLimitKind;
+/// use qubit_retry::RetryPolicy;
+///
+/// let retry = Retry::<&str>::builder(RetryPolicy::builder().max_attempts(1).build()?).build();
+/// let error = retry.sync().run(|| Err::<(), _>("offline")).unwrap_err();
+/// assert!(matches!(error.failure(), RetryFailure::Exhausted {
+///     limit: RetryLimitKind::Attempts, ..
+/// }));
+/// assert_eq!(error.failure().last_error(), Some(&"offline"));
+/// # Ok::<(), qubit_retry::RetryPolicyError>(())
+/// ```
+#[must_use]
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum RetryFailure<E> {
-    /// A retry rule deliberately stopped the flow.
+    /// A retry rule or the default failure policy stopped the flow.
     #[non_exhaustive]
     Aborted {
-        /// Failure that caused the rule to abort.
+        /// Failure that caused the rule or default policy to abort.
         last_failure: AttemptFailure<E>,
     },
     /// A continuation limit prevented another attempt.
@@ -73,12 +95,56 @@ pub enum RetryFailure<E> {
 }
 
 impl<E> RetryFailure<E> {
+    /// Returns the last attempt failure retained by this terminal value.
+    ///
+    /// # Returns
+    /// `Some(&AttemptFailure<E>)` when an attempt failed before termination,
+    /// or `None` when the flow stopped without a prior attempt failure.
+    #[must_use]
+    #[inline(always)]
+    pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
+        match self {
+            Self::Aborted { last_failure } => Some(last_failure),
+            Self::Exhausted { last_failure, .. }
+            | Self::TimedOut { last_failure, .. }
+            | Self::Cancelled { last_failure, .. }
+            | Self::CallbackFailed { last_failure, .. }
+            | Self::Infrastructure { last_failure, .. } => last_failure.as_ref(),
+        }
+    }
+
+    /// Returns the last application error retained by this terminal value.
+    ///
+    /// # Returns
+    /// `Some(&E)` when the last attempt failure contains an application error,
+    /// or `None` when no attempt failed or the last failure was not an
+    /// application error.
+    #[must_use]
+    #[inline(always)]
+    pub fn last_error(&self) -> Option<&E> {
+        self.last_failure().and_then(AttemptFailure::as_error)
+    }
+
     /// Maps the retained application error without changing terminal data.
     ///
     /// The mapper is called exactly once when the last attempt failure is an
     /// [`AttemptFailure::Error`], and is not called when no application error
     /// is retained. A mapper panic propagates to the caller.
-    #[must_use]
+    ///
+    /// # Type Parameters
+    /// - `U`: New application error type.
+    /// - `F`: Consuming mapper; no extra Clone, Send, or static bound is
+    ///   required.
+    ///
+    /// # Parameters
+    /// - `map`: Function called only when a retained application error exists.
+    ///
+    /// # Returns
+    /// The same failure classification with its application payload converted.
+    ///
+    /// # Panics
+    /// Propagates any panic raised by the mapper.
+    #[must_use = "handle the mapped failure"]
     pub fn map_error<U, F: FnOnce(E) -> U>(self, map: F) -> RetryFailure<U> {
         match self {
             Self::Aborted { last_failure } => RetryFailure::Aborted {
@@ -106,37 +172,20 @@ impl<E> RetryFailure<E> {
             },
         }
     }
-
-    /// Returns the last attempt failure retained by this terminal value.
-    ///
-    /// # Returns
-    /// `Some(&AttemptFailure<E>)` when an attempt failed before termination,
-    /// or `None` when the flow stopped without a prior attempt failure.
-    #[must_use]
-    pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
-        match self {
-            Self::Aborted { last_failure } => Some(last_failure),
-            Self::Exhausted { last_failure, .. }
-            | Self::TimedOut { last_failure, .. }
-            | Self::Cancelled { last_failure, .. }
-            | Self::CallbackFailed { last_failure, .. }
-            | Self::Infrastructure { last_failure, .. } => last_failure.as_ref(),
-        }
-    }
-
-    /// Returns the last application error retained by this terminal value.
-    ///
-    /// # Returns
-    /// `Some(&E)` when the last attempt failure contains an application error,
-    /// or `None` when no attempt failed or the last failure was not an
-    /// application error.
-    #[must_use]
-    pub fn last_error(&self) -> Option<&E> {
-        self.last_failure().and_then(AttemptFailure::as_error)
-    }
 }
 
 impl<E: fmt::Display> fmt::Display for RetryFailure<E> {
+    ///
+    /// Formats the terminal classification and any retained last failure.
+    ///
+    /// # Parameters
+    /// - `formatter`: Destination supplied by the formatting machinery.
+    ///
+    /// # Returns
+    /// The result of writing this diagnostic representation.
+    ///
+    /// # Errors
+    /// Returns a formatting error if the destination rejects a write.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Aborted { last_failure } => {
@@ -162,6 +211,22 @@ impl<E: fmt::Display> fmt::Display for RetryFailure<E> {
 }
 
 /// Formats a terminal classification and its optional last attempt failure.
+///
+/// # Type Parameters
+/// - `E`: Displayable retained application error.
+///
+/// # Parameters
+/// - `formatter`: Destination formatter.
+/// - `label`: Terminal category label.
+/// - `classification`: Limit, timeout, cancellation, callback or infrastructure
+///   detail.
+/// - `last_failure`: Last attempt diagnostic; `None` omits its suffix.
+///
+/// # Returns
+/// The result of writing classification and optional attempt details.
+///
+/// # Errors
+/// Returns a formatting error from either write.
 fn write_terminal<E: fmt::Display>(
     formatter: &mut fmt::Formatter<'_>,
     label: &str,

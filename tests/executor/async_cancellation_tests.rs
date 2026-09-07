@@ -7,6 +7,8 @@
 // =============================================================================
 
 #[cfg(feature = "tokio")]
+use std::future;
+#[cfg(feature = "tokio")]
 use std::future::Future;
 #[cfg(feature = "tokio")]
 use std::future::poll_fn;
@@ -61,6 +63,8 @@ use qubit_retry::RetryFailure;
 use qubit_retry::RetryObserver;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryPolicy;
+#[cfg(feature = "tokio")]
+use qubit_retry::RetryTimeoutScope;
 
 #[cfg(feature = "tokio")]
 use crate::support::TestError;
@@ -266,7 +270,7 @@ async fn test_attempt_success_wins_when_cancellation_is_ready_in_same_poll() {
     .cancellation_token(token)
     .run(move || {
         operation_token.cancel();
-        std::future::ready(Ok::<_, TestError>("completed"))
+        future::ready(Ok::<_, TestError>("completed"))
     })
     .await
     .expect("operation success must win the same-poll cancellation race");
@@ -526,4 +530,68 @@ async fn test_backoff_registration_cancellation_wins_over_timer_failure() {
         assert_cancelled(&error, RetryCancellationPhase::Backoff),
         Some(&AttemptFailure::Error(TestError("registration")))
     );
+}
+
+/// One clock advance makes equal deadlines and external cancellation ready
+/// before the first operation poll, without depending on scheduler timing.
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn test_async_ready_result_cancellation_and_equal_deadline_priority() {
+    for (result_ready, succeeds, cancel) in [
+        (true, true, true),
+        (true, false, true),
+        (false, false, true),
+        (false, false, false),
+    ] {
+        let clock = ManualMonotonicClock::new_shared();
+        let token = RetryCancellationToken::new();
+        let operation_token = token.clone();
+        let deadline = Duration::from_secs(5);
+        let result = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap())
+            .build()
+            .asynchronous()
+            .timer(clock.new_timer())
+            .attempt_timeout(deadline)
+            .flow_timeout(deadline)
+            .cancellation_token(token)
+            .run(|| {
+                clock.advance(deadline).expect("coherent manual time");
+                if cancel {
+                    operation_token.cancel();
+                }
+                poll_fn(move |_| {
+                    if result_ready {
+                        Poll::Ready(if succeeds { Ok(()) } else { Err("business") })
+                    } else {
+                        Poll::Pending
+                    }
+                })
+            })
+            .await;
+        if succeeds {
+            let success = result.expect("ready success wins both controls");
+            assert_eq!(success.context().attempts(), 1);
+            assert_eq!(success.context().operation_elapsed(), deadline);
+            continue;
+        }
+        let error = result.expect_err("a control or failed result must stop the flow");
+        assert_eq!(error.context().attempts(), 1);
+        assert_eq!(error.context().operation_elapsed(), deadline);
+        if cancel {
+            assert!(matches!(error.failure(), RetryFailure::Cancelled { phase, .. }
+                if *phase == if result_ready { RetryCancellationPhase::Backoff } else { RetryCancellationPhase::Attempt }));
+            assert_eq!(error.last_error(), result_ready.then_some(&"business"));
+        } else {
+            assert!(matches!(
+                error.failure(),
+                RetryFailure::TimedOut {
+                    scope: RetryTimeoutScope::Attempt,
+                    last_failure: Some(AttemptFailure::TimedOut {
+                        scope: RetryTimeoutScope::Attempt
+                    }),
+                    ..
+                }
+            ));
+        }
+    }
 }

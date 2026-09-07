@@ -12,6 +12,7 @@ use std::fmt;
 use super::WorkerStopTrigger;
 
 /// Infrastructure failure that prevented safe retry-flow continuation.
+#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RetryInfrastructureFailure {
     /// Reading the retry clock failed.
@@ -45,6 +46,7 @@ impl RetryInfrastructureFailure {
     /// `Some(&str)` for clock, timer, and worker-spawn failures, or `None` for
     /// a worker that remained running or whose event channel closed.
     #[must_use]
+    #[inline(always)]
     pub fn message(&self) -> Option<&str> {
         match self {
             Self::Clock { message } | Self::Timer { message } | Self::WorkerSpawn { message } => Some(message),
@@ -58,6 +60,7 @@ impl RetryInfrastructureFailure {
     /// `Some(WorkerStopTrigger)` for `WorkerStillRunning`, or `None` for other
     /// infrastructure failures.
     #[must_use]
+    #[inline(always)]
     pub fn worker_stop_trigger(&self) -> Option<WorkerStopTrigger> {
         match self {
             Self::WorkerStillRunning { trigger } => Some(*trigger),
@@ -67,6 +70,17 @@ impl RetryInfrastructureFailure {
 }
 
 impl fmt::Display for RetryInfrastructureFailure {
+    ///
+    /// Formats the infrastructure cause and available runtime diagnostic.
+    ///
+    /// # Parameters
+    /// - `formatter`: Destination supplied by the formatting machinery.
+    ///
+    /// # Returns
+    /// The result of writing this diagnostic representation.
+    ///
+    /// # Errors
+    /// Returns a formatting error if the destination rejects a write.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Clock { message } => {

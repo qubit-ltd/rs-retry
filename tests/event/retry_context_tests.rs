@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::num::NonZeroU32;
 use std::time::Duration;
 
 use qubit_retry::RetryContext;
@@ -23,7 +24,7 @@ fn test_retry_context_before_first_attempt() {
 fn test_retry_context_first_operation_started() {
     let context = RetryContext::new(1, 5);
     assert_eq!(context.attempts(), 1);
-    assert_eq!(context.current_attempt().map(std::num::NonZeroU32::get), Some(1));
+    assert_eq!(context.current_attempt().map(NonZeroU32::get), Some(1));
 }
 
 /// Verifies retry context carries the renamed timing metadata fields.
@@ -31,7 +32,7 @@ fn test_retry_context_first_operation_started() {
 fn test_retry_context_fields() {
     let context = RetryContext::new(2, 5);
     assert_eq!(context.attempts(), 2);
-    assert_eq!(context.current_attempt().map(std::num::NonZeroU32::get), Some(2));
+    assert_eq!(context.current_attempt().map(NonZeroU32::get), Some(2));
     assert_eq!(context.max_attempts(), 5);
     assert_eq!(context.max_retries(), 4);
     assert_eq!(context.max_operation_elapsed(), None);
