@@ -2,7 +2,7 @@
 
 [English](design.md) · [用户指南](user_guide.zh_CN.md) · [README](../README.zh_CN.md)
 
-本文记录 **qubit-retry 0.22** 的长期维护契约。公开 API 的使用方法见用户指南；内部实现变更应遵守这里的不变量。
+本文记录 **qubit-retry 0.23** 的长期维护契约。公开 API 的使用方法见用户指南；内部实现变更应遵守这里的不变量。
 
 ## 范围与依赖方向
 
@@ -46,7 +46,7 @@ flowchart TD
 或清理宽限期结束后仍活动的 worker，不能用它代替实际操作计数。
 控制回调后的非活动取消会清除该覆盖字段，保留已提交次数、最后失败，以及适用的 next delay。
 
-`max_operation_elapsed` 累计已准入操作耗时，`max_total_elapsed` 还包含单调流程时间、控制回调与退避。
+`operation_time_budget` 累计已准入操作耗时，`total_time_budget` 还包含单调流程时间、控制回调与退避。
 两者是续试预算，不会撤销已准入操作的成功。独立 `RetryBudget` 将线性 token 绑定到唯一预算身份，
 重叠操作和外来 token 都是错误。丢弃 token 会让该流程无法继续准入；快照不会为尚活动的操作伪造已完成耗时。
 

@@ -23,7 +23,7 @@ Qubit Retry 为 Rust 客户端、存储操作和重连循环提供统一的类�
 <!-- retry-example: kind=cargo features=none -->
 ```toml
 [dependencies]
-qubit-retry = "0.22"
+qubit-retry = "0.23"
 ```
 
 Tokio 执行和配置序列化需要显式开启：
@@ -31,7 +31,7 @@ Tokio 执行和配置序列化需要显式开启：
 <!-- retry-example: kind=cargo features=tokio,serde -->
 ```toml
 [dependencies]
-qubit-retry = { version = "0.22", features = ["tokio", "serde"] }
+qubit-retry = { version = "0.23", features = ["tokio", "serde"] }
 ```
 
 ## 快速开始
@@ -69,7 +69,7 @@ fn fetch_snapshot(retry: &Retry<io::Error>) -> Result<RetrySuccess<Vec<u8>>, Ret
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let policy = RetryPolicy::builder()
         .max_attempts(4)
-        .max_total_elapsed(Duration::from_secs(10))
+        .total_time_budget(Duration::from_secs(10))
         .backoff(BackoffPolicy::immediate())
         .build()?;
     let retry = Retry::builder(policy)
@@ -94,11 +94,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `asynchronous()` | 支持非 `Send`、非静态生命周期 future；需要 `tokio` | 协作式单次/流程计时器可丢弃待完成 future，无法抢占阻塞的 poll |
 | `worker()` | 操作须为 `Send + 'static`；每次尝试创建 worker 和 reaper | 请求协作退出，在真实时间清理宽限期内等待 join，包括 TLS 析构 |
 
-默认允许**总共三次尝试**，采用立即退避，不设耗时预算。业务错误默认重试，永久性错误应由规则拒绝。
+默认允许**总共三次尝试**，采用立即退避，不设耗时预算。未被规则处理的业务错误默认终止；需要“全部重试”时请显式使用 `RetryFallback::Retry`。
 捕获的单次超时和 worker panic 默认终止，但规则可在剩余预算内请求重试。
 规则按注册顺序执行，第一个非 `UseDefault` 决策生效；流程超时、取消、控制回调失败和基础设施失败不能由规则恢复。
 
-`max_operation_elapsed` 累计已准入操作的耗时，`max_total_elapsed` 还包含控制回调与退避。
+`operation_time_budget` 累计已准入操作的耗时，`total_time_budget` 还包含控制回调与退避。
 两者都不是硬超时。完成计量有效时，sync 的成功优先于取消；async 同时就绪时先取操作结果，再检查取消和超时；
 worker 则先检查取消、再检查超时，最后接受操作结果和线程已退出的确认。取消令牌的克隆共享永久取消状态，不支持重置或父子树。
 
@@ -107,7 +107,7 @@ worker 清理宽限期结束后仍未退出，会返回带触发原因的 `Worke
 
 ## 错误、提示与完成诊断
 
-`RetryFailure` 区分 `Aborted`、`Exhausted`、`TimedOut`、`Cancelled`、`CallbackFailed` 和 `Infrastructure`；
+`RetryErrorReason` 区分 `Aborted`、`Exhausted`、`TimedOut`、`Cancelled`、`CallbackFailed` 和 `Infrastructure`；
 `AttemptFailure` 保留业务错误、超时范围或已捕获的 panic。只有 worker 捕获操作 panic，sync/async 操作 panic
 会向调用者或轮询任务传播。
 
@@ -124,9 +124,12 @@ worker 清理宽限期结束后仍未退出，会返回带触发原因的 `Worke
 必须遵守该最小等待时，不应设置更小的最终上限；应停止重试或调整预算。
 `serde` 只用于配置，不将运行时错误、结果或回调作为序列化协议。
 
-## 升级到 0.22
+## 升级到 0.23
 
-- 同步升级直接依赖、适配层及锁文件。`into_parts()` 改为三元组，删除 `into_parts_with_diagnostics()`。
+- 同步升级直接依赖、适配层及锁文件。`into_parts()` 现在返回原因、最后一次失败、上下文与 `Box<[RetryCallbackFailure]>` 诊断。
+- 用 `RetryErrorReason` 和独立的 `last_failure` 替换 `RetryFailure<E>`；适配器可用 `into_metadata_and_error()` 分离业务错误和终止元数据。
+- `RetryLimits`/`limits()` 改为 `RetryAdmissionLimits`/`admission_limits()`；时间预算改为 `operation_time_budget`/`total_time_budget`。
+- `attempt_timeout`/`flow_timeout` 改为 `hard_attempt_timeout`/`hard_flow_timeout`，worker 执行必须显式开启 `worker` feature。
 - 只有明确允许丢失诊断时，才把 `into_value()` / `into_failure()` 改为显式丢弃名称；转换结果优先完整拆解。
 - 控制回调正常返回后，先刷新时钟，再检查取消或处理返回的决策。异常时钟返回 `Infrastructure::Clock`；
   回调 panic 仍保留 `CallbackFailed`，仅尽力刷新计量。取消快照现在包含控制回调耗时。

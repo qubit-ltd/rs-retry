@@ -10,3 +10,13 @@ fi
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else "Python 3.11 or newer is required")'
 python3 -B "$DOC_PROJECT_ROOT/scripts/check_doc_examples_tests.py"
 python3 -B "$DOC_PROJECT_ROOT/scripts/check_doc_examples.py"
+
+if cargo check --locked --manifest-path "$DOC_PROJECT_ROOT/tests/fixtures/worker_disabled/Cargo.toml"; then
+    echo "worker API unexpectedly available without the worker feature" >&2
+    exit 1
+fi
+cargo check --no-default-features --locked
+cargo check --no-default-features --features worker --locked
+cargo check --no-default-features --features tokio --locked
+cargo check --no-default-features --features serde --locked
+cargo check --all-features --locked
