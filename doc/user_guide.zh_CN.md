@@ -295,7 +295,7 @@ fn main() {
     let mapped = error.map_error(String::from);
     let (reason, failure, context, diagnostics) = mapped.into_parts();
     assert!(matches!(reason, RetryErrorReason::Aborted));
-    assert_eq!(failure.and_then(|failure| failure.as_error()).map(String::as_str), Some("offline"));
+    assert_eq!(failure.and_then(|failure| failure.into_error()).as_deref(), Some("offline"));
     assert_eq!(context.attempts(), 1);
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].phase(), RetryCallbackPhase::TerminalFailure);
