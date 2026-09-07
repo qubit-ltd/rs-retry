@@ -1,8 +1,1 @@
-{
-  "threshold_exempt_files": {
-      "qubit-retry": [
-        "src/executor/worker_retry.rs",
-        "src/executor/sync_retry.rs"
-     ]
-  }
-}
+{}
