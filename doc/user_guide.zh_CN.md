@@ -53,8 +53,9 @@ qubit-retry = { version = "0.23", features = ["tokio", "serde"] }
 | 可以安全取消的异步客户端调用 | `asynchronous()` | 需要 Tokio feature/运行时；future 不必为 `Send` 或静态生命周期 |
 | 收到令牌后可协作退出的阻塞调用 | `worker()` | 需要启用 `worker` feature；操作须为 `Fn + Send + Sync + 'static`，结果和错误须为 `Send + 'static`；每次创建 worker 与 reaper |
 
-成功和失败都应完整保留三元组。只转换业务错误类型时使用 `map_error`：存在业务错误才调用一次 `FnOnce` 映射函数，
-否则不调用；映射函数 panic 会向外传播。转换保留终态分类、上下文和完成诊断，不额外要求 `Clone`、`Send` 或 `'static`。
+成功结果包含值、上下文和诊断；失败结果还包含终止原因与可选的最后一次失败，使用消费方法时应完整保留这些终态信息。
+只转换业务错误类型时使用 `map_error`：存在业务错误才调用一次 `FnOnce` 映射函数，否则不调用；映射函数 panic 会向外传播。
+转换保留终态分类、上下文和完成诊断，不额外要求 `Clone`、`Send` 或 `'static`。
 单纯克隆 `Retry` 不会克隆业务错误 `E`。
 
 ## 时间限制与应用关闭
