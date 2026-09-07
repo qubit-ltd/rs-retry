@@ -62,8 +62,9 @@ Select the mode that matches the actual operation:
 | A cancellation-safe asynchronous client call | `asynchronous()` | Tokio feature/runtime; operation futures need not be `Send` or static |
 | A blocking call that cooperatively exits on a token | `worker()` | Requires the `worker` feature; operation: `Fn + Send + Sync + 'static`; result/error: `Send + 'static`; worker and reaper per attempt |
 
-Retain all three parts of success or error. Use `map_error` when only converting
-the application error type. Its `FnOnce` mapper runs once if an application error
+Retain every terminal part: success has a value, context, and diagnostics;
+error additionally has a reason and optional last failure. Use `map_error` when
+only converting the application error type. Its `FnOnce` mapper runs once if an application error
 exists and zero times otherwise; a mapper panic propagates. It preserves terminal
 classification, context and completion diagnostics without imposing extra
 `Clone`, `Send` or `'static` bounds. Merely cloning `Retry` does not clone `E`.
