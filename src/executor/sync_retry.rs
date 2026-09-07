@@ -203,7 +203,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                 }
                 Err(error) => {
                     let directive = controller.record_failure(AttemptFailure::Error(error), clock, cancellation)?;
-                    match wait_for_backoff(&self.timer, directive.sleep_duration(), cancellation) {
+                    match wait_for_backoff(&self.timer, directive.deadline(), cancellation) {
                         BlockingBackoffOutcome::Elapsed => {}
                         BlockingBackoffOutcome::Cancelled => {
                             return Err(controller.record_backoff_cancellation(clock));

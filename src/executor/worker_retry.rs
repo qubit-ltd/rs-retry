@@ -409,11 +409,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         failure: AttemptFailure<E>,
     ) -> Result<(), RetryError<E>> {
         let directive = controller.record_failure(failure, clock, self.cancellation_token.as_ref())?;
-        match wait_for_backoff(
-            &self.timer,
-            directive.sleep_duration(),
-            self.cancellation_token.as_ref(),
-        ) {
+        match wait_for_backoff(&self.timer, directive.deadline(), self.cancellation_token.as_ref()) {
             BlockingBackoffOutcome::Elapsed => {}
             BlockingBackoffOutcome::Cancelled => {
                 return Err(controller.record_backoff_cancellation(clock));

@@ -15,6 +15,10 @@ use std::time::Duration;
 
 use qubit_clock::ManualMonotonicClock;
 use qubit_clock::MonotonicClock;
+use qubit_clock::MonotonicInstant;
+use qubit_clock::TimeError;
+use qubit_clock::Timer;
+use qubit_clock::TimerFuture;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
@@ -25,6 +29,38 @@ use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
 
 use crate::support::UnitTestError;
+
+/// Timer that advances time only when a caller incorrectly registers a
+/// relative delay, making deadline drift externally observable.
+struct RegistrationAdvancingTimer {
+    clock: Arc<ManualMonotonicClock>,
+    timer: Arc<dyn Timer>,
+    registered_deadline: mpsc::Sender<MonotonicInstant>,
+    registrations: AtomicU32,
+}
+
+impl Timer for RegistrationAdvancingTimer {
+    fn clock(&self) -> &dyn MonotonicClock {
+        self.clock.as_ref()
+    }
+
+    fn at(&self, deadline: MonotonicInstant) -> Result<TimerFuture, TimeError> {
+        if self.registrations.fetch_add(1, Ordering::SeqCst) == 1 {
+            self.registered_deadline
+                .send(deadline)
+                .expect("test receiver remains available");
+        }
+        self.timer.at(deadline)
+    }
+
+    fn after(&self, duration: Duration) -> Result<TimerFuture, TimeError> {
+        self.clock
+            .advance(Duration::from_secs(6))
+            .expect("advance registration clock");
+        let deadline = self.clock.now().checked_add(duration)?;
+        self.at(deadline)
+    }
+}
 
 #[test]
 fn test_worker_facade_retries_with_cooperative_token() {
@@ -145,6 +181,7 @@ fn test_worker_flow_timeout_caps_retry_sleep() {
                 Err::<(), _>(UnitTestError)
             })
             .map_err(Box::new)
+            .map_err(Box::new)
     });
     let failed = failed_receiver.recv_timeout(Duration::from_secs(1)).is_ok();
     let deadline = if failed {
@@ -174,4 +211,55 @@ fn test_worker_flow_timeout_caps_retry_sleep() {
     ));
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert_eq!(error.context().total_elapsed(), Duration::from_millis(10));
+}
+
+/// Flow timeout remains anchored at flow start when registering a backoff
+/// timer.
+#[test]
+#[allow(clippy::result_large_err)]
+fn test_worker_backoff_registration_does_not_move_flow_deadline() {
+    let clock = ManualMonotonicClock::new_shared();
+    let (deadline_sender, deadline_receiver) = mpsc::channel();
+    let timer: Arc<dyn Timer> = Arc::new(RegistrationAdvancingTimer {
+        timer: clock.new_timer(),
+        clock: Arc::clone(&clock),
+        registered_deadline: deadline_sender,
+        registrations: AtomicU32::new(0),
+    });
+    let attempts = Arc::new(AtomicU32::new(0));
+    let operation_attempts = Arc::clone(&attempts);
+    let handle = thread::spawn(move || {
+        let policy = RetryPolicy::builder()
+            .max_attempts(2)
+            .backoff(BackoffPolicy::fixed(Duration::from_secs(20)))
+            .build()
+            .expect("valid retry policy");
+        Retry::<UnitTestError>::builder(policy)
+            .build()
+            .worker()
+            .timer(timer)
+            .flow_timeout(Duration::from_secs(10))
+            .run(move |_| {
+                operation_attempts.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(UnitTestError)
+            })
+    });
+
+    let deadline = deadline_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("backoff timer registration");
+    assert_eq!(deadline.elapsed_since_origin(), Duration::from_secs(10));
+    clock.advance(Duration::from_secs(20)).expect("reach flow deadline");
+    let error = handle
+        .join()
+        .expect("worker runner joins")
+        .expect_err("flow deadline expires during backoff");
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Flow,
+            ..
+        }
+    ));
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }

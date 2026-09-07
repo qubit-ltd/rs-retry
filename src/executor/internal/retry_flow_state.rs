@@ -157,6 +157,16 @@ impl<'a> RetryFlowState<'a> {
         self.flow_remaining().map_or(delay, |remaining| delay.min(remaining))
     }
 
+    /// Prepares an absolute deadline from the current control-boundary sample.
+    #[inline]
+    pub(crate) fn backoff_deadline(
+        &self,
+        now: MonotonicInstant,
+        delay: Duration,
+    ) -> Result<MonotonicInstant, TimeError> {
+        now.checked_add(self.sleep_duration(delay))
+    }
+
     /// Returns the next one-based attempt ordinal.
     ///
     /// # Returns

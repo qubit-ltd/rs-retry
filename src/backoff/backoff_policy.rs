@@ -401,6 +401,9 @@ impl BackoffPolicy {
             JitterStrategy::None => base,
             JitterStrategy::Full => interpolate(Duration::ZERO, base, random.random_f64_inclusive(0.0, 1.0)),
             JitterStrategy::Bounded { ratio } => {
+                if ratio == 0.0 {
+                    return base;
+                }
                 let low = (1.0 - ratio).max(0.0);
                 let high = 1.0 + ratio;
                 interpolate(
@@ -572,7 +575,7 @@ impl TryFrom<BackoffPolicyData> for BackoffPolicy {
 /// A base delay no greater than `max`, including when growth overflows.
 #[must_use]
 fn exponential_delay(initial: Duration, multiplier: f64, max: Duration, retry_index: u32) -> Duration {
-    if initial.is_zero() || multiplier == 1.0 {
+    if retry_index <= 1 || initial.is_zero() || multiplier == 1.0 {
         return initial.min(max);
     }
     let exponent = f64::from(retry_index.saturating_sub(1));

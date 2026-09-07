@@ -50,6 +50,34 @@ fn test_regression_uniform_preserves_large_duration_endpoints() {
     }
 }
 
+/// Zero bounded jitter must preserve every representable Duration exactly.
+#[test]
+fn test_bounded_zero_jitter_preserves_large_duration_exactly() {
+    let initial = Duration::new(9_007_199_254_740_992, 123);
+    let actual = BackoffPolicy::fixed(initial)
+        .with_bounded_jitter(0.0)
+        .expect("zero jitter is valid")
+        .start()
+        .next(BackoffRequest::policy())
+        .effective_delay();
+
+    assert_eq!(actual, initial);
+}
+
+/// The first exponential retry must use the configured initial Duration
+/// exactly.
+#[test]
+fn test_exponential_first_retry_preserves_large_initial_duration_exactly() {
+    let initial = Duration::new(9_007_199_254_740_992, 123);
+    let actual = BackoffPolicy::exponential(initial, 2.0, Duration::MAX)
+        .expect("valid exponential policy")
+        .start()
+        .next(BackoffRequest::policy())
+        .effective_delay();
+
+    assert_eq!(actual, initial);
+}
+
 #[test]
 #[cfg(feature = "serde")]
 fn test_policy_serde_round_trip_preserves_valid_policy() {

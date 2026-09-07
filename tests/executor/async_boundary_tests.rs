@@ -11,6 +11,7 @@ use std::future;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use std::time::Duration;
 
 use qubit_clock::ManualMonotonicClock;
@@ -36,6 +37,86 @@ use crate::support::AdvancingObserver;
 use crate::support::FixedRetryRandomSource;
 use crate::support::TestError;
 use crate::support::retry_once_policy;
+
+#[cfg(feature = "tokio")]
+struct RegistrationAdvancingTimer {
+    clock: Arc<ManualMonotonicClock>,
+    timer: Arc<dyn Timer>,
+    registered_deadline: mpsc::Sender<MonotonicInstant>,
+    registrations: AtomicUsize,
+}
+
+#[cfg(feature = "tokio")]
+impl Timer for RegistrationAdvancingTimer {
+    fn clock(&self) -> &dyn MonotonicClock {
+        self.clock.as_ref()
+    }
+
+    fn at(&self, deadline: MonotonicInstant) -> Result<TimerFuture, TimeError> {
+        if self.registrations.fetch_add(1, Ordering::SeqCst) == 1 {
+            self.registered_deadline
+                .send(deadline)
+                .expect("receiver remains available");
+        }
+        self.timer.at(deadline)
+    }
+
+    fn after(&self, duration: Duration) -> Result<TimerFuture, TimeError> {
+        self.clock
+            .advance(Duration::from_secs(6))
+            .expect("advance registration clock");
+        self.at(self.clock.now().checked_add(duration)?)
+    }
+}
+
+#[cfg(feature = "tokio")]
+#[tokio::test(start_paused = true)]
+async fn test_async_backoff_registration_does_not_move_flow_deadline() {
+    let clock = ManualMonotonicClock::new_shared();
+    let (sender, receiver) = mpsc::channel();
+    let timer: Arc<dyn Timer> = Arc::new(RegistrationAdvancingTimer {
+        timer: clock.new_timer(),
+        clock: Arc::clone(&clock),
+        registered_deadline: sender,
+        registrations: AtomicUsize::new(0),
+    });
+    let task = tokio::spawn(async move {
+        let policy = RetryPolicy::builder()
+            .max_attempts(2)
+            .backoff(BackoffPolicy::fixed(Duration::from_secs(20)))
+            .build()
+            .expect("valid retry policy");
+        Retry::<TestError>::builder(policy)
+            .build()
+            .asynchronous()
+            .timer(timer)
+            .flow_timeout(Duration::from_secs(10))
+            .run(|| async { Err::<(), _>(TestError("retry")) })
+            .await
+    });
+    let deadline = tokio::task::spawn_blocking(move || receiver.recv_timeout(Duration::from_secs(1)))
+        .await
+        .expect("deadline receiver task")
+        .expect("backoff registration");
+    if deadline.elapsed_since_origin() != Duration::from_secs(10) {
+        task.abort();
+        let _ = task.await;
+        assert_eq!(deadline.elapsed_since_origin(), Duration::from_secs(10));
+        return;
+    }
+    clock.advance(Duration::from_secs(20)).expect("reach flow deadline");
+    let error = task
+        .await
+        .expect("async retry task completes")
+        .expect_err("flow timeout");
+    assert!(matches!(
+        error.failure(),
+        RetryFailure::TimedOut {
+            scope: RetryTimeoutScope::Flow,
+            ..
+        }
+    ));
+}
 
 #[cfg(feature = "tokio")]
 struct SecondRegistrationFailsTimer {
