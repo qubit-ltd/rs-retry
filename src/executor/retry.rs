@@ -51,6 +51,7 @@ use crate::rule::RetryRules;
 pub struct Retry<E> {
     /// Validated limits and backoff shared by executions.
     policy: RetryPolicy,
+    /// Action used when all retry rules delegate an application failure.
     fallback: RetryFallback,
     /// Ordered decision callbacks shared across executions.
     rules: RetryRules<E>,
@@ -164,6 +165,9 @@ impl<E: 'static> Retry<E> {
         &self.policy
     }
 
+    /// Returns the configured fallback action for internal executors.
+    #[inline(always)]
+    #[must_use]
     pub(crate) fn fallback(&self) -> RetryFallback {
         self.fallback
     }

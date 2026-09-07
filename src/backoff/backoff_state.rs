@@ -12,23 +12,9 @@ use std::sync::Arc;
 use super::BackoffPolicy;
 use super::BackoffRequest;
 use super::BackoffStep;
+use super::internal::RetryRandomSourceStorage;
 use crate::RetryRandomSource;
 use crate::random::ThreadRetryRandomSource;
-
-#[derive(Clone)]
-enum RetryRandomSourceStorage {
-    Thread(ThreadRetryRandomSource),
-    Custom(Arc<dyn RetryRandomSource>),
-}
-
-impl RetryRandomSourceStorage {
-    fn as_source(&self) -> &dyn RetryRandomSource {
-        match self {
-            Self::Thread(source) => source,
-            Self::Custom(source) => source.as_ref(),
-        }
-    }
-}
 
 /// Backoff state whose retry index advances once for every selected step.
 ///
@@ -77,6 +63,9 @@ impl BackoffState {
         }
     }
 
+    /// Creates an empty state using the default thread-local random source.
+    #[must_use]
+    #[inline]
     pub(crate) fn new_thread(policy: BackoffPolicy) -> Self {
         Self {
             policy,
