@@ -9,7 +9,7 @@
 use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
 use qubit_retry::RetryError;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryPolicy;
 
@@ -33,12 +33,12 @@ fn create_exhausted_error() -> RetryError<UnitTestError> {
 #[test]
 fn test_retry_error_terminal_accessors_are_lossless() {
     let error = create_exhausted_error();
-    assert_eq!(error.last_failure(), error.failure().last_failure());
+    assert_eq!(error.last_failure(), error.reason().last_failure());
     assert_eq!(error.last_error(), Some(&UnitTestError));
     let failure = error.into_failure_discarding_diagnostics();
     assert!(matches!(
         failure,
-        RetryFailure::Exhausted {
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::Attempts,
             last_failure: Some(AttemptFailure::Error(UnitTestError)),
             ..

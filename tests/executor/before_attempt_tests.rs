@@ -16,7 +16,7 @@ use qubit_retry::Retry;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
@@ -30,7 +30,7 @@ impl RetryObserver<&'static str> for CancelBefore {
     fn on_before_attempt(&self, context: &RetryContext) {
         assert_eq!(context.attempts(), 0);
         assert_eq!(context.current_attempt().expect("candidate").get(), 1);
-        assert_eq!(context.current_attempt_timeout(), None);
+        assert_eq!(context.current_hard_attempt_timeout(), None);
         self.callbacks.fetch_add(1, Ordering::SeqCst);
         self.token.cancel();
     }
@@ -59,8 +59,8 @@ fn test_before_attempt_cancellation_does_not_admit_operation() {
     assert_eq!(operations.load(Ordering::SeqCst), 0);
     assert_eq!(error.context().attempts(), 0);
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Cancelled {
+        error.reason(),
+        RetryErrorReason::Cancelled {
             phase: RetryCancellationPhase::BeforeAttempt,
             ..
         }
@@ -85,7 +85,7 @@ fn test_before_attempt_elapsed_time_can_reject_candidate() {
     let clock = ManualMonotonicClock::new_shared();
     let retry = Retry::<&'static str>::builder(
         RetryPolicy::builder()
-            .max_total_elapsed(Duration::from_secs(1))
+            .total_time_budget(Duration::from_secs(1))
             .build()
             .expect("policy"),
     )
@@ -102,8 +102,8 @@ fn test_before_attempt_elapsed_time_can_reject_candidate() {
         .expect_err("the candidate should be rejected");
     assert_eq!(error.context().attempts(), 0);
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Exhausted {
+        error.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             ..
         }

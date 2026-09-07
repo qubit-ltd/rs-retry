@@ -32,7 +32,6 @@ use super::internal::JitterStrategy;
 use super::internal::RetryAfterStrategy;
 use crate::RetryPolicyError;
 use crate::RetryRandomSource;
-use crate::random::ThreadRetryRandomSource;
 
 /// Immutable delay strategy shared by retry and reconnect flows.
 ///
@@ -155,7 +154,7 @@ impl BackoffPolicy {
     #[must_use]
     #[inline(always)]
     pub fn start(&self) -> BackoffState {
-        self.start_with_random_source(Arc::new(ThreadRetryRandomSource))
+        BackoffState::new_thread(self.clone())
     }
 
     /// Starts a state with a deterministic or custom random source.

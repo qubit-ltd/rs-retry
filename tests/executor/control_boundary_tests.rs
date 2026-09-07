@@ -28,7 +28,7 @@ use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryError;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
@@ -104,9 +104,9 @@ fn assert_cancelled(error: &RetryError<&'static str>, phase: RetryCallbackPhase)
     assert_eq!(error.context().operation_elapsed(), Duration::ZERO);
     assert_eq!(error.context().attempts(), u32::from(!before));
     assert_eq!(error.context().current_attempt(), None);
-    assert_eq!(error.context().current_attempt_timeout(), None);
+    assert_eq!(error.context().current_hard_attempt_timeout(), None);
     assert_eq!(error.last_error().copied(), (!before).then_some("offline"));
-    assert!(matches!(error.failure(), RetryFailure::Cancelled { phase, .. }
+    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. }
         if *phase == if before { RetryCancellationPhase::BeforeAttempt } else { RetryCancellationPhase::Backoff }));
     assert_eq!(
         error.context().next_delay(),
@@ -240,11 +240,11 @@ fn assert_clock_terminal(error: &RetryError<&'static str>, phase: RetryCallbackP
         (phase != RetryCallbackPhase::BeforeAttempt).then_some("offline")
     );
     if panic_after {
-        assert!(matches!(error.failure(), RetryFailure::CallbackFailed { callback, .. } if callback.phase() == phase));
+        assert!(matches!(error.reason(), RetryErrorReason::CallbackFailed { callback, .. } if callback.phase() == phase));
     } else {
         assert!(matches!(
-            error.failure(),
-            RetryFailure::Infrastructure {
+            error.reason(),
+            RetryErrorReason::Infrastructure {
                 failure: RetryInfrastructureFailure::Clock { .. },
                 ..
             }

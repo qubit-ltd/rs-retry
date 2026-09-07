@@ -9,8 +9,10 @@
 
 mod internal;
 mod retry_decision;
+mod retry_fallback;
 mod retry_rule;
 
 pub(crate) use internal::RetryRules;
 pub use retry_decision::RetryDecision;
+pub use retry_fallback::RetryFallback;
 pub use retry_rule::RetryRule;

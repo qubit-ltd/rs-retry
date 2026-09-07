@@ -28,7 +28,7 @@ use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
@@ -75,7 +75,7 @@ fn test_regression_worker_preserves_non_string_payload_after_drop_panic() {
     }
     struct CompletionCount(Arc<AtomicUsize>);
     impl RetryObserver<()> for CompletionCount {
-        fn on_terminal_failure(&self, _: &RetryFailure<()>, _: &RetryContext) {
+        fn on_terminal_failure(&self, _: &RetryErrorReason, _: &RetryContext) {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -99,8 +99,8 @@ fn test_regression_worker_preserves_non_string_payload_after_drop_panic() {
         assert_eq!(error.context().attempts(), 1);
         assert!(error.completion_callback_failures().is_empty());
         assert!(matches!(
-            error.failure(),
-            RetryFailure::Aborted {
+            error.reason(),
+            RetryErrorReason::Aborted {
                 last_failure: AttemptFailure::Panicked {
                     panic: RetryPanic::NonString
                 },
@@ -146,11 +146,11 @@ fn test_worker_spawn_failure_preserves_infrastructure_diagnostic() {
 
     assert_eq!(operation_calls.load(Ordering::SeqCst), 0);
     assert_eq!(rule_calls.load(Ordering::SeqCst), 0);
-    let RetryFailure::Infrastructure {
+    let RetryErrorReason::Infrastructure {
         failure: RetryInfrastructureFailure::WorkerSpawn { message },
         last_failure,
         ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a worker-spawn infrastructure failure");
     };
@@ -158,7 +158,7 @@ fn test_worker_spawn_failure_preserves_infrastructure_diagnostic() {
     assert!(last_failure.is_none());
     assert_eq!(error.context().attempts(), 0);
     assert_eq!(error.context().current_attempt(), None);
-    assert_eq!(error.context().current_attempt_timeout(), None);
+    assert_eq!(error.context().current_hard_attempt_timeout(), None);
 }
 
 #[test]
@@ -170,11 +170,11 @@ fn test_worker_retry_clock_failure_retains_the_captured_operation_panic() {
         .run(|_| -> Result<(), TestError> { panic!("operation panic") })
         .expect_err("normal rule return requires coherent terminal accounting");
 
-    let RetryFailure::Infrastructure {
+    let RetryErrorReason::Infrastructure {
         failure: RetryInfrastructureFailure::Clock { .. },
         last_failure: Some(last_failure),
         ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected post-rule clock failure with the retained operation panic");
     };
@@ -208,8 +208,8 @@ fn test_worker_retry_matches_shared_terminal_matrix() {
             .max_attempts(2)
             .backoff(BackoffPolicy::immediate());
         policy = match limit {
-            RetryLimitKind::OperationElapsed => policy.max_operation_elapsed(Duration::from_secs(1)),
-            RetryLimitKind::TotalElapsed => policy.max_total_elapsed(Duration::from_secs(1)),
+            RetryLimitKind::OperationElapsed => policy.operation_time_budget(Duration::from_secs(1)),
+            RetryLimitKind::TotalElapsed => policy.total_time_budget(Duration::from_secs(1)),
             RetryLimitKind::Attempts => unreachable!(),
         };
         let operation_clock = Arc::clone(&clock);
@@ -275,7 +275,7 @@ fn test_worker_retry_refreshes_elapsed_time_between_callback_phases() {
     let records = callback_elapsed_records();
     let policy = RetryPolicy::builder()
         .max_attempts(2)
-        .max_total_elapsed(Duration::from_secs(3))
+        .total_time_budget(Duration::from_secs(3))
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("callback elapsed policy should be valid");
@@ -312,8 +312,8 @@ fn test_worker_retry_refreshes_elapsed_time_between_callback_phases() {
         ]
     );
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Exhausted {
+        error.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             ..
         }
@@ -392,8 +392,8 @@ fn test_worker_retry_matches_shared_infrastructure_and_timeout_matrix() {
             .timer(clock.new_timer())
             .cancellation_grace(Duration::from_secs(1));
         let worker = match scope {
-            RetryTimeoutScope::Attempt => worker.attempt_timeout(Duration::from_millis(1)),
-            RetryTimeoutScope::Flow => worker.flow_timeout(Duration::from_millis(1)),
+            RetryTimeoutScope::Attempt => worker.hard_attempt_timeout(Duration::from_millis(1)),
+            RetryTimeoutScope::Flow => worker.hard_flow_timeout(Duration::from_millis(1)),
         };
         let error = worker
             .run(move |token| {
@@ -420,7 +420,7 @@ fn test_worker_retry_reports_still_running_with_active_scope() {
         .build()
         .worker()
         .timer(clock.new_timer())
-        .attempt_timeout(Duration::from_millis(1))
+        .hard_attempt_timeout(Duration::from_millis(1))
         .cancellation_grace(Duration::from_millis(1))
         .run({
             let release_receiver = Arc::clone(&release_receiver);
@@ -441,11 +441,11 @@ fn test_worker_retry_reports_still_running_with_active_scope() {
         .send(())
         .expect("detached test worker should still receive its release");
 
-    let RetryFailure::Infrastructure {
+    let RetryErrorReason::Infrastructure {
         failure: RetryInfrastructureFailure::WorkerStillRunning { trigger },
         last_failure,
         ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a worker-still-running infrastructure failure");
     };
@@ -454,7 +454,7 @@ fn test_worker_retry_reports_still_running_with_active_scope() {
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
     assert_eq!(
-        error.context().current_attempt_timeout(),
+        error.context().current_hard_attempt_timeout(),
         Some(Duration::from_millis(1))
     );
 }
@@ -472,7 +472,7 @@ fn test_worker_timeout_uses_injected_timer() {
             .build()
             .worker()
             .timer(worker_clock.new_timer())
-            .attempt_timeout(Duration::from_secs(3600))
+            .hard_attempt_timeout(Duration::from_secs(3600))
             .cancellation_token(worker_cancellation)
             .cancellation_grace(Duration::from_secs(1))
             .run(move |token| {
@@ -505,7 +505,7 @@ fn test_worker_timeout_registration_failure_does_not_admit_operation() {
     let error = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
         .build()
         .worker()
-        .attempt_timeout(Duration::from_secs(1))
+        .hard_attempt_timeout(Duration::from_secs(1))
         .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
             TimerFailurePoint::Registration,
             "attempt",
@@ -523,7 +523,7 @@ fn test_worker_timeout_poll_failure_reaps_operation() {
     let error = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
         .build()
         .worker()
-        .attempt_timeout(Duration::from_secs(1))
+        .hard_attempt_timeout(Duration::from_secs(1))
         .cancellation_grace(Duration::from_secs(1))
         .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
             TimerFailurePoint::Completion,
@@ -549,7 +549,7 @@ fn test_worker_timeout_poll_failure_retains_live_worker_trigger() {
     let error = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
         .build()
         .worker()
-        .attempt_timeout(Duration::from_secs(1))
+        .hard_attempt_timeout(Duration::from_secs(1))
         .cancellation_grace(Duration::ZERO)
         .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
             TimerFailurePoint::Completion,
@@ -567,8 +567,8 @@ fn test_worker_timeout_poll_failure_retains_live_worker_trigger() {
         .expect_err("uncooperative worker remains live");
     release_sender.send(()).expect("release detached worker");
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Infrastructure {
+        error.reason(),
+        RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::WorkerStillRunning {
                 trigger: WorkerStopTrigger::TimerFailure
             },

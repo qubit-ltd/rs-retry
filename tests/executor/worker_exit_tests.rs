@@ -26,7 +26,7 @@ use qubit_clock::Timer;
 use qubit_clock::TimerFuture;
 use qubit_retry::Retry;
 use qubit_retry::RetryCancellationToken;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryPolicy;
 use qubit_retry::WorkerStopTrigger;
@@ -98,7 +98,7 @@ fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger)
             .cancellation_token(runner_token)
             .cancellation_grace(Duration::from_millis(20));
         if trigger != WorkerStopTrigger::Cancellation {
-            worker = worker.attempt_timeout(Duration::from_secs(60));
+            worker = worker.hard_attempt_timeout(Duration::from_secs(60));
         }
         let result = worker.run(move |_| {
             operation_calls.fetch_add(1, Ordering::SeqCst);
@@ -126,7 +126,7 @@ fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger)
     let error = result
         .expect("retry must return before TLS gate release")
         .expect_err("worker still exiting");
-    assert!(matches!(error.failure(), RetryFailure::Infrastructure {
+    assert!(matches!(error.reason(), RetryErrorReason::Infrastructure {
         failure: RetryInfrastructureFailure::WorkerStillRunning { trigger: actual }, ..
     } if *actual == trigger));
     assert_eq!(error.context().attempts(), 1);

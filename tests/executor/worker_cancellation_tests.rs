@@ -35,7 +35,7 @@ use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
@@ -236,9 +236,9 @@ fn test_worker_pre_cancellation_does_not_start_operation() {
     })
     .expect_err("pre-cancellation must stop before spawning an operation");
 
-    let RetryFailure::Cancelled {
+    let RetryErrorReason::Cancelled {
         phase, last_failure, ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a cancellation terminal");
     };
@@ -274,9 +274,9 @@ fn test_worker_attempt_cancellation_discards_late_success() {
     })
     .expect_err("active cancellation must win over a late success");
 
-    let RetryFailure::Cancelled {
+    let RetryErrorReason::Cancelled {
         phase, last_failure, ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a cancellation terminal");
     };
@@ -315,9 +315,9 @@ fn test_worker_attempt_cancellation_supports_maximum_grace() {
     })
     .expect_err("cooperative cancellation must remain a cancellation terminal");
 
-    let RetryFailure::Cancelled {
+    let RetryErrorReason::Cancelled {
         phase, last_failure, ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a cancellation terminal");
     };
@@ -361,9 +361,9 @@ fn test_worker_attempt_cancellation_discards_late_error() {
         })
         .expect_err("active cancellation must win over a late error");
 
-    let RetryFailure::Cancelled {
+    let RetryErrorReason::Cancelled {
         phase, last_failure, ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a cancellation terminal");
     };
@@ -425,11 +425,11 @@ fn test_worker_cancellation_reports_still_running_with_cancellation_trigger() {
         .send(())
         .expect("detached test worker should receive its release");
 
-    let RetryFailure::Infrastructure {
+    let RetryErrorReason::Infrastructure {
         failure: RetryInfrastructureFailure::WorkerStillRunning { trigger },
         last_failure,
         ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a worker-still-running infrastructure failure");
     };
@@ -495,9 +495,9 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
         .expect_err("backoff cancellation must terminate the retry");
     runner.join().expect("worker retry runner should not panic");
 
-    let RetryFailure::Cancelled {
+    let RetryErrorReason::Cancelled {
         phase, last_failure, ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a cancellation terminal");
     };
@@ -540,9 +540,9 @@ fn test_worker_backoff_registration_cancellation_wins_over_timer_failure() {
     .expect_err("registration-time cancellation must stop the retry");
 
     assert_eq!(registrations.load(Ordering::SeqCst), 1);
-    let RetryFailure::Cancelled {
+    let RetryErrorReason::Cancelled {
         phase, last_failure, ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a cancellation terminal");
     };
@@ -585,8 +585,8 @@ fn assert_blocked_worker_timeout_trigger(scope: RetryTimeoutScope, expected_trig
         .timer(clock.new_timer())
         .cancellation_grace(Duration::ZERO);
     let worker = match scope {
-        RetryTimeoutScope::Attempt => worker.attempt_timeout(Duration::from_nanos(1)),
-        RetryTimeoutScope::Flow => worker.flow_timeout(Duration::from_nanos(1)),
+        RetryTimeoutScope::Attempt => worker.hard_attempt_timeout(Duration::from_nanos(1)),
+        RetryTimeoutScope::Flow => worker.hard_flow_timeout(Duration::from_nanos(1)),
     };
     let error = worker
         .run({
@@ -609,10 +609,10 @@ fn assert_blocked_worker_timeout_trigger(scope: RetryTimeoutScope, expected_trig
         .send(())
         .expect("detached test worker should receive its release");
 
-    let RetryFailure::Infrastructure {
+    let RetryErrorReason::Infrastructure {
         failure: RetryInfrastructureFailure::WorkerStillRunning { trigger },
         ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a worker-still-running infrastructure failure");
     };

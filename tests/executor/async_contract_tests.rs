@@ -18,7 +18,7 @@ use qubit_clock::MonotonicClock;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
 
@@ -57,7 +57,7 @@ async fn test_async_attempt_timeout_has_a_distinct_terminal_reason() {
     let retry = Retry::<UnitTestError>::builder(policy).build();
     let error = retry
         .asynchronous()
-        .attempt_timeout(Duration::from_millis(1))
+        .hard_attempt_timeout(Duration::from_millis(1))
         .run(|| async {
             tokio::time::sleep(Duration::from_millis(20)).await;
             Err::<(), _>(UnitTestError)
@@ -66,8 +66,8 @@ async fn test_async_attempt_timeout_has_a_distinct_terminal_reason() {
         .unwrap_err();
 
     assert!(matches!(
-        error.failure(),
-        RetryFailure::TimedOut {
+        error.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Attempt,
             last_failure: Some(AttemptFailure::TimedOut {
                 scope: RetryTimeoutScope::Attempt
@@ -85,8 +85,8 @@ async fn test_async_shorter_flow_timeout_reports_flow_source() {
     let clock = ManualMonotonicClock::new_shared();
     let executor = retry
         .asynchronous()
-        .attempt_timeout(Duration::from_secs(30))
-        .flow_timeout(Duration::from_secs(1))
+        .hard_attempt_timeout(Duration::from_secs(30))
+        .hard_flow_timeout(Duration::from_secs(1))
         .timer(clock.new_timer());
     let future = executor.run(future::pending::<Result<(), UnitTestError>>);
     tokio::pin!(future);
@@ -101,8 +101,8 @@ async fn test_async_shorter_flow_timeout_reports_flow_source() {
 
     let error = future.await.expect_err("flow timeout should terminate retry");
     assert!(matches!(
-        error.failure(),
-        RetryFailure::TimedOut {
+        error.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Flow,
             last_failure: Some(AttemptFailure::TimedOut {
                 scope: RetryTimeoutScope::Flow
@@ -125,7 +125,7 @@ async fn test_async_flow_timeout_caps_retry_sleep() {
     let attempts = Arc::new(AtomicU32::new(0));
     let executor = retry
         .asynchronous()
-        .flow_timeout(Duration::from_secs(1))
+        .hard_flow_timeout(Duration::from_secs(1))
         .timer(clock.new_timer());
     let future = executor.run({
         let attempts = Arc::clone(&attempts);
@@ -150,8 +150,8 @@ async fn test_async_flow_timeout_caps_retry_sleep() {
 
     let error = future.await.expect_err("flow timeout should terminate retry");
     assert!(matches!(
-        error.failure(),
-        RetryFailure::TimedOut {
+        error.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Flow,
             ..
         }

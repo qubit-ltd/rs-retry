@@ -24,7 +24,7 @@ use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
 
@@ -92,7 +92,7 @@ fn test_worker_attempt_timeout_has_a_distinct_terminal_reason() {
     let error = retry
         .worker()
         .timer(clock.new_timer())
-        .attempt_timeout(Duration::from_millis(1))
+        .hard_attempt_timeout(Duration::from_millis(1))
         .cancellation_grace(Duration::from_millis(50))
         .run(move |token| {
             operation_clock
@@ -106,8 +106,8 @@ fn test_worker_attempt_timeout_has_a_distinct_terminal_reason() {
         .unwrap_err();
 
     assert!(matches!(
-        error.failure(),
-        RetryFailure::TimedOut {
+        error.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Attempt,
             last_failure: Some(AttemptFailure::TimedOut {
                 scope: RetryTimeoutScope::Attempt
@@ -126,8 +126,8 @@ fn test_worker_shorter_flow_timeout_reports_flow_source() {
     let error = retry
         .worker()
         .timer(clock.new_timer())
-        .attempt_timeout(Duration::from_secs(1))
-        .flow_timeout(Duration::from_millis(10))
+        .hard_attempt_timeout(Duration::from_secs(1))
+        .hard_flow_timeout(Duration::from_millis(10))
         .cancellation_grace(Duration::from_millis(50))
         .run(move |token| {
             operation_clock
@@ -141,8 +141,8 @@ fn test_worker_shorter_flow_timeout_reports_flow_source() {
         .expect_err("flow timeout should terminate retry");
 
     assert!(matches!(
-        error.failure(),
-        RetryFailure::TimedOut {
+        error.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Flow,
             last_failure: Some(AttemptFailure::TimedOut {
                 scope: RetryTimeoutScope::Flow
@@ -174,7 +174,7 @@ fn test_worker_flow_timeout_caps_retry_sleep() {
             .build()
             .worker()
             .timer(worker_clock.new_timer())
-            .flow_timeout(Duration::from_millis(10))
+            .hard_flow_timeout(Duration::from_millis(10))
             .cancellation_token(worker_cancellation)
             .run(move |_| {
                 operation_attempts.fetch_add(1, Ordering::SeqCst);
@@ -203,8 +203,8 @@ fn test_worker_flow_timeout_caps_retry_sleep() {
         "backoff must register its capped deadline"
     );
     assert!(matches!(
-        error.failure(),
-        RetryFailure::TimedOut {
+        error.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Flow,
             ..
         }
@@ -238,7 +238,7 @@ fn test_worker_backoff_registration_does_not_move_flow_deadline() {
             .build()
             .worker()
             .timer(timer)
-            .flow_timeout(Duration::from_secs(10))
+            .hard_flow_timeout(Duration::from_secs(10))
             .run(move |_| {
                 operation_attempts.fetch_add(1, Ordering::SeqCst);
                 Err::<(), _>(UnitTestError)
@@ -255,8 +255,8 @@ fn test_worker_backoff_registration_does_not_move_flow_deadline() {
         .expect("worker runner joins")
         .expect_err("flow deadline expires during backoff");
     assert!(matches!(
-        error.failure(),
-        RetryFailure::TimedOut {
+        error.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Flow,
             ..
         }

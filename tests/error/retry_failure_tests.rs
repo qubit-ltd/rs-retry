@@ -18,7 +18,7 @@ use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
@@ -31,39 +31,39 @@ use qubit_retry::RetryTimeoutScope;
 #[test]
 fn test_retry_failure_external_shape_and_accessor_signatures() {
     /// Type-checks the externally visible terminal failure shape.
-    fn inspect<E: fmt::Display>(failure: &RetryFailure<E>) {
+    fn inspect<E: fmt::Display>(failure: &RetryErrorReason) {
         let _: Option<&AttemptFailure<E>> = failure.last_failure();
         let _: Option<&E> = failure.last_error();
         let _: String = failure.to_string();
         match failure {
-            RetryFailure::Aborted { last_failure, .. } => {
+            RetryErrorReason::Aborted { last_failure, .. } => {
                 let _: &AttemptFailure<E> = last_failure;
             }
-            RetryFailure::Exhausted {
+            RetryErrorReason::Exhausted {
                 limit, last_failure, ..
             } => {
                 let _: &RetryLimitKind = limit;
                 let _: &Option<AttemptFailure<E>> = last_failure;
             }
-            RetryFailure::TimedOut {
+            RetryErrorReason::TimedOut {
                 scope, last_failure, ..
             } => {
                 let _: &RetryTimeoutScope = scope;
                 let _: &Option<AttemptFailure<E>> = last_failure;
             }
-            RetryFailure::Cancelled {
+            RetryErrorReason::Cancelled {
                 phase, last_failure, ..
             } => {
                 let _: &RetryCancellationPhase = phase;
                 let _: &Option<AttemptFailure<E>> = last_failure;
             }
-            RetryFailure::CallbackFailed {
+            RetryErrorReason::CallbackFailed {
                 callback, last_failure, ..
             } => {
                 let _: &RetryCallbackFailure = callback;
                 let _: &Option<AttemptFailure<E>> = last_failure;
             }
-            RetryFailure::Infrastructure {
+            RetryErrorReason::Infrastructure {
                 failure, last_failure, ..
             } => {
                 let _: &RetryInfrastructureFailure = failure;
@@ -73,7 +73,7 @@ fn test_retry_failure_external_shape_and_accessor_signatures() {
         }
     }
 
-    let _: fn(&RetryFailure<String>) = inspect::<String>;
+    let _: fn(&RetryErrorReason) = inspect::<String>;
 }
 
 /// Observer that fails during the pre-admission notification.
@@ -98,9 +98,9 @@ fn test_map_error_preserves_aborted_failure_fields() {
         .expect_err("worker panic must abort the flow")
         .into_failure_discarding_diagnostics();
 
-    let mapped: RetryFailure<usize> = failure.map_error(|_| panic!("panic failure must not call the mapper"));
+    let mapped: RetryErrorReason = failure.map_error(|_| panic!("panic failure must not call the mapper"));
 
-    let RetryFailure::Aborted { last_failure, .. } = mapped else {
+    let RetryErrorReason::Aborted { last_failure, .. } = mapped else {
         panic!("expected an aborted failure");
     };
     assert_eq!(
@@ -123,7 +123,7 @@ fn test_map_error_preserves_exhausted_failure_fields() {
 
     let mapped = failure.map_error(String::into_bytes);
 
-    let RetryFailure::Exhausted {
+    let RetryErrorReason::Exhausted {
         limit, last_failure, ..
     } = mapped
     else {
@@ -139,14 +139,14 @@ fn test_map_error_preserves_timed_out_failure_fields() {
     let failure = Retry::<String>::builder(RetryPolicy::builder().build().unwrap())
         .build()
         .worker()
-        .attempt_timeout(Duration::ZERO)
+        .hard_attempt_timeout(Duration::ZERO)
         .run(|_: AttemptCancellationToken| Ok::<(), String>(()))
         .expect_err("a zero attempt timeout must stop before admission")
         .into_failure_discarding_diagnostics();
 
-    let mapped: RetryFailure<usize> = failure.map_error(|_| panic!("empty timeout must not call the mapper"));
+    let mapped: RetryErrorReason = failure.map_error(|_| panic!("empty timeout must not call the mapper"));
 
-    let RetryFailure::TimedOut {
+    let RetryErrorReason::TimedOut {
         scope, last_failure, ..
     } = mapped
     else {
@@ -169,9 +169,9 @@ fn test_map_error_preserves_cancelled_failure_fields() {
         .expect_err("a pre-cancelled flow must stop before admission")
         .into_failure_discarding_diagnostics();
 
-    let mapped: RetryFailure<usize> = failure.map_error(|_| panic!("empty cancellation must not call the mapper"));
+    let mapped: RetryErrorReason = failure.map_error(|_| panic!("empty cancellation must not call the mapper"));
 
-    let RetryFailure::Cancelled {
+    let RetryErrorReason::Cancelled {
         phase, last_failure, ..
     } = mapped
     else {
@@ -192,9 +192,9 @@ fn test_map_error_preserves_callback_failed_fields() {
         .expect_err("the pre-admission observer must fail closed")
         .into_failure_discarding_diagnostics();
 
-    let mapped: RetryFailure<usize> = failure.map_error(|_| panic!("empty callback failure must not call the mapper"));
+    let mapped: RetryErrorReason = failure.map_error(|_| panic!("empty callback failure must not call the mapper"));
 
-    let RetryFailure::CallbackFailed {
+    let RetryErrorReason::CallbackFailed {
         callback, last_failure, ..
     } = mapped
     else {
@@ -218,10 +218,10 @@ fn test_map_error_preserves_infrastructure_failure_fields() {
         .expect_err("an impossible stack size must fail worker creation")
         .into_failure_discarding_diagnostics();
 
-    let mapped: RetryFailure<usize> =
+    let mapped: RetryErrorReason =
         failure.map_error(|_| panic!("empty infrastructure failure must not call the mapper"));
 
-    let RetryFailure::Infrastructure {
+    let RetryErrorReason::Infrastructure {
         failure, last_failure, ..
     } = mapped
     else {

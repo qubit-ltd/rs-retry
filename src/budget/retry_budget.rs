@@ -17,8 +17,8 @@ use super::RetryBudgetError;
 use super::RetryBudgetExhausted;
 use super::RetryBudgetSnapshot;
 use super::RetryBudgetState;
+use crate::RetryAdmissionLimits;
 use crate::RetryLimitKind;
-use crate::RetryLimits;
 
 /// Sequential admission and elapsed-time accounting shared with retry facades.
 ///
@@ -40,7 +40,7 @@ use crate::RetryLimits;
 /// fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let clock = ManualMonotonicClock::new_shared();
 ///     let policy = RetryPolicy::builder().max_attempts(2).build()?;
-///     let mut budget = RetryBudget::new(clock.as_ref(), *policy.limits())?;
+///     let mut budget = RetryBudget::new(clock.as_ref(), *policy.admission_limits())?;
 ///     let attempt = budget.begin_attempt()?;
 ///     clock.advance(Duration::from_secs(2))?;
 ///     let snapshot = budget.finish_attempt(attempt)?;
@@ -78,7 +78,7 @@ impl<'a> RetryBudget<'a> {
     /// # Errors
     /// Returns `Clock` when the initial sample does not belong to `clock`.
     #[inline]
-    pub fn new(clock: &'a dyn MonotonicClock, limits: RetryLimits) -> Result<Self, RetryBudgetError> {
+    pub fn new(clock: &'a dyn MonotonicClock, limits: RetryAdmissionLimits) -> Result<Self, RetryBudgetError> {
         let now = clock.now();
         now.validate_domain(clock.domain())?;
         Ok(Self {

@@ -29,11 +29,11 @@ fn test_new_accepts_soft_budget_without_representable_deadline() {
         .advance(Duration::MAX)
         .expect("clock must reach its greatest instant");
     let policy = RetryPolicy::builder()
-        .max_total_elapsed(Duration::from_nanos(1))
+        .total_time_budget(Duration::from_nanos(1))
         .build()
         .expect("policy must be valid");
 
-    let mut budget = RetryBudget::new(&clock, *policy.limits()).expect("soft budget needs no absolute deadline");
+    let mut budget = RetryBudget::new(&clock, *policy.admission_limits()).expect("soft budget needs no absolute deadline");
     let token = budget.begin_attempt().expect("initial operation remains admissible");
     assert_eq!(budget.finish_attempt(token).expect("valid clock").attempts(), 1);
 }
@@ -67,7 +67,7 @@ fn test_clock_regression_returns_structured_error() {
         nanos: AtomicU64::new(10),
     };
     let policy = RetryPolicy::builder().build().expect("valid policy");
-    let mut budget = RetryBudget::new(&clock, *policy.limits()).expect("valid domain");
+    let mut budget = RetryBudget::new(&clock, *policy.admission_limits()).expect("valid domain");
     let attempt = budget.begin_attempt().expect("first attempt");
     clock.nanos.store(20, Ordering::Relaxed);
     let snapshot = budget.finish_attempt(attempt).expect("valid completion");

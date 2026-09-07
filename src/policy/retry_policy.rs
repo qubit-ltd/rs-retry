@@ -18,7 +18,7 @@ use serde::Serializer;
 #[cfg(feature = "serde")]
 use serde::de::Error;
 
-use super::RetryLimits;
+use super::RetryAdmissionLimits;
 use super::RetryPolicyBuilder;
 #[cfg(feature = "serde")]
 use super::internal::RetryPolicyData;
@@ -36,10 +36,10 @@ use crate::backoff::BackoffPolicy;
 ///
 /// let policy = RetryPolicy::builder()
 ///     .max_attempts(4)
-///     .max_total_elapsed(Duration::from_secs(10))
+///     .total_time_budget(Duration::from_secs(10))
 ///     .backoff(BackoffPolicy::fixed(Duration::from_millis(50)))
 ///     .build()?;
-/// assert_eq!(policy.limits().max_attempts().get(), 4);
+/// assert_eq!(policy.admission_limits().max_attempts().get(), 4);
 /// assert_eq!(policy.backoff().maximum_delay(), Some(Duration::from_millis(50)));
 /// # Ok::<(), qubit_retry::RetryPolicyError>(())
 /// ```
@@ -47,7 +47,7 @@ use crate::backoff::BackoffPolicy;
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetryPolicy {
     /// Validated admission and elapsed-time budgets.
-    limits: RetryLimits,
+    limits: RetryAdmissionLimits,
     /// Validated delay configuration copied into each fresh flow.
     backoff: BackoffPolicy,
 }
@@ -122,7 +122,7 @@ impl RetryPolicy {
     /// # Returns
     /// An immutable policy owning both components.
     #[inline]
-    pub(crate) fn new(limits: RetryLimits, backoff: BackoffPolicy) -> Self {
+    pub(crate) fn new(limits: RetryAdmissionLimits, backoff: BackoffPolicy) -> Self {
         Self { limits, backoff }
     }
 
@@ -132,7 +132,7 @@ impl RetryPolicy {
     /// Borrowed immutable limits; inspecting them does not start a flow.
     #[must_use = "inspect the retry limits"]
     #[inline(always)]
-    pub fn limits(&self) -> &RetryLimits {
+    pub fn admission_limits(&self) -> &RetryAdmissionLimits {
         &self.limits
     }
 

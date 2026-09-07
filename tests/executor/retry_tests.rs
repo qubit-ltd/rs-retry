@@ -33,7 +33,7 @@ fn test_retry_clone_does_not_require_a_cloneable_error() {
     .build();
 
     let cloned = retry.clone();
-    assert_eq!(cloned.policy().limits().max_attempts().get(), 2);
+    assert_eq!(cloned.policy().admission_limits().max_attempts().get(), 2);
 }
 
 #[test]

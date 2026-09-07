@@ -16,7 +16,7 @@ use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
@@ -37,8 +37,8 @@ fn test_retry_error_preserves_terminal_failure_and_context() {
         .expect_err("the rule should abort the retry flow");
 
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Aborted {
+        error.reason(),
+        RetryErrorReason::Aborted {
             last_failure: AttemptFailure::Error(TestError("fatal")),
             ..
         }
@@ -52,7 +52,7 @@ fn test_retry_error_preserves_terminal_failure_and_context() {
     assert!(diagnostics.is_empty());
     assert!(matches!(
         failure,
-        RetryFailure::Aborted {
+        RetryErrorReason::Aborted {
             last_failure: AttemptFailure::Error(TestError("fatal")),
             ..
         }
@@ -69,7 +69,7 @@ struct TerminalPanickingObserver;
 
 impl RetryObserver<NonCloneError> for TerminalPanickingObserver {
     /// Panics during terminal completion notification.
-    fn on_terminal_failure(&self, _failure: &RetryFailure<NonCloneError>, _context: &RetryContext) {
+    fn on_terminal_failure(&self, _failure: &RetryErrorReason, _context: &RetryContext) {
         panic!("terminal observer panic");
     }
 }
@@ -92,9 +92,9 @@ fn test_map_error_preserves_context_and_completion_diagnostics() {
     });
 
     assert_eq!(*mapped.context(), expected_context);
-    let RetryFailure::Exhausted {
+    let RetryErrorReason::Exhausted {
         limit, last_failure, ..
-    } = mapped.failure()
+    } = mapped.reason()
     else {
         panic!("expected an exhausted failure");
     };

@@ -13,6 +13,22 @@ use super::BackoffPolicy;
 use super::BackoffRequest;
 use super::BackoffStep;
 use crate::RetryRandomSource;
+use crate::random::ThreadRetryRandomSource;
+
+#[derive(Clone)]
+enum RetryRandomSourceStorage {
+    Thread(ThreadRetryRandomSource),
+    Custom(Arc<dyn RetryRandomSource>),
+}
+
+impl RetryRandomSourceStorage {
+    fn as_source(&self) -> &dyn RetryRandomSource {
+        match self {
+            Self::Thread(source) => source,
+            Self::Custom(source) => source.as_ref(),
+        }
+    }
+}
 
 /// Backoff state whose retry index advances once for every selected step.
 ///
@@ -37,7 +53,7 @@ pub struct BackoffState {
     /// Owned immutable configuration for this sequence.
     policy: BackoffPolicy,
     /// Shared sampler used for uniform selection and jitter.
-    random: Arc<dyn RetryRandomSource>,
+    random: RetryRandomSourceStorage,
     /// Number of selected steps, saturating at u32::MAX.
     retry_index: u32,
 }
@@ -56,7 +72,15 @@ impl BackoffState {
     pub(crate) fn new(policy: BackoffPolicy, random: Arc<dyn RetryRandomSource>) -> Self {
         Self {
             policy,
-            random,
+            random: RetryRandomSourceStorage::Custom(random),
+            retry_index: 0,
+        }
+    }
+
+    pub(crate) fn new_thread(policy: BackoffPolicy) -> Self {
+        Self {
+            policy,
+            random: RetryRandomSourceStorage::Thread(ThreadRetryRandomSource),
             retry_index: 0,
         }
     }
@@ -83,9 +107,9 @@ impl BackoffState {
     #[inline]
     pub fn next(&mut self, request: BackoffRequest) -> BackoffStep {
         self.retry_index = self.retry_index.saturating_add(1);
-        let base_delay = self.policy.base_delay(self.retry_index, self.random.as_ref());
+        let base_delay = self.policy.base_delay(self.retry_index, self.random.as_source());
         self.policy
-            .resolve(base_delay, request, self.retry_index, self.random.as_ref())
+            .resolve(base_delay, request, self.retry_index, self.random.as_source())
     }
 
     /// Resets the retry index after a stable connection or completed flow.

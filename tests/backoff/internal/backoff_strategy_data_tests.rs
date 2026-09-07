@@ -59,8 +59,8 @@ fn test_backoff_strategy_data_serializes_every_public_variant() {
 fn test_backoff_strategy_data_rejects_unknown_fields_and_tags() {
     let valid = json!({
         "max_attempts": 4,
-        "max_operation_elapsed": null,
-        "max_total_elapsed": null,
+        "operation_time_budget": null,
+        "total_time_budget": null,
         "backoff": {
             "strategy": {
                 "type": "fixed",

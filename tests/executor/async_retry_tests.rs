@@ -54,7 +54,7 @@ use qubit_retry::RetryContext;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryDecision;
 #[cfg(feature = "tokio")]
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryInfrastructureFailure;
 #[cfg(feature = "tokio")]
@@ -177,8 +177,8 @@ async fn test_async_retry_matches_shared_terminal_matrix() {
             .max_attempts(2)
             .backoff(BackoffPolicy::immediate());
         policy = match limit {
-            RetryLimitKind::OperationElapsed => policy.max_operation_elapsed(Duration::from_secs(1)),
-            RetryLimitKind::TotalElapsed => policy.max_total_elapsed(Duration::from_secs(1)),
+            RetryLimitKind::OperationElapsed => policy.operation_time_budget(Duration::from_secs(1)),
+            RetryLimitKind::TotalElapsed => policy.total_time_budget(Duration::from_secs(1)),
             RetryLimitKind::Attempts => unreachable!(),
         };
         let error = Retry::<TestError>::builder(policy.build().unwrap())
@@ -248,7 +248,7 @@ async fn test_async_retry_refreshes_elapsed_time_between_callback_phases() {
     let records = callback_elapsed_records();
     let policy = RetryPolicy::builder()
         .max_attempts(2)
-        .max_total_elapsed(Duration::from_secs(3))
+        .total_time_budget(Duration::from_secs(3))
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("callback elapsed policy should be valid");
@@ -286,8 +286,8 @@ async fn test_async_retry_refreshes_elapsed_time_between_callback_phases() {
         ]
     );
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Exhausted {
+        error.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             ..
         }
@@ -366,7 +366,7 @@ async fn test_async_retry_matches_shared_infrastructure_and_timeout_matrix() {
     let attempt_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
         .build()
         .asynchronous()
-        .attempt_timeout(Duration::from_millis(1))
+        .hard_attempt_timeout(Duration::from_millis(1))
         .run(pending::<Result<(), TestError>>)
         .await
         .expect_err("the pending attempt must hit its attempt timeout");
@@ -375,7 +375,7 @@ async fn test_async_retry_matches_shared_infrastructure_and_timeout_matrix() {
     let flow_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
         .build()
         .asynchronous()
-        .flow_timeout(Duration::from_millis(1))
+        .hard_flow_timeout(Duration::from_millis(1))
         .run(pending::<Result<(), TestError>>)
         .await
         .expect_err("the pending attempt must hit its flow timeout");
@@ -394,7 +394,7 @@ async fn test_async_timeout_registration_failure_does_not_start_attempt() {
     )
     .build()
     .asynchronous()
-    .attempt_timeout(Duration::from_secs(1))
+    .hard_attempt_timeout(Duration::from_secs(1))
     .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
         TimerFailurePoint::Registration,
         "attempt-timeout",
@@ -414,8 +414,8 @@ async fn test_async_timeout_registration_failure_does_not_start_attempt() {
     .expect_err("timeout registration failure must stop before the attempt");
 
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Infrastructure {
+        error.reason(),
+        RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Timer { .. },
             last_failure: None,
             ..
@@ -423,7 +423,7 @@ async fn test_async_timeout_registration_failure_does_not_start_attempt() {
     ));
     assert_eq!(error.context().attempts(), 0);
     assert_eq!(error.context().current_attempt(), None);
-    assert_eq!(error.context().current_attempt_timeout(), None);
+    assert_eq!(error.context().current_hard_attempt_timeout(), None);
     assert_eq!(poll_count.load(Ordering::SeqCst), 0);
 }
 
@@ -462,8 +462,8 @@ async fn test_async_timeout_uses_fixed_deadline_and_preserves_selected_scope() {
         )
         .build()
         .asynchronous()
-        .attempt_timeout(attempt_timeout)
-        .flow_timeout(flow_timeout)
+        .hard_attempt_timeout(attempt_timeout)
+        .hard_flow_timeout(flow_timeout)
         .timer(timer.clone())
         .run({
             let clock = Arc::clone(&clock);
@@ -487,9 +487,9 @@ async fn test_async_timeout_uses_fixed_deadline_and_preserves_selected_scope() {
         let recorded_deadline = timer.deadline();
         assert_eq!(recorded_deadline, expected_deadline);
         assert!(recorded_deadline.elapsed_since_origin() <= flow_deadline.elapsed_since_origin());
-        let RetryFailure::TimedOut {
+        let RetryErrorReason::TimedOut {
             scope, last_failure, ..
-        } = error.failure()
+        } = error.reason()
         else {
             panic!("expected the prepared hard timeout to terminate the flow");
         };
@@ -514,7 +514,7 @@ async fn test_async_registration_reaching_deadline_does_not_start_operation() {
     )
     .build()
     .asynchronous()
-    .attempt_timeout(Duration::from_secs(1))
+    .hard_attempt_timeout(Duration::from_secs(1))
     .timer(timer)
     .run({
         let poll_count = Arc::clone(&poll_count);
@@ -530,8 +530,8 @@ async fn test_async_registration_reaching_deadline_does_not_start_operation() {
     .expect_err("a deadline reached during registration must stop admission");
 
     assert!(matches!(
-        error.failure(),
-        RetryFailure::TimedOut {
+        error.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Attempt,
             last_failure: None,
             ..
@@ -539,7 +539,7 @@ async fn test_async_registration_reaching_deadline_does_not_start_operation() {
     ));
     assert_eq!(error.context().attempts(), 0);
     assert_eq!(error.context().current_attempt(), None);
-    assert_eq!(error.context().current_attempt_timeout(), None);
+    assert_eq!(error.context().current_hard_attempt_timeout(), None);
     assert_eq!(poll_count.load(Ordering::SeqCst), 0);
 }
 
@@ -554,7 +554,7 @@ async fn test_async_timeout_polling_failure_retains_active_attempt_scope() {
     )
     .build()
     .asynchronous()
-    .attempt_timeout(Duration::from_secs(1))
+    .hard_attempt_timeout(Duration::from_secs(1))
     .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
         TimerFailurePoint::Completion,
         "attempt-timeout",
@@ -565,8 +565,8 @@ async fn test_async_timeout_polling_failure_retains_active_attempt_scope() {
     .expect_err("timer polling failure must retain the active attempt");
 
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Infrastructure {
+        error.reason(),
+        RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Timer { .. },
             last_failure: None,
             ..
@@ -574,7 +574,7 @@ async fn test_async_timeout_polling_failure_retains_active_attempt_scope() {
     ));
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
-    assert_eq!(error.context().current_attempt_timeout(), Some(Duration::from_secs(1)));
+    assert_eq!(error.context().current_hard_attempt_timeout(), Some(Duration::from_secs(1)));
 }
 
 #[cfg(feature = "tokio")]
@@ -591,7 +591,7 @@ async fn test_async_success_counts_one_started_attempt_with_or_without_timeout()
     let with_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
         .build()
         .asynchronous()
-        .attempt_timeout(Duration::from_secs(1))
+        .hard_attempt_timeout(Duration::from_secs(1))
         .run(|| async { Ok::<_, TestError>(()) })
         .await
         .expect("an immediate operation with a timeout should succeed");

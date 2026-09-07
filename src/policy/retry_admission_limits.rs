@@ -22,22 +22,22 @@ use serde::Serializer;
 use serde::de::Error;
 
 #[cfg(feature = "serde")]
-use super::internal::RetryLimitsData;
+use super::internal::RetryAdmissionLimitsData;
 /// Limits that decide whether a retry flow may continue.
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RetryLimits {
+pub struct RetryAdmissionLimits {
     /// Maximum admissions including the initial operation.
     max_attempts: NonZeroU32,
     /// Optional cumulative operation-time limit; None disables this soft
     /// budget.
-    max_operation_elapsed: Option<Duration>,
+    operation_time_budget: Option<Duration>,
     /// Optional monotonic whole-flow limit; None disables this soft budget.
-    max_total_elapsed: Option<Duration>,
+    total_time_budget: Option<Duration>,
 }
 
 #[cfg(feature = "serde")]
-impl Serialize for RetryLimits {
+impl Serialize for RetryAdmissionLimits {
     /// Serializes validated limits through the stable private wire DTO.
     ///
     /// # Type Parameters
@@ -56,12 +56,12 @@ impl Serialize for RetryLimits {
     where
         S: Serializer,
     {
-        RetryLimitsData::from(self).serialize(serializer)
+        RetryAdmissionLimitsData::from(self).serialize(serializer)
     }
 }
 
 #[cfg(feature = "serde")]
-impl<'de> Deserialize<'de> for RetryLimits {
+impl<'de> Deserialize<'de> for RetryAdmissionLimits {
     /// Deserializes limits and rejects invalid or unknown configuration data.
     ///
     /// # Type Parameters
@@ -81,33 +81,33 @@ impl<'de> Deserialize<'de> for RetryLimits {
     where
         D: Deserializer<'de>,
     {
-        let data = RetryLimitsData::deserialize(deserializer)?;
+        let data = RetryAdmissionLimitsData::deserialize(deserializer)?;
         Self::try_from(data).map_err(Error::custom)
     }
 }
 
-impl RetryLimits {
+impl RetryAdmissionLimits {
     /// Creates validated retry limits.
     ///
     /// # Parameters
     /// - `max_attempts`: Nonzero admission limit, including the initial
     ///   operation.
-    /// - `max_operation_elapsed`: Some cumulative operation budget, or None to
+    /// - `operation_time_budget`: Some cumulative operation budget, or None to
     ///   disable.
-    /// - `max_total_elapsed`: Some whole-flow budget, or None to disable.
+    /// - `total_time_budget`: Some whole-flow budget, or None to disable.
     ///
     /// # Returns
     /// Immutable continuation limits; zero elapsed budgets prohibit admission.
     #[inline]
     pub(crate) fn new(
         max_attempts: NonZeroU32,
-        max_operation_elapsed: Option<Duration>,
-        max_total_elapsed: Option<Duration>,
+        operation_time_budget: Option<Duration>,
+        total_time_budget: Option<Duration>,
     ) -> Self {
         Self {
             max_attempts,
-            max_operation_elapsed,
-            max_total_elapsed,
+            operation_time_budget,
+            total_time_budget,
         }
     }
 
@@ -128,8 +128,8 @@ impl RetryLimits {
     /// This budget cannot interrupt an already admitted operation.
     #[must_use]
     #[inline(always)]
-    pub fn max_operation_elapsed(&self) -> Option<Duration> {
-        self.max_operation_elapsed
+    pub fn operation_time_budget(&self) -> Option<Duration> {
+        self.operation_time_budget
     }
 
     /// Returns the whole-flow monotonic elapsed budget.
@@ -140,7 +140,7 @@ impl RetryLimits {
     /// preserved.
     #[must_use]
     #[inline(always)]
-    pub fn max_total_elapsed(&self) -> Option<Duration> {
-        self.max_total_elapsed
+    pub fn total_time_budget(&self) -> Option<Duration> {
+        self.total_time_budget
     }
 }

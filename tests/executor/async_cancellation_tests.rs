@@ -58,7 +58,7 @@ use qubit_retry::RetryDecision;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryError;
 #[cfg(feature = "tokio")]
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryObserver;
 #[cfg(feature = "tokio")]
@@ -162,16 +162,16 @@ fn assert_cancelled(
     error: &RetryError<TestError>,
     expected_phase: RetryCancellationPhase,
 ) -> Option<&AttemptFailure<TestError>> {
-    let RetryFailure::Cancelled {
+    let RetryErrorReason::Cancelled {
         phase, last_failure, ..
-    } = error.failure()
+    } = error.reason()
     else {
-        panic!("expected a cancellation terminal, got {:?}", error.failure());
+        panic!("expected a cancellation terminal, got {:?}", error.reason());
     };
     assert_eq!(*phase, expected_phase);
-    assert_eq!(error.failure().last_failure(), last_failure.as_ref());
+    assert_eq!(error.reason().last_failure(), last_failure.as_ref());
     assert_eq!(
-        error.failure().last_error(),
+        error.reason().last_error(),
         last_failure.as_ref().and_then(AttemptFailure::as_error)
     );
     let suffix = last_failure
@@ -179,7 +179,7 @@ fn assert_cancelled(
         .map(|failure| format!("; last attempt failed: {failure}"))
         .unwrap_or_default();
     assert_eq!(
-        error.failure().to_string(),
+        error.reason().to_string(),
         format!("retry cancelled: {expected_phase}{suffix}")
     );
     last_failure.as_ref()
@@ -230,7 +230,7 @@ async fn test_cancellation_token_during_attempt_retains_active_attempt_scope() {
     )
     .build()
     .asynchronous()
-    .attempt_timeout(Duration::from_secs(5))
+    .hard_attempt_timeout(Duration::from_secs(5))
     .cancellation_token(token)
     .run({
         let operation_polls = Arc::clone(&operation_polls);
@@ -250,7 +250,7 @@ async fn test_cancellation_token_during_attempt_retains_active_attempt_scope() {
     assert_eq!(assert_cancelled(&error, RetryCancellationPhase::Attempt), None);
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.context().current_attempt().map(|attempt| attempt.get()), Some(1));
-    assert_eq!(error.context().current_attempt_timeout(), Some(Duration::from_secs(5)));
+    assert_eq!(error.context().current_hard_attempt_timeout(), Some(Duration::from_secs(5)));
     assert_eq!(operation_polls.load(Ordering::SeqCst), 1);
 }
 
@@ -551,8 +551,8 @@ async fn test_async_ready_result_cancellation_and_equal_deadline_priority() {
             .build()
             .asynchronous()
             .timer(clock.new_timer())
-            .attempt_timeout(deadline)
-            .flow_timeout(deadline)
+            .hard_attempt_timeout(deadline)
+            .hard_flow_timeout(deadline)
             .cancellation_token(token)
             .run(|| {
                 clock.advance(deadline).expect("coherent manual time");
@@ -578,13 +578,13 @@ async fn test_async_ready_result_cancellation_and_equal_deadline_priority() {
         assert_eq!(error.context().attempts(), 1);
         assert_eq!(error.context().operation_elapsed(), deadline);
         if cancel {
-            assert!(matches!(error.failure(), RetryFailure::Cancelled { phase, .. }
+            assert!(matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. }
                 if *phase == if result_ready { RetryCancellationPhase::Backoff } else { RetryCancellationPhase::Attempt }));
             assert_eq!(error.last_error(), result_ready.then_some(&"business"));
         } else {
             assert!(matches!(
-                error.failure(),
-                RetryFailure::TimedOut {
+                error.reason(),
+                RetryErrorReason::TimedOut {
                     scope: RetryTimeoutScope::Attempt,
                     last_failure: Some(AttemptFailure::TimedOut {
                         scope: RetryTimeoutScope::Attempt

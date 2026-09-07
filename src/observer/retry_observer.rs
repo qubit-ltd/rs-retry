@@ -10,7 +10,7 @@
 use crate::AttemptFailure;
 use crate::BackoffStep;
 use crate::RetryContext;
-use crate::RetryFailure;
+use crate::RetryErrorReason;
 
 /// Observes retry lifecycle events without changing retry decisions.
 ///
@@ -53,7 +53,7 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     ///   replace it.
     /// - `_context`: Borrowed snapshot, including failures before admission.
     #[inline(always)]
-    fn on_terminal_failure(&self, _failure: &RetryFailure<E>, _context: &RetryContext) {}
+    fn on_terminal_failure(&self, _reason: &RetryErrorReason, _context: &RetryContext) {}
 
     /// Observes the context before an attempt is admitted.
     ///

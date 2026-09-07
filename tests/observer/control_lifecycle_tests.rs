@@ -19,7 +19,7 @@ use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
 
@@ -71,9 +71,9 @@ fn test_observers_and_rules_cover_current_lifecycle() {
         .sync()
         .run(|| Ok::<_, TestError>(11_u32))
         .expect_err("the first started observer panic must terminate the flow");
-    let RetryFailure::CallbackFailed {
+    let RetryErrorReason::CallbackFailed {
         callback, last_failure, ..
-    } = observer_error.failure()
+    } = observer_error.reason()
     else {
         panic!("expected an observer callback failure");
     };
@@ -93,9 +93,9 @@ fn test_observers_and_rules_cover_current_lifecycle() {
         .sync()
         .run(|| Err::<u32, _>(TestError("retry")))
         .expect_err("the first rule panic must terminate the flow");
-    let RetryFailure::CallbackFailed {
+    let RetryErrorReason::CallbackFailed {
         callback, last_failure, ..
-    } = rule_error.failure()
+    } = rule_error.reason()
     else {
         panic!("expected a rule callback failure");
     };

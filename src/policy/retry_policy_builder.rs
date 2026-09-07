@@ -10,7 +10,7 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
-use super::RetryLimits;
+use super::RetryAdmissionLimits;
 use super::RetryPolicy;
 use crate::RetryPolicyError;
 use crate::backoff::BackoffPolicy;
@@ -23,9 +23,9 @@ pub struct RetryPolicyBuilder {
     max_attempts: u32,
     /// Optional cumulative operation-time limit; None disables this soft
     /// budget.
-    max_operation_elapsed: Option<Duration>,
+    operation_time_budget: Option<Duration>,
     /// Optional monotonic whole-flow limit; None disables this soft budget.
-    max_total_elapsed: Option<Duration>,
+    total_time_budget: Option<Duration>,
     /// Validated delay configuration copied into each fresh flow.
     backoff: BackoffPolicy,
 }
@@ -40,8 +40,8 @@ impl RetryPolicyBuilder {
     pub fn new() -> Self {
         Self {
             max_attempts: 3,
-            max_operation_elapsed: None,
-            max_total_elapsed: None,
+            operation_time_budget: None,
+            total_time_budget: None,
             backoff: BackoffPolicy::immediate(),
         }
     }
@@ -68,8 +68,8 @@ impl RetryPolicyBuilder {
     /// # Returns
     /// The owned builder with that budget enabled.
     #[inline(always)]
-    pub fn max_operation_elapsed(mut self, elapsed: Duration) -> Self {
-        self.max_operation_elapsed = Some(elapsed);
+    pub fn operation_time_budget(mut self, elapsed: Duration) -> Self {
+        self.operation_time_budget = Some(elapsed);
         self
     }
 
@@ -82,8 +82,8 @@ impl RetryPolicyBuilder {
     /// # Returns
     /// The owned builder with the optional budget replaced.
     #[inline(always)]
-    pub fn max_operation_elapsed_opt(mut self, elapsed: Option<Duration>) -> Self {
-        self.max_operation_elapsed = elapsed;
+    pub fn operation_time_budget_opt(mut self, elapsed: Option<Duration>) -> Self {
+        self.operation_time_budget = elapsed;
         self
     }
 
@@ -92,8 +92,8 @@ impl RetryPolicyBuilder {
     /// # Returns
     /// The owned builder with the corresponding elapsed budget disabled.
     #[inline(always)]
-    pub fn without_operation_elapsed(mut self) -> Self {
-        self.max_operation_elapsed = None;
+    pub fn without_operation_time_budget(mut self) -> Self {
+        self.operation_time_budget = None;
         self
     }
 
@@ -105,8 +105,8 @@ impl RetryPolicyBuilder {
     /// # Returns
     /// The owned builder with that budget enabled.
     #[inline(always)]
-    pub fn max_total_elapsed(mut self, elapsed: Duration) -> Self {
-        self.max_total_elapsed = Some(elapsed);
+    pub fn total_time_budget(mut self, elapsed: Duration) -> Self {
+        self.total_time_budget = Some(elapsed);
         self
     }
 
@@ -119,8 +119,8 @@ impl RetryPolicyBuilder {
     /// # Returns
     /// The owned builder with the optional budget replaced.
     #[inline(always)]
-    pub fn max_total_elapsed_opt(mut self, elapsed: Option<Duration>) -> Self {
-        self.max_total_elapsed = elapsed;
+    pub fn total_time_budget_opt(mut self, elapsed: Option<Duration>) -> Self {
+        self.total_time_budget = elapsed;
         self
     }
 
@@ -129,8 +129,8 @@ impl RetryPolicyBuilder {
     /// # Returns
     /// The owned builder with the corresponding elapsed budget disabled.
     #[inline(always)]
-    pub fn without_total_elapsed(mut self) -> Self {
-        self.max_total_elapsed = None;
+    pub fn without_total_time_budget(mut self) -> Self {
+        self.total_time_budget = None;
         self
     }
 
@@ -160,7 +160,7 @@ impl RetryPolicyBuilder {
         let max_attempts = NonZeroU32::new(self.max_attempts)
             .ok_or_else(|| RetryPolicyError::new("max_attempts", "maximum attempts must be greater than zero"))?;
         Ok(RetryPolicy::new(
-            RetryLimits::new(max_attempts, self.max_operation_elapsed, self.max_total_elapsed),
+            RetryAdmissionLimits::new(max_attempts, self.operation_time_budget, self.total_time_budget),
             self.backoff,
         ))
     }

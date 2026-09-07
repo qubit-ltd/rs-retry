@@ -76,21 +76,21 @@ fn test_policy_builders_cover_backoff_variants() {
 
     let policy = RetryPolicyBuilder::new()
         .max_attempts(4)
-        .max_operation_elapsed(Duration::from_secs(1))
-        .max_operation_elapsed_opt(Some(Duration::from_secs(2)))
-        .without_operation_elapsed()
-        .max_total_elapsed(Duration::from_secs(3))
-        .max_total_elapsed_opt(Some(Duration::from_secs(4)))
-        .without_total_elapsed()
+        .operation_time_budget(Duration::from_secs(1))
+        .operation_time_budget_opt(Some(Duration::from_secs(2)))
+        .without_operation_time_budget()
+        .total_time_budget(Duration::from_secs(3))
+        .total_time_budget_opt(Some(Duration::from_secs(4)))
+        .without_total_time_budget()
         .backoff(BackoffPolicy::immediate())
         .build()
         .unwrap();
-    assert_eq!(policy.limits().max_attempts().get(), 4);
+    assert_eq!(policy.admission_limits().max_attempts().get(), 4);
     assert_eq!(
         RetryPolicyBuilder::default()
             .build()
             .unwrap()
-            .limits()
+            .admission_limits()
             .max_attempts()
             .get(),
         3

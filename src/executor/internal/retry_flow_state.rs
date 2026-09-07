@@ -54,13 +54,16 @@ impl<'a> RetryFlowState<'a> {
     pub(crate) fn new(
         started_at: MonotonicInstant,
         policy: &'a RetryPolicy,
-        random_source: Arc<dyn RetryRandomSource>,
+        random_source: Option<Arc<dyn RetryRandomSource>>,
         flow_timeout: Option<Duration>,
     ) -> Self {
         Self {
             policy,
-            budget: RetryBudgetState::new(started_at, *policy.limits()),
-            backoff: policy.backoff().start_with_random_source(random_source),
+            budget: RetryBudgetState::new(started_at, *policy.admission_limits()),
+            backoff: random_source.map_or_else(
+                || policy.backoff().start(),
+                |random_source| policy.backoff().start_with_random_source(random_source),
+            ),
             flow_timeout,
         }
     }
@@ -197,13 +200,13 @@ impl<'a> RetryFlowState<'a> {
         RetryContext::from_parts(RetryContextParts {
             attempts: snapshot.attempts(),
             current_attempt,
-            max_attempts: self.policy.limits().max_attempts().get(),
-            max_operation_elapsed: self.policy.limits().max_operation_elapsed(),
-            max_total_elapsed: self.policy.limits().max_total_elapsed(),
+            max_attempts: self.policy.admission_limits().max_attempts().get(),
+            operation_time_budget: self.policy.admission_limits().operation_time_budget(),
+            total_time_budget: self.policy.admission_limits().total_time_budget(),
             operation_elapsed: snapshot.operation_elapsed(),
             total_elapsed: snapshot.total_elapsed(),
             last_attempt_elapsed: snapshot.attempt_elapsed(),
-            current_attempt_timeout: None,
+            current_hard_attempt_timeout: None,
             next_delay: None,
             retry_after_hint: None,
         })

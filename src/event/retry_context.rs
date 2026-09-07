@@ -33,9 +33,9 @@ pub struct RetryContext {
     /// Configured maximum attempts.
     max_attempts: u32,
     /// Configured maximum cumulative user operation time.
-    max_operation_elapsed: Option<Duration>,
+    operation_time_budget: Option<Duration>,
     /// Configured maximum total retry-flow elapsed time.
-    max_total_elapsed: Option<Duration>,
+    total_time_budget: Option<Duration>,
     /// Cumulative user operation time consumed by this retry flow.
     operation_elapsed: Duration,
     /// Total monotonic time consumed by this retry flow.
@@ -43,7 +43,7 @@ pub struct RetryContext {
     /// Elapsed time spent in the last completed attempt.
     last_attempt_elapsed: Duration,
     /// Effective timeout configured for the current attempt.
-    current_attempt_timeout: Option<Duration>,
+    current_hard_attempt_timeout: Option<Duration>,
     /// Delay selected before the next attempt, when known.
     next_delay: Option<Duration>,
     /// Optional retry-after hint selected by a retry rule.
@@ -66,12 +66,12 @@ impl RetryContext {
             attempts,
             current_attempt: NonZeroU32::new(attempts),
             max_attempts,
-            max_operation_elapsed: None,
-            max_total_elapsed: None,
+            operation_time_budget: None,
+            total_time_budget: None,
             operation_elapsed: Duration::ZERO,
             total_elapsed: Duration::ZERO,
             last_attempt_elapsed: Duration::ZERO,
-            current_attempt_timeout: None,
+            current_hard_attempt_timeout: None,
             next_delay: None,
             retry_after_hint: None,
         })
@@ -90,12 +90,12 @@ impl RetryContext {
             attempts: parts.attempts,
             current_attempt: parts.current_attempt,
             max_attempts: parts.max_attempts,
-            max_operation_elapsed: parts.max_operation_elapsed,
-            max_total_elapsed: parts.max_total_elapsed,
+            operation_time_budget: parts.operation_time_budget,
+            total_time_budget: parts.total_time_budget,
             operation_elapsed: parts.operation_elapsed,
             total_elapsed: parts.total_elapsed,
             last_attempt_elapsed: parts.last_attempt_elapsed,
-            current_attempt_timeout: parts.current_attempt_timeout,
+            current_hard_attempt_timeout: parts.current_hard_attempt_timeout,
             next_delay: parts.next_delay,
             retry_after_hint: parts.retry_after_hint,
         }
@@ -149,8 +149,8 @@ impl RetryContext {
     /// `Some(Duration)` for bounded retry flows, or `None` for unlimited flows.
     #[inline(always)]
     #[must_use]
-    pub fn max_operation_elapsed(&self) -> Option<Duration> {
-        self.max_operation_elapsed
+    pub fn operation_time_budget(&self) -> Option<Duration> {
+        self.operation_time_budget
     }
 
     /// Returns the optional total retry-flow elapsed time budget.
@@ -159,8 +159,8 @@ impl RetryContext {
     /// `Some(Duration)` for bounded retry flows, or `None` for unlimited flows.
     #[inline(always)]
     #[must_use]
-    pub fn max_total_elapsed(&self) -> Option<Duration> {
-        self.max_total_elapsed
+    pub fn total_time_budget(&self) -> Option<Duration> {
+        self.total_time_budget
     }
 
     /// Returns cumulative user operation time consumed by the retry flow.
@@ -206,8 +206,8 @@ impl RetryContext {
     /// timeout is attached to this snapshot.
     #[inline(always)]
     #[must_use]
-    pub fn current_attempt_timeout(&self) -> Option<Duration> {
-        self.current_attempt_timeout
+    pub fn current_hard_attempt_timeout(&self) -> Option<Duration> {
+        self.current_hard_attempt_timeout
     }
 
     /// Returns the delay selected before the next attempt.
@@ -265,8 +265,8 @@ impl RetryContext {
     /// # Returns
     /// A copy with only the selected overlay field changed.
     #[inline(always)]
-    pub(crate) fn with_attempt_timeout(mut self, timeout: Option<Duration>) -> Self {
-        self.current_attempt_timeout = timeout;
+    pub(crate) fn with_hard_attempt_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.current_hard_attempt_timeout = timeout;
         self
     }
 }

@@ -31,7 +31,6 @@ use crate::WorkerStopTrigger;
 use crate::executor::internal::BlockingAttempt;
 use crate::executor::internal::BlockingAttemptOutcome;
 use crate::executor::internal::BlockingValueOperation;
-use crate::random::ThreadRetryRandomSource;
 
 /// Worker retry execution with cooperative cancellation.
 ///
@@ -74,9 +73,9 @@ pub struct WorkerRetry<'a, E> {
     /// cancellation.
     cancellation_token: Option<RetryCancellationToken>,
     /// Timer and monotonic clock used by this execution.
-    timer: Arc<dyn Timer>,
+    timer: Option<Arc<dyn Timer>>,
     /// Shared random source for uniform delays and jitter.
-    random_source: Arc<dyn RetryRandomSource>,
+    random_source: Option<Arc<dyn RetryRandomSource>>,
 }
 
 impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
@@ -98,8 +97,8 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             flow_timeout: None,
             cancellation_grace: Duration::from_millis(100),
             cancellation_token: None,
-            timer: Arc::new(StdTimer::new()),
-            random_source: Arc::new(ThreadRetryRandomSource),
+            timer: None,
+            random_source: None,
         }
     }
 
@@ -112,7 +111,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     /// # Returns
     /// This facade with the selected hard timeout enabled.
     #[inline(always)]
-    pub fn attempt_timeout(mut self, timeout: Duration) -> Self {
+    pub fn hard_attempt_timeout(mut self, timeout: Duration) -> Self {
         self.attempt_timeout = Some(timeout);
         self
     }
@@ -126,7 +125,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     /// # Returns
     /// This facade with the selected hard timeout enabled.
     #[inline(always)]
-    pub fn flow_timeout(mut self, timeout: Duration) -> Self {
+    pub fn hard_flow_timeout(mut self, timeout: Duration) -> Self {
         self.flow_timeout = Some(timeout);
         self
     }
@@ -200,7 +199,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     /// This facade using the supplied runtime resource.
     #[inline(always)]
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
-        self.timer = timer;
+        self.timer = Some(timer);
         self
     }
 
@@ -213,7 +212,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     /// This facade using the supplied runtime resource.
     #[inline(always)]
     pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
-        self.random_source = random_source;
+        self.random_source = Some(random_source);
         self
     }
 
@@ -286,12 +285,13 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     {
         let operation = Arc::new(BlockingValueOperation::new(operation));
         let worker_operation: Arc<dyn BlockingAttempt<E>> = operation.clone();
-        let timer = &self.timer;
+        let default_timer = StdTimer::new();
+        let timer: &dyn Timer = self.timer.as_deref().unwrap_or(&default_timer);
         let clock = timer.clock();
         let mut controller = RetryFlowController::new(
             clock.now(),
             self.retry,
-            Arc::clone(&self.random_source),
+            self.random_source.clone(),
             self.attempt_timeout,
             self.flow_timeout,
         );
@@ -361,6 +361,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                     }
                     WorkerStopTrigger::AttemptTimeout => {
                         self.finish_failed_attempt(
+                            timer,
                             &mut controller,
                             clock,
                             AttemptFailure::TimedOut {
@@ -370,6 +371,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                     }
                     WorkerStopTrigger::FlowTimeout => {
                         self.finish_failed_attempt(
+                            timer,
                             &mut controller,
                             clock,
                             AttemptFailure::TimedOut {
@@ -379,7 +381,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                     }
                 },
                 BlockingAttemptOutcome::Completed(Err(failure)) => {
-                    self.finish_failed_attempt(&mut controller, clock, failure)?;
+                    self.finish_failed_attempt(timer, &mut controller, clock, failure)?;
                 }
             }
         }
@@ -404,12 +406,13 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     )]
     fn finish_failed_attempt(
         &self,
+        timer: &dyn Timer,
         controller: &mut RetryFlowController<'_, E>,
         clock: &dyn MonotonicClock,
         failure: AttemptFailure<E>,
     ) -> Result<(), RetryError<E>> {
         let directive = controller.record_failure(failure, clock, self.cancellation_token.as_ref())?;
-        match wait_for_backoff(&self.timer, directive.deadline(), self.cancellation_token.as_ref()) {
+        match wait_for_backoff(timer, directive.deadline(), self.cancellation_token.as_ref()) {
             BlockingBackoffOutcome::Elapsed => {}
             BlockingBackoffOutcome::Cancelled => {
                 return Err(controller.record_backoff_cancellation(clock));

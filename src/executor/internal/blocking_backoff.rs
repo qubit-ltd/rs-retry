@@ -39,7 +39,7 @@ use crate::RetryCancellationToken;
 /// Panics if all notification senders disappear while a pending future is
 /// retained, which indicates an internal waker-lifetime invariant violation.
 pub(crate) fn wait_for_backoff(
-    timer: &Arc<dyn Timer>,
+    timer: &dyn Timer,
     deadline: MonotonicInstant,
     cancellation: Option<&RetryCancellationToken>,
 ) -> BlockingBackoffOutcome {

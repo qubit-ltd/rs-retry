@@ -17,7 +17,7 @@ use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryRule;
@@ -62,7 +62,7 @@ fn test_retry_rules_preserve_each_panic_payload() {
             })
             .build();
         let error = retry.sync().run(|| Err::<(), _>(())).expect_err("the rule must panic");
-        let RetryFailure::CallbackFailed { callback, .. } = error.failure() else {
+        let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
             panic!("expected a callback-failure terminal");
         };
         assert_eq!(callback.callback(), RetryCallbackKind::Rule);
