@@ -14,14 +14,14 @@ use qubit_clock::MonotonicInstant;
 use qubit_clock::TimeError;
 
 use super::RetryResource;
+use crate::RetryAdmissionLimits;
 use crate::RetryBudgetSnapshot;
 use crate::RetryLimitKind;
-use crate::RetryLimits;
 
 /// The single accounting state used by public budgets and retry facades.
 pub(crate) struct RetryBudgetState {
     /// Validated admission limits.
-    limits: RetryLimits,
+    limits: RetryAdmissionLimits,
     /// Initial sample for whole-flow elapsed time.
     started_at: MonotonicInstant,
     /// Latest committed sample; invalid samples never change accounting.
@@ -49,7 +49,7 @@ impl RetryBudgetState {
     /// Empty accounting whose latest sample equals its start.
     #[inline]
     #[must_use = "use the prepared value or inspect the result"]
-    pub(crate) fn new(started_at: MonotonicInstant, limits: RetryLimits) -> Self {
+    pub(crate) fn new(started_at: MonotonicInstant, limits: RetryAdmissionLimits) -> Self {
         Self {
             limits,
             started_at,
@@ -144,14 +144,14 @@ impl RetryBudgetState {
         }
         if self
             .limits
-            .max_operation_elapsed()
+            .operation_time_budget()
             .is_some_and(|limit| self.operation_elapsed >= limit)
         {
             return Some(RetryLimitKind::OperationElapsed);
         }
         if self
             .limits
-            .max_total_elapsed()
+            .total_time_budget()
             .is_some_and(|limit| self.snapshot().total_elapsed().saturating_add(delay) >= limit)
         {
             return Some(RetryLimitKind::TotalElapsed);

@@ -8,10 +8,10 @@
 //! Pure retry policy values and their validated builder.
 
 pub(crate) mod internal;
-mod retry_limits;
+mod retry_admission_limits;
 mod retry_policy;
 mod retry_policy_builder;
 
-pub use retry_limits::RetryLimits;
+pub use retry_admission_limits::RetryAdmissionLimits;
 pub use retry_policy::RetryPolicy;
 pub use retry_policy_builder::RetryPolicyBuilder;

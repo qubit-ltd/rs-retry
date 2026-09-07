@@ -10,7 +10,7 @@ use qubit_retry::Retry;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
 /// Executes the guide's synchronous cancellation contract.
@@ -30,7 +30,7 @@ fn test_readme_synchronous_cancellation() {
         })
         .expect_err("cancellation stops further attempts");
     assert_eq!(calls, 1);
-    assert!(matches!(error.failure(), RetryFailure::Cancelled { .. }));
+    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { .. }));
 }
 
 /// Executes the guide's completion diagnostic and consuming error map contract.
@@ -38,7 +38,7 @@ fn test_readme_synchronous_cancellation() {
 fn test_readme_completion_diagnostics_and_error_mapping() {
     struct CompletionAudit;
     impl RetryObserver<&'static str> for CompletionAudit {
-        fn on_terminal_failure(&self, _: &RetryFailure<&'static str>, _: &RetryContext) {
+        fn on_terminal_failure(&self, _: &RetryErrorReason, _: &RetryContext) {
             panic!("audit sink unavailable");
         }
     }

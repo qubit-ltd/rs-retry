@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use super::DurationData;
 use crate::BackoffPolicy;
-use crate::RetryLimits;
+use crate::RetryAdmissionLimits;
 use crate::RetryPolicy;
 use crate::RetryPolicyError;
 
@@ -23,9 +23,9 @@ pub(crate) struct RetryPolicyData {
     /// Maximum number of attempts including the first attempt.
     pub(crate) max_attempts: u32,
     /// Optional cumulative operation budget.
-    pub(crate) max_operation_elapsed: Option<DurationData>,
+    pub(crate) operation_time_budget: Option<DurationData>,
     /// Optional whole-flow budget.
-    pub(crate) max_total_elapsed: Option<DurationData>,
+    pub(crate) total_time_budget: Option<DurationData>,
     /// Validated backoff strategy data.
     pub(crate) backoff: BackoffPolicy,
 }
@@ -40,11 +40,11 @@ impl From<&RetryPolicy> for RetryPolicyData {
     /// Wire policy preserving validated backoff and continuation budgets.
     #[inline]
     fn from(policy: &RetryPolicy) -> Self {
-        let limits = policy.limits();
+        let limits = policy.admission_limits();
         Self {
             max_attempts: limits.max_attempts().get(),
-            max_operation_elapsed: limits.max_operation_elapsed().map(DurationData::from),
-            max_total_elapsed: limits.max_total_elapsed().map(DurationData::from),
+            operation_time_budget: limits.operation_time_budget().map(DurationData::from),
+            total_time_budget: limits.total_time_budget().map(DurationData::from),
             backoff: policy.backoff().clone(),
         }
     }
@@ -65,10 +65,10 @@ impl TryFrom<RetryPolicyData> for RetryPolicy {
     /// # Errors
     /// Rejects zero attempts and invalid encoded elapsed durations.
     fn try_from(data: RetryPolicyData) -> Result<Self, Self::Error> {
-        let limits = RetryLimits::try_from(super::RetryLimitsData {
+        let limits = RetryAdmissionLimits::try_from(super::RetryAdmissionLimitsData {
             max_attempts: data.max_attempts,
-            max_operation_elapsed: data.max_operation_elapsed,
-            max_total_elapsed: data.max_total_elapsed,
+            operation_time_budget: data.operation_time_budget,
+            total_time_budget: data.total_time_budget,
         })?;
         Ok(Self::new(limits, data.backoff))
     }

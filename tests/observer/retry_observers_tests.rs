@@ -39,7 +39,7 @@ use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
@@ -149,7 +149,7 @@ impl RetryObserver<TestError> for CompletionObserver {
         self.complete(RetryCallbackPhase::Success, None, context);
     }
 
-    fn on_terminal_failure(&self, failure: &RetryFailure<TestError>, context: &RetryContext) {
+    fn on_terminal_failure(&self, failure: &RetryErrorReason, context: &RetryContext) {
         self.complete(
             RetryCallbackPhase::TerminalFailure,
             Some(format!("{failure:?}")),
@@ -186,7 +186,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
         policy = policy.backoff(BackoffPolicy::fixed(Duration::from_millis(1)));
     }
     if scenario == CompletionScenario::ExhaustedBeforeAttempt {
-        policy = policy.max_total_elapsed(Duration::ZERO);
+        policy = policy.total_time_budget(Duration::ZERO);
     }
     let mut builder = Retry::<TestError>::builder(policy.build().expect("valid completion policy"));
     for index in 0..3 {
@@ -245,7 +245,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                 scenario,
                 CompletionScenario::TimedOut | CompletionScenario::TimerFailureBeforeAttempt
             ) {
-                worker = worker.flow_timeout(Duration::from_secs(1));
+                worker = worker.hard_flow_timeout(Duration::from_secs(1));
             }
             worker.run(move |_| operation())
         }
@@ -256,7 +256,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                 scenario,
                 CompletionScenario::TimedOut | CompletionScenario::TimerFailureBeforeAttempt
             ) {
-                executor = executor.flow_timeout(Duration::from_secs(1));
+                executor = executor.hard_flow_timeout(Duration::from_secs(1));
             }
             executor.run(|| future::ready(operation())).await
         }
@@ -289,14 +289,14 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                 "{facade:?} {scenario:?}"
             );
             match scenario {
-                CompletionScenario::Abort => assert!(matches!(error.failure(), RetryFailure::Aborted { .. })),
+                CompletionScenario::Abort => assert!(matches!(error.reason(), RetryErrorReason::Aborted { .. })),
                 CompletionScenario::Exhausted | CompletionScenario::ExhaustedBeforeAttempt => {
                     let expected = if zero_attempts {
                         RetryLimitKind::TotalElapsed
                     } else {
                         RetryLimitKind::Attempts
                     };
-                    assert!(matches!(error.failure(), RetryFailure::Exhausted { limit, .. } if *limit == expected));
+                    assert!(matches!(error.reason(), RetryErrorReason::Exhausted { limit, .. } if *limit == expected));
                 }
                 CompletionScenario::CancelledBeforeAttempt | CompletionScenario::CancelledAfterFailure => {
                     let expected = if zero_attempts {
@@ -304,7 +304,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                     } else {
                         RetryCancellationPhase::Backoff
                     };
-                    assert!(matches!(error.failure(), RetryFailure::Cancelled { phase, .. } if *phase == expected));
+                    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. } if *phase == expected));
                 }
                 CompletionScenario::StartedPanic
                 | CompletionScenario::FailedPanic
@@ -317,28 +317,28 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                         _ => RetryCallbackPhase::RuleDecision,
                     };
                     assert!(
-                        matches!(error.failure(), RetryFailure::CallbackFailed { callback, .. } if callback.phase() == expected && callback.index() == 0)
+                        matches!(error.reason(), RetryErrorReason::CallbackFailed { callback, .. } if callback.phase() == expected && callback.index() == 0)
                     );
                 }
                 CompletionScenario::TimerFailure | CompletionScenario::TimerFailureBeforeAttempt => {
                     assert!(matches!(
-                        error.failure(),
-                        RetryFailure::Infrastructure {
+                        error.reason(),
+                        RetryErrorReason::Infrastructure {
                             failure: RetryInfrastructureFailure::Timer { .. },
                             ..
                         }
                     ))
                 }
                 CompletionScenario::TimedOut => assert!(matches!(
-                    error.failure(),
-                    RetryFailure::TimedOut {
+                    error.reason(),
+                    RetryErrorReason::TimedOut {
                         scope: RetryTimeoutScope::Flow,
                         ..
                     }
                 )),
                 CompletionScenario::Success => unreachable!(),
             }
-            let original_failure = format!("{:?}", error.failure());
+            let original_failure = format!("{:?}", error.reason());
             assert_eq!(
                 error.completion_callback_failures().len(),
                 if panic_on_completion { 2 } else { 0 }
@@ -476,7 +476,7 @@ impl RetryObserver<TestError> for CompletionCounter {
         self.0.fetch_add(1, Ordering::SeqCst);
     }
 
-    fn on_terminal_failure(&self, _failure: &RetryFailure<TestError>, _context: &RetryContext) {
+    fn on_terminal_failure(&self, _failure: &RetryErrorReason, _context: &RetryContext) {
         self.0.fetch_add(1, Ordering::SeqCst);
     }
 }
@@ -550,7 +550,7 @@ impl RetryObserver<TestError> for CompletionPanic {
         panic!("completion panic");
     }
 
-    fn on_terminal_failure(&self, _failure: &RetryFailure<TestError>, _context: &RetryContext) {
+    fn on_terminal_failure(&self, _failure: &RetryErrorReason, _context: &RetryContext) {
         panic!("completion panic");
     }
 }
@@ -636,7 +636,7 @@ impl RetryObserver<TestError> for CompletionDropPanicObserver {
         self.raise();
     }
 
-    fn on_terminal_failure(&self, _failure: &RetryFailure<TestError>, _context: &RetryContext) {
+    fn on_terminal_failure(&self, _failure: &RetryErrorReason, _context: &RetryContext) {
         self.raise();
     }
 }
@@ -713,7 +713,7 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                         let (failure, context, failures) = error.into_parts();
                         assert!(matches!(
                             failure,
-                            RetryFailure::Exhausted {
+                            RetryErrorReason::Exhausted {
                                 limit: RetryLimitKind::Attempts,
                                 ..
                             }

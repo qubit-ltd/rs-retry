@@ -418,7 +418,7 @@ mod tests {
     use crate::AttemptFailure;
     use crate::Retry;
     use crate::RetryCancellationToken;
-    use crate::RetryFailure;
+    use crate::RetryErrorReason;
     use crate::RetryInfrastructureFailure;
     use crate::RetryPanic;
     use crate::RetryPolicy;
@@ -582,8 +582,10 @@ mod tests {
             .expect_err("reaper spawn fails");
         assert_eq!(error.context().attempts(), 0);
         assert_eq!(error.context().current_attempt(), None);
-        assert!(matches!(error.failure(), RetryFailure::Infrastructure {
-            failure: RetryInfrastructureFailure::WorkerSpawn { message }, last_failure: None, ..
-        } if message.contains("reaper")));
+        assert!(matches!(
+            error.reason(),
+            RetryErrorReason::Infrastructure { failure: RetryInfrastructureFailure::WorkerSpawn { message } }
+                if message.contains("reaper")
+        ));
     }
 }

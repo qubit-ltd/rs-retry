@@ -28,7 +28,6 @@ use crate::RetryInfrastructureFailure;
 use crate::RetryRandomSource;
 use crate::RetrySuccess;
 use crate::RetryTimeoutScope;
-use crate::random::ThreadRetryRandomSource;
 
 /// Tokio retry execution with explicit attempt and flow timeout controls.
 ///
@@ -46,7 +45,7 @@ use crate::random::ThreadRetryRandomSource;
 /// use qubit_retry::Retry;
 /// use qubit_retry::RetryCancellationPhase;
 /// use qubit_retry::RetryCancellationToken;
-/// use qubit_retry::RetryFailure;
+/// use qubit_retry::RetryErrorReason;
 /// use qubit_retry::RetryPolicy;
 ///
 /// #[tokio::main(flavor = "current_thread")]
@@ -56,14 +55,14 @@ use crate::random::ThreadRetryRandomSource;
 ///     let operation_token = token.clone();
 ///     let execution: AsyncRetry<'_, &str> = retry.asynchronous();
 ///     let error = execution
-///         .attempt_timeout(Duration::from_secs(2))
-///         .flow_timeout(Duration::from_secs(5))
+///         .hard_attempt_timeout(Duration::from_secs(2))
+///         .hard_flow_timeout(Duration::from_secs(5))
 ///         .cancellation_token(token)
 ///         .run(move || {
 ///             operation_token.cancel();
 ///             future::pending::<Result<(), &str>>()
 ///         }).await.unwrap_err();
-///     assert!(matches!(error.failure(), RetryFailure::Cancelled {
+///     assert!(matches!(error.reason(), RetryErrorReason::Cancelled {
 ///         phase: RetryCancellationPhase::Attempt, ..
 ///     }));
 /// }
@@ -82,7 +81,7 @@ pub struct AsyncRetry<'a, E> {
     /// Timer and monotonic clock used by this execution.
     timer: Option<Arc<dyn Timer>>,
     /// Shared random source for uniform delays and jitter.
-    random_source: Arc<dyn RetryRandomSource>,
+    random_source: Option<Arc<dyn RetryRandomSource>>,
 }
 
 impl<'a, E: 'static> AsyncRetry<'a, E> {
@@ -102,7 +101,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
             flow_timeout: None,
             cancellation_token: None,
             timer: None,
-            random_source: Arc::new(ThreadRetryRandomSource),
+            random_source: None,
         }
     }
 
@@ -115,7 +114,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     /// # Returns
     /// This facade with the selected hard timeout enabled.
     #[inline(always)]
-    pub fn attempt_timeout(mut self, timeout: Duration) -> Self {
+    pub fn hard_attempt_timeout(mut self, timeout: Duration) -> Self {
         self.attempt_timeout = Some(timeout);
         self
     }
@@ -129,7 +128,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     /// # Returns
     /// This facade with the selected hard timeout enabled.
     #[inline(always)]
-    pub fn flow_timeout(mut self, timeout: Duration) -> Self {
+    pub fn hard_flow_timeout(mut self, timeout: Duration) -> Self {
         self.flow_timeout = Some(timeout);
         self
     }
@@ -169,7 +168,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     /// This facade using the supplied runtime resource.
     #[inline(always)]
     pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
-        self.random_source = random_source;
+        self.random_source = Some(random_source);
         self
     }
 
@@ -244,12 +243,13 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
-        let timer = self.timer.clone().unwrap_or_else(|| Arc::new(TokioTimer::current()));
+        let default_timer = TokioTimer::current();
+        let timer: &dyn Timer = self.timer.as_deref().unwrap_or(&default_timer);
         let clock = timer.clock();
         let mut controller = RetryFlowController::new(
             clock.now(),
             self.retry,
-            Arc::clone(&self.random_source),
+            self.random_source.clone(),
             self.attempt_timeout,
             self.flow_timeout,
         );
@@ -382,10 +382,7 @@ where
 /// # Returns
 /// Some registered future, or None when no deadline was supplied.
 #[inline]
-fn register_timeout(
-    timer: &Arc<dyn Timer>,
-    deadline: Option<MonotonicInstant>,
-) -> Result<Option<TimerFuture>, TimeError> {
+fn register_timeout(timer: &dyn Timer, deadline: Option<MonotonicInstant>) -> Result<Option<TimerFuture>, TimeError> {
     deadline.map(|deadline| timer.at(deadline)).transpose()
 }
 
@@ -400,7 +397,7 @@ fn register_timeout(
 /// Elapsed, cancelled, or timer-failed status; cancellation wins same-poll
 /// readiness.
 async fn sleep(
-    timer: &Arc<dyn Timer>,
+    timer: &dyn Timer,
     deadline: MonotonicInstant,
     cancellation: Option<&RetryCancellationToken>,
 ) -> AsyncBackoffOutcome {

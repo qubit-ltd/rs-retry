@@ -25,7 +25,7 @@ use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
@@ -56,18 +56,18 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
         .run(|| Err::<(), _>(TestError("retry")))
         .unwrap_err();
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Infrastructure {
+        error.reason(),
+        RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Timer { .. },
             ..
         }
     ));
     assert_eq!(error.context().current_attempt(), None);
-    assert_eq!(error.context().current_attempt_timeout(), None);
+    assert_eq!(error.context().current_hard_attempt_timeout(), None);
 
     let exhausted = Retry::<TestError>::builder(
         RetryPolicy::builder()
-            .max_operation_elapsed(Duration::ZERO)
+            .operation_time_budget(Duration::ZERO)
             .build()
             .unwrap(),
     )
@@ -76,8 +76,8 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     .run(|| Ok::<_, TestError>(()))
     .unwrap_err();
     assert!(matches!(
-        exhausted.failure(),
-        RetryFailure::Exhausted {
+        exhausted.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::OperationElapsed,
             ..
         }
@@ -89,7 +89,7 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
         .sync()
         .run(|| Err::<(), _>(TestError("fatal")))
         .unwrap_err();
-    assert!(matches!(aborted.failure(), RetryFailure::Aborted { .. }));
+    assert!(matches!(aborted.reason(), RetryErrorReason::Aborted { .. }));
 
     let attempts_exhausted = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
         .build()
@@ -97,8 +97,8 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
         .run(|| Err::<(), _>(TestError("only attempt")))
         .unwrap_err();
     assert!(matches!(
-        attempts_exhausted.failure(),
-        RetryFailure::Exhausted {
+        attempts_exhausted.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::Attempts,
             ..
         }
@@ -107,7 +107,7 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     let delay_rejected = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .max_attempts(2)
-            .max_total_elapsed(Duration::from_millis(1))
+            .total_time_budget(Duration::from_millis(1))
             .backoff(BackoffPolicy::fixed(Duration::from_secs(1)))
             .build()
             .unwrap(),
@@ -117,8 +117,8 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     .run(|| Err::<(), _>(TestError("retry")))
     .unwrap_err();
     assert!(matches!(
-        delay_rejected.failure(),
-        RetryFailure::Exhausted {
+        delay_rejected.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             ..
         }
@@ -128,7 +128,7 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     let observer = AdvancingObserver(Arc::clone(&clock));
     let expired_by_observer = Retry::<TestError>::builder(
         RetryPolicy::builder()
-            .max_total_elapsed(Duration::from_secs(1))
+            .total_time_budget(Duration::from_secs(1))
             .build()
             .unwrap(),
     )
@@ -139,8 +139,8 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     .run(|| Ok::<_, TestError>(()))
     .unwrap_err();
     assert!(matches!(
-        expired_by_observer.failure(),
-        RetryFailure::Exhausted {
+        expired_by_observer.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             ..
         }
@@ -239,8 +239,8 @@ fn test_sync_commit_revalidates_clock_before_counting_operation() {
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(error.context().operation_elapsed(), Duration::ZERO);
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Infrastructure {
+        error.reason(),
+        RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Clock { .. },
             last_failure: None,
             ..

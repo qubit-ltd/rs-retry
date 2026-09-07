@@ -9,6 +9,7 @@
 
 use std::fmt;
 
+#[cfg(feature = "worker")]
 use super::WorkerStopTrigger;
 
 /// Infrastructure failure that prevented safe retry-flow continuation.
@@ -26,13 +27,16 @@ pub enum RetryInfrastructureFailure {
         message: Box<str>,
     },
     /// Starting an isolated worker failed.
+    #[cfg(feature = "worker")]
     WorkerSpawn {
         /// Diagnostic supplied by the worker runtime.
         message: Box<str>,
     },
     /// The worker event channel closed before its exit protocol completed.
+    #[cfg(feature = "worker")]
     WorkerChannelClosed,
     /// A stopped worker did not exit within its grace period.
+    #[cfg(feature = "worker")]
     WorkerStillRunning {
         /// Event that requested the worker to stop.
         trigger: WorkerStopTrigger,
@@ -49,7 +53,10 @@ impl RetryInfrastructureFailure {
     #[inline(always)]
     pub fn message(&self) -> Option<&str> {
         match self {
-            Self::Clock { message } | Self::Timer { message } | Self::WorkerSpawn { message } => Some(message),
+            Self::Clock { message } | Self::Timer { message } => Some(message),
+            #[cfg(feature = "worker")]
+            Self::WorkerSpawn { message } => Some(message),
+            #[cfg(feature = "worker")]
             Self::WorkerStillRunning { .. } | Self::WorkerChannelClosed => None,
         }
     }
@@ -61,6 +68,7 @@ impl RetryInfrastructureFailure {
     /// infrastructure failures.
     #[must_use]
     #[inline(always)]
+    #[cfg(feature = "worker")]
     pub fn worker_stop_trigger(&self) -> Option<WorkerStopTrigger> {
         match self {
             Self::WorkerStillRunning { trigger } => Some(*trigger),
@@ -89,12 +97,15 @@ impl fmt::Display for RetryInfrastructureFailure {
             Self::Timer { message } => {
                 write!(formatter, "timer failed: {message}")
             }
+            #[cfg(feature = "worker")]
             Self::WorkerSpawn { message } => {
                 write!(formatter, "worker spawn failed: {message}")
             }
+            #[cfg(feature = "worker")]
             Self::WorkerChannelClosed => {
                 write!(formatter, "worker event channel closed before exit was confirmed")
             }
+            #[cfg(feature = "worker")]
             Self::WorkerStillRunning { trigger } => {
                 write!(formatter, "worker still running after {trigger}")
             }

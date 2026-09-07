@@ -27,7 +27,7 @@ use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryPolicy;
@@ -90,7 +90,7 @@ async fn test_async_backoff_registration_does_not_move_flow_deadline() {
             .build()
             .asynchronous()
             .timer(timer)
-            .flow_timeout(Duration::from_secs(10))
+            .hard_flow_timeout(Duration::from_secs(10))
             .run(|| async { Err::<(), _>(TestError("retry")) })
             .await
     });
@@ -110,8 +110,8 @@ async fn test_async_backoff_registration_does_not_move_flow_deadline() {
         .expect("async retry task completes")
         .expect_err("flow timeout");
     assert!(matches!(
-        error.failure(),
-        RetryFailure::TimedOut {
+        error.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Flow,
             ..
         }
@@ -167,8 +167,8 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         .await
         .unwrap_err();
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Infrastructure {
+        error.reason(),
+        RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Timer { .. },
             ..
         }
@@ -181,8 +181,8 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         .await
         .unwrap_err();
     assert!(matches!(
-        attempts_exhausted.failure(),
-        RetryFailure::Exhausted {
+        attempts_exhausted.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::Attempts,
             ..
         }
@@ -191,7 +191,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let delay_rejected = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .max_attempts(2)
-            .max_total_elapsed(Duration::from_millis(1))
+            .total_time_budget(Duration::from_millis(1))
             .backoff(BackoffPolicy::fixed(Duration::from_secs(1)))
             .build()
             .unwrap(),
@@ -202,8 +202,8 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     .await
     .unwrap_err();
     assert!(matches!(
-        delay_rejected.failure(),
-        RetryFailure::Exhausted {
+        delay_rejected.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             ..
         }
@@ -216,12 +216,12 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         .run(|| async { Err::<(), _>(TestError("fatal")) })
         .await
         .unwrap_err();
-    assert!(matches!(aborted.failure(), RetryFailure::Aborted { .. }));
+    assert!(matches!(aborted.reason(), RetryErrorReason::Aborted { .. }));
 
     let clock = ManualMonotonicClock::new_shared();
     let expired_by_observer = Retry::<TestError>::builder(
         RetryPolicy::builder()
-            .max_total_elapsed(Duration::from_secs(1))
+            .total_time_budget(Duration::from_secs(1))
             .build()
             .unwrap(),
     )
@@ -233,8 +233,8 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     .await
     .unwrap_err();
     assert!(matches!(
-        expired_by_observer.failure(),
-        RetryFailure::Exhausted {
+        expired_by_observer.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             ..
         }
@@ -248,14 +248,14 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let attempt_registration_error = Retry::<TestError>::builder(retry_once_policy())
         .build()
         .asynchronous()
-        .attempt_timeout(Duration::from_secs(1))
+        .hard_attempt_timeout(Duration::from_secs(1))
         .timer(registration_timer)
         .run(|| async { Ok::<_, TestError>(()) })
         .await
         .unwrap_err();
     assert!(matches!(
-        attempt_registration_error.failure(),
-        RetryFailure::Infrastructure {
+        attempt_registration_error.reason(),
+        RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Timer { .. },
             ..
         }
@@ -269,14 +269,14 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let attempt_completion_error = Retry::<TestError>::builder(retry_once_policy())
         .build()
         .asynchronous()
-        .attempt_timeout(Duration::from_secs(1))
+        .hard_attempt_timeout(Duration::from_secs(1))
         .timer(completion_timer)
         .run(future::pending::<Result<(), TestError>>)
         .await
         .unwrap_err();
     assert!(matches!(
-        attempt_completion_error.failure(),
-        RetryFailure::Infrastructure {
+        attempt_completion_error.reason(),
+        RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Timer { .. },
             ..
         }
@@ -289,11 +289,11 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         .run(|| async { Err::<(), _>(TestError("retry")) })
         .await
         .unwrap_err();
-    assert!(matches!(rule_panics.failure(), RetryFailure::CallbackFailed { .. }));
+    assert!(matches!(rule_panics.reason(), RetryErrorReason::CallbackFailed { .. }));
 
     let zero_budget = Retry::<TestError>::builder(
         RetryPolicy::builder()
-            .max_total_elapsed(Duration::ZERO)
+            .total_time_budget(Duration::ZERO)
             .build()
             .unwrap(),
     )
@@ -303,8 +303,8 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     .await
     .unwrap_err();
     assert!(matches!(
-        zero_budget.failure(),
-        RetryFailure::Exhausted {
+        zero_budget.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             ..
         }
@@ -313,7 +313,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let successful_timed_attempt = Retry::<TestError>::builder(retry_once_policy())
         .build()
         .asynchronous()
-        .attempt_timeout(Duration::from_secs(1))
+        .hard_attempt_timeout(Duration::from_secs(1))
         .run(|| async { Ok::<_, TestError>(23_u32) })
         .await
         .unwrap();
@@ -322,14 +322,14 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let tie = Retry::<TestError>::builder(retry_once_policy())
         .build()
         .asynchronous()
-        .attempt_timeout(Duration::from_millis(1))
-        .flow_timeout(Duration::from_millis(5))
+        .hard_attempt_timeout(Duration::from_millis(1))
+        .hard_flow_timeout(Duration::from_millis(5))
         .run(future::pending::<Result<(), TestError>>)
         .await
         .unwrap_err();
     assert!(matches!(
-        tie.failure(),
-        RetryFailure::TimedOut {
+        tie.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Attempt,
             last_failure: Some(AttemptFailure::TimedOut {
                 scope: RetryTimeoutScope::Attempt
@@ -348,14 +348,14 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     )
     .build()
     .asynchronous()
-    .flow_timeout(Duration::from_secs(1))
+    .hard_flow_timeout(Duration::from_secs(1))
     .timer(cap_timer)
     .run(|| async { Err::<(), _>(TestError("retry")) })
     .await
     .unwrap_err();
     assert!(matches!(
-        cap_error.failure(),
-        RetryFailure::Infrastructure {
+        cap_error.reason(),
+        RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Timer { .. },
             ..
         }
@@ -364,13 +364,13 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let zero_flow = Retry::<TestError>::builder(retry_once_policy())
         .build()
         .asynchronous()
-        .flow_timeout(Duration::ZERO)
+        .hard_flow_timeout(Duration::ZERO)
         .run(|| async { Ok::<_, TestError>(()) })
         .await
         .unwrap_err();
     assert!(matches!(
-        zero_flow.failure(),
-        RetryFailure::TimedOut {
+        zero_flow.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Flow,
             ..
         }
@@ -381,14 +381,14 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         .observer(AdvancingObserver(Arc::clone(&clock)))
         .build()
         .asynchronous()
-        .flow_timeout(Duration::from_secs(1))
+        .hard_flow_timeout(Duration::from_secs(1))
         .timer(clock.new_timer())
         .run(|| async { Ok::<_, TestError>(()) })
         .await
         .unwrap_err();
     assert!(matches!(
-        flow_expired_by_observer.failure(),
-        RetryFailure::TimedOut {
+        flow_expired_by_observer.reason(),
+        RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Flow,
             ..
         }

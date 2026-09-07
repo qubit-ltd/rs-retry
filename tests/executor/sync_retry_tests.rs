@@ -38,7 +38,7 @@ use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
@@ -176,9 +176,9 @@ fn test_sync_cancellation_before_attempt_does_not_call_operation() {
         .run(|| -> Result<(), TestError> { panic!("pre-cancelled operation must not run") })
         .expect_err("pre-cancellation must stop before the first operation");
 
-    let RetryFailure::Cancelled {
+    let RetryErrorReason::Cancelled {
         phase, last_failure, ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a cancellation terminal");
     };
@@ -209,8 +209,8 @@ fn test_sync_pre_admission_observer_cancellation_does_not_call_operation() {
         .expect_err("observer cancellation must stop before admission");
 
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Cancelled {
+        error.reason(),
+        RetryErrorReason::Cancelled {
             phase: RetryCancellationPhase::BeforeAttempt,
             last_failure: None,
             ..
@@ -264,9 +264,9 @@ fn test_sync_operation_error_records_failure_before_cancellation() {
     })
     .expect_err("a cancelled failing operation must stop before another attempt");
 
-    let RetryFailure::Cancelled {
+    let RetryErrorReason::Cancelled {
         phase, last_failure, ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a cancellation terminal");
     };
@@ -330,9 +330,9 @@ fn test_sync_backoff_cancellation_wakes_pending_manual_timer() {
         .expect("cancellation should wake the pending backoff")
         .expect_err("backoff cancellation must terminate the retry");
 
-    let RetryFailure::Cancelled {
+    let RetryErrorReason::Cancelled {
         phase, last_failure, ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected a cancellation terminal");
     };
@@ -422,8 +422,8 @@ fn test_sync_retry_success_clock_regression_returns_infrastructure_error() {
         .expect_err("a regressing completion sample must fail");
 
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Infrastructure {
+        error.reason(),
+        RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Clock { .. },
             last_failure: None,
             ..
@@ -431,7 +431,7 @@ fn test_sync_retry_success_clock_regression_returns_infrastructure_error() {
     ));
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.context().current_attempt(), None);
-    assert_eq!(error.context().current_attempt_timeout(), None);
+    assert_eq!(error.context().current_hard_attempt_timeout(), None);
 }
 
 #[test]
@@ -445,11 +445,11 @@ fn test_sync_retry_clock_failure_precedes_a_returned_abort_decision() {
         .run(|| Err::<(), _>(TestError("abort")))
         .expect_err("normal rule return requires coherent terminal accounting");
 
-    let RetryFailure::Infrastructure {
+    let RetryErrorReason::Infrastructure {
         failure: RetryInfrastructureFailure::Clock { .. },
         last_failure: Some(last_failure),
         ..
-    } = error.failure()
+    } = error.reason()
     else {
         panic!("expected post-rule clock failure with the retained operation error");
     };
@@ -533,7 +533,7 @@ fn test_sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
     let clock = ManualMonotonicClock::new_shared();
     let policy = RetryPolicy::builder()
         .max_attempts(2)
-        .max_total_elapsed(Duration::from_secs(1))
+        .total_time_budget(Duration::from_secs(1))
         .backoff(BackoffPolicy::immediate())
         .build()
         .unwrap();
@@ -551,8 +551,8 @@ fn test_sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
 
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Exhausted {
+        error.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             last_failure: Some(AttemptFailure::Error(TestError("first attempt failed"))),
             ..
@@ -583,8 +583,8 @@ fn test_sync_retry_matches_shared_terminal_matrix() {
             .max_attempts(2)
             .backoff(BackoffPolicy::immediate());
         policy = match limit {
-            RetryLimitKind::OperationElapsed => policy.max_operation_elapsed(Duration::from_secs(1)),
-            RetryLimitKind::TotalElapsed => policy.max_total_elapsed(Duration::from_secs(1)),
+            RetryLimitKind::OperationElapsed => policy.operation_time_budget(Duration::from_secs(1)),
+            RetryLimitKind::TotalElapsed => policy.total_time_budget(Duration::from_secs(1)),
             RetryLimitKind::Attempts => unreachable!(),
         };
         let error = Retry::<TestError>::builder(policy.build().unwrap())
@@ -649,7 +649,7 @@ fn test_sync_retry_refreshes_elapsed_time_between_callback_phases() {
     let records = callback_elapsed_records();
     let policy = RetryPolicy::builder()
         .max_attempts(2)
-        .max_total_elapsed(Duration::from_secs(3))
+        .total_time_budget(Duration::from_secs(3))
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("callback elapsed policy should be valid");
@@ -686,8 +686,8 @@ fn test_sync_retry_refreshes_elapsed_time_between_callback_phases() {
         ]
     );
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Exhausted {
+        error.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             ..
         }

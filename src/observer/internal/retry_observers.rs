@@ -17,7 +17,7 @@ use crate::RetryCallbackFailure;
 use crate::RetryCallbackKind;
 use crate::RetryCallbackPhase;
 use crate::RetryContext;
-use crate::RetryFailure;
+use crate::RetryErrorReason;
 use crate::internal::retry_panic_from_payload;
 use crate::observer::RetryObserver;
 
@@ -27,7 +27,7 @@ use crate::observer::RetryObserver;
 pub(crate) struct RetryObservers<E> {
     /// Ordered shared observer objects; cloning copies references without
     /// cloning E.
-    observers: Vec<Arc<dyn RetryObserver<E>>>,
+    observers: Arc<[Arc<dyn RetryObserver<E>>]>,
 }
 
 /// Clones the ordered observer references without cloning the operation error.
@@ -41,7 +41,7 @@ impl<E> Clone for RetryObservers<E> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            observers: self.observers.clone(),
+            observers: Arc::clone(&self.observers),
         }
     }
 }
@@ -54,7 +54,9 @@ impl<E> Default for RetryObservers<E> {
     /// A collection with no registered callbacks and no vector allocation.
     #[inline]
     fn default() -> Self {
-        Self { observers: Vec::new() }
+        Self {
+            observers: Arc::from([]),
+        }
     }
 }
 
@@ -72,7 +74,15 @@ impl<E: 'static> RetryObservers<E> {
     where
         O: RetryObserver<E>,
     {
-        self.observers.push(Arc::new(observer));
+        let mut observers: Vec<_> = self.observers.iter().cloned().collect();
+        observers.push(Arc::new(observer));
+        self.observers = observers.into();
+    }
+
+    pub(crate) fn push_shared(&mut self, observer: Arc<dyn RetryObserver<E>>) {
+        let mut observers: Vec<_> = self.observers.iter().cloned().collect();
+        observers.push(observer);
+        self.observers = observers.into();
     }
 
     /// Notifies observers before an attempt and stops on the first panic.
@@ -168,11 +178,11 @@ impl<E: 'static> RetryObservers<E> {
     #[inline(always)]
     pub(crate) fn notify_terminal_failure(
         &self,
-        failure: &RetryFailure<E>,
+        reason: &RetryErrorReason,
         context: &RetryContext,
     ) -> Vec<RetryCallbackFailure> {
         self.notify_each(RetryCallbackPhase::TerminalFailure, |observer| {
-            observer.on_terminal_failure(failure, context)
+            observer.on_terminal_failure(reason, context)
         })
     }
 

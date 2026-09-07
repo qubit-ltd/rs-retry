@@ -26,7 +26,7 @@ use crate::rule::RetryRule;
 pub(crate) struct RetryRules<E> {
     /// Ordered shared rule objects; cloning copies references without cloning
     /// E.
-    rules: Vec<Arc<dyn RetryRule<E>>>,
+    rules: Arc<[Arc<dyn RetryRule<E>>]>,
 }
 
 /// Clones the ordered callback references without cloning the operation error.
@@ -39,7 +39,7 @@ impl<E> Clone for RetryRules<E> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            rules: self.rules.clone(),
+            rules: Arc::clone(&self.rules),
         }
     }
 }
@@ -52,7 +52,7 @@ impl<E> Default for RetryRules<E> {
     /// A collection with no registered callbacks and no vector allocation.
     #[inline]
     fn default() -> Self {
-        Self { rules: Vec::new() }
+        Self { rules: Arc::from([]) }
     }
 }
 
@@ -70,7 +70,15 @@ impl<E: 'static> RetryRules<E> {
     where
         R: RetryRule<E>,
     {
-        self.rules.push(Arc::new(rule));
+        let mut rules: Vec<_> = self.rules.iter().cloned().collect();
+        rules.push(Arc::new(rule));
+        self.rules = rules.into();
+    }
+
+    pub(crate) fn push_shared(&mut self, rule: Arc<dyn RetryRule<E>>) {
+        let mut rules: Vec<_> = self.rules.iter().cloned().collect();
+        rules.push(rule);
+        self.rules = rules.into();
     }
 
     /// Resolves the first non-default decision.

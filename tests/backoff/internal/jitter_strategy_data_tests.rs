@@ -30,7 +30,7 @@ fn test_jitter_strategy_data_serializes_variants_and_rejects_invalid_ratio_shape
     for (policy, expected) in values {
         assert_eq!(to_value(policy).unwrap()["jitter"], expected);
     }
-    let valid = json!({"max_attempts": 4, "max_operation_elapsed": null, "max_total_elapsed": null, "backoff": {"strategy": {"type": "fixed", "delay": {"seconds": 1, "nanoseconds": 0}}, "jitter": {"type": "none"}, "retry_after": "at_least_backoff"}});
+    let valid = json!({"max_attempts": 4, "operation_time_budget": null, "total_time_budget": null, "backoff": {"strategy": {"type": "fixed", "delay": {"seconds": 1, "nanoseconds": 0}}, "jitter": {"type": "none"}, "retry_after": "at_least_backoff"}});
     for (jitter, expected_error) in [
         (json!({"type": "none", "ratio": null}), "expected f64"),
         (json!({"type": "none", "ratio": 0.5}), "only valid for bounded jitter"),

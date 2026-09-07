@@ -20,7 +20,7 @@ use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryError;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
@@ -105,7 +105,7 @@ impl RetryObserver<&'static str> for LaterObserver {
         self.record(RetryCallbackPhase::RetryScheduled);
     }
 
-    fn on_terminal_failure(&self, _: &RetryFailure<&'static str>, _: &RetryContext) {
+    fn on_terminal_failure(&self, _: &RetryErrorReason, _: &RetryContext) {
         self.completed.fetch_add(1, Ordering::SeqCst);
     }
 }
@@ -171,7 +171,7 @@ async fn run_matrix(recursive: bool) {
                 Facade::Async => retry.asynchronous().run(|| async { Err::<(), _>("business") }).await,
             };
             let error: RetryError<&'static str> = result.expect_err("callback terminal");
-            let RetryFailure::CallbackFailed { callback, .. } = error.failure() else {
+            let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
                 panic!("must preserve callback terminal");
             };
             assert_eq!(callback.phase(), phase);

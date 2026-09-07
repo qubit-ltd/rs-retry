@@ -16,7 +16,7 @@ use serde_json::json;
 #[test]
 fn test_retry_policy_data_rejects_unknown_public_wire_fields() {
     let error = from_value::<RetryPolicy>(
-        json!({"max_attempts": 1, "max_operation_elapsed": null, "max_total_elapsed": null, "backoff": {"strategy": {"type": "immediate"}, "jitter": {"type": "none"}, "retry_after": "at_least_backoff"}, "unexpected": true}),
+        json!({"max_attempts": 1, "operation_time_budget": null, "total_time_budget": null, "backoff": {"strategy": {"type": "immediate"}, "jitter": {"type": "none"}, "retry_after": "at_least_backoff"}, "unexpected": true}),
     )
     .expect_err("retry policy data must reject unknown fields");
     assert!(error.to_string().contains("unknown field"));

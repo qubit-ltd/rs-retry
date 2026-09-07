@@ -15,7 +15,7 @@ use qubit_retry::Retry;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
 
@@ -47,7 +47,7 @@ fn test_callback_failure_stops_later_callback_kinds() {
         .sync()
         .run(|| Err::<(), _>(TestError("retry")))
         .expect_err("the observer must panic first");
-    let RetryFailure::CallbackFailed { callback, .. } = error.failure() else {
+    let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
         panic!("expected a callback-failure terminal");
     };
     assert_eq!(callback.callback(), RetryCallbackKind::Observer);

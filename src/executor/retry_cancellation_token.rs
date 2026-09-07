@@ -24,7 +24,7 @@ use super::internal::RetryCancellationState;
 /// use qubit_retry::Retry;
 /// use qubit_retry::RetryCancellationPhase;
 /// use qubit_retry::RetryCancellationToken;
-/// use qubit_retry::RetryFailure;
+/// use qubit_retry::RetryErrorReason;
 /// use qubit_retry::RetryPolicy;
 ///
 /// fn main() {
@@ -35,7 +35,7 @@ use super::internal::RetryCancellationState;
 ///         Err::<(), _>("temporary read failure")
 ///     }).unwrap_err();
 ///     assert_eq!(error.context().attempts(), 1);
-///     assert!(matches!(error.failure(), RetryFailure::Cancelled {
+///     assert!(matches!(error.reason(), RetryErrorReason::Cancelled {
 ///         phase: RetryCancellationPhase::Backoff, ..
 ///     }));
 /// }

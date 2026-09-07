@@ -10,7 +10,7 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryRule;
@@ -38,8 +38,8 @@ fn test_first_rule_wins_and_failure_kind_is_stable() {
         .build();
     let error = retry.sync().run::<(), _>(|| Err(UnitTestError)).unwrap_err();
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Exhausted {
+        error.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::Attempts,
             last_failure: Some(AttemptFailure::Error(UnitTestError)),
             ..

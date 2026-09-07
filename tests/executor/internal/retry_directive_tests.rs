@@ -22,7 +22,7 @@ use qubit_retry::Retry;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
@@ -83,8 +83,8 @@ fn test_retry_scheduled_is_not_emitted_after_attempt_exhaustion() {
         .expect_err("one failed attempt exhausts the flow");
     assert_eq!(*recorded.lock().expect("record lock"), None);
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Exhausted {
+        error.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::Attempts,
             ..
         }
@@ -97,7 +97,7 @@ fn test_retry_scheduled_panic_cannot_mask_exhaustion() {
     for policy in [
         RetryPolicy::builder().max_attempts(1).build().expect("attempt policy"),
         RetryPolicy::builder()
-            .max_total_elapsed(Duration::from_secs(1))
+            .total_time_budget(Duration::from_secs(1))
             .backoff(BackoffPolicy::fixed(Duration::from_secs(1)))
             .build()
             .expect("elapsed policy"),
@@ -110,7 +110,7 @@ fn test_retry_scheduled_panic_cannot_mask_exhaustion() {
             .sync()
             .run(|| Err::<(), _>(TestError("retained")))
             .expect_err("budget exhausted");
-        assert!(matches!(error.failure(), RetryFailure::Exhausted { .. }));
+        assert!(matches!(error.reason(), RetryErrorReason::Exhausted { .. }));
         assert_eq!(error.last_error().expect("retained error").0, "retained");
     }
 }
@@ -132,7 +132,7 @@ fn test_retry_scheduled_rechecks_time_after_resolving_jitter() {
     let recorded = Arc::new(Mutex::new(None));
     let policy = RetryPolicy::builder()
         .max_attempts(2)
-        .max_total_elapsed(Duration::from_secs(1))
+        .total_time_budget(Duration::from_secs(1))
         .backoff(BackoffPolicy::fixed(Duration::from_millis(1)).with_full_jitter())
         .build()
         .expect("valid policy");
@@ -145,8 +145,8 @@ fn test_retry_scheduled_rechecks_time_after_resolving_jitter() {
         .run(|| Err::<(), _>(TestError("retained")))
         .expect_err("budget expired during jitter");
     assert!(matches!(
-        error.failure(),
-        RetryFailure::Exhausted {
+        error.reason(),
+        RetryErrorReason::Exhausted {
             limit: RetryLimitKind::TotalElapsed,
             ..
         }

@@ -20,7 +20,7 @@ use qubit_retry::Retry;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
@@ -153,7 +153,7 @@ fn test_retry_panic_from_payload_stops_later_callbacks_for_each_case() {
             .sync()
             .run(|| Err::<(), _>(TestError("retry")))
             .expect_err("the selected callback should panic");
-        let RetryFailure::CallbackFailed { callback, .. } = error.failure() else {
+        let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
             panic!("expected a public callback-failure terminal");
         };
         assert_eq!(callback.callback(), RetryCallbackKind::Observer);
@@ -182,6 +182,6 @@ fn test_control_payload_normal_drop_is_not_leaked() {
         .sync()
         .run(|| Err::<(), _>("business"))
         .expect_err("rule panic should terminate the retry");
-    assert!(matches!(error.failure(), RetryFailure::CallbackFailed { .. }));
+    assert!(matches!(error.reason(), RetryErrorReason::CallbackFailed { .. }));
     assert_eq!(drops.load(Ordering::SeqCst), 1);
 }

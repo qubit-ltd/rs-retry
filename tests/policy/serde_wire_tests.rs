@@ -21,7 +21,7 @@ use serde_json::to_value;
 fn test_serde_serializes_configuration_with_stable_golden_json() {
     let policy = RetryPolicy::builder()
         .max_attempts(4)
-        .max_total_elapsed(Duration::from_secs(10))
+        .total_time_budget(Duration::from_secs(10))
         .backoff(
             BackoffPolicy::exponential(Duration::from_millis(50), 2.0, Duration::from_secs(2))
                 .expect("the golden exponential policy should be valid"),
@@ -33,8 +33,8 @@ fn test_serde_serializes_configuration_with_stable_golden_json() {
         to_value(&policy).expect("policy should serialize"),
         json!({
             "max_attempts": 4,
-            "max_operation_elapsed": null,
-            "max_total_elapsed": { "seconds": 10, "nanoseconds": 0 },
+            "operation_time_budget": null,
+            "total_time_budget": { "seconds": 10, "nanoseconds": 0 },
             "backoff": {
                 "strategy": {
                     "type": "exponential",
@@ -48,11 +48,11 @@ fn test_serde_serializes_configuration_with_stable_golden_json() {
         }),
     );
     assert_eq!(
-        to_value(policy.limits()).expect("limits should serialize"),
+        to_value(policy.admission_limits()).expect("limits should serialize"),
         json!({
             "max_attempts": 4,
-            "max_operation_elapsed": null,
-            "max_total_elapsed": { "seconds": 10, "nanoseconds": 0 }
+            "operation_time_budget": null,
+            "total_time_budget": { "seconds": 10, "nanoseconds": 0 }
         }),
     );
 }

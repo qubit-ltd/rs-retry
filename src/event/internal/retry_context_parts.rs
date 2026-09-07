@@ -20,9 +20,9 @@ pub(crate) struct RetryContextParts {
     /// Configured maximum attempts.
     pub(crate) max_attempts: u32,
     /// Configured maximum cumulative user operation time.
-    pub(crate) max_operation_elapsed: Option<Duration>,
+    pub(crate) operation_time_budget: Option<Duration>,
     /// Configured maximum total retry-flow elapsed time.
-    pub(crate) max_total_elapsed: Option<Duration>,
+    pub(crate) total_time_budget: Option<Duration>,
     /// Cumulative user operation time consumed by this retry flow.
     pub(crate) operation_elapsed: Duration,
     /// Total monotonic time consumed by this retry flow.
@@ -30,7 +30,7 @@ pub(crate) struct RetryContextParts {
     /// Elapsed time spent in the last completed attempt.
     pub(crate) last_attempt_elapsed: Duration,
     /// Effective timeout configured for the current attempt.
-    pub(crate) current_attempt_timeout: Option<Duration>,
+    pub(crate) current_hard_attempt_timeout: Option<Duration>,
     /// Delay selected before the next attempt, when known.
     pub(crate) next_delay: Option<Duration>,
     /// Optional retry-after hint selected by a retry rule.

@@ -22,7 +22,6 @@ use crate::RetryError;
 use crate::RetryInfrastructureFailure;
 use crate::RetryRandomSource;
 use crate::RetrySuccess;
-use crate::random::ThreadRetryRandomSource;
 
 /// Same-thread retry execution. It intentionally exposes no timeout method.
 ///
@@ -52,9 +51,9 @@ pub struct SyncRetry<'a, E> {
     /// cancellation.
     cancellation_token: Option<RetryCancellationToken>,
     /// Timer and monotonic clock used by this execution.
-    timer: Arc<dyn Timer>,
+    timer: Option<Arc<dyn Timer>>,
     /// Shared random source for uniform delays and jitter.
-    random_source: Arc<dyn RetryRandomSource>,
+    random_source: Option<Arc<dyn RetryRandomSource>>,
 }
 
 impl<'a, E: 'static> SyncRetry<'a, E> {
@@ -70,8 +69,8 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
         Self {
             retry,
             cancellation_token: None,
-            timer: Arc::new(StdTimer::new()),
-            random_source: Arc::new(ThreadRetryRandomSource),
+            timer: None,
+            random_source: None,
         }
     }
 
@@ -103,7 +102,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
     /// This facade using the supplied runtime resource.
     #[inline(always)]
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
-        self.timer = timer;
+        self.timer = Some(timer);
         self
     }
 
@@ -116,7 +115,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
     /// This facade using the supplied runtime resource.
     #[inline(always)]
     pub fn random_source(mut self, random: Arc<dyn RetryRandomSource>) -> Self {
-        self.random_source = random;
+        self.random_source = Some(random);
         self
     }
 
@@ -186,9 +185,10 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
     where
         F: FnMut() -> Result<T, E>,
     {
-        let clock = self.timer.clock();
-        let mut controller =
-            RetryFlowController::new(clock.now(), self.retry, Arc::clone(&self.random_source), None, None);
+        let default_timer = StdTimer::new();
+        let timer: &dyn Timer = self.timer.as_deref().unwrap_or(&default_timer);
+        let clock = timer.clock();
+        let mut controller = RetryFlowController::new(clock.now(), self.retry, self.random_source.clone(), None, None);
 
         loop {
             let cancellation = self.cancellation_token.as_ref();
@@ -203,7 +203,7 @@ impl<'a, E: 'static> SyncRetry<'a, E> {
                 }
                 Err(error) => {
                     let directive = controller.record_failure(AttemptFailure::Error(error), clock, cancellation)?;
-                    match wait_for_backoff(&self.timer, directive.deadline(), cancellation) {
+                    match wait_for_backoff(timer, directive.deadline(), cancellation) {
                         BlockingBackoffOutcome::Elapsed => {}
                         BlockingBackoffOutcome::Cancelled => {
                             return Err(controller.record_backoff_cancellation(clock));

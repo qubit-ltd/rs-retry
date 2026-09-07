@@ -22,14 +22,14 @@ fn test_duration_data_uses_wire_components_and_rejects_invalid_nanoseconds() {
     let value = to_value(BackoffPolicy::fixed(Duration::from_nanos(1))).expect("policy should serialize");
     assert_eq!(value["strategy"]["delay"]["seconds"], 0);
     assert_eq!(value["strategy"]["delay"]["nanoseconds"], 1);
-    let invalid = json!({"max_attempts": 4, "max_operation_elapsed": null, "max_total_elapsed": null, "backoff": {"strategy": {"type": "fixed", "delay": {"seconds": 1, "nanoseconds": 1_000_000_000}}, "jitter": {"type": "none"}, "retry_after": "at_least_backoff"}});
+    let invalid = json!({"max_attempts": 4, "operation_time_budget": null, "total_time_budget": null, "backoff": {"strategy": {"type": "fixed", "delay": {"seconds": 1, "nanoseconds": 1_000_000_000}}, "jitter": {"type": "none"}, "retry_after": "at_least_backoff"}});
     let error = from_value::<RetryPolicy>(invalid).expect_err("invalid nanoseconds must fail");
     assert!(error.to_string().contains("nanoseconds"));
 
     let unknown_field = json!({
         "max_attempts": 4,
-        "max_operation_elapsed": null,
-        "max_total_elapsed": null,
+        "operation_time_budget": null,
+        "total_time_budget": null,
         "backoff": {
             "strategy": {
                 "type": "fixed",

@@ -18,8 +18,8 @@ use serde_json::json;
 fn test_backoff_policy_data_rejects_unknown_fields() {
     let error = from_value::<RetryPolicy>(json!({
         "max_attempts": 4,
-        "max_operation_elapsed": null,
-        "max_total_elapsed": null,
+        "operation_time_budget": null,
+        "total_time_budget": null,
         "backoff": {
             "strategy": { "type": "immediate" },
             "jitter": { "type": "none" },

@@ -11,7 +11,9 @@
 use super::async_retry::AsyncRetry;
 use super::retry_builder::RetryBuilder;
 use super::sync_retry::SyncRetry;
+#[cfg(feature = "worker")]
 use super::worker_retry::WorkerRetry;
+use crate::RetryFallback;
 use crate::RetryPolicy;
 use crate::RetryResult;
 use crate::observer::RetryObservers;
@@ -30,9 +32,12 @@ use crate::rule::RetryRules;
 ///
 /// ```
 /// use qubit_retry::Retry;
+/// use qubit_retry::RetryFallback;
 /// use qubit_retry::RetryPolicy;
 ///
-/// let retry = Retry::<&str>::builder(RetryPolicy::builder().max_attempts(2).build()?).build();
+/// let retry = Retry::<&str>::builder(RetryPolicy::builder().max_attempts(2).build()?)
+///     .fallback(RetryFallback::Retry)
+///     .build();
 /// let mut calls = 0;
 /// let success = retry.sync().run(|| {
 ///     calls += 1;
@@ -46,6 +51,7 @@ use crate::rule::RetryRules;
 pub struct Retry<E> {
     /// Validated limits and backoff shared by executions.
     policy: RetryPolicy,
+    fallback: RetryFallback,
     /// Ordered decision callbacks shared across executions.
     rules: RetryRules<E>,
     /// Ordered lifecycle callbacks shared across executions.
@@ -64,6 +70,7 @@ impl<E> Clone for Retry<E> {
     fn clone(&self) -> Self {
         Self {
             policy: self.policy.clone(),
+            fallback: self.fallback,
             rules: self.rules.clone(),
             observers: self.observers.clone(),
         }
@@ -114,6 +121,7 @@ impl<E: 'static> Retry<E> {
     /// A facade borrowing this definition with cooperative OS-thread cleanup.
     #[must_use = "configure and run the selected execution facade"]
     #[inline(always)]
+    #[cfg(feature = "worker")]
     pub fn worker(&self) -> WorkerRetry<'_, E>
     where
         E: Send,
@@ -132,9 +140,15 @@ impl<E: 'static> Retry<E> {
     /// # Returns
     /// A definition owning the supplied configuration.
     #[inline(always)]
-    pub(crate) fn new(policy: RetryPolicy, rules: RetryRules<E>, observers: RetryObservers<E>) -> Self {
+    pub(crate) fn new(
+        policy: RetryPolicy,
+        fallback: RetryFallback,
+        rules: RetryRules<E>,
+        observers: RetryObservers<E>,
+    ) -> Self {
         Self {
             policy,
+            fallback,
             rules,
             observers,
         }
@@ -148,6 +162,10 @@ impl<E: 'static> Retry<E> {
     #[inline(always)]
     pub fn policy(&self) -> &RetryPolicy {
         &self.policy
+    }
+
+    pub(crate) fn fallback(&self) -> RetryFallback {
+        self.fallback
     }
 
     ///
@@ -194,7 +212,7 @@ impl<E: 'static> Retry<E> {
     pub(super) fn complete<T>(&self, mut result: RetryResult<T, E>) -> RetryResult<T, E> {
         let diagnostics = match &result {
             Ok(success) => self.observers.notify_success(success.context()),
-            Err(error) => self.observers.notify_terminal_failure(error.failure(), error.context()),
+            Err(error) => self.observers.notify_terminal_failure(error.reason(), error.context()),
         };
         match &mut result {
             Ok(success) => success.set_completion_callback_failures(diagnostics),

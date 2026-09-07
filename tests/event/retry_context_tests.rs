@@ -35,12 +35,12 @@ fn test_retry_context_fields() {
     assert_eq!(context.current_attempt().map(NonZeroU32::get), Some(2));
     assert_eq!(context.max_attempts(), 5);
     assert_eq!(context.max_retries(), 4);
-    assert_eq!(context.max_operation_elapsed(), None);
-    assert_eq!(context.max_total_elapsed(), None);
+    assert_eq!(context.operation_time_budget(), None);
+    assert_eq!(context.total_time_budget(), None);
     assert_eq!(context.operation_elapsed(), Duration::ZERO);
     assert_eq!(context.total_elapsed(), Duration::ZERO);
     assert_eq!(context.last_attempt_elapsed(), Duration::ZERO);
-    assert_eq!(context.current_attempt_timeout(), None);
+    assert_eq!(context.current_hard_attempt_timeout(), None);
     assert_eq!(context.next_delay(), None);
     assert_eq!(context.retry_after_hint(), None);
 }

@@ -8,6 +8,7 @@
 //! Builder for immutable retry definitions.
 
 use super::retry::Retry;
+use crate::RetryFallback;
 use crate::RetryPolicy;
 use crate::observer::RetryObserver;
 use crate::observer::RetryObservers;
@@ -21,6 +22,7 @@ use crate::rule::RetryRules;
 pub struct RetryBuilder<E> {
     /// Validated limits and backoff shared by executions.
     policy: RetryPolicy,
+    fallback: RetryFallback,
     /// Ordered decision callbacks shared across executions.
     rules: RetryRules<E>,
     /// Ordered lifecycle callbacks shared across executions.
@@ -39,6 +41,7 @@ impl<E: 'static> RetryBuilder<E> {
     pub(crate) fn new(policy: RetryPolicy) -> Self {
         Self {
             policy,
+            fallback: RetryFallback::default(),
             rules: RetryRules::default(),
             observers: RetryObservers::default(),
         }
@@ -64,9 +67,30 @@ impl<E: 'static> RetryBuilder<E> {
         self
     }
 
+    /// Sets the action for an application error left unclassified by rules.
+    #[inline(always)]
+    pub fn fallback(mut self, fallback: RetryFallback) -> Self {
+        self.fallback = fallback;
+        self
+    }
+
+    /// Appends an already shared rule without wrapping it in another `Arc`.
+    #[inline(always)]
+    pub fn shared_rule(mut self, rule: std::sync::Arc<dyn RetryRule<E>>) -> Self {
+        self.rules.push_shared(rule);
+        self
+    }
+
+    /// Appends an already shared observer without wrapping it in another `Arc`.
+    #[inline(always)]
+    pub fn shared_observer(mut self, observer: std::sync::Arc<dyn RetryObserver<E>>) -> Self {
+        self.observers.push_shared(observer);
+        self
+    }
+
     /// Appends an observer. A control callback panic terminates execution with
-    /// `RetryFailure::CallbackFailed`; completion callback panics are retained
-    /// as diagnostics without changing the frozen result.
+    /// `RetryErrorReason::CallbackFailed`; completion callback panics are
+    /// retained as diagnostics without changing the frozen result.
     ///
     /// # Type Parameters
     /// - `O`: Thread-safe callback stored for repeated execution.
@@ -92,6 +116,6 @@ impl<E: 'static> RetryBuilder<E> {
     #[must_use = "run or retain the configured retry definition"]
     #[inline(always)]
     pub fn build(self) -> Retry<E> {
-        Retry::new(self.policy, self.rules, self.observers)
+        Retry::new(self.policy, self.fallback, self.rules, self.observers)
     }
 }
