@@ -12,6 +12,18 @@
       ]
     },
     {
+      "name": "serde",
+      "defaultFeatures": false,
+      "features": [
+        "serde"
+      ],
+      "commands": [
+        "check",
+        "test",
+        "doc"
+      ]
+    },
+    {
       "name": "tokio",
       "defaultFeatures": false,
       "features": [
