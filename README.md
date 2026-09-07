@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | --- | --- | --- |
 | `sync()` | `FnMut` on the calling thread | Before admission, after failure, and during backoff; no hard operation timeout |
 | `asynchronous()` | Non-`Send`, non-static futures supported; requires `tokio` | Cooperative attempt/flow timers drop a pending future; cannot preempt blocking polls |
-| `worker()` | `Send + 'static` work; one worker and one reaper per attempt | Cancellation requests cooperative exit; waits for join including TLS destruction, within real-time cleanup grace |
+| `worker()` | Requires the `worker` feature; `Send + 'static` work; one worker and one reaper per attempt | Cancellation requests cooperative exit; waits for join including TLS destruction, within real-time cleanup grace |
 
 The default is **three total attempts**, immediate retries, and no elapsed budget.
 Unmatched application errors abort by default; opt into retry-all behavior with

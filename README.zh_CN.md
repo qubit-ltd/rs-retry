@@ -92,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | --- | --- | --- |
 | `sync()` | 在调用线程执行 `FnMut` | 准入前、失败后和退避等待中检查取消；不支持操作硬超时 |
 | `asynchronous()` | 支持非 `Send`、非静态生命周期 future；需要 `tokio` | 协作式单次/流程计时器可丢弃待完成 future，无法抢占阻塞的 poll |
-| `worker()` | 操作须为 `Send + 'static`；每次尝试创建 worker 和 reaper | 请求协作退出，在真实时间清理宽限期内等待 join，包括 TLS 析构 |
+| `worker()` | 需要启用 `worker` feature；操作须为 `Send + 'static`；每次尝试创建 worker 和 reaper | 请求协作退出，在真实时间清理宽限期内等待 join，包括 TLS 析构 |
 
 默认允许**总共三次尝试**，采用立即退避，不设耗时预算。未被规则处理的业务错误默认终止；需要“全部重试”时请显式使用 `RetryFallback::Retry`。
 捕获的单次超时和 worker panic 默认终止，但规则可在剩余预算内请求重试。

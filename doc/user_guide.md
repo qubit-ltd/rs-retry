@@ -11,15 +11,19 @@ returned snapshot with an accurate admitted-attempt count; retries must not hide
 an uncertain side effect. The [README fixture](../README.md#quick-start) provides
 the complete minimal implementation and returns `RetryError<io::Error>` intact.
 
-## Concepts and setup
+## Conceptual model
 
 `RetryPolicy` is reusable configuration; `Retry` adds ordered rules and observers.
 Each `run` creates a fresh budget, backoff index, and context. A policy's
 `max_attempts` includes the first operation. The default is three attempts,
-immediate backoff, no elapsed limits, and retryable application errors.
+immediate backoff, no elapsed limits, and aborting unclassified application errors.
 `AttemptFailure` describes one failed operation; `RetryErrorReason` describes why the
 whole flow stopped. A context's `attempts()` counts admissions, whereas
 `current_attempt()` may describe a pre-admission callback or retained active work.
+Set `RetryFallback::Retry` when the application explicitly wants unclassified
+errors to use the policy's retry behavior.
+
+## Installation and minimal configuration
 
 Install with Rust 1.94 or newer. Default features are empty:
 
@@ -46,8 +50,9 @@ for the async binary. The document checker supplies these fixture dependencies.
 Use a rule to retry only transient snapshot read failures. The first
 non-`UseDefault` decision wins. `Abort` stops after retaining the failure;
 `Retry`, `RetryWithHint`, and `RetryWithJitteredHint` still cannot bypass admission
-limits. When all rules delegate, application errors retry, attempt timeouts stop
-as `TimedOut`, and captured worker panics stop as `Aborted`.
+limits. When all rules delegate, unclassified application errors abort by default;
+with `RetryFallback::Retry`, they use the policy backoff. Attempt timeouts stop as
+`TimedOut`, and captured worker panics stop as `Aborted`.
 
 Select the mode that matches the actual operation:
 
@@ -55,7 +60,7 @@ Select the mode that matches the actual operation:
 | --- | --- | --- |
 | A bounded blocking read on the current thread | `sync()` | Cannot interrupt the closure; borrowed state and `FnMut` are supported |
 | A cancellation-safe asynchronous client call | `asynchronous()` | Tokio feature/runtime; operation futures need not be `Send` or static |
-| A blocking call that cooperatively exits on a token | `worker()` | Operation: `Fn + Send + Sync + 'static`; result/error: `Send + 'static`; worker and reaper per attempt |
+| A blocking call that cooperatively exits on a token | `worker()` | Requires the `worker` feature; operation: `Fn + Send + Sync + 'static`; result/error: `Send + 'static`; worker and reaper per attempt |
 
 Retain all three parts of success or error. Use `map_error` when only converting
 the application error type. Its `FnOnce` mapper runs once if an application error
@@ -143,7 +148,7 @@ boundaries, or application-specific reconciliation before retrying side effects.
 
 For blocking work, cooperate with the per-attempt token:
 
-<!-- retry-example: kind=run features=none -->
+<!-- retry-example: kind=run features=worker -->
 ```rust
 use std::time::Duration;
 
@@ -239,7 +244,7 @@ use qubit_retry::RetryPolicy;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let clock = ManualMonotonicClock::new_shared();
     let policy = RetryPolicy::builder().max_attempts(2).build()?;
-    let mut budget = RetryBudget::new(clock.as_ref(), *policy.limits())?;
+    let mut budget = RetryBudget::new(clock.as_ref(), *policy.admission_limits())?;
     let attempt = budget.begin_attempt()?;
     clock.advance(Duration::from_secs(2))?;
     let snapshot = budget.finish_attempt(attempt)?;
@@ -284,7 +289,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }"#;
     let policy: RetryPolicy = serde_json::from_str(json)?;
-    assert_eq!(policy.limits().max_attempts().get(), 4);
+    assert_eq!(policy.admission_limits().max_attempts().get(), 4);
     let encoded = serde_json::to_string(&policy)?;
     assert_eq!(serde_json::from_str::<RetryPolicy>(&encoded)?, policy);
     Ok(())
@@ -328,7 +333,7 @@ fn main() {
     let mapped = error.map_error(String::from);
     let (reason, failure, context, diagnostics) = mapped.into_parts();
     assert!(matches!(reason, RetryErrorReason::Aborted));
-    assert_eq!(failure.and_then(|failure| failure.error()).map(String::as_str), Some("offline"));
+    assert_eq!(failure.and_then(|failure| failure.as_error()).map(String::as_str), Some("offline"));
     assert_eq!(context.attempts(), 1);
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].phase(), RetryCallbackPhase::TerminalFailure);

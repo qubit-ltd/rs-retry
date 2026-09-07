@@ -9,12 +9,15 @@
 成功标准是返回一份快照及准确的实际准入次数，重试不能掩盖结果不确定的副作用。
 [README 示例](../README.zh_CN.md#快速开始)给出了完整最小实现，直接保留 `RetryError<io::Error>`。
 
-## 概念与安装
+## 概念模型
 
 `RetryPolicy` 是可复用配置，`Retry` 在此基础上持有有序规则和观察者。每次 `run` 独立创建预算、退避索引和上下文。
-`max_attempts` 包含首次操作；默认总共三次尝试、立即退避、无耗时限制，业务错误默认允许重试。
+`max_attempts` 包含首次操作；默认总共三次尝试、立即退避、无耗时限制，未分类业务错误默认立即终止。
 `AttemptFailure` 描述一次操作的失败，`RetryErrorReason` 描述整个流程为何停止。
 `context.attempts()` 统计已准入次数；`current_attempt()` 还可能表示准入前回调或尚未结束的活动操作。
+如果业务明确希望重试未分类错误，需设置 `RetryFallback::Retry`，让它使用策略中的退避行为。
+
+## 安装与最小配置
 
 使用 Rust 1.94 或更新版本。默认 feature 集为空：
 
@@ -39,7 +42,8 @@ qubit-retry = { version = "0.23", features = ["tokio", "serde"] }
 
 先用规则区分快照读取中的瞬时错误和永久性错误。规则按注册顺序执行，第一个非 `UseDefault` 决策生效。
 `Abort` 保留失败后停止；`Retry`、`RetryWithHint` 和 `RetryWithJitteredHint` 都不能绕过准入限制。
-全部规则委托默认行为时，业务错误会重试，单次超时以 `TimedOut` 终止，捕获的 worker panic 以 `Aborted` 终止。
+全部规则委托默认行为时，未分类业务错误会立即终止；设置 `RetryFallback::Retry` 后，才会使用策略退避重试。
+单次超时以 `TimedOut` 终止，捕获的 worker panic 以 `Aborted` 终止。
 
 按操作实际行为选择执行模式：
 
@@ -47,7 +51,7 @@ qubit-retry = { version = "0.23", features = ["tokio", "serde"] }
 | --- | --- | --- |
 | 当前线程上的有界阻塞读取 | `sync()` | 无法打断闭包，支持借用状态和 `FnMut` |
 | 可以安全取消的异步客户端调用 | `asynchronous()` | 需要 Tokio feature/运行时；future 不必为 `Send` 或静态生命周期 |
-| 收到令牌后可协作退出的阻塞调用 | `worker()` | 操作须为 `Fn + Send + Sync + 'static`，结果和错误须为 `Send + 'static`；每次创建 worker 与 reaper |
+| 收到令牌后可协作退出的阻塞调用 | `worker()` | 需要启用 `worker` feature；操作须为 `Fn + Send + Sync + 'static`，结果和错误须为 `Send + 'static`；每次创建 worker 与 reaper |
 
 成功和失败都应完整保留三元组。只转换业务错误类型时使用 `map_error`：存在业务错误才调用一次 `FnOnce` 映射函数，
 否则不调用；映射函数 panic 会向外传播。转换保留终态分类、上下文和完成诊断，不额外要求 `Clone`、`Send` 或 `'static`。
@@ -126,7 +130,7 @@ async fn main() {
 
 阻塞操作通过单次尝试令牌协作退出：
 
-<!-- retry-example: kind=run features=none -->
+<!-- retry-example: kind=run features=worker -->
 ```rust
 use std::time::Duration;
 
@@ -211,7 +215,7 @@ use qubit_retry::RetryPolicy;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let clock = ManualMonotonicClock::new_shared();
     let policy = RetryPolicy::builder().max_attempts(2).build()?;
-    let mut budget = RetryBudget::new(clock.as_ref(), *policy.limits())?;
+    let mut budget = RetryBudget::new(clock.as_ref(), *policy.admission_limits())?;
     let attempt = budget.begin_attempt()?;
     clock.advance(Duration::from_secs(2))?;
     let snapshot = budget.finish_attempt(attempt)?;
@@ -251,7 +255,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }"#;
     let policy: RetryPolicy = serde_json::from_str(json)?;
-    assert_eq!(policy.limits().max_attempts().get(), 4);
+    assert_eq!(policy.admission_limits().max_attempts().get(), 4);
     let encoded = serde_json::to_string(&policy)?;
     assert_eq!(serde_json::from_str::<RetryPolicy>(&encoded)?, policy);
     Ok(())
@@ -291,7 +295,7 @@ fn main() {
     let mapped = error.map_error(String::from);
     let (reason, failure, context, diagnostics) = mapped.into_parts();
     assert!(matches!(reason, RetryErrorReason::Aborted));
-    assert_eq!(failure.and_then(|failure| failure.error()).map(String::as_str), Some("offline"));
+    assert_eq!(failure.and_then(|failure| failure.as_error()).map(String::as_str), Some("offline"));
     assert_eq!(context.attempts(), 1);
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].phase(), RetryCallbackPhase::TerminalFailure);
