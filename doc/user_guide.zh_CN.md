@@ -4,7 +4,7 @@
 
 ## 读者与贯穿场景
 
-本指南适用于 **qubit-retry 0.22**，面向客户端和存储组件作者。贯穿场景是读取存储快照：
+本指南适用于 **qubit-retry 0.23**，面向客户端和存储组件作者。贯穿场景是读取存储快照：
 临时不可用时恢复读取，永久性错误及时停止，应用关闭时能够退出，并保留最终结果。
 成功标准是返回一份快照及准确的实际准入次数，重试不能掩盖结果不确定的副作用。
 [README 示例](../README.zh_CN.md#快速开始)给出了完整最小实现，直接保留 `RetryError<io::Error>`。
@@ -13,7 +13,7 @@
 
 `RetryPolicy` 是可复用配置，`Retry` 在此基础上持有有序规则和观察者。每次 `run` 独立创建预算、退避索引和上下文。
 `max_attempts` 包含首次操作；默认总共三次尝试、立即退避、无耗时限制，业务错误默认允许重试。
-`AttemptFailure` 描述一次操作的失败，`RetryFailure` 描述整个流程为何停止。
+`AttemptFailure` 描述一次操作的失败，`RetryErrorReason` 描述整个流程为何停止。
 `context.attempts()` 统计已准入次数；`current_attempt()` 还可能表示准入前回调或尚未结束的活动操作。
 
 使用 Rust 1.94 或更新版本。默认 feature 集为空：
@@ -21,7 +21,7 @@
 <!-- retry-example: kind=cargo features=none -->
 ```toml
 [dependencies]
-qubit-retry = "0.22"
+qubit-retry = "0.23"
 ```
 
 异步执行需要 `tokio`，配置序列化需要 `serde`：
@@ -29,7 +29,7 @@ qubit-retry = "0.22"
 <!-- retry-example: kind=cargo features=tokio,serde -->
 ```toml
 [dependencies]
-qubit-retry = { version = "0.22", features = ["tokio", "serde"] }
+qubit-retry = { version = "0.23", features = ["tokio", "serde"] }
 ```
 
 手动时钟示例另用 `qubit-clock` 0.13 的 `test-util`，JSON 示例使用 `serde_json` 1；
@@ -55,9 +55,9 @@ qubit-retry = { version = "0.22", features = ["tokio", "serde"] }
 
 ## 时间限制与应用关闭
 
-`max_operation_elapsed` 累计已准入操作的耗时；`max_total_elapsed` 计量单调流程时间，包括控制回调和等待。
+`operation_time_budget` 累计已准入操作的耗时；`total_time_budget` 计量单调流程时间，包括控制回调和等待。
 二者都只限制后续准入，已经准入的操作越过预算后成功仍是成功。
-async/worker 的 `attempt_timeout`、`flow_timeout` 限制协作式等待，不能抢占任意同步代码。
+async/worker 的 `hard_attempt_timeout`、`hard_flow_timeout` 限制协作式等待，不能抢占任意同步代码。
 阻塞回调或阻塞 future poll 会推迟检查；完成回调不在耗时计量和超时控制范围内。
 
 同步读取失败后，取消可以阻止再次读取：
@@ -67,7 +67,7 @@ async/worker 的 `attempt_timeout`、`flow_timeout` 限制协作式等待，不�
 use qubit_retry::Retry;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryPolicy;
 
 fn main() {
@@ -78,8 +78,8 @@ fn main() {
         Err::<(), _>("temporary read failure")
     }).unwrap_err();
     assert_eq!(error.context().attempts(), 1);
-    assert!(matches!(error.failure(), RetryFailure::Cancelled {
-        phase: RetryCancellationPhase::Backoff, ..
+    assert!(matches!(error.reason(), RetryErrorReason::Cancelled {
+        phase: RetryCancellationPhase::Backoff
     }));
 }
 ```
@@ -98,7 +98,7 @@ use std::time::Duration;
 use qubit_retry::Retry;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryPolicy;
 
 #[tokio::main(flavor = "current_thread")]
@@ -107,15 +107,15 @@ async fn main() {
     let token = RetryCancellationToken::new();
     let operation_token = token.clone();
     let error = retry.asynchronous()
-        .attempt_timeout(Duration::from_secs(2))
-        .flow_timeout(Duration::from_secs(5))
+        .hard_attempt_timeout(Duration::from_secs(2))
+        .hard_flow_timeout(Duration::from_secs(5))
         .cancellation_token(token)
         .run(move || {
             operation_token.cancel();
             future::pending::<Result<(), &str>>()
         }).await.unwrap_err();
-    assert!(matches!(error.failure(), RetryFailure::Cancelled {
-        phase: RetryCancellationPhase::Attempt, ..
+    assert!(matches!(error.reason(), RetryErrorReason::Cancelled {
+        phase: RetryCancellationPhase::Attempt
     }));
 }
 ```
@@ -132,7 +132,7 @@ use std::time::Duration;
 
 use qubit_retry::Retry;
 use qubit_retry::RetryCancellationToken;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryPolicy;
 
 fn main() {
@@ -149,7 +149,7 @@ fn main() {
             }
             Err::<(), _>("cancelled read")
         }).unwrap_err();
-    assert!(matches!(error.failure(), RetryFailure::Cancelled { .. }));
+    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { .. }));
 }
 ```
 
@@ -242,8 +242,8 @@ use qubit_retry::RetryPolicy;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let json = r#"{
         "max_attempts": 4,
-        "max_operation_elapsed": null,
-        "max_total_elapsed": {"seconds": 10, "nanoseconds": 0},
+        "operation_time_budget": null,
+        "total_time_budget": {"seconds": 10, "nanoseconds": 0},
         "backoff": {
             "strategy": {"type": "fixed", "delay": {"seconds": 0, "nanoseconds": 50000000}},
             "jitter": {"type": "none"},
@@ -273,13 +273,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 use qubit_retry::Retry;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
-use qubit_retry::RetryFailure;
+use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
 
 struct Audit;
 impl RetryObserver<&'static str> for Audit {
-    fn on_terminal_failure(&self, _: &RetryFailure<&'static str>, _: &RetryContext) {
+    fn on_terminal_failure(&self, _: &RetryErrorReason, _: &RetryContext) {
         panic!("audit sink unavailable");
     }
 }
@@ -289,8 +289,9 @@ fn main() {
         .observer(Audit).build();
     let error = retry.sync().run(|| Err::<(), _>("offline")).unwrap_err();
     let mapped = error.map_error(String::from);
-    let (failure, context, diagnostics) = mapped.into_parts();
-    assert_eq!(failure.last_error().map(String::as_str), Some("offline"));
+    let (reason, failure, context, diagnostics) = mapped.into_parts();
+    assert!(matches!(reason, RetryErrorReason::Aborted));
+    assert_eq!(failure.and_then(|failure| failure.error()).map(String::as_str), Some("offline"));
     assert_eq!(context.attempts(), 1);
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].phase(), RetryCallbackPhase::TerminalFailure);
@@ -303,7 +304,7 @@ sync/async 操作 panic、异步 run future 被丢弃或进程中止时，不保
 
 ## 适配层边界与版本迁移
 
-0.22 中 `RetrySuccess::into_parts`、`RetryError::into_parts` 都返回包含诊断的三元组，
+0.23 中 `RetrySuccess::into_parts` 返回三元组，`RetryError::into_parts` 返回四元组，
 删除 `into_parts_with_diagnostics` 且不保留别名。旧 `into_value` / `into_failure` 改为显式命名的
 `into_value_discarding_diagnostics` / `into_failure_discarding_diagnostics`，同时丢弃上下文。
 默认行为和各模式优先级见前文；控制回调正常返回后的时钟验证，现在优先于返回的 Abort 决策和取消，回调 panic 仍保留自身主因。

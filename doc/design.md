@@ -2,7 +2,7 @@
 
 [简体中文](design.zh_CN.md) · [User guide](user_guide.md) · [README](../README.md)
 
-This document records the maintenance contract of **qubit-retry 0.22**. Public
+This document records the maintenance contract of **qubit-retry 0.23**. Public
 usage belongs in the user guide; the invariants here govern internal changes.
 
 ## Scope and dependency direction
@@ -62,7 +62,7 @@ active worker state after grace expiry. It is not an executed-operation counter.
 Inactive cancellation after controls clears the overlay but preserves committed
 attempts, last failure, and selected next delay when one exists.
 
-`max_operation_elapsed` sums admitted operation durations; `max_total_elapsed`
+`operation_time_budget` sums admitted operation durations; `total_time_budget`
 includes monotonic flow time, control callbacks, and backoff. They are continuation
 budgets and never revoke an admitted success. Standalone `RetryBudget` binds each
 linear token to one budget identity; overlap and foreign tokens are errors.

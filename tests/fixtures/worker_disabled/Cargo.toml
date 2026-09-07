@@ -1,0 +1,10 @@
+[package]
+name = "worker-disabled-fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+qubit-retry = { path = "../../..", default-features = false }

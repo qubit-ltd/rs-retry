@@ -26,7 +26,7 @@ Requires Rust 1.94 or newer. The default feature set is empty.
 <!-- retry-example: kind=cargo features=none -->
 ```toml
 [dependencies]
-qubit-retry = "0.22"
+qubit-retry = "0.23"
 ```
 
 Tokio execution and configuration serialization are opt-in:
@@ -34,7 +34,7 @@ Tokio execution and configuration serialization are opt-in:
 <!-- retry-example: kind=cargo features=tokio,serde -->
 ```toml
 [dependencies]
-qubit-retry = { version = "0.22", features = ["tokio", "serde"] }
+qubit-retry = { version = "0.23", features = ["tokio", "serde"] }
 ```
 
 ## Quick start
@@ -75,7 +75,7 @@ fn fetch_snapshot(retry: &Retry<io::Error>) -> Result<RetrySuccess<Vec<u8>>, Ret
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let policy = RetryPolicy::builder()
         .max_attempts(4)
-        .max_total_elapsed(Duration::from_secs(10))
+        .total_time_budget(Duration::from_secs(10))
         .backoff(BackoffPolicy::immediate())
         .build()?;
     let retry = Retry::builder(policy)
@@ -101,13 +101,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `worker()` | `Send + 'static` work; one worker and one reaper per attempt | Cancellation requests cooperative exit; waits for join including TLS destruction, within real-time cleanup grace |
 
 The default is **three total attempts**, immediate retries, and no elapsed budget.
-Application errors retry by default; rules should reject permanent errors.
+Unmatched application errors abort by default; opt into retry-all behavior with
+`RetryFallback::Retry`.
 Captured attempt timeouts and worker panics are terminal by default, but a rule
 may request retry within remaining limits. Rules run in registration order;
 the first decision other than `UseDefault` wins. Flow timeout, cancellation,
 control callback failure, and infrastructure failure cannot be recovered by a rule.
 
-`max_operation_elapsed` counts admitted operation time; `max_total_elapsed`
+`operation_time_budget` counts admitted operation time; `total_time_budget`
 includes control callbacks and backoff. Neither is a hard timeout. Sync success
 wins over cancellation with a valid completion clock. Async selection prefers
 ready operation results over cancellation, then timeout. Worker selection checks
@@ -120,9 +121,10 @@ alive. Without timeout/cancellation, waiting for exit can be unbounded.
 
 ## Errors, hints, and completion
 
-`RetryFailure` distinguishes `Aborted`, `Exhausted`, `TimedOut`, `Cancelled`,
+`RetryErrorReason` distinguishes `Aborted`, `Exhausted`, `TimedOut`, `Cancelled`,
 `CallbackFailed`, and `Infrastructure`; `AttemptFailure` retains the application
-error, timeout scope, or captured panic. Only worker mode catches operation
+error, timeout scope, or captured panic, while `RetryErrorMetadata` carries the
+non-generic terminal details. Only worker mode catches operation
 panics. Sync/async operation panics unwind to the caller or polling task.
 
 Completion observers run synchronously after the result is frozen, once per
@@ -144,10 +146,19 @@ final delay after hints and jitter and **can truncate a server minimum**. If tha
 minimum is mandatory, do not configure a smaller cap; stop or revise the budget.
 The `serde` feature covers configuration, not runtime errors, results or callbacks.
 
-## Migrating to 0.22
+## Migrating to 0.23
 
 - Update direct dependencies and adapter lockfiles together. `into_parts()` now
-  returns three elements; `into_parts_with_diagnostics()` has been removed.
+  returns `(reason, last_failure, context, diagnostics)` and diagnostics are
+  stored in `Box<[RetryCallbackFailure]>`.
+- Replace `RetryFailure<E>` with `RetryErrorReason` plus the independent
+  `last_failure`; use `into_metadata_and_error()` when a domain adapter needs
+  to separate the application error from terminal metadata.
+- `RetryLimits`/`limits()` are now `RetryAdmissionLimits`/`admission_limits()`;
+  `max_operation_elapsed`/`max_total_elapsed` are now
+  `operation_time_budget`/`total_time_budget`.
+- `attempt_timeout` and `flow_timeout` are now `hard_attempt_timeout` and
+  `hard_flow_timeout`. Worker execution is opt-in through the `worker` feature.
 - Replace `into_value()` / `into_failure()` with the explicit diagnostic-discarding
   names only when loss is intended. Prefer the full triple for conversions.
 - Normal control callback return now refreshes the clock before cancellation or
