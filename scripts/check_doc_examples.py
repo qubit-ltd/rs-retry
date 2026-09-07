@@ -3,9 +3,9 @@
 
 Each Rust block is a complete binary. Cargo blocks are dependency snippets and
 are checked with an empty binary. An immediately preceding annotation declares
-kind=run|cargo and features=none|serde|tokio|serde,tokio. Undeclared blocks fail
-closed. Examples run from a fresh temporary directory, using this checkout via
-a path dependency. Clock test utilities and serde_json are available as explicit
+kind=run|cargo and a declared feature set. Undeclared blocks fail closed.
+Examples run from a fresh temporary directory, using this checkout via a path
+dependency. Clock test utilities and serde_json are available as explicit
 example fixtures, never as public re-exports from qubit-retry.
 """
 import json
@@ -42,7 +42,7 @@ def extract(path):
         if (language == "rust") != (kind == "run"):
             raise ValueError(f"{path}:{start + 1}: example kind disagrees with fence language")
         features = [] if feature_text == "none" else feature_text.split(",")
-        if any(feature not in ("serde", "tokio") for feature in features) or len(set(features)) != len(features):
+        if any(feature not in ("serde", "tokio", "worker") for feature in features) or len(set(features)) != len(features):
             raise ValueError(f"{path}:{start + 1}: unknown feature or repeated feature")
         index += 1
         body = []

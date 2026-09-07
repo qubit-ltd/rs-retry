@@ -26,6 +26,10 @@ class ExampleContractTests(unittest.TestCase):
         self.assertEqual(examples[0]["line"], 5)
         self.assertEqual(examples[0]["code"], "fn main() {}\n")
 
+    def test_worker_feature_is_accepted(self):
+        examples = self.parse("<!-- retry-example: kind=run features=worker -->\n```rust\nfn main() {}\n```\n")
+        self.assertEqual(examples[0]["features"], ["worker"])
+
     def test_rust_modifiers_cannot_silently_skip_validation(self):
         with self.assertRaisesRegex(ValueError, "unsupported.*fence"):
             self.parse("```rust,ignore\nfn main() {}\n```\n")
