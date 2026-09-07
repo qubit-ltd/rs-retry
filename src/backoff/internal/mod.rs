@@ -15,9 +15,9 @@ mod jitter_strategy;
 #[cfg(feature = "serde")]
 mod jitter_strategy_data;
 mod retry_after_strategy;
-mod retry_random_source_storage;
 #[cfg(feature = "serde")]
 mod retry_after_strategy_data;
+mod retry_random_source_storage;
 
 #[cfg(feature = "serde")]
 pub(super) use backoff_policy_data::BackoffPolicyData;
@@ -28,9 +28,9 @@ pub(super) use jitter_strategy::JitterStrategy;
 #[cfg(feature = "serde")]
 pub(super) use jitter_strategy_data::JitterStrategyData;
 pub(super) use retry_after_strategy::RetryAfterStrategy;
-pub(super) use retry_random_source_storage::RetryRandomSourceStorage;
 #[cfg(feature = "serde")]
 pub(super) use retry_after_strategy_data::RetryAfterStrategyData;
+pub(super) use retry_random_source_storage::RetryRandomSourceStorage;
 
 #[cfg(feature = "serde")]
 mod jitter_strategy_data_raw;

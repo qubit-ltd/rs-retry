@@ -7,6 +7,8 @@
 // =============================================================================
 //! Immutable timeout data prepared during async admission.
 
+#![cfg_attr(not(any(feature = "tokio", feature = "worker")), allow(dead_code))]
+
 use std::time::Duration;
 
 use qubit_clock::MonotonicInstant;

@@ -7,6 +7,8 @@
 // =============================================================================
 //! Runtime-independent retry-flow decisions shared by executor facades.
 
+#![cfg_attr(not(any(feature = "tokio", feature = "worker")), allow(dead_code))]
+
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
