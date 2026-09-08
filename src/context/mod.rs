@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Internal location for the retry context value.
+//! Runtime snapshot captured by a retry execution.
 
 mod internal;
 mod retry_context;

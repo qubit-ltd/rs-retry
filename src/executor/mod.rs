@@ -15,7 +15,6 @@ mod retry_cancellation_token;
 mod retry_cancelled;
 mod retry_config;
 mod retry_config_builder;
-mod retry_success;
 #[cfg(feature = "tokio")]
 mod tokio_retry;
 #[cfg(feature = "worker")]
@@ -28,8 +27,9 @@ pub use retry_cancellation_token::RetryCancellationToken;
 pub use retry_cancelled::RetryCancelled;
 pub use retry_config::RetryConfig;
 pub use retry_config_builder::RetryConfigBuilder;
-pub use retry_success::RetrySuccess;
 #[cfg(feature = "tokio")]
 pub use tokio_retry::TokioRetry;
 #[cfg(feature = "worker")]
 pub use worker_retry::WorkerRetry;
+
+pub use crate::outcome::RetrySuccess;

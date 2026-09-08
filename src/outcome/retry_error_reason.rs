@@ -9,11 +9,11 @@
 
 use std::fmt;
 
-use super::RetryCallbackFailure;
-use super::RetryCancellationPhase;
-use super::RetryInfrastructureFailure;
-use super::RetryLimitKind;
-use super::RetryTimeoutScope;
+use crate::RetryCallbackFailure;
+use crate::RetryCancellationPhase;
+use crate::RetryInfrastructureFailure;
+use crate::RetryLimitKind;
+use crate::RetryTimeoutScope;
 
 /// Terminal reason for a retry flow, independent of its application error.
 #[derive(Debug)]

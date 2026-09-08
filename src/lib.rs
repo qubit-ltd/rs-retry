@@ -17,11 +17,12 @@
 
 pub mod backoff;
 pub mod budget;
+mod context;
 pub mod error;
-mod event;
 pub mod executor;
 mod internal;
 pub mod observer;
+mod outcome;
 pub mod policy;
 pub mod random;
 pub mod rule;
@@ -36,6 +37,7 @@ pub use budget::RetryBudget;
 pub use budget::RetryBudgetError;
 pub use budget::RetryBudgetExhausted;
 pub use budget::RetryBudgetSnapshot;
+pub use context::RetryContext;
 pub use error::AttemptFailure;
 pub use error::AttemptFailureMetadata;
 pub use error::RetryCallbackFailure;
@@ -65,7 +67,6 @@ pub use executor::RetrySuccess;
 pub use executor::TokioRetry;
 #[cfg(feature = "worker")]
 pub use executor::WorkerRetry;
-pub use observer::RetryContext;
 pub use observer::RetryObserver;
 pub use policy::RetryAdmissionLimits;
 pub use policy::RetryPolicy;

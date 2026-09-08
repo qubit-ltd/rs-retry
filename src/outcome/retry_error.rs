@@ -16,7 +16,6 @@ use crate::RetryCallbackFailure;
 use crate::RetryContext;
 use crate::RetryErrorMetadata;
 use crate::RetryErrorReason;
-use crate::RetrySuccess;
 
 /// Error returned when a retry flow terminates without a successful result.
 ///
@@ -42,9 +41,6 @@ pub struct RetryError<E> {
     context: RetryContext,
     completion_callback_failures: Box<[RetryCallbackFailure]>,
 }
-
-/// Result alias returned by retry executor execution.
-pub type RetryResult<T, E> = Result<RetrySuccess<T>, RetryError<E>>;
 
 impl<E> RetryError<E> {
     /// Creates a terminal error before completion callbacks are notified.
