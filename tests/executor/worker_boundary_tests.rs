@@ -20,7 +20,6 @@ use qubit_clock::test_util::FaultInjectingTimer;
 use qubit_clock::test_util::TimerFailurePoint;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
-use qubit_retry::WorkerRetry;
 use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
@@ -28,8 +27,8 @@ use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
-use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
+use qubit_retry::WorkerRetry;
 use qubit_retry::WorkerStopTrigger;
 
 use crate::support::AdvancingObserver;
@@ -45,9 +44,11 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
         "offline",
     ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
-    let config = RetryConfig::<TestError>::builder().policy(retry_once_policy())
+    let config = RetryConfig::<TestError>::builder()
+        .policy(retry_once_policy())
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let timer_error = WorkerRetry::new(&config)
         .timer(timer)
         .random_source(random)
@@ -61,8 +62,10 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
         }
     ));
 
-    let config2 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
-        .build().expect("valid config");
+    let config2 = RetryConfig::<TestError>::builder()
+        .policy(retry_once_policy())
+        .build()
+        .expect("valid config");
     let panic_error = WorkerRetry::new(&config2)
         .run(|_| -> Result<(), TestError> { panic!("isolated") })
         .unwrap_err();
@@ -72,8 +75,10 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
     let release_receiver = Arc::new(Mutex::new(release_receiver));
     let clock = ManualMonotonicClock::new_shared();
     let operation_clock = Arc::clone(&clock);
-    let config3 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
-        .build().expect("valid config");
+    let config3 = RetryConfig::<TestError>::builder()
+        .policy(retry_once_policy())
+        .build()
+        .expect("valid config");
     let detached = WorkerRetry::new(&config3)
         .timer(clock.new_timer())
         .hard_attempt_timeout(Duration::from_millis(1))
@@ -107,8 +112,10 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
 
     let clock = ManualMonotonicClock::new_shared();
     let operation_clock = Arc::clone(&clock);
-    let chain_config1 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
-        .build().expect("valid config");
+    let chain_config1 = RetryConfig::<TestError>::builder()
+        .policy(retry_once_policy())
+        .build()
+        .expect("valid config");
     let zero_grace = WorkerRetry::new(&chain_config1)
         .hard_attempt_timeout(Duration::from_millis(1))
         .timer(clock.new_timer())
@@ -136,9 +143,11 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
         }
     ));
 
-    let config4 = RetryConfig::<TestError>::builder().max_attempts(1)
+    let config4 = RetryConfig::<TestError>::builder()
+        .max_attempts(1)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let attempts_exhausted = WorkerRetry::new(&config4)
         .run(|_| Err::<(), _>(TestError("only attempt")))
         .unwrap_err();
@@ -151,11 +160,9 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
     ));
 
     let delay_config = RetryConfig::<TestError>::builder()
-        
-                .max_attempts(2)
-                .total_time_budget(Duration::from_millis(1))
-                .backoff(BackoffPolicy::fixed(Duration::from_secs(1)))
-
+        .max_attempts(2)
+        .total_time_budget(Duration::from_millis(1))
+        .backoff(BackoffPolicy::fixed(Duration::from_secs(1)))
         .fallback(RetryFallback::Retry)
         .build()
         .expect("valid config");
@@ -172,9 +179,7 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
 
     let clock = ManualMonotonicClock::new_shared();
     let observer_config = RetryConfig::<TestError>::builder()
-        
-                .total_time_budget(Duration::from_secs(1))
-
+        .total_time_budget(Duration::from_secs(1))
         .observer(AdvancingObserver(Arc::clone(&clock)))
         .build()
         .expect("valid config");
@@ -190,18 +195,18 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
         }
     ));
 
-    let config5 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
+    let config5 = RetryConfig::<TestError>::builder()
+        .policy(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("rule panic"))
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let rule_panics = WorkerRetry::new(&config5)
         .run(|_| Err::<(), _>(TestError("retry")))
         .unwrap_err();
     assert!(matches!(rule_panics.reason(), RetryErrorReason::CallbackFailed { .. }));
 
     let zero_config = RetryConfig::<TestError>::builder()
-        
-                .total_time_budget(Duration::ZERO)
-
+        .total_time_budget(Duration::ZERO)
         .build()
         .expect("valid config");
     let zero_budget = WorkerRetry::new(&zero_config)
@@ -221,10 +226,8 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
         "offline",
     ));
     let cap_config = RetryConfig::<TestError>::builder()
-        
-                .max_attempts(2)
-                .backoff(BackoffPolicy::fixed(Duration::from_secs(2)))
-
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::from_secs(2)))
         .build()
         .expect("valid config");
     let cap_error = WorkerRetry::new(&cap_config)
@@ -240,9 +243,11 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
         }
     ));
 
-    let config6 = RetryConfig::<TestError>::builder().max_attempts(1)
+    let config6 = RetryConfig::<TestError>::builder()
+        .max_attempts(1)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let explicit_retry = WorkerRetry::new(&config6)
         .run(|_| Err::<(), _>(TestError("retry")))
         .unwrap_err();
@@ -258,8 +263,10 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
 /// Covers worker thread naming through a successful worker attempt.
 #[test]
 fn test_worker_facade_accepts_thread_name() {
-    let config = RetryConfig::<TestError>::builder().max_attempts(1)
-        .build().expect("valid config");
+    let config = RetryConfig::<TestError>::builder()
+        .max_attempts(1)
+        .build()
+        .expect("valid config");
     let result = WorkerRetry::new(&config)
         .thread_name("coverage-worker")
         .run(|_| Ok::<_, TestError>(thread::current().name().map(str::to_owned)))
@@ -273,7 +280,10 @@ fn test_worker_deadline_overflow_does_not_admit_operation() {
     for flow_timeout in [false, true] {
         let clock = ManualMonotonicClock::new_shared();
         clock.advance(Duration::from_nanos(1)).expect("nonzero clock origin");
-        let retry = RetryConfig::<TestError>::builder().policy(retry_once_policy()).build().expect("valid config");
+        let retry = RetryConfig::<TestError>::builder()
+            .policy(retry_once_policy())
+            .build()
+            .expect("valid config");
         let execution = WorkerRetry::new(&retry).timer(clock.new_timer());
         let execution = if flow_timeout {
             execution.hard_flow_timeout(Duration::MAX)

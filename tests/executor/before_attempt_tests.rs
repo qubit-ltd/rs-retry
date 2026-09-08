@@ -13,14 +13,13 @@ use std::time::Duration;
 use qubit_clock::ManualMonotonicClock;
 use qubit_clock::MonotonicClock;
 use qubit_retry::Retry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
-use qubit_retry::RetryPolicy;
 
 struct CancelBefore {
     token: RetryCancellationToken,
@@ -47,7 +46,8 @@ fn test_before_attempt_cancellation_does_not_admit_operation() {
             token: token.clone(),
             callbacks: Arc::clone(&callbacks),
         })
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let error = Retry::new(&retry)
         .cancellation_token(token)
         .run(|| {
@@ -84,12 +84,12 @@ impl RetryObserver<&'static str> for ExpireBefore {
 fn test_before_attempt_elapsed_time_can_reject_candidate() {
     let clock = ManualMonotonicClock::new_shared();
     let retry = RetryConfig::<&'static str>::builder()
-            .total_time_budget(Duration::from_secs(1))
-
-    .observer(ExpireBefore {
-        clock: Arc::clone(&clock),
-    })
-    .build().expect("valid config");
+        .total_time_budget(Duration::from_secs(1))
+        .observer(ExpireBefore {
+            clock: Arc::clone(&clock),
+        })
+        .build()
+        .expect("valid config");
     let error = Retry::new(&retry)
         .timer(clock.new_timer())
         .run(|| -> Result<(), &'static str> {

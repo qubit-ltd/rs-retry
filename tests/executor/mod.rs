@@ -13,8 +13,6 @@ mod async_boundary_tests;
 mod async_cancellation_tests;
 #[cfg(feature = "tokio")]
 mod async_contract_tests;
-#[cfg(feature = "tokio")]
-mod tokio_retry_tests;
 #[cfg(feature = "worker")]
 mod attempt_cancellation_token_tests;
 mod before_attempt_tests;
@@ -32,6 +30,8 @@ mod retry_tests;
 mod sync_boundary_tests;
 mod sync_contract_tests;
 mod sync_retry_tests;
+#[cfg(feature = "tokio")]
+mod tokio_retry_tests;
 #[cfg(feature = "worker")]
 mod worker_boundary_tests;
 #[cfg(feature = "worker")]

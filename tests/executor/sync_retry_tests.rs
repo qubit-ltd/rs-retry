@@ -33,10 +33,10 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
@@ -156,7 +156,10 @@ impl RetryObserver<TestError> for CancelOnBeforeAttempt {
 #[test]
 fn test_sync_facade_is_available() {
     let policy = RetryPolicy::builder().build().unwrap();
-    let retry = RetryConfig::<()>::builder().policy(policy).build().expect("valid config");
+    let retry = RetryConfig::<()>::builder()
+        .policy(policy)
+        .build()
+        .expect("valid config");
     let _ = Retry::new(&retry);
 }
 
@@ -165,9 +168,7 @@ fn test_sync_facade_is_available() {
 fn test_sync_cancellation_before_attempt_does_not_call_operation() {
     let cancellation = RetryCancellationToken::new();
     cancellation.cancel();
-    let config = RetryConfig::<TestError>::builder()
-        .build()
-        .expect("valid config");
+    let config = RetryConfig::<TestError>::builder().build().expect("valid config");
 
     let error = Retry::new(&config)
         .cancellation_token(cancellation)
@@ -214,9 +215,7 @@ fn test_sync_operation_success_wins_over_cancellation() {
     let cancellation = RetryCancellationToken::new();
     let operation_cancellation = cancellation.clone();
     let runner_thread = thread::current().id();
-    let config = RetryConfig::<TestError>::builder()
-        .build()
-        .expect("valid config");
+    let config = RetryConfig::<TestError>::builder().build().expect("valid config");
     let success = Retry::new(&config)
         .cancellation_token(cancellation)
         .run(move || {
@@ -240,12 +239,12 @@ fn test_sync_operation_error_records_failure_before_cancellation() {
         .build()
         .expect("valid config");
     let error = Retry::new(&config)
-    .cancellation_token(cancellation)
-    .run(move || {
-        operation_cancellation.cancel();
-        Err::<(), _>(TestError("cancelled operation failure"))
-    })
-    .expect_err("a cancelled failing operation must stop before another attempt");
+        .cancellation_token(cancellation)
+        .run(move || {
+            operation_cancellation.cancel();
+            Err::<(), _>(TestError("cancelled operation failure"))
+        })
+        .expect_err("a cancelled failing operation must stop before another attempt");
 
     let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal");
@@ -278,18 +277,18 @@ fn test_sync_backoff_cancellation_wakes_pending_manual_timer() {
     let (result_sender, result_receiver) = mpsc::channel();
     let runner = thread::spawn(move || {
         let config = RetryConfig::<TestError>::builder()
-                .max_attempts(2)
-                .backoff(BackoffPolicy::fixed(Duration::from_secs(60)))
-
-        .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+            .max_attempts(2)
+            .backoff(BackoffPolicy::fixed(Duration::from_secs(60)))
+            .fallback(RetryFallback::Retry)
+            .build()
+            .expect("valid config");
         let result = Retry::new(&config)
-        .timer(timer)
-        .cancellation_token(runner_cancellation)
-        .run(move || {
-            runner_operation_calls.fetch_add(1, Ordering::SeqCst);
-            Err::<(), _>(TestError("backoff"))
-        });
+            .timer(timer)
+            .cancellation_token(runner_cancellation)
+            .run(move || {
+                runner_operation_calls.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(TestError("backoff"))
+            });
         result_sender
             .send(result)
             .expect("test should receive the retry result");
@@ -389,8 +388,10 @@ impl Timer for SuccessCompletionRegressingTimer {
 #[test]
 fn test_sync_retry_success_clock_regression_returns_infrastructure_error() {
     let policy = RetryPolicy::builder().build().unwrap();
-    let config2 = RetryConfig::<TestError>::builder().policy(policy)
-        .build().expect("valid config");
+    let config2 = RetryConfig::<TestError>::builder()
+        .policy(policy)
+        .build()
+        .expect("valid config");
     let error = Retry::new(&config2)
         .timer(Arc::new(SuccessCompletionRegressingTimer::new()))
         .run(|| Ok::<_, TestError>(42_u32))
@@ -410,9 +411,11 @@ fn test_sync_retry_success_clock_regression_returns_infrastructure_error() {
 #[test]
 fn test_sync_retry_clock_failure_precedes_a_returned_abort_decision() {
     let policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
-    let config3 = RetryConfig::<TestError>::builder().policy(policy)
+    let config3 = RetryConfig::<TestError>::builder()
+        .policy(policy)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let error = Retry::new(&config3)
         .timer(rule_terminal_regressing_timer())
         .run(|| Err::<(), _>(TestError("abort")))
@@ -461,14 +464,16 @@ fn test_sync_retry_callbacks_retain_current_attempt_scope() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .unwrap();
-    let config = RetryConfig::<TestError>::builder().policy(policy)
+    let config = RetryConfig::<TestError>::builder()
+        .policy(policy)
         .observer(AttemptScopeObserver)
         .rule(|_: &AttemptFailure<TestError>, context: &RetryContext| {
             assert_eq!(context.attempts(), 1);
             assert_eq!(context.current_attempt().map(|value| value.get()), Some(1));
             RetryDecision::Retry
         })
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let result = Retry::new(&config)
         .run(|| {
             if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -509,10 +514,12 @@ fn test_sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
         .build()
         .unwrap();
     let attempts = AtomicUsize::new(0);
-    let config4 = RetryConfig::<TestError>::builder().policy(policy)
+    let config4 = RetryConfig::<TestError>::builder()
+        .policy(policy)
         .observer(ExhaustsBeforeSecondAttempt(Arc::clone(&clock)))
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let error = Retry::new(&config4)
         .timer(Arc::new(clock.new_timer()))
         .run(|| {
@@ -536,17 +543,21 @@ fn test_sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
 
 #[test]
 fn test_sync_retry_matches_shared_terminal_matrix() {
-    let config5 = RetryConfig::<TestError>::builder().max_attempts(2)
+    let config5 = RetryConfig::<TestError>::builder()
+        .max_attempts(2)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let abort = Retry::new(&config5)
         .run(|| Err::<(), _>(TestError("matrix")))
         .expect_err("the explicit abort rule must terminate after attempt one");
     assert_matrix_abort(&abort);
 
-    let config6 = RetryConfig::<TestError>::builder().max_attempts(1)
+    let config6 = RetryConfig::<TestError>::builder()
+        .max_attempts(1)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let attempts = Retry::new(&config6)
         .run(|| Err::<(), _>(TestError("matrix")))
         .expect_err("one admitted failure must exhaust the attempt limit");
@@ -562,9 +573,11 @@ fn test_sync_retry_matches_shared_terminal_matrix() {
             RetryLimitKind::TotalElapsed => policy.total_time_budget(Duration::from_secs(1)),
             RetryLimitKind::Attempts => unreachable!(),
         };
-        let config7 = RetryConfig::<TestError>::builder().policy(policy.build().unwrap())
+        let config7 = RetryConfig::<TestError>::builder()
+            .policy(policy.build().unwrap())
             .fallback(RetryFallback::Retry)
-            .build().expect("valid config");
+            .build()
+            .expect("valid config");
         let error = Retry::new(&config7)
             .timer(clock.new_timer())
             .run(|| {
@@ -581,7 +594,8 @@ fn test_sync_retry_matches_shared_terminal_matrix() {
 #[test]
 fn test_sync_retry_matches_shared_callback_matrix() {
     let later_rule_calls = Arc::new(AtomicUsize::new(0));
-    let rule_config = RetryConfig::<TestError>::builder().max_attempts(2)
+    let rule_config = RetryConfig::<TestError>::builder()
+        .max_attempts(2)
         .fallback(RetryFallback::Retry)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("matrix rule panic"))
         .rule({
@@ -591,7 +605,8 @@ fn test_sync_retry_matches_shared_callback_matrix() {
                 RetryDecision::Retry
             }
         })
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let rule_error = Retry::new(&rule_config)
         .run(|| Err::<(), _>(TestError("matrix")))
         .expect_err("the first panicking rule must fail closed");
@@ -604,10 +619,8 @@ fn test_sync_retry_matches_shared_callback_matrix() {
     ] {
         let later_counts = Arc::new(ObserverPhaseCounts::default());
         let observer_config = RetryConfig::<TestError>::builder()
-            
-                    .max_attempts(2)
-                    .backoff(BackoffPolicy::immediate())
-
+            .max_attempts(2)
+            .backoff(BackoffPolicy::immediate())
             .observer(PanickingPhaseObserver::new(phase))
             .observer(CountingPhaseObserver(Arc::clone(&later_counts)))
             .fallback(RetryFallback::Retry)
@@ -630,7 +643,8 @@ fn test_sync_retry_refreshes_elapsed_time_between_callback_phases() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("callback elapsed policy should be valid");
-    let config8 = RetryConfig::<TestError>::builder().policy(policy)
+    let config8 = RetryConfig::<TestError>::builder()
+        .policy(policy)
         .observer(ElapsedObserverCallback::new(
             Arc::clone(&clock),
             RetryCallbackPhase::AttemptFailed,
@@ -648,7 +662,8 @@ fn test_sync_retry_refreshes_elapsed_time_between_callback_phases() {
             Arc::clone(&records),
             false,
         ))
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let error = Retry::new(&config8)
         .timer(clock.new_timer())
         .run(|| Err::<(), _>(TestError("elapsed")))
@@ -687,17 +702,21 @@ fn test_sync_retry_refreshes_elapsed_time_after_callback_panics() {
             .build()
             .expect("callback panic policy should be valid");
         let error = if phase == RetryCallbackPhase::RuleDecision {
-            let chain_config1 = RetryConfig::<TestError>::builder().policy(policy)
+            let chain_config1 = RetryConfig::<TestError>::builder()
+                .policy(policy)
                 .rule(ElapsedRuleCallback::new(Arc::clone(&clock), records, true))
-                .build().expect("valid config");
+                .build()
+                .expect("valid config");
             Retry::new(&chain_config1)
                 .timer(clock.new_timer())
                 .run(|| Err::<(), _>(TestError("elapsed")))
         } else {
-            let chain_config1 = RetryConfig::<TestError>::builder().policy(policy)
+            let chain_config1 = RetryConfig::<TestError>::builder()
+                .policy(policy)
                 .observer(ElapsedObserverCallback::new(Arc::clone(&clock), phase, records, true))
                 .fallback(RetryFallback::Retry)
-                .build().expect("valid config");
+                .build()
+                .expect("valid config");
             Retry::new(&chain_config1)
                 .timer(clock.new_timer())
                 .run(|| Err::<(), _>(TestError("elapsed")))
@@ -712,10 +731,8 @@ fn test_sync_retry_matches_shared_infrastructure_matrix() {
     // Attempt and flow timeout cases are intentionally absent: Retry does
     // not expose a timeout API and cannot preempt a same-thread operation.
     let timer_config = RetryConfig::<TestError>::builder()
-        
-                .max_attempts(2)
-                .backoff(BackoffPolicy::fixed(Duration::from_millis(1)))
-
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::from_millis(1)))
         .fallback(RetryFallback::Retry)
         .build()
         .expect("valid config");
@@ -729,8 +746,7 @@ fn test_sync_retry_matches_shared_infrastructure_matrix() {
         .expect_err("retry sleep registration failure must be terminal");
     assert_matrix_infrastructure(&timer_error, "timer", 1, None, true);
 
-    let config10 = RetryConfig::<TestError>::builder()
-        .build().expect("valid config");
+    let config10 = RetryConfig::<TestError>::builder().build().expect("valid config");
     let clock_error = Retry::new(&config10)
         .timer(completion_regressing_timer())
         .run(|| Ok::<_, TestError>(()))
@@ -746,7 +762,10 @@ fn test_sync_retry_returns_successful_value() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .unwrap();
-    let retry = RetryConfig::<TestError>::builder().policy(policy).build().expect("valid config");
+    let retry = RetryConfig::<TestError>::builder()
+        .policy(policy)
+        .build()
+        .expect("valid config");
 
     let success = Retry::new(&retry)
         .run(|| Ok::<_, TestError>(42_u32))
@@ -764,9 +783,11 @@ fn test_sync_retry_retries_default_failure_before_success() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .unwrap();
-    let retry = RetryConfig::<TestError>::builder().policy(policy)
+    let retry = RetryConfig::<TestError>::builder()
+        .policy(policy)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let attempts = AtomicUsize::new(0);
 
     let success = Retry::new(&retry)

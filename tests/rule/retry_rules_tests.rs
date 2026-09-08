@@ -13,9 +13,9 @@ use std::sync::atomic::Ordering;
 
 use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
@@ -34,7 +34,11 @@ impl RetryRule<()> for NoopRule {
 #[test]
 fn test_retry_builder_accepts_ordered_rules() {
     let policy = RetryPolicy::builder().build().unwrap();
-    let retry = RetryConfig::<()>::builder().policy(policy).rule(NoopRule).build().expect("valid config");
+    let retry = RetryConfig::<()>::builder()
+        .policy(policy)
+        .rule(NoopRule)
+        .build()
+        .expect("valid config");
     let _ = retry;
 }
 
@@ -61,8 +65,11 @@ fn test_retry_rules_preserve_each_panic_payload() {
                     RetryDecision::UseDefault
                 }
             })
-            .build().expect("valid config");
-        let error = Retry::new(&retry).run(|| Err::<(), _>(())).expect_err("the rule must panic");
+            .build()
+            .expect("valid config");
+        let error = Retry::new(&retry)
+            .run(|| Err::<(), _>(()))
+            .expect_err("the rule must panic");
         let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
             panic!("expected a callback-failure terminal");
         };

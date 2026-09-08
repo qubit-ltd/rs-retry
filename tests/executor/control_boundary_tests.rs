@@ -22,17 +22,16 @@ use qubit_clock::TimerFuture;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryError;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryObserver;
-use qubit_retry::RetryPolicy;
 use qubit_retry::TokioRetry;
 use qubit_retry::WorkerRetry;
 
@@ -76,7 +75,11 @@ impl RetryObserver<&'static str> for CancellingControl {
 /// Builds an execution whose selected observer or rule advances then cancels.
 fn cancellation_case(
     phase: RetryCallbackPhase,
-) -> (RetryConfig<&'static str>, Arc<ManualMonotonicClock>, RetryCancellationToken) {
+) -> (
+    RetryConfig<&'static str>,
+    Arc<ManualMonotonicClock>,
+    RetryCancellationToken,
+) {
     let clock = ManualMonotonicClock::new_shared();
     let token = RetryCancellationToken::new();
     let control = CancellingControl {
@@ -97,7 +100,8 @@ fn build_case(control: CancellingControl) -> RetryConfig<&'static str> {
             rule.act(RetryCallbackPhase::RuleDecision);
             RetryDecision::Retry
         })
-        .build().expect("valid config")
+        .build()
+        .expect("valid config")
 }
 
 /// Checks both elapsed accounting and terminal ownership of the attempt.

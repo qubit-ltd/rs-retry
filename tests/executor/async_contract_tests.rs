@@ -29,9 +29,11 @@ use crate::support::UnitTestError;
 #[tokio::test]
 async fn test_async_facade_retries_and_preserves_success() {
     let policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
-    let retry = RetryConfig::<UnitTestError>::builder().policy(policy)
+    let retry = RetryConfig::<UnitTestError>::builder()
+        .policy(policy)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let attempts = Arc::new(AtomicU32::new(0));
     let result = TokioRetry::new(&retry)
         .run({
@@ -56,9 +58,11 @@ async fn test_async_facade_retries_and_preserves_success() {
 #[tokio::test(start_paused = true)]
 async fn test_async_attempt_timeout_has_a_distinct_terminal_reason() {
     let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let retry = RetryConfig::<UnitTestError>::builder().policy(policy)
+    let retry = RetryConfig::<UnitTestError>::builder()
+        .policy(policy)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let error = TokioRetry::new(&retry)
         .hard_attempt_timeout(Duration::from_millis(1))
         .run(|| async {
@@ -80,9 +84,11 @@ async fn test_async_attempt_timeout_has_a_distinct_terminal_reason() {
 #[tokio::test]
 async fn test_async_shorter_flow_timeout_reports_flow_source() {
     let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let retry = RetryConfig::<UnitTestError>::builder().policy(policy)
+    let retry = RetryConfig::<UnitTestError>::builder()
+        .policy(policy)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let clock = ManualMonotonicClock::new_shared();
     let executor = TokioRetry::new(&retry)
         .hard_attempt_timeout(Duration::from_secs(30))
@@ -116,9 +122,11 @@ async fn test_async_flow_timeout_caps_retry_sleep() {
         .backoff(BackoffPolicy::fixed(Duration::from_secs(30)))
         .build()
         .unwrap();
-    let retry = RetryConfig::<UnitTestError>::builder().policy(policy)
+    let retry = RetryConfig::<UnitTestError>::builder()
+        .policy(policy)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let clock = ManualMonotonicClock::new_shared();
     let attempts = Arc::new(AtomicU32::new(0));
     let executor = TokioRetry::new(&retry)

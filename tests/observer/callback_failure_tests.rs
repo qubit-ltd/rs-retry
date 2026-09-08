@@ -12,13 +12,12 @@ use std::sync::atomic::Ordering;
 
 use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackKind;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
-use qubit_retry::RetryPolicy;
 
 use crate::support::TestError;
 
@@ -43,7 +42,8 @@ fn test_callback_failure_stops_later_callback_kinds() {
                 RetryDecision::UseDefault
             }
         })
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let error = Retry::new(&retry)
         .run(|| Err::<(), _>(TestError("retry")))
         .expect_err("the observer must panic first");

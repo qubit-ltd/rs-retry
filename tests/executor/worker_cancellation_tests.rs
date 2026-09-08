@@ -32,17 +32,16 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryObserver;
-use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
-use qubit_retry::WorkerStopTrigger;
-use qubit_retry::RetryConfig;
 use qubit_retry::WorkerRetry;
+use qubit_retry::WorkerStopTrigger;
 
 use crate::support::TestError;
 
@@ -178,20 +177,20 @@ fn test_worker_backoff_without_cancellation_token_reaches_next_attempt() {
     let (result_sender, result_receiver) = mpsc::channel();
     let runner = thread::spawn(move || {
         let config = RetryConfig::<TestError>::builder()
-                .max_attempts(2)
-                .backoff(BackoffPolicy::fixed(Duration::from_secs(60)))
-
-        .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+            .max_attempts(2)
+            .backoff(BackoffPolicy::fixed(Duration::from_secs(60)))
+            .fallback(RetryFallback::Retry)
+            .build()
+            .expect("valid config");
         let result = WorkerRetry::new(&config)
-        .timer(timer)
-        .run(move |_: AttemptCancellationToken| {
-            if runner_operation_calls.fetch_add(1, Ordering::SeqCst) == 0 {
-                Err(TestError("retry"))
-            } else {
-                Ok(42_u32)
-            }
-        });
+            .timer(timer)
+            .run(move |_: AttemptCancellationToken| {
+                if runner_operation_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Err(TestError("retry"))
+                } else {
+                    Ok(42_u32)
+                }
+            });
         result_sender
             .send(result)
             .expect("test should receive the retry result");
@@ -223,15 +222,15 @@ fn test_worker_pre_cancellation_does_not_start_operation() {
         .build()
         .expect("valid config");
     let error = WorkerRetry::new(&config)
-    .cancellation_token(cancellation)
-    .run({
-        let operation_calls = Arc::clone(&operation_calls);
-        move |_: AttemptCancellationToken| {
-            operation_calls.fetch_add(1, Ordering::SeqCst);
-            Ok::<(), TestError>(())
-        }
-    })
-    .expect_err("pre-cancellation must stop before spawning an operation");
+        .cancellation_token(cancellation)
+        .run({
+            let operation_calls = Arc::clone(&operation_calls);
+            move |_: AttemptCancellationToken| {
+                operation_calls.fetch_add(1, Ordering::SeqCst);
+                Ok::<(), TestError>(())
+            }
+        })
+        .expect_err("pre-cancellation must stop before spawning an operation");
 
     let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal");
@@ -254,16 +253,16 @@ fn test_worker_attempt_cancellation_discards_late_success() {
         .build()
         .expect("valid config");
     let error = WorkerRetry::new(&config)
-    .cancellation_token(cancellation)
-    .run({
-        let observed_token = Arc::clone(&observed_token);
-        move |token: AttemptCancellationToken| {
-            *observed_token.lock().expect("attempt token slot should remain valid") = Some(token.clone());
-            operation_cancellation.cancel();
-            Ok::<(), TestError>(())
-        }
-    })
-    .expect_err("active cancellation must win over a late success");
+        .cancellation_token(cancellation)
+        .run({
+            let observed_token = Arc::clone(&observed_token);
+            move |token: AttemptCancellationToken| {
+                *observed_token.lock().expect("attempt token slot should remain valid") = Some(token.clone());
+                operation_cancellation.cancel();
+                Ok::<(), TestError>(())
+            }
+        })
+        .expect_err("active cancellation must win over a late success");
 
     let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal");
@@ -292,13 +291,13 @@ fn test_worker_attempt_cancellation_supports_maximum_grace() {
         .build()
         .expect("valid config");
     let error = WorkerRetry::new(&config)
-    .cancellation_grace(Duration::MAX)
-    .cancellation_token(cancellation)
-    .run(move |_: AttemptCancellationToken| {
-        operation_cancellation.cancel();
-        Ok::<(), TestError>(())
-    })
-    .expect_err("cooperative cancellation must remain a cancellation terminal");
+        .cancellation_grace(Duration::MAX)
+        .cancellation_token(cancellation)
+        .run(move |_: AttemptCancellationToken| {
+            operation_cancellation.cancel();
+            Ok::<(), TestError>(())
+        })
+        .expect_err("cooperative cancellation must remain a cancellation terminal");
 
     let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal");
@@ -317,19 +316,19 @@ fn test_worker_attempt_cancellation_discards_late_error() {
     let failed_observer_calls = Arc::new(AtomicUsize::new(0));
     let rule_calls = Arc::new(AtomicUsize::new(0));
     let retry = RetryConfig::<TestError>::builder()
-            .max_attempts(2)
-
-    .observer(CountAttemptFailed {
-        calls: Arc::clone(&failed_observer_calls),
-    })
-    .rule({
-        let rule_calls = Arc::clone(&rule_calls);
-        move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-            rule_calls.fetch_add(1, Ordering::SeqCst);
-            RetryDecision::Retry
-        }
-    })
-    .build().expect("valid config");
+        .max_attempts(2)
+        .observer(CountAttemptFailed {
+            calls: Arc::clone(&failed_observer_calls),
+        })
+        .rule({
+            let rule_calls = Arc::clone(&rule_calls);
+            move |_: &AttemptFailure<TestError>, _: &RetryContext| {
+                rule_calls.fetch_add(1, Ordering::SeqCst);
+                RetryDecision::Retry
+            }
+        })
+        .build()
+        .expect("valid config");
 
     let error = WorkerRetry::new(&retry)
         .cancellation_token(cancellation)
@@ -359,20 +358,20 @@ fn test_worker_cancellation_reports_still_running_with_cancellation_trigger() {
     let (release_sender, release_receiver) = mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
     let config = RetryConfig::<TestError>::builder()
-            .max_attempts(2)
-            .backoff(BackoffPolicy::immediate())
-
-    .observer(CountAttemptFailed {
-        calls: Arc::clone(&failed_observer_calls),
-    })
-    .rule({
-        let rule_calls = Arc::clone(&rule_calls);
-        move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-            rule_calls.fetch_add(1, Ordering::SeqCst);
-            RetryDecision::Retry
-        }
-    })
-    .build().expect("valid config");
+        .max_attempts(2)
+        .backoff(BackoffPolicy::immediate())
+        .observer(CountAttemptFailed {
+            calls: Arc::clone(&failed_observer_calls),
+        })
+        .rule({
+            let rule_calls = Arc::clone(&rule_calls);
+            move |_: &AttemptFailure<TestError>, _: &RetryContext| {
+                rule_calls.fetch_add(1, Ordering::SeqCst);
+                RetryDecision::Retry
+            }
+        })
+        .build()
+        .expect("valid config");
     let error = WorkerRetry::new(&config)
         .cancellation_grace(Duration::ZERO)
         .cancellation_token(cancellation)
@@ -436,18 +435,18 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
     let runner = thread::spawn(move || {
         let delay = Duration::from_secs(4);
         let config2 = RetryConfig::<TestError>::builder()
-                .max_attempts(2)
-                .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
-
-        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
-        .build().expect("valid config");
+            .max_attempts(2)
+            .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
+            .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
+            .build()
+            .expect("valid config");
         let result = WorkerRetry::new(&config2)
-        .timer(timer)
-        .cancellation_token(runner_cancellation)
-        .run(move |_: AttemptCancellationToken| {
-            runner_operation_calls.fetch_add(1, Ordering::SeqCst);
-            Err::<(), _>(TestError("backoff"))
-        });
+            .timer(timer)
+            .cancellation_token(runner_cancellation)
+            .run(move |_: AttemptCancellationToken| {
+                runner_operation_calls.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(TestError("backoff"))
+            });
         result_sender
             .send(result)
             .expect("test should receive the retry result");
@@ -489,16 +488,16 @@ fn test_worker_backoff_registration_cancellation_wins_over_timer_failure() {
         registrations: Arc::clone(&registrations),
     });
     let config3 = RetryConfig::<TestError>::builder()
-            .max_attempts(2)
-            .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
-
-    .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
-    .build().expect("valid config");
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
+        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
+        .build()
+        .expect("valid config");
     let error = WorkerRetry::new(&config3)
         .timer(timer)
-    .cancellation_token(cancellation)
-    .run(|_: AttemptCancellationToken| Err::<(), _>(TestError("registration")))
-    .expect_err("registration-time cancellation must stop the retry");
+        .cancellation_token(cancellation)
+        .run(|_: AttemptCancellationToken| Err::<(), _>(TestError("registration")))
+        .expect_err("registration-time cancellation must stop the retry");
 
     assert_eq!(registrations.load(Ordering::SeqCst), 1);
     let RetryErrorReason::Cancelled { phase } = error.reason() else {
@@ -531,9 +530,7 @@ fn test_worker_still_running_retains_flow_timeout_trigger() {
 fn assert_blocked_worker_timeout_trigger(scope: RetryTimeoutScope, expected_trigger: WorkerStopTrigger) {
     let (release_sender, release_receiver) = mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
-    let config = RetryConfig::<TestError>::builder()
-        .build()
-        .expect("valid config");
+    let config = RetryConfig::<TestError>::builder().build().expect("valid config");
     let clock = ManualMonotonicClock::new_shared();
     let worker = WorkerRetry::new(&config)
         .timer(clock.new_timer())

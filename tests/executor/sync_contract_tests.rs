@@ -24,9 +24,11 @@ fn test_sync_facade_retries_application_failure() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .unwrap();
-    let retry = RetryConfig::<UnitTestError>::builder().policy(policy)
+    let retry = RetryConfig::<UnitTestError>::builder()
+        .policy(policy)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let attempts = AtomicU32::new(0);
     let result = Retry::new(&retry).run(|| {
         if attempts.fetch_add(1, Ordering::SeqCst) == 0 {

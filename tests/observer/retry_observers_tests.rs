@@ -33,13 +33,11 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
-use qubit_retry::WorkerRetry;
-use qubit_retry::TokioRetry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
@@ -50,6 +48,8 @@ use qubit_retry::RetryObserver;
 use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
+use qubit_retry::TokioRetry;
+use qubit_retry::WorkerRetry;
 
 use crate::support::TestError;
 
@@ -60,7 +60,11 @@ impl RetryObserver<()> for NoopObserver {}
 #[test]
 fn test_observers_are_registered_by_retry_builder() {
     let policy = RetryPolicy::builder().build().unwrap();
-    let retry = RetryConfig::<()>::builder().policy(policy).observer(NoopObserver).build().expect("valid config");
+    let retry = RetryConfig::<()>::builder()
+        .policy(policy)
+        .observer(NoopObserver)
+        .build()
+        .expect("valid config");
     let _ = retry;
 }
 
@@ -192,8 +196,9 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
     if scenario == CompletionScenario::ExhaustedBeforeAttempt {
         policy = policy.total_time_budget(Duration::ZERO);
     }
-    let mut builder =
-        RetryConfig::<TestError>::builder().policy(policy.build().expect("valid completion policy")).fallback(RetryFallback::Retry);
+    let mut builder = RetryConfig::<TestError>::builder()
+        .policy(policy.build().expect("valid completion policy"))
+        .fallback(RetryFallback::Retry);
     for index in 0..3 {
         builder = builder.observer(CompletionObserver {
             index,
@@ -214,7 +219,8 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                 RetryDecision::UseDefault
             }
         })
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let timer: Arc<dyn Timer> = if matches!(
         scenario,
         CompletionScenario::TimerFailure | CompletionScenario::TimerFailureBeforeAttempt
@@ -489,10 +495,10 @@ fn test_completion_sync_operation_panic_does_not_notify() {
     let calls = Arc::new(AtomicUsize::new(0));
     let retry = RetryConfig::<TestError>::builder()
         .observer(CompletionCounter(Arc::clone(&calls)))
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let panic = catch_unwind(AssertUnwindSafe(|| {
-        let _ = Retry::new(&retry)
-            .run(|| -> Result<(), TestError> { panic!("operation panic") });
+        let _ = Retry::new(&retry).run(|| -> Result<(), TestError> { panic!("operation panic") });
     }));
     assert!(panic.is_err());
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -506,7 +512,8 @@ async fn test_completion_dropped_async_future_does_not_notify() {
     let operation_calls = AtomicUsize::new(0);
     let retry = RetryConfig::<TestError>::builder()
         .observer(CompletionCounter(Arc::clone(&calls)))
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let executor = TokioRetry::new(&retry);
     let mut future = Box::pin(executor.run(|| {
         operation_calls.fetch_add(1, Ordering::SeqCst);
@@ -528,7 +535,8 @@ async fn test_completion_async_operation_panic_does_not_notify() {
     let calls = Arc::new(AtomicUsize::new(0));
     let retry = RetryConfig::<TestError>::builder()
         .observer(CompletionCounter(Arc::clone(&calls)))
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let executor = TokioRetry::new(&retry);
     let mut future = Box::pin(executor.run(|| async {
         panic!("operation panic");
@@ -559,11 +567,13 @@ impl RetryObserver<TestError> for CompletionPanic {
 /// Default decomposition preserves diagnostics; discarding uses explicit names.
 #[test]
 fn test_completion_result_consumers_preserve_or_explicitly_discard_diagnostics() {
-    let retry = RetryConfig::<TestError>::builder().max_attempts(1)
+    let retry = RetryConfig::<TestError>::builder()
+        .max_attempts(1)
         .observer(|_: &AttemptFailure<TestError>, _: &RetryContext| {})
         .observer(CompletionPanic)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let success = Retry::new(&retry).run(|| Ok(42)).expect("successful operation");
     assert_eq!(success.completion_callback_failures().len(), 1);
     assert_eq!(success.completion_callback_failures()[0].index(), 1);
@@ -657,15 +667,16 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 let drops = Arc::new(AtomicUsize::new(0));
                 let calls = Arc::new(AtomicUsize::new(0));
                 let clock = ManualMonotonicClock::new_shared();
-                let retry =
-                    RetryConfig::<TestError>::builder().max_attempts(1)
-                        .fallback(RetryFallback::Retry)
-                        .observer(CompletionDropPanicObserver {
-                            drops: Arc::clone(&drops),
-                            recursive,
-                        })
-                        .observer(CompletionCounter(Arc::clone(&calls)))
-                        .build().expect("valid config");
+                let retry = RetryConfig::<TestError>::builder()
+                    .max_attempts(1)
+                    .fallback(RetryFallback::Retry)
+                    .observer(CompletionDropPanicObserver {
+                        drops: Arc::clone(&drops),
+                        recursive,
+                    })
+                    .observer(CompletionCounter(Arc::clone(&calls)))
+                    .build()
+                    .expect("valid config");
                 let operation = move || {
                     if successful {
                         Ok(42)
@@ -676,7 +687,9 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 let mut future = Box::pin(async {
                     match facade {
                         CompletionFacade::Sync => Retry::new(&retry).timer(clock.new_timer()).run(operation),
-                        CompletionFacade::Worker => WorkerRetry::new(&retry).timer(clock.new_timer()).run(move |_| operation()),
+                        CompletionFacade::Worker => WorkerRetry::new(&retry)
+                            .timer(clock.new_timer())
+                            .run(move |_| operation()),
                         #[cfg(feature = "tokio")]
                         CompletionFacade::Async => {
                             TokioRetry::new(&retry)

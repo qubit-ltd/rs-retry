@@ -33,10 +33,12 @@ fn test_first_rule_wins_and_failure_kind_is_stable() {
         }
     }
     let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let retry = RetryConfig::<UnitTestError>::builder().policy(policy)
+    let retry = RetryConfig::<UnitTestError>::builder()
+        .policy(policy)
         .rule(RetryOnly)
         .rule(AbortRule)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let error = Retry::new(&retry).run::<(), _>(|| Err(UnitTestError)).unwrap_err();
     assert!(matches!(
         error.reason(),

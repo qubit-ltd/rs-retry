@@ -10,10 +10,10 @@
 //!
 //! Build a [`RetryPolicy`] once, attach ordered [`RetryRule`] values and
 //! [`RetryObserver`] values through [`RetryConfig::builder`], then construct
-//! the execution facade that matches the operation. A policy only decides whether
-//! another attempt may be admitted; an admitted success is not revoked by a
-//! soft budget. Cancellation and hard-timeout priorities depend on the selected
-//! facade, and completion requires valid clock accounting.
+//! the execution facade that matches the operation. A policy only decides
+//! whether another attempt may be admitted; an admitted success is not revoked
+//! by a soft budget. Cancellation and hard-timeout priorities depend on the
+//! selected facade, and completion requires valid clock accounting.
 
 pub mod backoff;
 pub mod budget;
@@ -53,16 +53,16 @@ pub use error::RetryResult;
 pub use error::RetryTimeoutScope;
 #[cfg(feature = "worker")]
 pub use error::WorkerStopTrigger;
-#[cfg(feature = "tokio")]
-pub use executor::TokioRetry;
 #[cfg(feature = "worker")]
 pub use executor::AttemptCancellationToken;
 pub use executor::Retry;
-pub use executor::RetryConfig;
-pub use executor::RetryConfigBuilder;
 pub use executor::RetryCancellationToken;
 pub use executor::RetryCancelled;
+pub use executor::RetryConfig;
+pub use executor::RetryConfigBuilder;
 pub use executor::RetrySuccess;
+#[cfg(feature = "tokio")]
+pub use executor::TokioRetry;
 #[cfg(feature = "worker")]
 pub use executor::WorkerRetry;
 pub use observer::RetryContext;

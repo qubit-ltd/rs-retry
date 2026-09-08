@@ -23,10 +23,9 @@ use qubit_clock::test_util::TimerFailurePoint;
 use qubit_retry::AttemptCancellationToken;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
-use qubit_retry::WorkerRetry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
@@ -37,6 +36,7 @@ use qubit_retry::RetryObserver;
 use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
+use qubit_retry::WorkerRetry;
 use qubit_retry::WorkerStopTrigger;
 
 use crate::support::CountingPhaseObserver;
@@ -87,7 +87,8 @@ fn test_regression_worker_preserves_non_string_payload_after_drop_panic() {
         let worker_drops = Arc::clone(&drops);
         let config = RetryConfig::<()>::builder()
             .observer(CompletionCount(Arc::clone(&completed)))
-            .build().expect("valid config");
+            .build()
+            .expect("valid config");
         let error = WorkerRetry::new(&config)
             .run(move |_| -> Result<(), ()> {
                 panic_any(PanickingDrop {
@@ -113,7 +114,10 @@ fn test_regression_worker_preserves_non_string_payload_after_drop_panic() {
 #[test]
 fn test_worker_facade_is_available() {
     let policy = RetryPolicy::builder().build().unwrap();
-    let retry = RetryConfig::<()>::builder().policy(policy).build().expect("valid config");
+    let retry = RetryConfig::<()>::builder()
+        .policy(policy)
+        .build()
+        .expect("valid config");
     let _ = WorkerRetry::new(&retry);
 }
 
@@ -122,7 +126,8 @@ fn test_worker_spawn_failure_preserves_infrastructure_diagnostic() {
     let operation_calls = Arc::new(AtomicUsize::new(0));
     let rule_calls = Arc::new(AtomicUsize::new(0));
     let policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
-    let retry = RetryConfig::<TestError>::builder().policy(policy)
+    let retry = RetryConfig::<TestError>::builder()
+        .policy(policy)
         .rule({
             let rule_calls = Arc::clone(&rule_calls);
             move |_: &AttemptFailure<TestError>, _: &RetryContext| {
@@ -130,7 +135,8 @@ fn test_worker_spawn_failure_preserves_infrastructure_diagnostic() {
                 RetryDecision::Retry
             }
         })
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
 
     let error = WorkerRetry::new(&retry)
         .worker_stack_size(usize::MAX)
@@ -160,8 +166,10 @@ fn test_worker_spawn_failure_preserves_infrastructure_diagnostic() {
 
 #[test]
 fn test_worker_retry_clock_failure_retains_the_captured_operation_panic() {
-    let config2 = RetryConfig::<TestError>::builder().max_attempts(2)
-        .build().expect("valid config");
+    let config2 = RetryConfig::<TestError>::builder()
+        .max_attempts(2)
+        .build()
+        .expect("valid config");
     let error = WorkerRetry::new(&config2)
         .timer(rule_terminal_regressing_timer())
         .run(|_| -> Result<(), TestError> { panic!("operation panic") })
@@ -182,17 +190,21 @@ fn test_worker_retry_clock_failure_retains_the_captured_operation_panic() {
 
 #[test]
 fn test_worker_retry_matches_shared_terminal_matrix() {
-    let config3 = RetryConfig::<TestError>::builder().max_attempts(2)
+    let config3 = RetryConfig::<TestError>::builder()
+        .max_attempts(2)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let abort = WorkerRetry::new(&config3)
         .run(|_| Err::<(), _>(TestError("matrix")))
         .expect_err("the explicit abort rule must terminate after attempt one");
     assert_matrix_abort(&abort);
 
-    let config4 = RetryConfig::<TestError>::builder().max_attempts(1)
+    let config4 = RetryConfig::<TestError>::builder()
+        .max_attempts(1)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let attempts = WorkerRetry::new(&config4)
         .run(|_| Err::<(), _>(TestError("matrix")))
         .expect_err("one admitted failure must exhaust the attempt limit");
@@ -209,9 +221,11 @@ fn test_worker_retry_matches_shared_terminal_matrix() {
             RetryLimitKind::Attempts => unreachable!(),
         };
         let operation_clock = Arc::clone(&clock);
-        let config5 = RetryConfig::<TestError>::builder().policy(policy.build().unwrap())
+        let config5 = RetryConfig::<TestError>::builder()
+            .policy(policy.build().unwrap())
             .fallback(RetryFallback::Retry)
-            .build().expect("valid config");
+            .build()
+            .expect("valid config");
         let error = WorkerRetry::new(&config5)
             .timer(clock.new_timer())
             .run(move |_| {
@@ -228,7 +242,8 @@ fn test_worker_retry_matches_shared_terminal_matrix() {
 #[test]
 fn test_worker_retry_matches_shared_callback_matrix() {
     let later_rule_calls = Arc::new(AtomicUsize::new(0));
-    let rule_config = RetryConfig::<TestError>::builder().max_attempts(2)
+    let rule_config = RetryConfig::<TestError>::builder()
+        .max_attempts(2)
         .fallback(RetryFallback::Retry)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("matrix rule panic"))
         .rule({
@@ -238,7 +253,8 @@ fn test_worker_retry_matches_shared_callback_matrix() {
                 RetryDecision::Retry
             }
         })
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let rule_error = WorkerRetry::new(&rule_config)
         .run(|_| Err::<(), _>(TestError("matrix")))
         .expect_err("the first panicking rule must fail closed");
@@ -251,10 +267,8 @@ fn test_worker_retry_matches_shared_callback_matrix() {
     ] {
         let later_counts = Arc::new(ObserverPhaseCounts::default());
         let observer_config = RetryConfig::<TestError>::builder()
-            
-                    .max_attempts(2)
-                    .backoff(BackoffPolicy::immediate())
-
+            .max_attempts(2)
+            .backoff(BackoffPolicy::immediate())
             .observer(PanickingPhaseObserver::new(phase))
             .observer(CountingPhaseObserver(Arc::clone(&later_counts)))
             .fallback(RetryFallback::Retry)
@@ -277,7 +291,8 @@ fn test_worker_retry_refreshes_elapsed_time_between_callback_phases() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("callback elapsed policy should be valid");
-    let config6 = RetryConfig::<TestError>::builder().policy(policy)
+    let config6 = RetryConfig::<TestError>::builder()
+        .policy(policy)
         .observer(ElapsedObserverCallback::new(
             Arc::clone(&clock),
             RetryCallbackPhase::AttemptFailed,
@@ -295,7 +310,8 @@ fn test_worker_retry_refreshes_elapsed_time_between_callback_phases() {
             Arc::clone(&records),
             false,
         ))
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let error = WorkerRetry::new(&config6)
         .timer(clock.new_timer())
         .run(|_| Err::<(), _>(TestError("elapsed")))
@@ -334,17 +350,21 @@ fn test_worker_retry_refreshes_elapsed_time_after_callback_panics() {
             .build()
             .expect("callback panic policy should be valid");
         let error = if phase == RetryCallbackPhase::RuleDecision {
-            let chain_config1 = RetryConfig::<TestError>::builder().policy(policy)
+            let chain_config1 = RetryConfig::<TestError>::builder()
+                .policy(policy)
                 .rule(ElapsedRuleCallback::new(Arc::clone(&clock), records, true))
-                .build().expect("valid config");
+                .build()
+                .expect("valid config");
             WorkerRetry::new(&chain_config1)
                 .timer(clock.new_timer())
                 .run(|_| Err::<(), _>(TestError("elapsed")))
         } else {
-            let chain_config1 = RetryConfig::<TestError>::builder().policy(policy)
+            let chain_config1 = RetryConfig::<TestError>::builder()
+                .policy(policy)
                 .observer(ElapsedObserverCallback::new(Arc::clone(&clock), phase, records, true))
                 .fallback(RetryFallback::Retry)
-                .build().expect("valid config");
+                .build()
+                .expect("valid config");
             WorkerRetry::new(&chain_config1)
                 .timer(clock.new_timer())
                 .run(|_| Err::<(), _>(TestError("elapsed")))
@@ -357,10 +377,8 @@ fn test_worker_retry_refreshes_elapsed_time_after_callback_panics() {
 #[test]
 fn test_worker_retry_matches_shared_infrastructure_and_timeout_matrix() {
     let timer_config = RetryConfig::<TestError>::builder()
-        
-                .max_attempts(2)
-                .backoff(BackoffPolicy::fixed(Duration::from_millis(1)))
-
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::from_millis(1)))
         .fallback(RetryFallback::Retry)
         .build()
         .expect("valid config");
@@ -374,8 +392,7 @@ fn test_worker_retry_matches_shared_infrastructure_and_timeout_matrix() {
         .expect_err("retry sleep registration failure must be terminal");
     assert_matrix_infrastructure(&timer_error, "timer", 1, None, true);
 
-    let config8 = RetryConfig::<TestError>::builder()
-        .build().expect("valid config");
+    let config8 = RetryConfig::<TestError>::builder().build().expect("valid config");
     let clock_error = WorkerRetry::new(&config8)
         .timer(completion_regressing_timer())
         .run(|_| Ok::<_, TestError>(()))
@@ -414,8 +431,7 @@ fn test_worker_retry_reports_still_running_with_active_scope() {
     let release_receiver = Arc::new(Mutex::new(release_receiver));
     let clock = ManualMonotonicClock::new_shared();
     let operation_clock = Arc::clone(&clock);
-    let config9 = RetryConfig::<TestError>::builder()
-        .build().expect("valid config");
+    let config9 = RetryConfig::<TestError>::builder().build().expect("valid config");
     let error = WorkerRetry::new(&config9)
         .timer(clock.new_timer())
         .hard_attempt_timeout(Duration::from_millis(1))
@@ -464,9 +480,8 @@ fn test_worker_timeout_uses_injected_timer() {
     let worker_cancellation = cancellation.clone();
     let (started_sender, started_receiver) = mpsc::channel();
     let handle = thread::spawn(move || {
-        let config10 = RetryConfig::<TestError>::builder()
-            .build().expect("valid config");
-    WorkerRetry::new(&config10)
+        let config10 = RetryConfig::<TestError>::builder().build().expect("valid config");
+        WorkerRetry::new(&config10)
             .timer(worker_clock.new_timer())
             .hard_attempt_timeout(Duration::from_secs(3600))
             .cancellation_token(worker_cancellation)
@@ -498,10 +513,7 @@ fn test_worker_timeout_uses_injected_timer() {
 /// A failed timeout registration must not release or count an operation.
 #[test]
 fn test_worker_timeout_registration_failure_does_not_admit_operation() {
-    let chain_config2 = RetryConfig::<TestError>::builder()
-        
-        .build()
-        .expect("valid config");
+    let chain_config2 = RetryConfig::<TestError>::builder().build().expect("valid config");
     let error = WorkerRetry::new(&chain_config2)
         .hard_attempt_timeout(Duration::from_secs(1))
         .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
@@ -518,10 +530,7 @@ fn test_worker_timeout_registration_failure_does_not_admit_operation() {
 /// cause.
 #[test]
 fn test_worker_timeout_poll_failure_reaps_operation() {
-    let chain_config3 = RetryConfig::<TestError>::builder()
-        
-        .build()
-        .expect("valid config");
+    let chain_config3 = RetryConfig::<TestError>::builder().build().expect("valid config");
     let error = WorkerRetry::new(&chain_config3)
         .hard_attempt_timeout(Duration::from_secs(1))
         .cancellation_grace(Duration::from_secs(1))
@@ -546,10 +555,7 @@ fn test_worker_timeout_poll_failure_reaps_operation() {
 fn test_worker_timeout_poll_failure_retains_live_worker_trigger() {
     let (release_sender, release_receiver) = mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
-    let chain_config4 = RetryConfig::<TestError>::builder()
-        
-        .build()
-        .expect("valid config");
+    let chain_config4 = RetryConfig::<TestError>::builder().build().expect("valid config");
     let error = WorkerRetry::new(&chain_config4)
         .hard_attempt_timeout(Duration::from_secs(1))
         .cancellation_grace(Duration::ZERO)
