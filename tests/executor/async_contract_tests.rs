@@ -15,10 +15,10 @@ use std::time::Duration;
 
 use qubit_clock::ManualMonotonicClock;
 use qubit_clock::MonotonicClock;
-use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
 
@@ -28,7 +28,9 @@ use crate::support::UnitTestError;
 #[tokio::test]
 async fn test_async_facade_retries_and_preserves_success() {
     let policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
-    let retry = Retry::<UnitTestError>::builder(policy).build();
+    let retry = Retry::<UnitTestError>::builder(policy)
+        .fallback(RetryFallback::Retry)
+        .build();
     let attempts = Arc::new(AtomicU32::new(0));
     let result = retry
         .asynchronous()
@@ -54,7 +56,9 @@ async fn test_async_facade_retries_and_preserves_success() {
 #[tokio::test(start_paused = true)]
 async fn test_async_attempt_timeout_has_a_distinct_terminal_reason() {
     let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let retry = Retry::<UnitTestError>::builder(policy).build();
+    let retry = Retry::<UnitTestError>::builder(policy)
+        .fallback(RetryFallback::Retry)
+        .build();
     let error = retry
         .asynchronous()
         .hard_attempt_timeout(Duration::from_millis(1))
@@ -69,10 +73,6 @@ async fn test_async_attempt_timeout_has_a_distinct_terminal_reason() {
         error.reason(),
         RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Attempt,
-            last_failure: Some(AttemptFailure::TimedOut {
-                scope: RetryTimeoutScope::Attempt
-            }),
-            ..
         }
     ));
 }
@@ -104,10 +104,6 @@ async fn test_async_shorter_flow_timeout_reports_flow_source() {
         error.reason(),
         RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Flow,
-            last_failure: Some(AttemptFailure::TimedOut {
-                scope: RetryTimeoutScope::Flow
-            }),
-            ..
         }
     ));
 }

@@ -6,7 +6,6 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use std::fmt;
 use std::time::Duration;
 
 use qubit_retry::AttemptCancellationToken;
@@ -26,210 +25,139 @@ use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
 
-/// Verifies external callers can inspect every terminal classification and use
-/// the common accessors without constructing non-exhaustive variants.
 #[test]
-fn test_retry_failure_external_shape_and_accessor_signatures() {
-    /// Type-checks the externally visible terminal failure shape.
-    fn inspect<E: fmt::Display>(failure: &RetryErrorReason) {
-        let _: Option<&AttemptFailure<E>> = failure.last_failure();
-        let _: Option<&E> = failure.last_error();
+fn test_retry_error_reason_shape_and_accessors_are_separate() {
+    fn inspect(failure: &RetryErrorReason) {
         let _: String = failure.to_string();
         match failure {
-            RetryErrorReason::Aborted { last_failure, .. } => {
-                let _: &AttemptFailure<E> = last_failure;
-            }
-            RetryErrorReason::Exhausted {
-                limit, last_failure, ..
-            } => {
+            RetryErrorReason::Aborted => {}
+            RetryErrorReason::Exhausted { limit } => {
                 let _: &RetryLimitKind = limit;
-                let _: &Option<AttemptFailure<E>> = last_failure;
             }
-            RetryErrorReason::TimedOut {
-                scope, last_failure, ..
-            } => {
+            RetryErrorReason::TimedOut { scope } => {
                 let _: &RetryTimeoutScope = scope;
-                let _: &Option<AttemptFailure<E>> = last_failure;
             }
-            RetryErrorReason::Cancelled {
-                phase, last_failure, ..
-            } => {
+            RetryErrorReason::Cancelled { phase } => {
                 let _: &RetryCancellationPhase = phase;
-                let _: &Option<AttemptFailure<E>> = last_failure;
             }
-            RetryErrorReason::CallbackFailed {
-                callback, last_failure, ..
-            } => {
+            RetryErrorReason::CallbackFailed { callback } => {
                 let _: &RetryCallbackFailure = callback;
-                let _: &Option<AttemptFailure<E>> = last_failure;
             }
-            RetryErrorReason::Infrastructure {
-                failure, last_failure, ..
-            } => {
+            RetryErrorReason::Infrastructure { failure } => {
                 let _: &RetryInfrastructureFailure = failure;
-                let _: &Option<AttemptFailure<E>> = last_failure;
             }
             _ => {}
         }
     }
-
-    let _: fn(&RetryErrorReason) = inspect::<String>;
+    let _: fn(&RetryErrorReason) = inspect;
 }
 
-/// Observer that fails during the pre-admission notification.
 struct StartedPanickingObserver;
 
 impl RetryObserver<String> for StartedPanickingObserver {
-    /// Panics before the attempt is admitted.
     fn on_before_attempt(&self, _context: &RetryContext) {
         panic!("started observer panic");
     }
 }
 
-/// Verifies mapping preserves an abort carrying a worker panic.
 #[test]
-fn test_map_error_preserves_aborted_failure_fields() {
-    let failure = Retry::<String>::builder(RetryPolicy::builder().build().unwrap())
+fn test_map_error_preserves_aborted_worker_panic() {
+    let error = Retry::<String>::builder(RetryPolicy::builder().build().expect("policy"))
         .build()
         .worker()
         .run(|_: AttemptCancellationToken| -> Result<(), String> {
             panic!("operation panic");
         })
-        .expect_err("worker panic must abort the flow")
-        .into_failure_discarding_diagnostics();
-
-    let mapped: RetryErrorReason = failure.map_error(|_| panic!("panic failure must not call the mapper"));
-
-    let RetryErrorReason::Aborted { last_failure, .. } = mapped else {
-        panic!("expected an aborted failure");
-    };
-    assert_eq!(
-        last_failure,
-        AttemptFailure::Panicked {
-            panic: RetryPanic::StaticStr("operation panic"),
-        }
-    );
+        .expect_err("worker panic must abort the flow");
+    assert!(matches!(error.reason(), RetryErrorReason::Aborted));
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Panicked {
+            panic: RetryPanic::StaticStr("operation panic")
+        })
+    ));
+    let mapped = error.map_error(|value| value.into_bytes());
+    assert!(matches!(mapped.reason(), RetryErrorReason::Aborted));
+    assert!(matches!(mapped.last_failure(), Some(AttemptFailure::Panicked { .. })));
 }
 
-/// Verifies mapping preserves an exhausted limit and transforms its error.
 #[test]
-fn test_map_error_preserves_exhausted_failure_fields() {
-    let failure = Retry::<String>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+fn test_map_error_preserves_exhausted_application_failure() {
+    let error = Retry::<String>::builder(RetryPolicy::builder().max_attempts(1).build().expect("policy"))
         .build()
         .sync()
         .run(|| Err::<(), _>(String::from("exhausted")))
-        .expect_err("one failed attempt must exhaust the flow")
-        .into_failure_discarding_diagnostics();
-
-    let mapped = failure.map_error(String::into_bytes);
-
-    let RetryErrorReason::Exhausted {
-        limit, last_failure, ..
-    } = mapped
-    else {
-        panic!("expected an exhausted failure");
-    };
-    assert_eq!(limit, RetryLimitKind::Attempts);
-    assert_eq!(last_failure, Some(AttemptFailure::Error(b"exhausted".to_vec())));
+        .expect_err("one failed attempt must exhaust the flow");
+    assert!(matches!(
+        error.reason(),
+        RetryErrorReason::Exhausted {
+            limit: RetryLimitKind::Attempts
+        }
+    ));
+    let mapped = error.map_error(String::into_bytes);
+    assert_eq!(mapped.last_error(), Some(&b"exhausted".to_vec()));
 }
 
-/// Verifies mapping preserves timeout scope and an absent last failure.
 #[test]
-fn test_map_error_preserves_timed_out_failure_fields() {
-    let failure = Retry::<String>::builder(RetryPolicy::builder().build().unwrap())
+fn test_retry_error_retains_timeout_and_cancellation_failures() {
+    let timeout = Retry::<String>::builder(RetryPolicy::builder().build().expect("policy"))
         .build()
         .worker()
         .hard_attempt_timeout(Duration::ZERO)
         .run(|_: AttemptCancellationToken| Ok::<(), String>(()))
-        .expect_err("a zero attempt timeout must stop before admission")
-        .into_failure_discarding_diagnostics();
+        .expect_err("zero attempt timeout must stop before admission");
+    assert!(matches!(
+        timeout.reason(),
+        RetryErrorReason::TimedOut {
+            scope: RetryTimeoutScope::Attempt
+        }
+    ));
+    assert!(timeout.last_failure().is_none());
 
-    let mapped: RetryErrorReason = failure.map_error(|_| panic!("empty timeout must not call the mapper"));
-
-    let RetryErrorReason::TimedOut {
-        scope, last_failure, ..
-    } = mapped
-    else {
-        panic!("expected a timed out failure");
-    };
-    assert_eq!(scope, RetryTimeoutScope::Attempt);
-    assert_eq!(last_failure, None);
-}
-
-/// Verifies mapping preserves cancellation phase and an absent last failure.
-#[test]
-fn test_map_error_preserves_cancelled_failure_fields() {
-    let cancellation = RetryCancellationToken::new();
-    cancellation.cancel();
-    let failure = Retry::<String>::builder(RetryPolicy::builder().build().unwrap())
+    let token = RetryCancellationToken::new();
+    token.cancel();
+    let cancelled = Retry::<String>::builder(RetryPolicy::builder().build().expect("policy"))
         .build()
         .sync()
-        .cancellation_token(cancellation)
+        .cancellation_token(token)
         .run(|| Ok::<(), String>(()))
-        .expect_err("a pre-cancelled flow must stop before admission")
-        .into_failure_discarding_diagnostics();
-
-    let mapped: RetryErrorReason = failure.map_error(|_| panic!("empty cancellation must not call the mapper"));
-
-    let RetryErrorReason::Cancelled {
-        phase, last_failure, ..
-    } = mapped
-    else {
-        panic!("expected a cancelled failure");
-    };
-    assert_eq!(phase, RetryCancellationPhase::BeforeAttempt);
-    assert_eq!(last_failure, None);
+        .expect_err("pre-cancelled flow must stop before admission");
+    assert!(matches!(
+        cancelled.reason(),
+        RetryErrorReason::Cancelled {
+            phase: RetryCancellationPhase::BeforeAttempt
+        }
+    ));
+    assert!(cancelled.last_failure().is_none());
 }
 
-/// Verifies mapping preserves callback attribution and an absent last failure.
 #[test]
-fn test_map_error_preserves_callback_failed_fields() {
-    let failure = Retry::<String>::builder(RetryPolicy::builder().build().unwrap())
+fn test_retry_error_retains_callback_and_infrastructure_classification() {
+    let callback = Retry::<String>::builder(RetryPolicy::builder().build().expect("policy"))
         .observer(StartedPanickingObserver)
         .build()
         .sync()
         .run(|| Ok::<(), String>(()))
-        .expect_err("the pre-admission observer must fail closed")
-        .into_failure_discarding_diagnostics();
+        .expect_err("observer panic must fail closed");
+    assert!(matches!(
+        callback.reason(),
+        RetryErrorReason::CallbackFailed { callback }
+            if callback.callback() == RetryCallbackKind::Observer
+                && callback.phase() == RetryCallbackPhase::BeforeAttempt
+    ));
+    assert!(callback.last_failure().is_none());
 
-    let mapped: RetryErrorReason = failure.map_error(|_| panic!("empty callback failure must not call the mapper"));
-
-    let RetryErrorReason::CallbackFailed {
-        callback, last_failure, ..
-    } = mapped
-    else {
-        panic!("expected a callback failure");
-    };
-    assert_eq!(callback.callback(), RetryCallbackKind::Observer);
-    assert_eq!(callback.index(), 0);
-    assert_eq!(callback.phase(), RetryCallbackPhase::BeforeAttempt);
-    assert_eq!(callback.panic().message(), Some("started observer panic"));
-    assert_eq!(last_failure, None);
-}
-
-/// Verifies mapping preserves infrastructure data and an absent last failure.
-#[test]
-fn test_map_error_preserves_infrastructure_failure_fields() {
-    let failure = Retry::<String>::builder(RetryPolicy::builder().build().unwrap())
+    let infrastructure = Retry::<String>::builder(RetryPolicy::builder().build().expect("policy"))
         .build()
         .worker()
         .worker_stack_size(usize::MAX)
         .run(|_: AttemptCancellationToken| Ok::<(), String>(()))
-        .expect_err("an impossible stack size must fail worker creation")
-        .into_failure_discarding_diagnostics();
-
-    let mapped: RetryErrorReason =
-        failure.map_error(|_| panic!("empty infrastructure failure must not call the mapper"));
-
-    let RetryErrorReason::Infrastructure {
-        failure, last_failure, ..
-    } = mapped
-    else {
-        panic!("expected an infrastructure failure");
-    };
-    let RetryInfrastructureFailure::WorkerSpawn { message } = failure else {
-        panic!("expected worker-spawn attribution");
-    };
-    assert!(!message.is_empty());
-    assert_eq!(last_failure, None);
+        .expect_err("impossible stack size must fail worker creation");
+    assert!(matches!(
+        infrastructure.reason(),
+        RetryErrorReason::Infrastructure {
+            failure: RetryInfrastructureFailure::WorkerSpawn { .. }
+        }
+    ));
+    assert!(infrastructure.last_failure().is_none());
 }

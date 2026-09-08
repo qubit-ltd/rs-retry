@@ -33,7 +33,8 @@ fn test_new_accepts_soft_budget_without_representable_deadline() {
         .build()
         .expect("policy must be valid");
 
-    let mut budget = RetryBudget::new(&clock, *policy.admission_limits()).expect("soft budget needs no absolute deadline");
+    let mut budget =
+        RetryBudget::new(&clock, *policy.admission_limits()).expect("soft budget needs no absolute deadline");
     let token = budget.begin_attempt().expect("initial operation remains admissible");
     assert_eq!(budget.finish_attempt(token).expect("valid clock").attempts(), 1);
 }

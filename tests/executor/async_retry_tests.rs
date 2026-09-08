@@ -417,8 +417,6 @@ async fn test_async_timeout_registration_failure_does_not_start_attempt() {
         error.reason(),
         RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Timer { .. },
-            last_failure: None,
-            ..
         }
     ));
     assert_eq!(error.context().attempts(), 0);
@@ -487,14 +485,14 @@ async fn test_async_timeout_uses_fixed_deadline_and_preserves_selected_scope() {
         let recorded_deadline = timer.deadline();
         assert_eq!(recorded_deadline, expected_deadline);
         assert!(recorded_deadline.elapsed_since_origin() <= flow_deadline.elapsed_since_origin());
-        let RetryErrorReason::TimedOut {
-            scope, last_failure, ..
-        } = error.reason()
-        else {
+        let RetryErrorReason::TimedOut { scope } = error.reason() else {
             panic!("expected the prepared hard timeout to terminate the flow");
         };
         assert_eq!(*scope, expected_scope);
-        assert_eq!(last_failure, &Some(AttemptFailure::TimedOut { scope: expected_scope }));
+        assert_eq!(
+            error.last_failure(),
+            Some(&AttemptFailure::TimedOut { scope: expected_scope })
+        );
         assert_eq!(error.context().attempts(), 1);
         assert!(operation_polls.load(Ordering::SeqCst) >= 1);
     }
@@ -533,8 +531,6 @@ async fn test_async_registration_reaching_deadline_does_not_start_operation() {
         error.reason(),
         RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Attempt,
-            last_failure: None,
-            ..
         }
     ));
     assert_eq!(error.context().attempts(), 0);
@@ -568,13 +564,14 @@ async fn test_async_timeout_polling_failure_retains_active_attempt_scope() {
         error.reason(),
         RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Timer { .. },
-            last_failure: None,
-            ..
         }
     ));
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
-    assert_eq!(error.context().current_hard_attempt_timeout(), Some(Duration::from_secs(1)));
+    assert_eq!(
+        error.context().current_hard_attempt_timeout(),
+        Some(Duration::from_secs(1))
+    );
 }
 
 #[cfg(feature = "tokio")]

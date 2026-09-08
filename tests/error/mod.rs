@@ -16,10 +16,12 @@ mod retry_callback_phase_tests;
 mod retry_cancellation_phase_tests;
 mod retry_error_tests;
 mod retry_failure_tests;
+#[cfg(feature = "worker")]
 mod retry_infrastructure_failure_tests;
 mod retry_limit_kind_tests;
 mod retry_panic_tests;
 mod retry_policy_error_tests;
 mod retry_timeout_scope_tests;
 mod terminal_accessors_tests;
+#[cfg(feature = "worker")]
 mod worker_stop_trigger_tests;

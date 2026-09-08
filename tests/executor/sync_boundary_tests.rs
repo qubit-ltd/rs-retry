@@ -89,7 +89,7 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
         .sync()
         .run(|| Err::<(), _>(TestError("fatal")))
         .unwrap_err();
-    assert!(matches!(aborted.reason(), RetryErrorReason::Aborted { .. }));
+    assert!(matches!(aborted.reason(), RetryErrorReason::Aborted));
 
     let attempts_exhausted = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
         .build()
@@ -242,7 +242,6 @@ fn test_sync_commit_revalidates_clock_before_counting_operation() {
         error.reason(),
         RetryErrorReason::Infrastructure {
             failure: RetryInfrastructureFailure::Clock { .. },
-            last_failure: None,
             ..
         }
     ));

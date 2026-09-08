@@ -10,5 +10,6 @@ mod callback_failure_tests;
 mod control_lifecycle_tests;
 mod control_panic_payload_tests;
 mod retry_observer_tests;
+#[cfg(any(feature = "worker", feature = "tokio"))]
 mod retry_observers_tests;
 mod retry_panic_from_payload_tests;

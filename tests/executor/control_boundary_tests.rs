@@ -240,7 +240,9 @@ fn assert_clock_terminal(error: &RetryError<&'static str>, phase: RetryCallbackP
         (phase != RetryCallbackPhase::BeforeAttempt).then_some("offline")
     );
     if panic_after {
-        assert!(matches!(error.reason(), RetryErrorReason::CallbackFailed { callback, .. } if callback.phase() == phase));
+        assert!(
+            matches!(error.reason(), RetryErrorReason::CallbackFailed { callback, .. } if callback.phase() == phase)
+        );
     } else {
         assert!(matches!(
             error.reason(),

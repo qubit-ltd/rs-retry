@@ -33,22 +33,31 @@ fn create_exhausted_error() -> RetryError<UnitTestError> {
 #[test]
 fn test_retry_error_terminal_accessors_are_lossless() {
     let error = create_exhausted_error();
-    assert_eq!(error.last_failure(), error.reason().last_failure());
-    assert_eq!(error.last_error(), Some(&UnitTestError));
-    let failure = error.into_failure_discarding_diagnostics();
     assert!(matches!(
-        failure,
+        error.reason(),
         RetryErrorReason::Exhausted {
-            limit: RetryLimitKind::Attempts,
-            last_failure: Some(AttemptFailure::Error(UnitTestError)),
-            ..
+            limit: RetryLimitKind::Attempts
         }
+    ));
+    assert_eq!(error.last_error(), Some(&UnitTestError));
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Error(UnitTestError))
     ));
 
     let error = create_exhausted_error();
-    let (failure, context, diagnostics) = error.into_parts();
+    let (reason, failure, context, diagnostics) = error.into_parts();
     assert!(diagnostics.is_empty());
-    assert_eq!(failure.last_error(), Some(&UnitTestError));
+    assert!(matches!(
+        reason,
+        RetryErrorReason::Exhausted {
+            limit: RetryLimitKind::Attempts
+        }
+    ));
+    assert_eq!(
+        failure.as_ref().and_then(AttemptFailure::as_error),
+        Some(&UnitTestError)
+    );
     assert_eq!(context.attempts(), 1);
     assert_eq!(context.current_attempt(), None);
 }

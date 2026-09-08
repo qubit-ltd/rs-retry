@@ -11,6 +11,7 @@ use std::sync::atomic::Ordering;
 
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryPolicy;
 
 use crate::support::UnitTestError;
@@ -22,7 +23,9 @@ fn test_sync_facade_retries_application_failure() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .unwrap();
-    let retry = Retry::<UnitTestError>::builder(policy).build();
+    let retry = Retry::<UnitTestError>::builder(policy)
+        .fallback(RetryFallback::Retry)
+        .build();
     let attempts = AtomicU32::new(0);
     let result = retry.sync().run(|| {
         if attempts.fetch_add(1, Ordering::SeqCst) == 0 {

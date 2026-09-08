@@ -26,7 +26,7 @@ fn test_retry_flow_controller_clears_attempt_scope_for_abort_and_limit() {
         .sync()
         .run(|| Err::<(), _>(TestError("abort")))
         .expect_err("the abort rule must terminate the flow");
-    assert!(matches!(aborted.reason(), RetryErrorReason::Aborted { .. }));
+    assert!(matches!(aborted.reason(), RetryErrorReason::Aborted));
     assert_eq!(aborted.context().current_attempt(), None);
     assert_eq!(aborted.context().current_hard_attempt_timeout(), None);
 

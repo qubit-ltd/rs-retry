@@ -226,14 +226,12 @@ impl RetryObserver<TestError> for CountingPhaseObserver {
 
 /// Asserts the complete first-attempt abort terminal shape.
 pub(crate) fn assert_matrix_abort(error: &RetryError<TestError>) {
-    let RetryErrorReason::Aborted { last_failure, .. } = error.reason() else {
+    let RetryErrorReason::Aborted = error.reason() else {
         panic!("expected an aborted terminal failure");
     };
-    assert_eq!(last_failure, &AttemptFailure::Error(TestError("matrix")));
-    assert_eq!(error.reason().last_failure(), Some(last_failure));
-    assert_eq!(error.reason().last_error(), Some(&TestError("matrix")));
+    assert_eq!(error.last_failure(), Some(&AttemptFailure::Error(TestError("matrix"))));
     assert_eq!(error.last_error(), Some(&TestError("matrix")));
-    assert_eq!(error.reason().to_string(), "retry aborted: matrix");
+    assert_eq!(error.reason().to_string(), "aborted");
     assert_terminal_context(error.context(), 1, None);
 }
 
@@ -244,25 +242,16 @@ pub(crate) fn assert_matrix_limit(
     expected_attempts: u32,
     has_last_failure: bool,
 ) {
-    let RetryErrorReason::Exhausted {
-        limit: actual_limit,
-        last_failure,
-        ..
-    } = error.reason()
-    else {
+    let RetryErrorReason::Exhausted { limit: actual_limit } = error.reason() else {
         panic!("expected an exhausted terminal failure");
     };
     assert_eq!(*actual_limit, limit);
     if has_last_failure {
-        assert_eq!(last_failure, &Some(AttemptFailure::Error(TestError("matrix"))));
+        assert_eq!(error.last_failure(), Some(&AttemptFailure::Error(TestError("matrix"))));
     } else {
-        assert_eq!(last_failure, &None);
+        assert_eq!(error.last_failure(), None);
     }
-    assert_eq!(error.reason().last_failure(), last_failure.as_ref());
-    assert_eq!(
-        error.reason().last_error(),
-        has_last_failure.then_some(&TestError("matrix"))
-    );
+    assert_eq!(error.last_error(), has_last_failure.then_some(&TestError("matrix")));
     let suffix = if has_last_failure {
         "; last attempt failed: matrix"
     } else {
@@ -341,10 +330,7 @@ pub(crate) fn assert_matrix_infrastructure(
     current_attempt: Option<u32>,
     has_last_failure: bool,
 ) {
-    let RetryErrorReason::Infrastructure {
-        failure, last_failure, ..
-    } = error.reason()
-    else {
+    let RetryErrorReason::Infrastructure { failure } = error.reason() else {
         panic!("expected an infrastructure terminal failure");
     };
     match (expected, failure) {
@@ -355,49 +341,31 @@ pub(crate) fn assert_matrix_infrastructure(
         _ => panic!("unexpected infrastructure failure: {failure:?}"),
     }
     assert_eq!(
-        last_failure.as_ref(),
+        error.last_failure(),
         has_last_failure.then_some(&AttemptFailure::Error(TestError("matrix")))
     );
-    assert_eq!(error.reason().last_failure(), last_failure.as_ref());
-    assert_eq!(
-        error.reason().last_error(),
-        has_last_failure.then_some(&TestError("matrix"))
-    );
-    let suffix = if has_last_failure {
+    assert_eq!(error.last_error(), has_last_failure.then_some(&TestError("matrix")));
+    let _suffix = if has_last_failure {
         "; last attempt failed: matrix"
     } else {
         ""
     };
     assert_eq!(
         error.reason().to_string(),
-        format!("retry infrastructure failed: {failure}{suffix}")
+        format!("infrastructure failure ({failure})")
     );
     assert_terminal_context(error.context(), expected_attempts, current_attempt);
 }
 
 /// Asserts timeout terminal and attempt-failure scopes remain identical.
 pub(crate) fn assert_matrix_timeout(error: &RetryError<TestError>, scope: RetryTimeoutScope, expected_attempts: u32) {
-    let RetryErrorReason::TimedOut {
-        scope: terminal_scope,
-        last_failure,
-        ..
-    } = error.reason()
-    else {
+    let RetryErrorReason::TimedOut { scope: terminal_scope } = error.reason() else {
         panic!("expected a timeout terminal failure");
     };
     assert_eq!(*terminal_scope, scope);
-    assert_eq!(last_failure, &Some(AttemptFailure::TimedOut { scope }));
-    assert_eq!(error.reason().last_failure(), last_failure.as_ref());
-    assert_eq!(error.reason().last_error(), None);
-    assert_eq!(
-        error.reason().to_string(),
-        format!(
-            "retry timed out: {scope}; last attempt failed: {}",
-            last_failure
-                .as_ref()
-                .expect("timeout matrix retains its failed attempt")
-        )
-    );
+    assert_eq!(error.last_failure(), Some(&AttemptFailure::TimedOut { scope }));
+    assert_eq!(error.last_error(), None);
+    assert_eq!(error.reason().to_string(), format!("timed out ({scope})"));
     assert_terminal_context(error.context(), expected_attempts, None);
 }
 
@@ -440,10 +408,7 @@ fn assert_matrix_callback(
     attempts: u32,
     current_attempt: Option<u32>,
 ) {
-    let RetryErrorReason::CallbackFailed {
-        callback, last_failure, ..
-    } = error.reason()
-    else {
+    let RetryErrorReason::CallbackFailed { callback } = error.reason() else {
         panic!("expected a callback terminal failure");
     };
     assert_eq!(callback.callback(), kind);
@@ -456,23 +421,16 @@ fn assert_matrix_callback(
     };
     assert_eq!(callback.panic().message(), Some(expected_message));
     assert_eq!(
-        last_failure.as_ref(),
+        error.last_failure(),
         has_last_failure.then_some(&AttemptFailure::Error(TestError("matrix")))
     );
-    assert_eq!(error.reason().last_failure(), last_failure.as_ref());
-    assert_eq!(
-        error.reason().last_error(),
-        has_last_failure.then_some(&TestError("matrix"))
-    );
-    let suffix = if has_last_failure {
+    assert_eq!(error.last_error(), has_last_failure.then_some(&TestError("matrix")));
+    let _suffix = if has_last_failure {
         "; last attempt failed: matrix"
     } else {
         ""
     };
-    assert_eq!(
-        error.reason().to_string(),
-        format!("retry callback failed: {callback}{suffix}")
-    );
+    assert_eq!(error.reason().to_string(), format!("callback failed ({callback})"));
     assert_terminal_context(error.context(), attempts, current_attempt);
 }
 

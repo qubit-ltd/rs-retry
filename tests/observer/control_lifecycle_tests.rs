@@ -71,16 +71,13 @@ fn test_observers_and_rules_cover_current_lifecycle() {
         .sync()
         .run(|| Ok::<_, TestError>(11_u32))
         .expect_err("the first started observer panic must terminate the flow");
-    let RetryErrorReason::CallbackFailed {
-        callback, last_failure, ..
-    } = observer_error.reason()
-    else {
+    let RetryErrorReason::CallbackFailed { callback } = observer_error.reason() else {
         panic!("expected an observer callback failure");
     };
     assert_eq!(callback.callback(), RetryCallbackKind::Observer);
     assert_eq!(callback.index(), 0);
     assert_eq!(callback.phase(), RetryCallbackPhase::BeforeAttempt);
-    assert_eq!(last_failure, &None);
+    assert_eq!(observer_error.last_failure(), None);
     assert_eq!(observer_error.context().attempts(), 0);
     assert_eq!(observer_error.context().current_attempt().map(NonZeroU32::get), Some(1));
     assert_eq!(counts.started.load(Ordering::SeqCst), 0);
@@ -93,16 +90,16 @@ fn test_observers_and_rules_cover_current_lifecycle() {
         .sync()
         .run(|| Err::<u32, _>(TestError("retry")))
         .expect_err("the first rule panic must terminate the flow");
-    let RetryErrorReason::CallbackFailed {
-        callback, last_failure, ..
-    } = rule_error.reason()
-    else {
+    let RetryErrorReason::CallbackFailed { callback } = rule_error.reason() else {
         panic!("expected a rule callback failure");
     };
     assert_eq!(callback.callback(), RetryCallbackKind::Rule);
     assert_eq!(callback.index(), 0);
     assert_eq!(callback.phase(), RetryCallbackPhase::RuleDecision);
-    assert_eq!(last_failure, &Some(AttemptFailure::Error(TestError("retry"))));
+    assert_eq!(
+        rule_error.last_failure(),
+        Some(&AttemptFailure::Error(TestError("retry")))
+    );
     assert_eq!(counts.failed.load(Ordering::SeqCst), 1);
     assert_eq!(counts.scheduled.load(Ordering::SeqCst), 0);
     assert_eq!(rule_error.context().current_attempt().map(NonZeroU32::get), Some(1));
