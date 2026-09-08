@@ -29,7 +29,7 @@ name = "qubit_retry"
 
 [[test]]
 name = "tests"
-path = "tests/lib_tests.rs"
+path = "tests/all_tests.rs"
 
 [[bench]]
 name = "retry_benchmarks"

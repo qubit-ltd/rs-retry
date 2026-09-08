@@ -387,7 +387,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
             .state
             .backoff_deadline(clock.now(), backoff.effective_delay())
             .map_err(|error| self.inactive_clock_failure(error))?;
-        Ok(PreparedBackoffPlan::new(deadline))
+        Ok(PreparedBackoffPlan::new(deadline, backoff.effective_delay().is_zero()))
     }
 
     /// Finishes a successful operation and builds its terminal context.

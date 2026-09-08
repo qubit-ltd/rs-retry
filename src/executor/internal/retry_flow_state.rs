@@ -148,20 +148,6 @@ impl<'a> RetryFlowState<'a> {
         EffectiveTimeout::select(attempt_timeout, self.flow_remaining())
     }
 
-    /// Caps a retry sleep at the remaining hard flow timeout.
-    ///
-    /// # Parameters
-    /// - `delay`: Delay selected by backoff policy.
-    ///
-    /// # Returns
-    /// The delay capped at remaining hard-flow time, without changing policy
-    /// metadata.
-    #[inline(always)]
-    #[must_use]
-    pub(crate) fn sleep_duration(&self, delay: Duration) -> Duration {
-        self.flow_remaining().map_or(delay, |remaining| delay.min(remaining))
-    }
-
     /// Prepares an absolute deadline from the current control-boundary sample.
     #[inline]
     pub(crate) fn backoff_deadline(
@@ -169,7 +155,15 @@ impl<'a> RetryFlowState<'a> {
         now: MonotonicInstant,
         delay: Duration,
     ) -> Result<MonotonicInstant, TimeError> {
-        now.checked_add(self.sleep_duration(delay))
+        let requested = now.checked_add(delay)?;
+        let Some(flow_deadline) = self.flow_deadline()? else {
+            return Ok(requested);
+        };
+        if requested.elapsed_since_origin() <= flow_deadline.elapsed_since_origin() {
+            Ok(requested)
+        } else {
+            Ok(flow_deadline)
+        }
     }
 
     /// Returns the next one-based attempt ordinal.

@@ -7,6 +7,8 @@
 // =============================================================================
 //! Builder for immutable retry definitions.
 
+use std::sync::Arc;
+
 use super::retry::Retry;
 use crate::RetryFallback;
 use crate::RetryPolicy;
@@ -24,9 +26,9 @@ pub struct RetryBuilder<E> {
     policy: RetryPolicy,
     fallback: RetryFallback,
     /// Ordered decision callbacks shared across executions.
-    rules: RetryRules<E>,
+    rules: Vec<Arc<dyn RetryRule<E>>>,
     /// Ordered lifecycle callbacks shared across executions.
-    observers: RetryObservers<E>,
+    observers: Vec<Arc<dyn RetryObserver<E>>>,
 }
 
 impl<E: 'static> RetryBuilder<E> {
@@ -42,8 +44,8 @@ impl<E: 'static> RetryBuilder<E> {
         Self {
             policy,
             fallback: RetryFallback::default(),
-            rules: RetryRules::default(),
-            observers: RetryObservers::default(),
+            rules: Vec::new(),
+            observers: Vec::new(),
         }
     }
 
@@ -63,7 +65,7 @@ impl<E: 'static> RetryBuilder<E> {
     where
         R: RetryRule<E>,
     {
-        self.rules.push(rule);
+        self.rules.push(Arc::new(rule));
         self
     }
 
@@ -77,14 +79,14 @@ impl<E: 'static> RetryBuilder<E> {
     /// Appends an already shared rule without wrapping it in another `Arc`.
     #[inline(always)]
     pub fn shared_rule(mut self, rule: std::sync::Arc<dyn RetryRule<E>>) -> Self {
-        self.rules.push_shared(rule);
+        self.rules.push(rule);
         self
     }
 
     /// Appends an already shared observer without wrapping it in another `Arc`.
     #[inline(always)]
     pub fn shared_observer(mut self, observer: std::sync::Arc<dyn RetryObserver<E>>) -> Self {
-        self.observers.push_shared(observer);
+        self.observers.push(observer);
         self
     }
 
@@ -105,7 +107,7 @@ impl<E: 'static> RetryBuilder<E> {
     where
         O: RetryObserver<E>,
     {
-        self.observers.push(observer);
+        self.observers.push(Arc::new(observer));
         self
     }
 
@@ -116,6 +118,11 @@ impl<E: 'static> RetryBuilder<E> {
     #[must_use = "run or retain the configured retry definition"]
     #[inline(always)]
     pub fn build(self) -> Retry<E> {
-        Retry::new(self.policy, self.fallback, self.rules, self.observers)
+        Retry::new(
+            self.policy,
+            self.fallback,
+            RetryRules::from_vec(self.rules),
+            RetryObservers::from_vec(self.observers),
+        )
     }
 }
