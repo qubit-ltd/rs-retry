@@ -19,6 +19,21 @@ use crate::RetryErrorReason;
 use crate::RetrySuccess;
 
 /// Error returned when a retry flow terminates without a successful result.
+///
+/// # Examples
+/// ```
+/// use qubit_retry::{Retry, RetryErrorReason, RetryFallback, RetryPolicy};
+///
+/// let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
+/// let retry = Retry::<&'static str>::builder(policy)
+///     .fallback(RetryFallback::Retry)
+///     .build();
+/// let error = retry
+///     .sync()
+///     .run(|| Err::<(), _>("offline"))
+///     .unwrap_err();
+/// assert!(matches!(error.reason(), RetryErrorReason::Exhausted { .. }));
+/// ```
 #[must_use]
 #[derive(Debug)]
 pub struct RetryError<E> {
