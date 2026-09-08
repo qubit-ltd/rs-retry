@@ -5,10 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Default retry random source backed by `rand::rng()`.
-
-use rand::RngExt;
-use rand::rng;
+//! Default retry random source backed by `fastrand`'s thread-local generator.
 
 use crate::RetryRandomSource;
 
@@ -33,6 +30,10 @@ impl RetryRandomSource for ThreadRetryRandomSource {
     /// only request validated finite bounds.
     #[inline]
     fn random_f64_inclusive(&self, min: f64, max: f64) -> f64 {
-        rng().random_range(min..=max)
+        debug_assert!(min.is_finite() && max.is_finite() && min <= max);
+        if min == max {
+            return min;
+        }
+        min + (max - min) * fastrand::f64_inclusive()
     }
 }
