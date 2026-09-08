@@ -24,11 +24,12 @@ qubit-retry = "0.23"
 
 | Feature | 提供的能力 |
 | --- | --- |
-| `tokio` | 在 Tokio 运行时中异步执行 |
+| `async` | 使用 `StdTimer`、不绑定具体运行时的异步执行 |
+| `tokio` | 使用 `TokioTimer` 的 Tokio 异步执行（同时开启 `async`） |
 | `worker` | 在独立线程执行阻塞操作，支持协作式取消和超时 |
 | `serde` | 序列化策略配置，并在反序列化时校验配置 |
 
-这三个 feature 默认均不开启，可以按需组合。各模式的依赖配置与示例见
+这些 feature 默认均不开启，可以按需组合。各模式的依赖配置与示例见
 [用户手册](doc/user_guide.zh_CN.md)。
 
 ## 快速开始
@@ -123,6 +124,7 @@ Qubit Retry 将这些判断集中到可复用的 `Retry` 中。每次 `run` 都�
 | 模式 | 适用场景 | 使用边界 |
 | --- | --- | --- |
 | `Retry::new(&config)` | 在当前线程执行耗时可控的操作 | 无法打断正在执行的操作 |
+| `AsyncRetry::new(&config)` | 在任意 executor 中运行异步代码 | 使用 `StdTimer`，调用方仍需 poll 返回的 future |
 | `TokioRetry::new(&config)` | 调用 Tokio 异步客户端 | 可丢弃尚未完成的 future，无法打断其中的阻塞代码 |
 | `WorkerRetry::new(&config)` | 阻塞操作能够检查取消令牌并退出 | 请求线程退出并等待清理，不能强制终止线程 |
 

@@ -8,7 +8,7 @@ usage belongs in the user guide; the invariants here govern internal changes.
 ## Scope and dependency direction
 
 The engine separates validated policy, flow accounting, and execution mechanics.
-It does not implement a worker pool, circuit breaker, alternative async runtime,
+It does not implement a worker pool, circuit breaker, or an async executor,
 or parent/child cancellation hierarchy. SSE and custom reconnect loops may use
 budget/backoff directly; they do not need a synthetic operation executor.
 
@@ -16,12 +16,14 @@ budget/backoff directly; they do not need a synthetic operation executor.
 flowchart TD
     subgraph executors [Execution facades]
         F1[Retry]
-        F2[TokioRetry]
-        F3[WorkerRetry]
+        F2[AsyncRetry]
+        F3[TokioRetry]
+        F4[WorkerRetry]
     end
     F1 --> CFG[RetryConfig]
     F2 --> CFG
     F3 --> CFG
+    F4 --> CFG
     CFG --> C[RetryFlowController]
     C --> S[RetryFlowState / RetryBudgetState]
     CFG --> P[RetryPolicy / BackoffState]
@@ -29,10 +31,12 @@ flowchart TD
     F1 --> R[RetryConfig::complete]
     F2 --> R
     F3 --> R
+    F4 --> R
     R --> D[Completion observers and attached diagnostics]
     F1 --> W[Timers / blocking wait / worker protocol]
     F2 --> W
     F3 --> W
+    F4 --> W
     B[Standalone RetryBudget] --> S
 ```
 
@@ -45,7 +49,7 @@ flowchart TD
   can chain `.max_attempts(...)`, `.backoff(...)`, and `.rule(...)` in one builder.
   Use `.policy(prebuilt)` only when a policy already exists (JSON, shared variable,
   or helper such as `retry_once_policy()`).
-- Execution facades (`Retry`, `TokioRetry`, `WorkerRetry`) take `&RetryConfig`,
+- Execution facades (`Retry`, `AsyncRetry`, `TokioRetry`, `WorkerRetry`) take `&RetryConfig`,
   own per-run runtime options (timer, random source, cancellation token, hard
   timeouts, worker stack size), and delegate flow decisions to the controller.
 - `policy`, `backoff`, and `budget` validate values and calculate continuation
@@ -53,6 +57,10 @@ flowchart TD
 - `executor/internal/retry_flow_controller.rs` owns one flow's decisions and
   retained failure. State snapshots and plans separate preparation from admission.
 - Async attempt/backoff outcomes and worker event/waker types stay internal.
+- `AsyncRetry` uses `StdTimer` by default and standard-library future polling;
+  `TokioRetry` reuses its flow with `TokioTimer` as the default. Both accept an
+  injected `Arc<dyn Timer>`, so deterministic and custom timer backends remain
+  available.
 - `RetryConfig::complete` alone dispatches completion notifications after an
   executor returns its frozen result. It is outside the controller and never
   reenters it.
@@ -189,7 +197,7 @@ and completion diagnostics. No lossy failure-consumer alias exists.
 only a retained application error with an `FnOnce` mapper called zero or one times;
 it preserves all other data and imposes no extra Clone/Send/static bounds.
 
-All three public run wrappers delegate exactly once to `RetryConfig::complete`
+All four public run wrappers delegate exactly once to `RetryConfig::complete`
 after `run_inner` returns. A dropped async run future, outward unwind, or abort
 has no completion guarantee. There is no second completion event after observer
 failure.

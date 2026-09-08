@@ -42,7 +42,7 @@ def extract(path):
         if (language == "rust") != (kind == "run"):
             raise ValueError(f"{path}:{start + 1}: example kind disagrees with fence language")
         features = [] if feature_text == "none" else feature_text.split(",")
-        if any(feature not in ("serde", "tokio", "worker") for feature in features) or len(set(features)) != len(features):
+        if any(feature not in ("async", "serde", "tokio", "worker") for feature in features) or len(set(features)) != len(features):
             raise ValueError(f"{path}:{start + 1}: unknown feature or repeated feature")
         index += 1
         body = []

@@ -133,7 +133,7 @@ require resetting the library's counters.
 | Admission | The check that permits an attempt to start under the remaining limits |
 | `RetryPolicy` | Validated attempt limits, elapsed budgets, and backoff configuration |
 | `RetryConfig<E>` | Policy, rules, observers, and fallback for error type `E` |
-| `Retry` / `TokioRetry` / `WorkerRetry` | Executors that run operations with a shared `RetryConfig` |
+| `Retry` / `AsyncRetry` / `TokioRetry` / `WorkerRetry` | Executors that run operations with a shared `RetryConfig` |
 | `RetryContext` | A snapshot of counts, elapsed time, and the current phase's attempt/delay information |
 
 The normal path is:
@@ -163,6 +163,7 @@ rules and observers without requiring the application error to implement `Clone`
 | Entry point | Feature | Operation requirements | Where it runs |
 | --- | --- | --- | --- |
 | `Retry::new(&config)` | None | `FnMut() -> Result<T, E>`; can borrow local state | Calling thread |
+| `AsyncRetry::new(&config)` | `async` | `FnMut() -> Fut`; futures need not be `Send` or `'static` | Any executor polling the future; default timer is `StdTimer` |
 | `TokioRetry::new(&config)` | `tokio` | `FnMut() -> Fut`; futures need not be `Send` or `'static` | Tokio runtime |
 | `WorkerRetry::new(&config)` | `worker` | `Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static`; `T` and `E`: `Send + 'static` | Dedicated worker thread per attempt |
 
@@ -170,7 +171,17 @@ The execution APIs require `E: 'static`, including in sync/async mode; that does
 not require their operation closures to own all captured state. Rules and
 observers are shared `Send + Sync + 'static` callbacks.
 
-Enable async execution with:
+Enable runtime-independent async execution with:
+
+<!-- retry-example: kind=cargo features=async -->
+```toml
+[dependencies]
+qubit-retry = { version = "0.23", features = ["async"] }
+```
+
+`AsyncRetry` returns a standard `Future` and uses `StdTimer` by default. The
+executor is supplied by the application. To use Tokio's native timer instead,
+enable `tokio`:
 
 <!-- retry-example: kind=cargo features=tokio -->
 ```toml
@@ -407,7 +418,7 @@ do not guarantee that the entire `run` call returns by an exact wall-clock deadl
 
 ## Run async operations
 
-Enable `tokio` and add the direct Tokio dependency shown above. Supply a closure
+For Tokio-native async execution, enable `tokio` and add the direct Tokio dependency shown above. Supply a closure
 that creates a **fresh future for each attempt**, rather than reusing one future.
 This example first recovers from a client error, then times out a pending read:
 
@@ -829,7 +840,7 @@ best-effort timing.
 | `attempts() == 0` | Check pre-cancellation, zero budgets/timeouts, before-attempt callbacks, and infrastructure errors. |
 | `Exhausted` instead of `TimedOut` | Soft budgets stop admission; inspect `limit`. Hard timeout errors carry `scope`. |
 | Sync runs longer than the budget | Its closure cannot be interrupted. Bound the underlying I/O or choose a suitable async/worker operation. |
-| `TokioRetry` or `WorkerRetry` is unavailable | Enable its matching Cargo feature; async also needs a Tokio runtime. |
+| `AsyncRetry`, `TokioRetry`, or `WorkerRetry` is unavailable | Enable the matching `async`, `tokio`, or `worker` feature; `AsyncRetry` only needs an executor supplied by the application. |
 | Fewer calls than retry-scheduled notifications | Scheduling does not guarantee admission. Later cancellation, callbacks, or limits can prevent the attempt. |
 | `WorkerStillRunning` | Inspect its trigger and the operation/TLS cleanup protocol before starting replacement work. |
 | A successful result contains diagnostics | Inspect completion observers; their panic does not invalidate the business result. |
@@ -838,8 +849,8 @@ best-effort timing.
 
 Keep retries bounded for remote workloads, account for any retry behavior already
 inside the client, and define how uncertain side effects are reconciled. The
-library provides no circuit breaker, cancellation hierarchy, alternative async
-runtime, or thread pool.
+library provides no circuit breaker, cancellation hierarchy, async executor, or
+thread pool.
 
 ## Further reading and documentation checks
 
