@@ -6,19 +6,21 @@
 
 ## 范围与依赖方向
 
-引擎分离配置验证、流程计量和执行机制。本轮不引入 worker 池、熔断器、其他异步运行时或父子取消树。
+引擎分离配置验证、流程计量和执行机制。本轮不引入 worker 池、熔断器或异步执行器，也不引入父子取消树。
 SSE 和自定义重连循环可以直接使用预算与退避，无须构造虚拟操作执行器。
 
 ```mermaid
 flowchart TD
     subgraph executors [执行门面]
         F1[Retry]
-        F2[TokioRetry]
-        F3[WorkerRetry]
+        F2[AsyncRetry]
+        F3[TokioRetry]
+        F4[WorkerRetry]
     end
     F1 --> CFG[RetryConfig]
     F2 --> CFG
     F3 --> CFG
+    F4 --> CFG
     CFG --> C[RetryFlowController]
     C --> S[RetryFlowState / RetryBudgetState]
     CFG --> P[RetryPolicy / BackoffState]
@@ -26,10 +28,12 @@ flowchart TD
     F1 --> R[RetryConfig::complete]
     F2 --> R
     F3 --> R
+    F4 --> R
     R --> D[完成观察者与附加诊断]
     F1 --> W[计时器 / 阻塞等待 / worker 协议]
     F2 --> W
     F3 --> W
+    F4 --> W
     B[独立 RetryBudget] --> S
 ```
 
@@ -40,12 +44,15 @@ flowchart TD
 - `RetryConfigBuilder` 转发 `RetryPolicyBuilder` 的全部 API，允许在一条链上调用
   `.max_attempts(...)`、`.backoff(...)`、`.rule(...)`。仅当策略已预先构建
   （JSON、共享变量或 `retry_once_policy()` 等 helper）时才使用 `.policy(prebuilt)`。
-- 执行门面（`Retry`、`TokioRetry`、`WorkerRetry`）接收 `&RetryConfig`，持有每次
+- 执行门面（`Retry`、`AsyncRetry`、`TokioRetry`、`WorkerRetry`）接收 `&RetryConfig`，持有每次
   run 的运行时选项（timer、随机源、取消令牌、硬超时、worker 栈大小等），并将
   流程决策委托给控制器。
 - `policy`、`backoff`、`budget` 验证配置并计算是否允许继续，不调用业务回调，也不负责调度操作执行。
 - `executor/internal/retry_flow_controller.rs` 负责一次流程的决策及最后失败；状态快照和计划将准备与准入提交分开。
 - 异步结果、worker 事件和 waker 类型保持私有。
+- `AsyncRetry` 默认使用 `StdTimer` 和标准库 future 轮询；`TokioRetry` 复用相同
+  流程但默认使用 `TokioTimer`。两者都接受注入的 `Arc<dyn Timer>`，支持确定性
+  测试和自定义 timer 后端。
 - `RetryConfig::complete` 是唯一完成通知入口，在执行器返回冻结结果后调用，不属于控制器，也不重新进入控制流程。
 - `internal/retry_panic_from_payload.rs` 是已捕获载荷的唯一解码器，规则、控制/完成观察者、worker 和 reaper join 失败共同使用。
 

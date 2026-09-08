@@ -26,11 +26,12 @@ qubit-retry = "0.23"
 
 | Feature | Adds |
 | --- | --- |
-| `tokio` | Async execution on a Tokio runtime |
+| `async` | Runtime-independent async execution with `StdTimer` |
+| `tokio` | Tokio-backed async execution with `TokioTimer` (also enables `async`) |
 | `worker` | Cooperative cancellation and timeouts for blocking work on dedicated threads |
 | `serde` | Serialization and validated deserialization of policy configuration |
 
-All three are opt-in and can be combined. See the [user guide](doc/user_guide.md)
+All optional features are opt-in and can be combined. See the [user guide](doc/user_guide.md)
 for dependencies and examples for each mode.
 
 ## Quick start
@@ -132,6 +133,7 @@ consume another request's retry allowance.
 | Mode | Use it for | Boundary |
 | --- | --- | --- |
 | `Retry::new(&config)` | A bounded operation on the calling thread | Cannot interrupt the operation |
+| `AsyncRetry::new(&config)` | Async code on any executor | Uses `StdTimer`; the executor still polls the returned future |
 | `TokioRetry::new(&config)` | An async client on Tokio | Cancels a pending future; cannot interrupt blocking code inside it |
 | `WorkerRetry::new(&config)` | Blocking work that checks a cancellation token | Requests thread exit and waits for cleanup; cannot forcibly terminate a thread |
 

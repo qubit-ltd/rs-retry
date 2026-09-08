@@ -127,7 +127,7 @@ snapshot-v2, attempts=3
 | 准入（admission） | 检查剩余次数与预算，决定是否允许操作开始 |
 | `RetryPolicy` | 经过校验的次数限制、耗时预算与退避配置 |
 | `RetryConfig<E>` | 针对错误类型 `E` 的策略、规则、观察者与 fallback |
-| `Retry` / `TokioRetry` / `WorkerRetry` | 基于共享 `RetryConfig` 的执行器 |
+| `Retry` / `AsyncRetry` / `TokioRetry` / `WorkerRetry` | 基于共享 `RetryConfig` 的执行器 |
 | `RetryContext` | 次数、耗时，以及当前阶段的尝试或延迟信息快照 |
 
 正常执行顺序如下：
@@ -154,13 +154,23 @@ snapshot-v2, attempts=3
 | 入口 | 所需 feature | 操作要求 | 执行位置 |
 | --- | --- | --- | --- |
 | `Retry::new(&config)` | 无 | `FnMut() -> Result<T, E>`，可借用局部状态 | 调用线程 |
+| `AsyncRetry::new(&config)` | `async` | `FnMut() -> Fut`，future 无需满足 `Send` 或 `'static` | 由任意 executor poll；默认使用 `StdTimer` |
 | `TokioRetry::new(&config)` | `tokio` | `FnMut() -> Fut`，future 无需满足 `Send` 或 `'static` | Tokio 运行时 |
 | `WorkerRetry::new(&config)` | `worker` | `Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static`；`T`、`E` 须为 `Send + 'static` | 每次尝试创建独立工作线程 |
 
 各执行接口都要求 `E: 'static`，同步与异步模式也不例外；但这不意味着它们的操作闭包必须拥有所有捕获状态。
 规则与观察者会被共享，须满足 `Send + Sync + 'static`。
 
-异步执行需要开启 `tokio`：
+不绑定具体运行时的异步执行需要开启 `async`：
+
+<!-- retry-example: kind=cargo features=async -->
+```toml
+[dependencies]
+qubit-retry = { version = "0.23", features = ["async"] }
+```
+
+`AsyncRetry` 返回标准库 `Future`，默认使用 `StdTimer`；调用方负责提供
+executor。若希望使用 Tokio 原生计时器，请开启 `tokio`：
 
 <!-- retry-example: kind=cargo features=tokio -->
 ```toml
@@ -783,7 +793,7 @@ fn main() {
 | `attempts() == 0` | 检查预先取消、零预算或零超时、尝试前回调以及基础设施错误。 |
 | 返回 `Exhausted` 而非 `TimedOut` | 软预算限制准入，应检查 `limit`；硬超时错误带有 `scope`。 |
 | 同步操作运行时间超过预算 | 无法打断同步闭包。限制底层 I/O，或选择合适的 async/worker 操作。 |
-| 找不到 `TokioRetry` 或 `WorkerRetry` | 检查对应 Cargo feature 是否开启；异步执行还需要 Tokio 运行时。 |
+| 找不到 `AsyncRetry`、`TokioRetry` 或 `WorkerRetry` | 检查对应 Cargo feature 是否开启；`AsyncRetry` 由应用提供执行器，`TokioRetry` 需要 Tokio 运行时。 |
 | 操作次数少于重试调度通知数 | 调度不保证准入，后续取消、回调或限制可能阻止执行。 |
 | `WorkerStillRunning` | 检查触发原因及操作、TLS 的清理流程，再决定是否启动替代任务。 |
 | 成功结果中有诊断 | 检查完成观察者，其 panic 不会否定业务成功。 |
@@ -792,7 +802,7 @@ fn main() {
 
 远程操作应使用有界重试，并考虑客户端内部是否已经重试，避免叠加放大请求次数。
 对结果不确定的副作用，应提前定义核对与恢复方式。
-本库不提供熔断器、取消层级、其他异步运行时或线程池。
+本库不提供熔断器、取消层级或线程池。
 
 ## 延伸阅读与文档校验
 
