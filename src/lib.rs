@@ -54,7 +54,7 @@ pub use error::RetryTimeoutScope;
 #[cfg(feature = "worker")]
 pub use error::WorkerStopTrigger;
 #[cfg(feature = "tokio")]
-pub use executor::AsyncRetry;
+pub use executor::TokioRetry;
 #[cfg(feature = "worker")]
 pub use executor::AttemptCancellationToken;
 pub use executor::Retry;

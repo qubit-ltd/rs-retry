@@ -41,7 +41,7 @@ use crate::RetryTimeoutScope;
 /// use std::future;
 /// use std::time::Duration;
 ///
-/// use qubit_retry::AsyncRetry;
+/// use qubit_retry::TokioRetry;
 /// use qubit_retry::Retry;
 /// use qubit_retry::RetryCancellationPhase;
 /// use qubit_retry::RetryCancellationToken;
@@ -53,7 +53,7 @@ use crate::RetryTimeoutScope;
 ///     let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
 ///     let token = RetryCancellationToken::new();
 ///     let operation_token = token.clone();
-///     let execution: AsyncRetry<'_, &str> = retry.tokio();
+///     let execution: TokioRetry<'_, &str> = retry.tokio();
 ///     let error = execution
 ///         .hard_attempt_timeout(Duration::from_secs(2))
 ///         .hard_flow_timeout(Duration::from_secs(5))
@@ -68,7 +68,7 @@ use crate::RetryTimeoutScope;
 /// }
 /// ```
 #[must_use]
-pub struct AsyncRetry<'a, E> {
+pub struct TokioRetry<'a, E> {
     /// Borrowed immutable policy and callbacks.
     retry: &'a Retry<E>,
     /// Optional hard limit for each admitted attempt.
@@ -84,7 +84,7 @@ pub struct AsyncRetry<'a, E> {
     random_source: Option<Arc<dyn RetryRandomSource>>,
 }
 
-impl<'a, E: 'static> AsyncRetry<'a, E> {
+impl<'a, E: 'static> TokioRetry<'a, E> {
     ///
     /// Creates a facade borrowing the immutable retry definition.
     ///

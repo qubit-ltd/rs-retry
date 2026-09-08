@@ -14,7 +14,7 @@ mod async_cancellation_tests;
 #[cfg(feature = "tokio")]
 mod async_contract_tests;
 #[cfg(feature = "tokio")]
-mod async_retry_tests;
+mod tokio_retry_tests;
 #[cfg(feature = "worker")]
 mod attempt_cancellation_token_tests;
 mod before_attempt_tests;

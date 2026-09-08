@@ -8,7 +8,7 @@
 //! Retry executor and builder modules and public re-exports.
 
 #[cfg(feature = "tokio")]
-mod async_retry;
+mod tokio_retry;
 #[cfg(feature = "worker")]
 mod attempt_cancellation_token;
 mod internal;
@@ -22,7 +22,7 @@ mod sync_retry;
 mod worker_retry;
 
 #[cfg(feature = "tokio")]
-pub use async_retry::AsyncRetry;
+pub use tokio_retry::TokioRetry;
 #[cfg(feature = "worker")]
 pub use attempt_cancellation_token::AttemptCancellationToken;
 pub use retry::Retry;

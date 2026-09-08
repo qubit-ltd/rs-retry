@@ -11,7 +11,7 @@ SSE 和自定义重连循环可以直接使用预算与退避，无须构造虚�
 
 ```mermaid
 flowchart TD
-    F[SyncRetry / AsyncRetry / WorkerRetry] --> C[RetryFlowController]
+    F[SyncRetry / TokioRetry / WorkerRetry] --> C[RetryFlowController]
     C --> S[RetryFlowState / RetryBudgetState]
     C --> P[RetryPolicy / BackoffState]
     C --> O[RetryRules / RetryObservers 控制回调]
