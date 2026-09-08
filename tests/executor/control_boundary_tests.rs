@@ -32,6 +32,7 @@ use qubit_retry::RetryError;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryObserver;
+#[cfg(feature = "tokio")]
 use qubit_retry::TokioRetry;
 use qubit_retry::WorkerRetry;
 
