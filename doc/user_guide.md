@@ -164,7 +164,7 @@ rules and observers without requiring the application error to implement `Clone`
 | Entry point | Feature | Operation requirements | Where it runs |
 | --- | --- | --- | --- |
 | `sync()` | None | `FnMut() -> Result<T, E>`; can borrow local state | Calling thread |
-| `asynchronous()` | `tokio` | `FnMut() -> Fut`; futures need not be `Send` or `'static` | Tokio runtime |
+| `tokio()` | `tokio` | `FnMut() -> Fut`; futures need not be `Send` or `'static` | Tokio runtime |
 | `worker()` | `worker` | `Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static`; `T` and `E`: `Send + 'static` | Dedicated worker thread per attempt |
 
 The execution APIs require `E: 'static`, including in sync/async mode; that does
@@ -435,13 +435,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(io::Error::new(io::ErrorKind::TimedOut, "storage unavailable")),
         Ok("snapshot-v2"),
     ].into_iter();
-    let success = retry.asynchronous().run(|| {
+    let success = retry.tokio().run(|| {
         let response = responses.next().expect("fixture has two responses");
         async move { response }
     }).await?;
     assert_eq!(success.context().attempts(), 2);
 
-    let error = retry.asynchronous()
+    let error = retry.tokio()
         .hard_attempt_timeout(Duration::from_millis(10))
         .run(|| future::pending::<Result<(), io::Error>>())
         .await.unwrap_err();
@@ -519,7 +519,7 @@ async fn main() {
     let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
     let token = RetryCancellationToken::new();
     let operation_token = token.clone();
-    let error = retry.asynchronous()
+    let error = retry.tokio()
         .hard_attempt_timeout(Duration::from_secs(2))
         .hard_flow_timeout(Duration::from_secs(5))
         .cancellation_token(token)
@@ -830,7 +830,7 @@ best-effort timing.
 | `attempts() == 0` | Check pre-cancellation, zero budgets/timeouts, before-attempt callbacks, and infrastructure errors. |
 | `Exhausted` instead of `TimedOut` | Soft budgets stop admission; inspect `limit`. Hard timeout errors carry `scope`. |
 | Sync runs longer than the budget | Its closure cannot be interrupted. Bound the underlying I/O or choose a suitable async/worker operation. |
-| `asynchronous()` or `worker()` is unavailable | Enable its matching Cargo feature; async also needs a Tokio runtime. |
+| `tokio()` or `worker()` is unavailable | Enable its matching Cargo feature; async also needs a Tokio runtime. |
 | Fewer calls than retry-scheduled notifications | Scheduling does not guarantee admission. Later cancellation, callbacks, or limits can prevent the attempt. |
 | `WorkerStillRunning` | Inspect its trigger and the operation/TLS cleanup protocol before starting replacement work. |
 | A successful result contains diagnostics | Inspect completion observers; their panic does not invalidate the business result. |

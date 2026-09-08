@@ -90,7 +90,7 @@ async fn test_async_backoff_registration_does_not_move_flow_deadline() {
         Retry::<TestError>::builder(policy)
             .fallback(RetryFallback::Retry)
             .build()
-            .asynchronous()
+            .tokio()
             .timer(timer)
             .hard_flow_timeout(Duration::from_secs(10))
             .run(|| async { Err::<(), _>(TestError("retry")) })
@@ -163,7 +163,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let error = Retry::<TestError>::builder(retry_once_policy())
         .fallback(RetryFallback::Retry)
         .build()
-        .asynchronous()
+        .tokio()
         .timer(timer)
         .random_source(random)
         .run(|| async { Err::<(), _>(TestError("retry")) })
@@ -180,7 +180,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let attempts_exhausted = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
         .fallback(RetryFallback::Retry)
         .build()
-        .asynchronous()
+        .tokio()
         .run(|| async { Err::<(), _>(TestError("only attempt")) })
         .await
         .unwrap_err();
@@ -202,7 +202,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     )
     .fallback(RetryFallback::Retry)
     .build()
-    .asynchronous()
+    .tokio()
     .run(|| async { Err::<(), _>(TestError("retry")) })
     .await
     .unwrap_err();
@@ -217,7 +217,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let aborted = Retry::<TestError>::builder(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
         .build()
-        .asynchronous()
+        .tokio()
         .run(|| async { Err::<(), _>(TestError("fatal")) })
         .await
         .unwrap_err();
@@ -232,7 +232,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     )
     .observer(AdvancingObserver(Arc::clone(&clock)))
     .build()
-    .asynchronous()
+    .tokio()
     .timer(clock.new_timer())
     .run(|| async { Ok::<_, TestError>(()) })
     .await
@@ -252,7 +252,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     ));
     let attempt_registration_error = Retry::<TestError>::builder(retry_once_policy())
         .build()
-        .asynchronous()
+        .tokio()
         .hard_attempt_timeout(Duration::from_secs(1))
         .timer(registration_timer)
         .run(|| async { Ok::<_, TestError>(()) })
@@ -273,7 +273,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     ));
     let attempt_completion_error = Retry::<TestError>::builder(retry_once_policy())
         .build()
-        .asynchronous()
+        .tokio()
         .hard_attempt_timeout(Duration::from_secs(1))
         .timer(completion_timer)
         .run(future::pending::<Result<(), TestError>>)
@@ -290,7 +290,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let rule_panics = Retry::<TestError>::builder(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("rule panic"))
         .build()
-        .asynchronous()
+        .tokio()
         .run(|| async { Err::<(), _>(TestError("retry")) })
         .await
         .unwrap_err();
@@ -304,7 +304,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     )
     .fallback(RetryFallback::Retry)
     .build()
-    .asynchronous()
+    .tokio()
     .run(|| async { Ok::<_, TestError>(()) })
     .await
     .unwrap_err();
@@ -318,7 +318,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
 
     let successful_timed_attempt = Retry::<TestError>::builder(retry_once_policy())
         .build()
-        .asynchronous()
+        .tokio()
         .hard_attempt_timeout(Duration::from_secs(1))
         .run(|| async { Ok::<_, TestError>(23_u32) })
         .await
@@ -327,7 +327,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
 
     let tie = Retry::<TestError>::builder(retry_once_policy())
         .build()
-        .asynchronous()
+        .tokio()
         .hard_attempt_timeout(Duration::from_millis(1))
         .hard_flow_timeout(Duration::from_millis(5))
         .run(future::pending::<Result<(), TestError>>)
@@ -350,7 +350,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     )
     .fallback(RetryFallback::Retry)
     .build()
-    .asynchronous()
+    .tokio()
     .hard_flow_timeout(Duration::from_secs(1))
     .timer(cap_timer)
     .run(|| async { Err::<(), _>(TestError("retry")) })
@@ -366,7 +366,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
 
     let zero_flow = Retry::<TestError>::builder(retry_once_policy())
         .build()
-        .asynchronous()
+        .tokio()
         .hard_flow_timeout(Duration::ZERO)
         .run(|| async { Ok::<_, TestError>(()) })
         .await
@@ -383,7 +383,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let flow_expired_by_observer = Retry::<TestError>::builder(retry_once_policy())
         .observer(AdvancingObserver(Arc::clone(&clock)))
         .build()
-        .asynchronous()
+        .tokio()
         .hard_flow_timeout(Duration::from_secs(1))
         .timer(clock.new_timer())
         .run(|| async { Ok::<_, TestError>(()) })
@@ -401,7 +401,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let jittered_retry = Retry::<TestError>::builder(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithJitteredHint(Duration::ZERO))
         .build()
-        .asynchronous()
+        .tokio()
         .run(|| async {
             if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
                 Err(TestError("retry"))

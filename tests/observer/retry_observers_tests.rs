@@ -253,7 +253,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
         }
         #[cfg(feature = "tokio")]
         CompletionFacade::Async => {
-            let mut executor = retry.asynchronous().timer(timer).cancellation_token(cancellation);
+            let mut executor = retry.tokio().timer(timer).cancellation_token(cancellation);
             if matches!(
                 scenario,
                 CompletionScenario::TimedOut | CompletionScenario::TimerFailureBeforeAttempt
@@ -458,7 +458,7 @@ async fn test_completion_async_preserves_borrowed_non_send_future() {
     let value = Rc::new(42);
     let retry = Retry::<()>::builder(RetryPolicy::builder().build().expect("valid policy")).build();
     let success = retry
-        .asynchronous()
+        .tokio()
         .run(|| async {
             let borrowed = &value;
             tokio::task::yield_now().await;
@@ -508,7 +508,7 @@ async fn test_completion_dropped_async_future_does_not_notify() {
     let retry = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
         .observer(CompletionCounter(Arc::clone(&calls)))
         .build();
-    let executor = retry.asynchronous();
+    let executor = retry.tokio();
     let mut future = Box::pin(executor.run(|| {
         operation_calls.fetch_add(1, Ordering::SeqCst);
         future::pending::<Result<(), TestError>>()
@@ -530,7 +530,7 @@ async fn test_completion_async_operation_panic_does_not_notify() {
     let retry = Retry::<TestError>::builder(RetryPolicy::builder().build().expect("valid policy"))
         .observer(CompletionCounter(Arc::clone(&calls)))
         .build();
-    let executor = retry.asynchronous();
+    let executor = retry.tokio();
     let mut future = Box::pin(executor.run(|| async {
         panic!("operation panic");
         #[allow(unreachable_code)]
@@ -683,7 +683,7 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                         #[cfg(feature = "tokio")]
                         CompletionFacade::Async => {
                             retry
-                                .asynchronous()
+                                .tokio()
                                 .timer(clock.new_timer())
                                 .run(|| future::ready(operation()))
                                 .await

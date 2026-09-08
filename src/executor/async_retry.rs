@@ -53,7 +53,7 @@ use crate::RetryTimeoutScope;
 ///     let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
 ///     let token = RetryCancellationToken::new();
 ///     let operation_token = token.clone();
-///     let execution: AsyncRetry<'_, &str> = retry.asynchronous();
+///     let execution: AsyncRetry<'_, &str> = retry.tokio();
 ///     let error = execution
 ///         .hard_attempt_timeout(Duration::from_secs(2))
 ///         .hard_flow_timeout(Duration::from_secs(5))

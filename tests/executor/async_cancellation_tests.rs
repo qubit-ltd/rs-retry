@@ -187,7 +187,7 @@ async fn test_cancellation_token_before_attempt_does_not_construct_operation() {
             .expect("pre-cancellation policy should be valid"),
     )
     .build()
-    .asynchronous()
+    .tokio()
     .cancellation_token(token)
     .run({
         let operation_calls = Arc::clone(&operation_calls);
@@ -218,7 +218,7 @@ async fn test_cancellation_token_during_attempt_retains_active_attempt_scope() {
             .expect("attempt cancellation policy should be valid"),
     )
     .build()
-    .asynchronous()
+    .tokio()
     .hard_attempt_timeout(Duration::from_secs(5))
     .cancellation_token(token)
     .run({
@@ -258,7 +258,7 @@ async fn test_attempt_success_wins_when_cancellation_is_ready_in_same_poll() {
             .expect("attempt race policy should be valid"),
     )
     .build()
-    .asynchronous()
+    .tokio()
     .cancellation_token(token)
     .run(move || {
         operation_token.cancel();
@@ -286,7 +286,7 @@ async fn test_backoff_cancellation_wins_when_timer_is_ready_in_same_poll() {
     )
     .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
     .build();
-    let executor = retry.asynchronous().cancellation_token(token.clone());
+    let executor = retry.tokio().cancellation_token(token.clone());
     let future = executor.run({
         let operation_calls = Arc::clone(&operation_calls);
         move || {
@@ -339,7 +339,7 @@ async fn test_before_attempt_callback_cancellation_stops_before_operation() {
         }
     })
     .build()
-    .asynchronous()
+    .tokio()
     .cancellation_token(token)
     .run({
         let operation_calls = Arc::clone(&operation_calls);
@@ -384,7 +384,7 @@ async fn test_attempt_failed_callback_cancellation_stops_before_rule() {
         }
     })
     .build()
-    .asynchronous()
+    .tokio()
     .cancellation_token(token)
     .run({
         let operation_calls = Arc::clone(&operation_calls);
@@ -431,7 +431,7 @@ async fn test_rule_callback_cancellation_stops_before_retry_scheduling() {
         calls: Arc::clone(&scheduled_calls),
     })
     .build()
-    .asynchronous()
+    .tokio()
     .cancellation_token(token)
     .run({
         let operation_calls = Arc::clone(&operation_calls);
@@ -467,7 +467,7 @@ async fn test_retry_scheduled_callback_cancellation_stops_before_sleep() {
     .observer(CancelOnRetryScheduled { token: token.clone() })
     .fallback(RetryFallback::Retry)
     .build()
-    .asynchronous()
+    .tokio()
     .cancellation_token(token)
     .run({
         let operation_calls = Arc::clone(&operation_calls);
@@ -508,7 +508,7 @@ async fn test_backoff_registration_cancellation_wins_over_timer_failure() {
     )
     .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
     .build()
-    .asynchronous()
+    .tokio()
     .timer(timer)
     .cancellation_token(token)
     .run(|| async { Err::<(), _>(TestError("registration")) })
@@ -543,7 +543,7 @@ async fn test_async_ready_result_cancellation_and_equal_deadline_priority() {
         let deadline = Duration::from_secs(5);
         let result = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap())
             .build()
-            .asynchronous()
+            .tokio()
             .timer(clock.new_timer())
             .hard_attempt_timeout(deadline)
             .hard_flow_timeout(deadline)
