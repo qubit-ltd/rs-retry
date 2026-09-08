@@ -25,7 +25,9 @@ use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
+#[cfg(feature = "tokio")]
 use qubit_retry::TokioRetry;
+#[cfg(feature = "worker")]
 use qubit_retry::WorkerRetry;
 
 /// No-op lifecycle observer used to isolate observer dispatch overhead.

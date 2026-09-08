@@ -21,9 +21,15 @@ use crate::rule::RetryRules;
 /// selected execution facade, so cloning a configuration is cheap and
 /// deterministic.
 ///
-/// Construct an executor with [`Retry::new`](super::Retry::new),
-/// [`TokioRetry::new`](super::TokioRetry::new), or
-/// [`WorkerRetry::new`](super::WorkerRetry::new).
+/// Construct an executor with [`Retry::new`](super::Retry::new).
+#[cfg_attr(
+    feature = "tokio",
+    doc = " For async code use [`TokioRetry::new`](super::TokioRetry::new)."
+)]
+#[cfg_attr(
+    feature = "worker",
+    doc = " For blocking offload use [`WorkerRetry::new`](super::WorkerRetry::new)."
+)]
 ///
 /// # Type Parameters
 /// - `E`: Application error passed by reference to shared rules and observers.
