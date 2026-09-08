@@ -25,7 +25,7 @@ use crate::RetryLimitKind;
 use crate::RetryPolicy;
 use crate::RetryRandomSource;
 use crate::budget::RetryBudgetState;
-use crate::event::RetryContextParts;
+use crate::context::RetryContextParts;
 use crate::rule::RetryDecision;
 
 /// Mutable timing, attempt, and backoff state for one retry flow.

@@ -17,7 +17,6 @@ use qubit_clock::MonotonicClock;
 use qubit_clock::MonotonicInstant;
 use qubit_clock::TimeError;
 
-use super::super::RetryConfig;
 use super::PreparedAttemptPlan;
 use super::PreparedBackoffPlan;
 use super::RetryFlowState;
@@ -34,6 +33,7 @@ use crate::RetryInfrastructureFailure;
 use crate::RetryLimitKind;
 use crate::RetryRandomSource;
 use crate::RetryTimeoutScope;
+use crate::executor::RetryConfig;
 use crate::observer::RetryObservers;
 use crate::rule::RetryRules;
 
