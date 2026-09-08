@@ -48,7 +48,9 @@ use qubit_retry::RetryObserver;
 use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
+#[cfg(feature = "tokio")]
 use qubit_retry::TokioRetry;
+#[cfg(feature = "worker")]
 use qubit_retry::WorkerRetry;
 
 use crate::support::TestError;
@@ -299,7 +301,9 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                 "{facade:?} {scenario:?}"
             );
             match scenario {
-                CompletionScenario::Abort => assert!(matches!(error.reason(), RetryErrorReason::Aborted)),
+                CompletionScenario::Abort => {
+                    assert!(matches!(error.reason(), RetryErrorReason::Aborted))
+                }
                 CompletionScenario::Exhausted | CompletionScenario::ExhaustedBeforeAttempt => {
                     let expected = if zero_attempts {
                         RetryLimitKind::TotalElapsed
@@ -701,7 +705,8 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 });
                 // Polling these immediate operations finishes in one poll. The
                 // outer catch turns a leaked panic into a normal test failure;
-                // forget its payload to avoid recursive Drop aborting the suite.
+                // forget its payload to avoid recursive Drop aborting the
+                // suite.
                 let outcome = catch_unwind(AssertUnwindSafe(|| {
                     future.as_mut().poll(&mut Context::from_waker(Waker::noop()))
                 }));
