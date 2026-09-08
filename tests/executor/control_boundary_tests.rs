@@ -22,6 +22,7 @@ use qubit_clock::TimerFuture;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
@@ -32,6 +33,8 @@ use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
+use qubit_retry::TokioRetry;
+use qubit_retry::WorkerRetry;
 
 /// Advances virtual time and cancels at precisely one selected control phase.
 #[derive(Clone)]
@@ -73,7 +76,7 @@ impl RetryObserver<&'static str> for CancellingControl {
 /// Builds an execution whose selected observer or rule advances then cancels.
 fn cancellation_case(
     phase: RetryCallbackPhase,
-) -> (Retry<&'static str>, Arc<ManualMonotonicClock>, RetryCancellationToken) {
+) -> (RetryConfig<&'static str>, Arc<ManualMonotonicClock>, RetryCancellationToken) {
     let clock = ManualMonotonicClock::new_shared();
     let token = RetryCancellationToken::new();
     let control = CancellingControl {
@@ -86,15 +89,15 @@ fn cancellation_case(
 }
 
 /// Attaches the same boundary action through both observer and rule interfaces.
-fn build_case(control: CancellingControl) -> Retry<&'static str> {
+fn build_case(control: CancellingControl) -> RetryConfig<&'static str> {
     let rule = control.clone();
-    Retry::builder(RetryPolicy::builder().build().expect("valid policy"))
+    RetryConfig::builder()
         .observer(control)
         .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
             rule.act(RetryCallbackPhase::RuleDecision);
             RetryDecision::Retry
         })
-        .build()
+        .build().expect("valid config")
 }
 
 /// Checks both elapsed accounting and terminal ownership of the attempt.
@@ -126,14 +129,12 @@ fn test_regression_control_cancellation_refreshes_blocking_context() {
         for worker in [false, true] {
             let (retry, clock, token) = cancellation_case(phase);
             let error = if worker {
-                retry
-                    .worker()
+                WorkerRetry::new(&retry)
                     .timer(clock.new_timer())
                     .cancellation_token(token)
                     .run(|_| Err::<(), _>("offline"))
             } else {
-                retry
-                    .sync()
+                Retry::new(&retry)
                     .timer(clock.new_timer())
                     .cancellation_token(token)
                     .run(|| Err::<(), _>("offline"))
@@ -155,8 +156,7 @@ async fn test_regression_control_cancellation_refreshes_async_context() {
         RetryCallbackPhase::RetryScheduled,
     ] {
         let (retry, clock, token) = cancellation_case(phase);
-        let error = retry
-            .tokio()
+        let error = TokioRetry::new(&retry)
             .timer(clock.new_timer())
             .cancellation_token(token)
             .run(|| async { Err::<(), _>("offline") })
@@ -210,7 +210,7 @@ fn invalid_clock_case(
     phase: RetryCallbackPhase,
     mode: u8,
     panic_after: bool,
-) -> (Retry<&'static str>, Arc<dyn Timer>, RetryCancellationToken) {
+) -> (RetryConfig<&'static str>, Arc<dyn Timer>, RetryCancellationToken) {
     let base = ManualMonotonicClock::new_shared();
     base.advance(Duration::from_secs(1)).expect("nonzero initial sample");
     let clock = InvalidatingClock {
@@ -270,14 +270,12 @@ fn test_control_clock_failures_and_cancellation_have_explicit_precedence() {
                 for worker in [false, true] {
                     let (retry, timer, token) = invalid_clock_case(phase, mode, panic_after);
                     let error = if worker {
-                        retry
-                            .worker()
+                        WorkerRetry::new(&retry)
                             .timer(timer)
                             .cancellation_token(token)
                             .run(|_| Err::<(), _>("offline"))
                     } else {
-                        retry
-                            .sync()
+                        Retry::new(&retry)
                             .timer(timer)
                             .cancellation_token(token)
                             .run(|| Err::<(), _>("offline"))
@@ -303,8 +301,7 @@ async fn test_async_control_clock_failures_and_cancellation_have_explicit_preced
         for mode in [1, 2] {
             for panic_after in [false, true] {
                 let (retry, timer, token) = invalid_clock_case(phase, mode, panic_after);
-                let error = retry
-                    .tokio()
+                let error = TokioRetry::new(&retry)
                     .timer(timer)
                     .cancellation_token(token)
                     .run(|| async { Err::<(), _>("offline") })

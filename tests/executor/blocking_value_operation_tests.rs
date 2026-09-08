@@ -8,7 +8,8 @@
 
 use qubit_retry::AttemptCancellationToken;
 use qubit_retry::BackoffPolicy;
-use qubit_retry::Retry;
+use qubit_retry::WorkerRetry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryPolicy;
 
 use crate::support::TestError;
@@ -28,10 +29,9 @@ fn test_blocking_value_operation_is_observable_through_non_clone_success_value()
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("retry should build");
-    let retry = Retry::<TestError>::builder(policy).build();
+    let retry = RetryConfig::<TestError>::builder().policy(policy).build().expect("valid config");
 
-    let value = retry
-        .worker()
+    let value = WorkerRetry::new(&retry)
         .run(|_token: AttemptCancellationToken| Ok::<_, TestError>(NonCloneValue { text: "ok" }))
         .expect("worker operation should succeed");
 

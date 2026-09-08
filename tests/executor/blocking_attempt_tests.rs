@@ -10,7 +10,8 @@ use std::thread;
 
 use qubit_retry::AttemptCancellationToken;
 use qubit_retry::BackoffPolicy;
-use qubit_retry::Retry;
+use qubit_retry::WorkerRetry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryPolicy;
 
 use crate::support::TestError;
@@ -25,10 +26,9 @@ fn test_blocking_attempt_runs_with_uncancelled_token_on_worker_thread() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("retry should build");
-    let retry = Retry::<TestError>::builder(policy).build();
+    let retry = RetryConfig::<TestError>::builder().policy(policy).build().expect("valid config");
 
-    let worker_thread = retry
-        .worker()
+    let worker_thread = WorkerRetry::new(&retry)
         .run(|token: AttemptCancellationToken| {
             assert!(!token.is_cancelled());
             Ok(thread::current().id())

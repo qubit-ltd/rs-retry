@@ -39,7 +39,7 @@ qubit-retry = "0.23"
 存储服务暂时不可用时，我们希望自动重试，恢复后返回快照。
 下面把模拟读取单独写成 `read_snapshot` 函数：它前两次调用失败，第三次成功。
 函数内的计数只用于制造这组测试响应，不是业务需要实现的重试逻辑。
-最大尝试次数、等待时间与指数退避都由 `RetryPolicy` 配置，规则只负责判断错误是否值得重试。
+最大尝试次数、等待时间与指数退避都由 `RetryConfig` 配置，规则只负责判断错误是否值得重试。
 
 <!-- retry-example: kind=run features=none -->
 ```rust
@@ -49,9 +49,9 @@ use std::time::Duration;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryPolicy;
 
 // 模拟存储服务：第一次和第二次调用返回超时，第三次调用成功。
 // simulated_calls 只用于制造故障响应，不负责重试次数限制或重试调度。
@@ -66,15 +66,13 @@ fn read_snapshot(simulated_calls: &mut u32) -> io::Result<&'static str> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let policy = RetryPolicy::builder()
+    let config = RetryConfig::builder()
         .max_attempts(5)
         .backoff(BackoffPolicy::exponential(
             Duration::from_millis(100),
             2.0,
             Duration::from_secs(1),
         )?)
-        .build()?;
-    let retry = Retry::builder(policy)
         .rule(|failure: &AttemptFailure<io::Error>, _: &RetryContext| {
             match failure {
                 AttemptFailure::Error(error) if error.kind() == io::ErrorKind::TimedOut => {
@@ -83,10 +81,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ => RetryDecision::Abort,
             }
         })
-        .build();
+        .build()?;
 
     let mut simulated_calls = 0;
-    let success = retry.sync().run(|| read_snapshot(&mut simulated_calls))?;
+    let success = Retry::new(&config).run(|| read_snapshot(&mut simulated_calls))?;
     assert_eq!(*success.value(), "snapshot-v2");
     assert_eq!(success.context().attempts(), 3);
     assert!(success.completion_callback_failures().is_empty());
@@ -117,7 +115,7 @@ snapshot-v2, attempts=3
 
 这些修改仅用于验证不同分支。真实调用方可以保留完整的 `RetryError<io::Error>`，
 通过 `reason()` 查看终止原因，通过 `last_error()` 检查原始 I/O 错误。
-每次 `run` 都从新的状态开始，复用 `Retry` 不需要重置库内部计数。
+每次 `run` 都从新的状态开始，复用 `RetryConfig` 不需要重置库内部计数。
 
 ## 理解一次重试流程
 
@@ -128,7 +126,8 @@ snapshot-v2, attempts=3
 | 退避（backoff） | 重试前的等待时间 |
 | 准入（admission） | 检查剩余次数与预算，决定是否允许操作开始 |
 | `RetryPolicy` | 经过校验的次数限制、耗时预算与退避配置 |
-| `Retry<E>` | 可复用的策略，以及针对错误类型 `E` 的规则和观察者 |
+| `RetryConfig<E>` | 针对错误类型 `E` 的策略、规则、观察者与 fallback |
+| `Retry` / `TokioRetry` / `WorkerRetry` | 基于共享 `RetryConfig` 的执行器 |
 | `RetryContext` | 次数、耗时，以及当前阶段的尝试或延迟信息快照 |
 
 正常执行顺序如下：
@@ -147,16 +146,16 @@ snapshot-v2, attempts=3
 `current_attempt()` 在回调中也可能指即将开始、尚未计数的尝试。
 
 默认配置为：**总共最多三次尝试、立即退避、不设耗时预算，未分类业务错误直接终止**。
-仅创建默认策略，并不会让失败自动重试。每次 `run` 都创建独立状态。
-克隆 `Retry` 会共享规则与观察者，不要求业务错误实现 `Clone`。
+仅创建默认配置，并不会让失败自动重试。每次 `run` 都创建独立状态。
+克隆 `RetryConfig` 会共享规则与观察者，不要求业务错误实现 `Clone`。
 
 ## 选择执行模式
 
 | 入口 | 所需 feature | 操作要求 | 执行位置 |
 | --- | --- | --- | --- |
-| `sync()` | 无 | `FnMut() -> Result<T, E>`，可借用局部状态 | 调用线程 |
-| `tokio()` | `tokio` | `FnMut() -> Fut`，future 无需满足 `Send` 或 `'static` | Tokio 运行时 |
-| `worker()` | `worker` | `Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static`；`T`、`E` 须为 `Send + 'static` | 每次尝试创建独立工作线程 |
+| `Retry::new(&config)` | 无 | `FnMut() -> Result<T, E>`，可借用局部状态 | 调用线程 |
+| `TokioRetry::new(&config)` | `tokio` | `FnMut() -> Fut`，future 无需满足 `Send` 或 `'static` | Tokio 运行时 |
+| `WorkerRetry::new(&config)` | `worker` | `Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static`；`T`、`E` 须为 `Send + 'static` | 每次尝试创建独立工作线程 |
 
 各执行接口都要求 `E: 'static`，同步与异步模式也不例外；但这不意味着它们的操作闭包必须拥有所有捕获状态。
 规则与观察者会被共享，须满足 `Send + Sync + 'static`。
@@ -183,7 +182,7 @@ cargo add tokio@1.52 --features rt,macros,time
 qubit-retry = { version = "0.23", features = ["worker"] }
 ```
 
-多个 feature 可以放入同一依赖的 `features` 数组。`worker().run()` 在协调工作线程期间会阻塞调用方，
+多个 feature 可以放入同一依赖的 `features` 数组。`WorkerRetry::new(&config).run()` 在协调工作线程期间会阻塞调用方，
 它不是异步线程池接口。
 
 ## 决定哪些失败可以重试
@@ -204,15 +203,16 @@ qubit-retry = { version = "0.23", features = ["worker"] }
 <!-- retry-example: kind=run features=none -->
 ```rust
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
-use qubit_retry::RetryPolicy;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let retry = Retry::<&str>::builder(RetryPolicy::builder().max_attempts(2).build()?)
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(2)
         .fallback(RetryFallback::Retry)
-        .build();
-    let error = retry.sync().run(|| Err::<(), _>("temporarily unavailable")).unwrap_err();
+        .build()?;
+    let error = Retry::new(&config).run(|| Err::<(), _>("temporarily unavailable")).unwrap_err();
     assert!(matches!(error.reason(), RetryErrorReason::Exhausted { .. }));
     assert_eq!(error.context().attempts(), 2);
     Ok(())
@@ -231,7 +231,7 @@ Fallback 只决定业务错误的默认行为。即使设置了 `RetryFallback::
 
 ## 配置退避与服务端等待提示
 
-通过 `RetryPolicy::builder().backoff(...)` 设置退避策略。
+通过 `RetryConfig::builder().backoff(...)` 设置退避策略。
 创建策略本身不会等待；操作失败且允许重试时，执行器才会按策略等待。
 
 | 构造方法 | 基础延迟 | 适用场景 |
@@ -273,10 +273,10 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryObserver;
-use qubit_retry::RetryPolicy;
 
 #[derive(Debug)]
 enum ReadError {
@@ -295,11 +295,9 @@ impl RetryObserver<ReadError> for ReadLog {
 }
 
 fn main() -> Result<(), qubit_retry::RetryPolicyError> {
-    let policy = RetryPolicy::builder()
+    let config = RetryConfig::builder()
         .max_attempts(3)
         .backoff(BackoffPolicy::fixed(Duration::from_millis(5)))
-        .build()?;
-    let retry = Retry::builder(policy)
         .rule(|failure: &AttemptFailure<ReadError>, _: &RetryContext| {
             match failure {
                 AttemptFailure::Error(ReadError::Busy { retry_after }) => {
@@ -309,13 +307,13 @@ fn main() -> Result<(), qubit_retry::RetryPolicyError> {
             }
         })
         .observer(ReadLog)
-        .build();
+        .build()?;
     // Simulated server responses; the operation does not implement retry logic.
     let mut responses = [
         Err(ReadError::Busy { retry_after: Duration::from_millis(10) }),
         Ok("snapshot-v2"),
     ].into_iter();
-    let success = retry.sync()
+    let success = Retry::new(&config)
         .run(|| responses.next().expect("fixture has two responses"))
         .expect("read recovers after server hint");
     assert_eq!(*success.value(), "snapshot-v2");
@@ -396,29 +394,30 @@ use std::future;
 use std::io;
 use std::time::Duration;
 
-use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
-use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
+use qubit_retry::TokioRetry;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let retry = Retry::<io::Error>::builder(RetryPolicy::builder().max_attempts(3).build()?)
+    let config = RetryConfig::<io::Error>::builder()
+        .max_attempts(3)
         .fallback(RetryFallback::Retry)
-        .build();
+        .build()?;
     // Simulated client responses; retry limits are enforced by the policy.
     let mut responses = [
         Err(io::Error::new(io::ErrorKind::TimedOut, "storage unavailable")),
         Ok("snapshot-v2"),
     ].into_iter();
-    let success = retry.tokio().run(|| {
+    let success = TokioRetry::new(&config).run(|| {
         let response = responses.next().expect("fixture has two responses");
         async move { response }
     }).await?;
     assert_eq!(success.context().attempts(), 2);
 
-    let error = retry.tokio()
+    let error = TokioRetry::new(&config)
         .hard_attempt_timeout(Duration::from_millis(10))
         .run(|| future::pending::<Result<(), io::Error>>())
         .await.unwrap_err();
@@ -449,15 +448,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 <!-- retry-example: kind=run features=none -->
 ```rust
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryErrorReason;
-use qubit_retry::RetryPolicy;
 
 fn main() {
     let token = RetryCancellationToken::new();
-    let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
-    let error = retry.sync().cancellation_token(token.clone()).run(|| {
+    let config = RetryConfig::<&str>::builder().build().expect("valid config");
+    let error = Retry::new(&config).cancellation_token(token.clone()).run(|| {
         token.cancel();
         Err::<(), _>("temporary read failure")
     }).unwrap_err();
@@ -481,18 +480,18 @@ fn main() {
 use std::future;
 use std::time::Duration;
 
-use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryErrorReason;
-use qubit_retry::RetryPolicy;
+use qubit_retry::TokioRetry;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
+    let config = RetryConfig::<&str>::builder().build().expect("valid config");
     let token = RetryCancellationToken::new();
     let operation_token = token.clone();
-    let error = retry.tokio()
+    let error = TokioRetry::new(&config)
         .hard_attempt_timeout(Duration::from_secs(2))
         .hard_flow_timeout(Duration::from_secs(5))
         .cancellation_token(token)
@@ -521,16 +520,16 @@ async fn main() {
 ```rust
 use std::time::Duration;
 
-use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryErrorReason;
-use qubit_retry::RetryPolicy;
+use qubit_retry::WorkerRetry;
 
 fn main() {
-    let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
+    let config = RetryConfig::<&str>::builder().build().expect("valid config");
     let token = RetryCancellationToken::new();
     let operation_token = token.clone();
-    let error = retry.worker()
+    let error = WorkerRetry::new(&config)
         .cancellation_token(token)
         .cancellation_grace(Duration::from_secs(1))
         .run(move |attempt| {
@@ -603,11 +602,11 @@ Worker 模式先检查取消，再检查超时，最后才接受操作结果与�
 <!-- retry-example: kind=run features=none -->
 ```rust
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
-use qubit_retry::RetryPolicy;
 
 struct Audit;
 impl RetryObserver<&'static str> for Audit {
@@ -617,9 +616,9 @@ impl RetryObserver<&'static str> for Audit {
 }
 
 fn main() {
-    let retry = Retry::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
-        .observer(Audit).build();
-    let error = retry.sync().run(|| Err::<(), _>("offline")).unwrap_err();
+    let config = RetryConfig::builder().max_attempts(1)
+        .observer(Audit).build().expect("valid config");
+    let error = Retry::new(&config).run(|| Err::<(), _>("offline")).unwrap_err();
     let mapped = error.map_error(String::from);
     let (reason, failure, context, diagnostics) = mapped.into_parts();
     assert!(matches!(reason, RetryErrorReason::Aborted));
@@ -784,7 +783,7 @@ fn main() {
 | `attempts() == 0` | 检查预先取消、零预算或零超时、尝试前回调以及基础设施错误。 |
 | 返回 `Exhausted` 而非 `TimedOut` | 软预算限制准入，应检查 `limit`；硬超时错误带有 `scope`。 |
 | 同步操作运行时间超过预算 | 无法打断同步闭包。限制底层 I/O，或选择合适的 async/worker 操作。 |
-| 找不到 `tokio()` 或 `worker()` | 检查对应 Cargo feature 是否开启；异步执行还需要 Tokio 运行时。 |
+| 找不到 `TokioRetry` 或 `WorkerRetry` | 检查对应 Cargo feature 是否开启；异步执行还需要 Tokio 运行时。 |
 | 操作次数少于重试调度通知数 | 调度不保证准入，后续取消、回调或限制可能阻止执行。 |
 | `WorkerStillRunning` | 检查触发原因及操作、TLS 的清理流程，再决定是否启动替代任务。 |
 | 成功结果中有诊断 | 检查完成观察者，其 panic 不会否定业务成功。 |

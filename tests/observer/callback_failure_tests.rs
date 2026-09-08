@@ -12,6 +12,7 @@ use std::sync::atomic::Ordering;
 
 use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
@@ -33,7 +34,7 @@ impl RetryObserver<TestError> for PanickingObserver {
 #[test]
 fn test_callback_failure_stops_later_callback_kinds() {
     let rule_calls = Arc::new(AtomicUsize::new(0));
-    let retry = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
+    let retry = RetryConfig::<TestError>::builder()
         .observer(PanickingObserver)
         .rule({
             let rule_calls = Arc::clone(&rule_calls);
@@ -42,9 +43,8 @@ fn test_callback_failure_stops_later_callback_kinds() {
                 RetryDecision::UseDefault
             }
         })
-        .build();
-    let error = retry
-        .sync()
+        .build().expect("valid config");
+    let error = Retry::new(&retry)
         .run(|| Err::<(), _>(TestError("retry")))
         .expect_err("the observer must panic first");
     let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {

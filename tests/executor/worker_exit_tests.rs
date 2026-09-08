@@ -24,12 +24,13 @@ use qubit_clock::MonotonicInstant;
 use qubit_clock::TimeError;
 use qubit_clock::Timer;
 use qubit_clock::TimerFuture;
-use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryPolicy;
 use qubit_retry::WorkerStopTrigger;
+use qubit_retry::WorkerRetry;
 
 struct ExitGate {
     entered: Sender<()>,
@@ -91,9 +92,8 @@ fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger)
         fail: trigger == WorkerStopTrigger::TimerFailure,
     });
     let runner = thread::spawn(move || {
-        let retry = Retry::<&'static str>::builder(RetryPolicy::builder().build().expect("valid policy")).build();
-        let mut worker = retry
-            .worker()
+        let retry = RetryConfig::<&'static str>::builder().build().expect("valid config");
+        let mut worker = WorkerRetry::new(&retry)
             .timer(timer)
             .cancellation_token(runner_token)
             .cancellation_grace(Duration::from_millis(20));

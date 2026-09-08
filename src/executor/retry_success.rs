@@ -20,11 +20,11 @@ use crate::RetryContext;
 ///
 /// ```
 /// use qubit_retry::Retry;
-/// use qubit_retry::RetryPolicy;
+/// use qubit_retry::RetryConfig;
 /// use qubit_retry::RetrySuccess;
 ///
-/// let retry = Retry::<&str>::builder(RetryPolicy::builder().build()?).build();
-/// let success: RetrySuccess<u32> = retry.sync().run(|| Ok(7)).unwrap();
+/// let config = RetryConfig::<&str>::builder().max_attempts(3).build()?;
+/// let success: RetrySuccess<u32> = Retry::new(&config).run(|| Ok(7)).unwrap();
 /// let (value, context, diagnostics) = success.into_parts();
 /// assert_eq!(value, 7);
 /// assert_eq!(context.attempts(), 1);

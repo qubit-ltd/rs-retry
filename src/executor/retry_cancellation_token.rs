@@ -22,15 +22,15 @@ use super::internal::RetryCancellationState;
 ///
 /// ```
 /// use qubit_retry::Retry;
+/// use qubit_retry::RetryConfig;
 /// use qubit_retry::RetryCancellationPhase;
 /// use qubit_retry::RetryCancellationToken;
 /// use qubit_retry::RetryErrorReason;
-/// use qubit_retry::RetryPolicy;
 ///
 /// fn main() {
 ///     let token = RetryCancellationToken::new();
-///     let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
-///     let error = retry.sync().cancellation_token(token.clone()).run(|| {
+///     let config = RetryConfig::<&str>::builder().max_attempts(3).build().unwrap();
+///     let error = Retry::new(&config).cancellation_token(token.clone()).run(|| {
 ///         token.cancel();
 ///         Err::<(), _>("temporary read failure")
 ///     }).unwrap_err();

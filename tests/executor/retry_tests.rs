@@ -15,6 +15,7 @@ use std::sync::atomic::Ordering;
 
 use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryPolicy;
@@ -24,13 +25,10 @@ struct NonCloneError;
 
 #[test]
 fn test_retry_clone_does_not_require_a_cloneable_error() {
-    let retry = Retry::<io::Error>::builder(
-        RetryPolicy::builder()
-            .max_attempts(2)
-            .build()
-            .expect("retry policy should build"),
-    )
-    .build();
+    let retry = RetryConfig::<io::Error>::builder()
+        .max_attempts(2)
+        .build()
+        .expect("valid config");
 
     let cloned = retry.clone();
     assert_eq!(cloned.policy().admission_limits().max_attempts().get(), 2);
@@ -42,7 +40,7 @@ fn test_retry_clone_shares_callbacks_but_not_attempt_state() {
     let observers = Arc::new(AtomicUsize::new(0));
     let rule_counter = Arc::clone(&rules);
     let observer_counter = Arc::clone(&observers);
-    let original = Retry::<NonCloneError>::builder(RetryPolicy::builder().max_attempts(2).build().expect("policy"))
+    let original = RetryConfig::<NonCloneError>::builder().max_attempts(2)
         .rule(move |_: &AttemptFailure<NonCloneError>, _: &RetryContext| {
             rule_counter.fetch_add(1, Ordering::SeqCst);
             RetryDecision::Retry
@@ -50,13 +48,12 @@ fn test_retry_clone_shares_callbacks_but_not_attempt_state() {
         .observer(move |_: &AttemptFailure<NonCloneError>, _: &RetryContext| {
             observer_counter.fetch_add(1, Ordering::SeqCst);
         })
-        .build();
+        .build().expect("valid config");
     let copied = original.clone();
 
     for retry in [&original, &copied] {
         let mut calls = 0;
-        let success = retry
-            .sync()
+        let success = Retry::new(&retry)
             .run(|| {
                 calls += 1;
                 if calls == 1 { Err(NonCloneError) } else { Ok(42) }

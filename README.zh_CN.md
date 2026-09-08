@@ -36,7 +36,7 @@ qubit-retry = "0.23"
 存储服务暂时不可用时，我们希望自动重试，恢复后返回快照。
 下面把模拟读取单独写成 `read_snapshot` 函数：它前两次调用失败，第三次成功。
 函数内的计数只用于制造这组测试响应，不是业务需要实现的重试逻辑。
-最大尝试次数、等待时间与指数退避都由 `RetryPolicy` 配置，规则只负责判断错误是否值得重试。
+最大尝试次数、等待时间与指数退避都由 `RetryConfig` 配置，规则只负责判断错误是否值得重试。
 
 <!-- retry-example: kind=run features=none -->
 ```rust
@@ -46,9 +46,9 @@ use std::time::Duration;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryPolicy;
 
 // 模拟存储服务：第一次和第二次调用返回超时，第三次调用成功。
 // simulated_calls 只用于制造故障响应，不负责重试次数限制或重试调度。
@@ -63,15 +63,13 @@ fn read_snapshot(simulated_calls: &mut u32) -> io::Result<&'static str> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let policy = RetryPolicy::builder()
+    let config = RetryConfig::builder()
         .max_attempts(5)
         .backoff(BackoffPolicy::exponential(
             Duration::from_millis(100),
             2.0,
             Duration::from_secs(1),
         )?)
-        .build()?;
-    let retry = Retry::builder(policy)
         .rule(|failure: &AttemptFailure<io::Error>, _: &RetryContext| {
             match failure {
                 AttemptFailure::Error(error) if error.kind() == io::ErrorKind::TimedOut => {
@@ -80,10 +78,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ => RetryDecision::Abort,
             }
         })
-        .build();
+        .build()?;
 
     let mut simulated_calls = 0;
-    let success = retry.sync().run(|| read_snapshot(&mut simulated_calls))?;
+    let success = Retry::new(&config).run(|| read_snapshot(&mut simulated_calls))?;
     assert_eq!(*success.value(), "snapshot-v2");
     assert_eq!(success.context().attempts(), 3);
     assert!(success.completion_callback_failures().is_empty());

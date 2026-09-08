@@ -24,7 +24,7 @@ use qubit_clock::test_util::FaultInjectingTimer;
 use qubit_clock::test_util::TimerFailurePoint;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
-use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
@@ -33,6 +33,7 @@ use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
+use qubit_retry::TokioRetry;
 
 use crate::support::AdvancingObserver;
 use crate::support::FixedRetryRandomSource;
@@ -87,10 +88,10 @@ async fn test_async_backoff_registration_does_not_move_flow_deadline() {
             .backoff(BackoffPolicy::fixed(Duration::from_secs(20)))
             .build()
             .expect("valid retry policy");
-        Retry::<TestError>::builder(policy)
+        let config = RetryConfig::<TestError>::builder().policy(policy)
             .fallback(RetryFallback::Retry)
-            .build()
-            .tokio()
+            .build().expect("valid config");
+    TokioRetry::new(&config)
             .timer(timer)
             .hard_flow_timeout(Duration::from_secs(10))
             .run(|| async { Err::<(), _>(TestError("retry")) })
@@ -160,10 +161,10 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         "offline",
     ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
-    let error = Retry::<TestError>::builder(retry_once_policy())
+    let config2 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
         .fallback(RetryFallback::Retry)
-        .build()
-        .tokio()
+        .build().expect("valid config");
+    let error = TokioRetry::new(&config2)
         .timer(timer)
         .random_source(random)
         .run(|| async { Err::<(), _>(TestError("retry")) })
@@ -177,10 +178,10 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         }
     ));
 
-    let attempts_exhausted = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+    let config3 = RetryConfig::<TestError>::builder().max_attempts(1)
         .fallback(RetryFallback::Retry)
-        .build()
-        .tokio()
+        .build().expect("valid config");
+    let attempts_exhausted = TokioRetry::new(&config3)
         .run(|| async { Err::<(), _>(TestError("only attempt")) })
         .await
         .unwrap_err();
@@ -192,20 +193,17 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         }
     ));
 
-    let delay_rejected = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .max_attempts(2)
-            .total_time_budget(Duration::from_millis(1))
-            .backoff(BackoffPolicy::fixed(Duration::from_secs(1)))
-            .build()
-            .unwrap(),
-    )
-    .fallback(RetryFallback::Retry)
-    .build()
-    .tokio()
-    .run(|| async { Err::<(), _>(TestError("retry")) })
-    .await
-    .unwrap_err();
+    let delay_config = RetryConfig::<TestError>::builder()
+        .max_attempts(2)
+        .total_time_budget(Duration::from_millis(1))
+        .backoff(BackoffPolicy::fixed(Duration::from_secs(1)))
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
+    let delay_rejected = TokioRetry::new(&delay_config)
+        .run(|| async { Err::<(), _>(TestError("retry")) })
+        .await
+        .unwrap_err();
     assert!(matches!(
         delay_rejected.reason(),
         RetryErrorReason::Exhausted {
@@ -214,29 +212,26 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         }
     ));
 
-    let aborted = Retry::<TestError>::builder(retry_once_policy())
+    let config4 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
-        .build()
-        .tokio()
+        .build().expect("valid config");
+    let aborted = TokioRetry::new(&config4)
         .run(|| async { Err::<(), _>(TestError("fatal")) })
         .await
         .unwrap_err();
     assert!(matches!(aborted.reason(), RetryErrorReason::Aborted));
 
     let clock = ManualMonotonicClock::new_shared();
-    let expired_by_observer = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .total_time_budget(Duration::from_secs(1))
-            .build()
-            .unwrap(),
-    )
-    .observer(AdvancingObserver(Arc::clone(&clock)))
-    .build()
-    .tokio()
-    .timer(clock.new_timer())
-    .run(|| async { Ok::<_, TestError>(()) })
-    .await
-    .unwrap_err();
+    let observer_config = RetryConfig::<TestError>::builder()
+        .total_time_budget(Duration::from_secs(1))
+        .observer(AdvancingObserver(Arc::clone(&clock)))
+        .build()
+        .expect("valid config");
+    let expired_by_observer = TokioRetry::new(&observer_config)
+        .timer(clock.new_timer())
+        .run(|| async { Ok::<_, TestError>(()) })
+        .await
+        .unwrap_err();
     assert!(matches!(
         expired_by_observer.reason(),
         RetryErrorReason::Exhausted {
@@ -250,9 +245,9 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         "retry-test",
         "offline",
     ));
-    let attempt_registration_error = Retry::<TestError>::builder(retry_once_policy())
-        .build()
-        .tokio()
+    let chain_config1 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
+        .build().expect("valid config");
+    let attempt_registration_error = TokioRetry::new(&chain_config1)
         .hard_attempt_timeout(Duration::from_secs(1))
         .timer(registration_timer)
         .run(|| async { Ok::<_, TestError>(()) })
@@ -271,9 +266,9 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         "retry-test",
         "offline",
     ));
-    let attempt_completion_error = Retry::<TestError>::builder(retry_once_policy())
-        .build()
-        .tokio()
+    let chain_config2 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
+        .build().expect("valid config");
+    let attempt_completion_error = TokioRetry::new(&chain_config2)
         .hard_attempt_timeout(Duration::from_secs(1))
         .timer(completion_timer)
         .run(future::pending::<Result<(), TestError>>)
@@ -287,27 +282,24 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         }
     ));
 
-    let rule_panics = Retry::<TestError>::builder(retry_once_policy())
+    let config5 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("rule panic"))
-        .build()
-        .tokio()
+        .build().expect("valid config");
+    let rule_panics = TokioRetry::new(&config5)
         .run(|| async { Err::<(), _>(TestError("retry")) })
         .await
         .unwrap_err();
     assert!(matches!(rule_panics.reason(), RetryErrorReason::CallbackFailed { .. }));
 
-    let zero_budget = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .total_time_budget(Duration::ZERO)
-            .build()
-            .unwrap(),
-    )
-    .fallback(RetryFallback::Retry)
-    .build()
-    .tokio()
-    .run(|| async { Ok::<_, TestError>(()) })
-    .await
-    .unwrap_err();
+    let zero_config = RetryConfig::<TestError>::builder()
+        .total_time_budget(Duration::ZERO)
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
+    let zero_budget = TokioRetry::new(&zero_config)
+        .run(|| async { Ok::<_, TestError>(()) })
+        .await
+        .unwrap_err();
     assert!(matches!(
         zero_budget.reason(),
         RetryErrorReason::Exhausted {
@@ -316,18 +308,18 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         }
     ));
 
-    let successful_timed_attempt = Retry::<TestError>::builder(retry_once_policy())
-        .build()
-        .tokio()
+    let chain_config3 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
+        .build().expect("valid config");
+    let successful_timed_attempt = TokioRetry::new(&chain_config3)
         .hard_attempt_timeout(Duration::from_secs(1))
         .run(|| async { Ok::<_, TestError>(23_u32) })
         .await
         .unwrap();
     assert_eq!(*successful_timed_attempt.value(), 23);
 
-    let tie = Retry::<TestError>::builder(retry_once_policy())
-        .build()
-        .tokio()
+    let chain_config4 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
+        .build().expect("valid config");
+    let tie = TokioRetry::new(&chain_config4)
         .hard_attempt_timeout(Duration::from_millis(1))
         .hard_flow_timeout(Duration::from_millis(5))
         .run(future::pending::<Result<(), TestError>>)
@@ -341,21 +333,18 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     ));
 
     let cap_timer: Arc<dyn Timer> = Arc::new(SecondRegistrationFailsTimer::new());
-    let cap_error = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .max_attempts(2)
-            .backoff(BackoffPolicy::fixed(Duration::from_secs(2)))
-            .build()
-            .unwrap(),
-    )
-    .fallback(RetryFallback::Retry)
-    .build()
-    .tokio()
-    .hard_flow_timeout(Duration::from_secs(1))
-    .timer(cap_timer)
-    .run(|| async { Err::<(), _>(TestError("retry")) })
-    .await
-    .unwrap_err();
+    let cap_config = RetryConfig::<TestError>::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::from_secs(2)))
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
+    let cap_error = TokioRetry::new(&cap_config)
+        .hard_flow_timeout(Duration::from_secs(1))
+        .timer(cap_timer)
+        .run(|| async { Err::<(), _>(TestError("retry")) })
+        .await
+        .unwrap_err();
     assert!(matches!(
         cap_error.reason(),
         RetryErrorReason::Infrastructure {
@@ -364,9 +353,9 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         }
     ));
 
-    let zero_flow = Retry::<TestError>::builder(retry_once_policy())
-        .build()
-        .tokio()
+    let config6 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
+        .build().expect("valid config");
+    let zero_flow = TokioRetry::new(&config6)
         .hard_flow_timeout(Duration::ZERO)
         .run(|| async { Ok::<_, TestError>(()) })
         .await
@@ -380,10 +369,10 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     ));
 
     let clock = ManualMonotonicClock::new_shared();
-    let flow_expired_by_observer = Retry::<TestError>::builder(retry_once_policy())
+    let chain_config5 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
         .observer(AdvancingObserver(Arc::clone(&clock)))
-        .build()
-        .tokio()
+        .build().expect("valid config");
+    let flow_expired_by_observer = TokioRetry::new(&chain_config5)
         .hard_flow_timeout(Duration::from_secs(1))
         .timer(clock.new_timer())
         .run(|| async { Ok::<_, TestError>(()) })
@@ -398,10 +387,10 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     ));
 
     let attempts = AtomicUsize::new(0);
-    let jittered_retry = Retry::<TestError>::builder(retry_once_policy())
+    let config7 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithJitteredHint(Duration::ZERO))
-        .build()
-        .tokio()
+        .build().expect("valid config");
+    let jittered_retry = TokioRetry::new(&config7)
         .run(|| async {
             if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
                 Err(TestError("retry"))

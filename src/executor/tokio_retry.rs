@@ -20,7 +20,7 @@ use qubit_clock::TokioTimer;
 use super::internal::AsyncAttemptOutcome;
 use super::internal::AsyncBackoffOutcome;
 use super::internal::RetryFlowController;
-use super::retry::Retry;
+use super::retry_config::RetryConfig;
 use crate::AttemptFailure;
 use crate::RetryCancellationToken;
 use crate::RetryError;
@@ -41,19 +41,18 @@ use crate::RetryTimeoutScope;
 /// use std::future;
 /// use std::time::Duration;
 ///
+/// use qubit_retry::RetryConfig;
 /// use qubit_retry::TokioRetry;
-/// use qubit_retry::Retry;
 /// use qubit_retry::RetryCancellationPhase;
 /// use qubit_retry::RetryCancellationToken;
 /// use qubit_retry::RetryErrorReason;
-/// use qubit_retry::RetryPolicy;
 ///
 /// #[tokio::main(flavor = "current_thread")]
 /// async fn main() {
-///     let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
+///     let config = RetryConfig::<&str>::builder().max_attempts(3).build().unwrap();
 ///     let token = RetryCancellationToken::new();
 ///     let operation_token = token.clone();
-///     let execution: TokioRetry<'_, &str> = retry.tokio();
+///     let execution = TokioRetry::new(&config);
 ///     let error = execution
 ///         .hard_attempt_timeout(Duration::from_secs(2))
 ///         .hard_flow_timeout(Duration::from_secs(5))
@@ -70,7 +69,7 @@ use crate::RetryTimeoutScope;
 #[must_use]
 pub struct TokioRetry<'a, E> {
     /// Borrowed immutable policy and callbacks.
-    retry: &'a Retry<E>,
+    config: &'a RetryConfig<E>,
     /// Optional hard limit for each admitted attempt.
     attempt_timeout: Option<Duration>,
     /// Optional hard limit measured from execution start.
@@ -94,9 +93,9 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
     /// # Returns
     /// An execution facade with default runtime controls.
     #[inline]
-    pub(crate) fn new(retry: &'a Retry<E>) -> Self {
+    pub fn new(config: &'a RetryConfig<E>) -> Self {
         Self {
-            retry,
+            config,
             attempt_timeout: None,
             flow_timeout: None,
             cancellation_token: None,
@@ -208,7 +207,7 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
-        self.retry.complete(self.run_inner(operation).await)
+        self.config.complete(self.run_inner(operation).await)
     }
 
     /// Executes retry controls and freezes the final result before completion
@@ -248,7 +247,7 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
         let clock = timer.clock();
         let mut controller = RetryFlowController::new(
             clock.now(),
-            self.retry,
+            self.config,
             self.random_source.clone(),
             self.attempt_timeout,
             self.flow_timeout,

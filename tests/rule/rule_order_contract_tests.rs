@@ -8,6 +8,7 @@
 
 use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
@@ -32,11 +33,11 @@ fn test_first_rule_wins_and_failure_kind_is_stable() {
         }
     }
     let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let retry = Retry::<UnitTestError>::builder(policy)
+    let retry = RetryConfig::<UnitTestError>::builder().policy(policy)
         .rule(RetryOnly)
         .rule(AbortRule)
-        .build();
-    let error = retry.sync().run::<(), _>(|| Err(UnitTestError)).unwrap_err();
+        .build().expect("valid config");
+    let error = Retry::new(&retry).run::<(), _>(|| Err(UnitTestError)).unwrap_err();
     assert!(matches!(
         error.reason(),
         RetryErrorReason::Exhausted {

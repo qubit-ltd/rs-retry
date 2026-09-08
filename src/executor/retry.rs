@@ -5,223 +5,200 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Immutable retry facade.
+//! Same-thread retry execution facade.
 
-#[cfg(feature = "tokio")]
-use super::tokio_retry::TokioRetry;
-use super::retry_builder::RetryBuilder;
-use super::sync_retry::SyncRetry;
-#[cfg(feature = "worker")]
-use super::worker_retry::WorkerRetry;
-use crate::RetryFallback;
-use crate::RetryPolicy;
-use crate::RetryResult;
-use crate::observer::RetryObservers;
-use crate::rule::RetryRules;
+use std::sync::Arc;
 
-/// Immutable retry definition bound to an operation error type.
-///
-/// A [`Retry`] contains only pure policy data and ordered callbacks. Runtime
-/// resources such as clocks, timers, and random sources belong to the selected
-/// execution facade, so cloning a retry definition is cheap and deterministic.
+use qubit_clock::StdTimer;
+use qubit_clock::Timer;
+
+use super::internal::BlockingBackoffOutcome;
+use super::internal::RetryFlowController;
+use super::internal::wait_for_backoff;
+use super::retry_config::RetryConfig;
+use super::retry_cancellation_token::RetryCancellationToken;
+use crate::AttemptFailure;
+use crate::RetryError;
+use crate::RetryInfrastructureFailure;
+use crate::RetryRandomSource;
+use crate::RetrySuccess;
+
+/// Same-thread retry execution. It intentionally exposes no timeout method.
 ///
 /// # Type Parameters
-/// - `E`: Application error passed by reference to shared rules and observers.
+/// - `'a`: Lifetime of the borrowed retry configuration.
+/// - `E`: Application error; synchronous operations may capture non-Send state.
 ///
 /// # Examples
 ///
 /// ```
 /// use qubit_retry::Retry;
-/// use qubit_retry::RetryFallback;
-/// use qubit_retry::RetryPolicy;
+/// use qubit_retry::RetryConfig;
 ///
-/// let retry = Retry::<&str>::builder(RetryPolicy::builder().max_attempts(2).build()?)
-///     .fallback(RetryFallback::Retry)
-///     .build();
-/// let mut calls = 0;
-/// let success = retry.sync().run(|| {
-///     calls += 1;
-///     if calls == 1 { Err("busy") } else { Ok(42) }
-/// }).expect("second attempt succeeds");
-/// assert_eq!(*success.value(), 42);
-/// assert_eq!(success.context().attempts(), 2);
+/// let config = RetryConfig::<&str>::builder().max_attempts(3).build()?;
+/// let value = Retry::new(&config).run(|| Ok(7)).expect("operation succeeds");
+/// assert_eq!(*value.value(), 7);
+/// assert_eq!(value.context().attempts(), 1);
 /// # Ok::<(), qubit_retry::RetryPolicyError>(())
 /// ```
 #[must_use]
-pub struct Retry<E> {
-    /// Validated limits and backoff shared by executions.
-    policy: RetryPolicy,
-    /// Action used when all retry rules delegate an application failure.
-    fallback: RetryFallback,
-    /// Ordered decision callbacks shared across executions.
-    rules: RetryRules<E>,
-    /// Ordered lifecycle callbacks shared across executions.
-    observers: RetryObservers<E>,
+pub struct Retry<'a, E> {
+    /// Borrowed immutable policy and callbacks.
+    config: &'a RetryConfig<E>,
+    /// Optional shared cancellation source; None disables external
+    /// cancellation.
+    cancellation_token: Option<RetryCancellationToken>,
+    /// Timer and monotonic clock used by this execution.
+    timer: Option<Arc<dyn Timer>>,
+    /// Shared random source for uniform delays and jitter.
+    random_source: Option<Arc<dyn RetryRandomSource>>,
 }
 
-/// Clones the immutable definition without constraining the operation error.
-///
-/// Callback collections are reference-counted; each execution still creates
-/// fresh runtime state.
-impl<E> Clone for Retry<E> {
-    ///
-    /// # Returns
-    /// A definition sharing callbacks while retaining the same pure policy.
-    #[inline(always)]
-    fn clone(&self) -> Self {
-        Self {
-            policy: self.policy.clone(),
-            fallback: self.fallback,
-            rules: self.rules.clone(),
-            observers: self.observers.clone(),
-        }
-    }
-}
-
-impl<E: 'static> Retry<E> {
-    /// Starts building a retry definition from a validated policy.
+impl<'a, E: 'static> Retry<'a, E> {
+    /// Creates a synchronous executor from one retry configuration.
     ///
     /// # Parameters
-    /// - `policy`: Validated policy applied to each independent execution.
+    /// - `config`: Configuration that must outlive this executor.
     ///
     /// # Returns
-    /// A builder with no custom rules or observers.
-    #[inline(always)]
-    #[must_use = "configure and build the retry definition"]
-    pub fn builder(policy: RetryPolicy) -> RetryBuilder<E> {
-        RetryBuilder::new(policy)
-    }
-
-    /// Selects same-thread execution. This mode intentionally exposes no
-    /// timeout because Rust cannot safely interrupt an arbitrary closure.
-    ///
-    /// # Returns
-    /// A facade borrowing this definition with standard timer and random
-    /// source.
-    #[must_use = "configure and run the selected execution facade"]
-    #[inline(always)]
-    pub fn sync(&self) -> SyncRetry<'_, E> {
-        SyncRetry::new(self)
-    }
-
-    /// Selects Tokio execution with per-attempt and whole-flow timeouts.
-    ///
-    /// # Returns
-    /// A facade borrowing this definition; the Tokio timer is selected when
-    /// run.
-    #[cfg(feature = "tokio")]
-    #[must_use = "configure and run the selected execution facade"]
-    #[inline(always)]
-    pub fn tokio(&self) -> TokioRetry<'_, E> {
-        TokioRetry::new(self)
-    }
-
-    /// Selects worker-thread execution with cooperative cancellation.
-    ///
-    /// # Returns
-    /// A facade borrowing this definition with cooperative OS-thread cleanup.
-    #[must_use = "configure and run the selected execution facade"]
-    #[inline(always)]
-    #[cfg(feature = "worker")]
-    pub fn worker(&self) -> WorkerRetry<'_, E>
-    where
-        E: Send,
-    {
-        WorkerRetry::new(self)
-    }
-
-    ///
-    /// Constructs the definition from its validated parts.
-    ///
-    /// # Parameters
-    /// - `policy`: Immutable limits and backoff.
-    /// - `rules`: Ordered decision callbacks.
-    /// - `observers`: Ordered lifecycle callbacks.
-    ///
-    /// # Returns
-    /// A definition owning the supplied configuration.
-    #[inline(always)]
-    pub(crate) fn new(
-        policy: RetryPolicy,
-        fallback: RetryFallback,
-        rules: RetryRules<E>,
-        observers: RetryObservers<E>,
-    ) -> Self {
+    /// An execution facade with default runtime controls.
+    #[inline]
+    pub fn new(config: &'a RetryConfig<E>) -> Self {
         Self {
-            policy,
-            fallback,
-            rules,
-            observers,
+            config,
+            cancellation_token: None,
+            timer: None,
+            random_source: None,
         }
     }
 
-    /// Returns the immutable retry policy.
+    /// Sets the token used to cancel this synchronous retry flow.
     ///
-    /// # Returns
-    /// The borrowed immutable policy.
-    #[must_use = "use the policy to inspect retry configuration"]
-    #[inline(always)]
-    pub fn policy(&self) -> &RetryPolicy {
-        &self.policy
-    }
-
-    /// Returns the configured fallback action for internal executors.
-    #[inline(always)]
-    #[must_use]
-    pub(crate) fn fallback(&self) -> RetryFallback {
-        self.fallback
-    }
-
-    ///
-    /// Returns the registered callbacks.
-    ///
-    /// # Returns
-    /// The ordered rule collection borrowed from this definition.
-    #[inline(always)]
-    #[must_use]
-    pub(crate) fn rules(&self) -> &RetryRules<E> {
-        &self.rules
-    }
-
-    ///
-    /// Returns the registered callbacks.
-    ///
-    /// # Returns
-    /// The observer collection borrowed from this definition.
-    #[inline(always)]
-    #[must_use]
-    pub(crate) fn observers(&self) -> &RetryObservers<E> {
-        &self.observers
-    }
-
-    /// Notifies completion once and attaches diagnostics to a frozen result.
+    /// Cancellation is observed before an operation starts, after a failed
+    /// operation, and while waiting for backoff. It cannot interrupt an
+    /// operation that is already running on the calling thread.
     ///
     /// # Parameters
-    /// - `result`: Final execution result after all runtime cleanup decisions.
+    ///
+    /// - `token`: Shared flow cancellation token.
     ///
     /// # Returns
-    /// The original result with completion callback failures in registration
-    /// order. These callbacks run synchronously and cannot change the outcome.
-    /// Only returned results reach this boundary; operation unwinding and a
-    /// dropped async execution do not synthesize a completion notification.
+    ///
+    /// A synchronous facade that observes the supplied token.
+    #[inline(always)]
+    pub fn cancellation_token(mut self, token: RetryCancellationToken) -> Self {
+        self.cancellation_token = Some(token);
+        self
+    }
+
+    /// Replaces the blocking timer used by this execution.
+    ///
+    /// # Parameters
+    /// - `timer`: Shared timer and monotonic clock.
+    ///
+    /// # Returns
+    /// This facade using the supplied runtime resource.
+    #[inline(always)]
+    pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
+        self.timer = Some(timer);
+        self
+    }
+
+    /// Replaces the random source used by this execution.
+    ///
+    /// # Parameters
+    /// - `random`: Shared sampler for uniform delays and jitter.
+    ///
+    /// # Returns
+    /// This facade using the supplied runtime resource.
+    #[inline(always)]
+    pub fn random_source(mut self, random: Arc<dyn RetryRandomSource>) -> Self {
+        self.random_source = Some(random);
+        self
+    }
+
+    /// Runs a same-thread operation until success or a terminal retry error.
+    ///
+    /// Completion observers run synchronously with the frozen result; their
+    /// panics are attached as diagnostics and do not change the outcome.
+    /// Operation panics propagate without completion notification.
     ///
     /// # Type Parameters
-    /// - `T`: Successful operation value, preserved without conversion.
+    /// - `T`: Successful value returned to the caller.
+    /// - `F`: Operation invoked once per admitted attempt.
+    ///
+    /// # Parameters
+    /// - `operation`: Operation whose errors are classified by the registered
+    ///   rules.
+    ///
+    /// # Returns
+    /// The successful value with its frozen context and completion diagnostics.
     ///
     /// # Errors
-    /// Returns the original terminal failure with completion diagnostics
-    /// attached; completion observers do not replace or reclassify the
-    /// failure.
-    #[allow(clippy::result_large_err, reason = "completion preserves the lossless public result")]
-    pub(super) fn complete<T>(&self, mut result: RetryResult<T, E>) -> RetryResult<T, E> {
-        let diagnostics = match &result {
-            Ok(success) => self.observers.notify_success(success.context()),
-            Err(error) => self.observers.notify_terminal_failure(error.reason(), error.context()),
-        };
-        match &mut result {
-            Ok(success) => success.set_completion_callback_failures(diagnostics),
-            Err(error) => error.set_completion_callback_failures(diagnostics),
+    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
+    /// or infrastructure failure with its context.
+    ///
+    /// # Panics
+    /// Operation panics unwind through the caller; custom timer, random source,
+    /// or clock panics are not intercepted.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the public error intentionally retains lossless terminal context"
+    )]
+    #[inline(always)]
+    pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    where
+        F: FnMut() -> Result<T, E>,
+    {
+        self.config.complete(self.run_inner(operation))
+    }
+
+    /// Executes retry controls and freezes the final result before completion
+    /// observers run. Returns the original terminal error on control failure.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the internal helper propagates the lossless public terminal error"
+    )]
+    fn run_inner<T, F>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    where
+        F: FnMut() -> Result<T, E>,
+    {
+        let default_timer = StdTimer::new();
+        let timer: &dyn Timer = self.timer.as_deref().unwrap_or(&default_timer);
+        let clock = timer.clock();
+        let mut controller =
+            RetryFlowController::new(clock.now(), self.config, self.random_source.clone(), None, None);
+
+        loop {
+            let cancellation = self.cancellation_token.as_ref();
+            let _ = controller.before_attempt(clock, cancellation)?;
+            controller.commit_attempt(clock, cancellation)?;
+            let result = operation();
+
+            match result {
+                Ok(value) => {
+                    let context = controller.finish_success(clock)?;
+                    return Ok(RetrySuccess::new(value, context));
+                }
+                Err(error) => {
+                    let directive = controller.record_failure(AttemptFailure::Error(error), clock, cancellation)?;
+                    match wait_for_backoff(timer, directive.deadline(), directive.is_immediate(), cancellation) {
+                        BlockingBackoffOutcome::Elapsed => {}
+                        BlockingBackoffOutcome::Cancelled => {
+                            return Err(controller.record_backoff_cancellation(clock));
+                        }
+                        BlockingBackoffOutcome::TimerFailed(timer_error) => {
+                            let error = controller.record_inactive_infrastructure_failure(
+                                RetryInfrastructureFailure::Timer {
+                                    message: timer_error.to_string().into_boxed_str(),
+                                },
+                                clock.now(),
+                            );
+                            return Err(error);
+                        }
+                    }
+                }
+            }
         }
-        result
     }
 }

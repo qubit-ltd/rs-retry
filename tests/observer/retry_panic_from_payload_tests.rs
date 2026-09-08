@@ -17,6 +17,7 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
@@ -142,7 +143,7 @@ fn test_retry_panic_from_payload_stops_later_callbacks_for_each_case() {
     ];
     for (phase, payload) in cases {
         let later_calls = Arc::new(AtomicUsize::new(0));
-        let retry = Retry::<TestError>::builder(two_attempt_policy())
+        let retry = RetryConfig::<TestError>::builder().policy(two_attempt_policy())
             .observer(NoopObserver)
             .observer(PanickingObserver { phase, payload })
             .observer(CountingObserver {
@@ -150,9 +151,8 @@ fn test_retry_panic_from_payload_stops_later_callbacks_for_each_case() {
                 calls: Arc::clone(&later_calls),
             })
             .fallback(RetryFallback::Retry)
-            .build();
-        let error = retry
-            .sync()
+            .build().expect("valid config");
+        let error = Retry::new(&retry)
             .run(|| Err::<(), _>(TestError("retry")))
             .expect_err("the selected callback should panic");
         let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
@@ -174,14 +174,13 @@ fn test_retry_panic_from_payload_stops_later_callbacks_for_each_case() {
 fn test_control_payload_normal_drop_is_not_leaked() {
     let drops = Arc::new(AtomicUsize::new(0));
     let captured = Arc::clone(&drops);
-    let retry = Retry::<&'static str>::builder(RetryPolicy::builder().build().expect("policy should build"))
+    let retry = RetryConfig::<&'static str>::builder()
         .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
             panic_any(CountedPayload(Arc::clone(&captured)))
         })
-        .build();
+        .build().expect("valid config");
 
-    let error = retry
-        .sync()
+    let error = Retry::new(&retry)
         .run(|| Err::<(), _>("business"))
         .expect_err("rule panic should terminate the retry");
     assert!(matches!(error.reason(), RetryErrorReason::CallbackFailed { .. }));

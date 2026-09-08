@@ -17,7 +17,7 @@ use qubit_clock::MonotonicClock;
 use qubit_clock::MonotonicInstant;
 use qubit_clock::TimeError;
 
-use super::super::Retry;
+use super::super::RetryConfig;
 use super::PreparedAttemptPlan;
 use super::PreparedBackoffPlan;
 use super::RetryFlowState;
@@ -83,16 +83,16 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     #[must_use = "use the prepared value or inspect the result"]
     pub(crate) fn new(
         started_at: MonotonicInstant,
-        retry: &'a Retry<E>,
+        config: &'a RetryConfig<E>,
         random_source: Option<Arc<dyn RetryRandomSource>>,
         attempt_timeout: Option<Duration>,
         flow_timeout: Option<Duration>,
     ) -> Self {
         Self {
-            state: RetryFlowState::new(started_at, retry.policy(), random_source, flow_timeout),
-            rules: retry.rules(),
-            observers: retry.observers(),
-            fallback: retry.fallback(),
+            state: RetryFlowState::new(started_at, config.policy(), random_source, flow_timeout),
+            rules: config.rules(),
+            observers: config.observers(),
+            fallback: config.fallback(),
             last_failure: None,
             attempt_timeout,
             current_attempt: None,

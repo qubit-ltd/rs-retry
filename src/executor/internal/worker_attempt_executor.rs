@@ -416,7 +416,8 @@ mod tests {
     use super::wait_for_worker;
     use crate::AttemptCancellationToken;
     use crate::AttemptFailure;
-    use crate::Retry;
+    use crate::RetryConfig;
+    use crate::WorkerRetry;
     use crate::RetryCancellationToken;
     use crate::RetryErrorReason;
     use crate::RetryInfrastructureFailure;
@@ -575,9 +576,10 @@ mod tests {
     #[test]
     fn test_worker_reaper_spawn_failure_has_zero_attempts() {
         FAIL_REAPER_SPAWN.with(|fail| fail.set(true));
-        let error = Retry::<()>::builder(RetryPolicy::builder().build().expect("valid policy"))
+        let config = RetryConfig::<()>::builder().policy(RetryPolicy::builder().build().expect("valid policy"))
             .build()
-            .worker()
+            .expect("valid config");
+        let error = WorkerRetry::new(&config)
             .run(|_| -> Result<(), ()> { panic!("operation must remain behind gate") })
             .expect_err("reaper spawn fails");
         assert_eq!(error.context().attempts(), 0);

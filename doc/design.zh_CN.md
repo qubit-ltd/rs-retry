@@ -11,24 +11,46 @@ SSE 和自定义重连循环可以直接使用预算与退避，无须构造虚�
 
 ```mermaid
 flowchart TD
-    F[SyncRetry / TokioRetry / WorkerRetry] --> C[RetryFlowController]
+    subgraph executors [执行门面]
+        F1[Retry]
+        F2[TokioRetry]
+        F3[WorkerRetry]
+    end
+    F1 --> CFG[RetryConfig]
+    F2 --> CFG
+    F3 --> CFG
+    CFG --> C[RetryFlowController]
     C --> S[RetryFlowState / RetryBudgetState]
-    C --> P[RetryPolicy / BackoffState]
-    C --> O[RetryRules / RetryObservers 控制回调]
-    F --> R[Retry::complete]
+    CFG --> P[RetryPolicy / BackoffState]
+    CFG --> O[RetryRules / RetryObservers 控制回调]
+    F1 --> R[RetryConfig::complete]
+    F2 --> R
+    F3 --> R
     R --> D[完成观察者与附加诊断]
-    F --> W[计时器 / 阻塞等待 / worker 协议]
+    F1 --> W[计时器 / 阻塞等待 / worker 协议]
+    F2 --> W
+    F3 --> W
     B[独立 RetryBudget] --> S
 ```
 
+- `RetryPolicy` 只负责校验次数、预算与退避，可通过 `serde` 序列化，并在多个
+  `RetryConfig` 之间复用。
+- `RetryConfig` 将策略与有序规则、观察者和 fallback 绑定到一种业务错误类型。
+  它不含运行时资源；克隆时通过引用计数共享回调集合。
+- `RetryConfigBuilder` 转发 `RetryPolicyBuilder` 的全部 API，允许在一条链上调用
+  `.max_attempts(...)`、`.backoff(...)`、`.rule(...)`。仅当策略已预先构建
+  （JSON、共享变量或 `retry_once_policy()` 等 helper）时才使用 `.policy(prebuilt)`。
+- 执行门面（`Retry`、`TokioRetry`、`WorkerRetry`）接收 `&RetryConfig`，持有每次
+  run 的运行时选项（timer、随机源、取消令牌、硬超时、worker 栈大小等），并将
+  流程决策委托给控制器。
 - `policy`、`backoff`、`budget` 验证配置并计算是否允许继续，不调用业务回调，也不负责调度操作执行。
 - `executor/internal/retry_flow_controller.rs` 负责一次流程的决策及最后失败；状态快照和计划将准备与准入提交分开。
-- 执行门面负责运行闭包、轮询 future 或管理一次 OS worker 尝试。异步结果、worker 事件和 waker 类型保持私有。
-- `Retry::complete` 是唯一完成通知入口，在执行器返回冻结结果后调用，不属于控制器，也不重新进入控制流程。
+- 异步结果、worker 事件和 waker 类型保持私有。
+- `RetryConfig::complete` 是唯一完成通知入口，在执行器返回冻结结果后调用，不属于控制器，也不重新进入控制流程。
 - `internal/retry_panic_from_payload.rs` 是已捕获载荷的唯一解码器，规则、控制/完成观察者、worker 和 reaper join 失败共同使用。
 
-每次 run 都创建独立计量与退避状态。克隆 `Retry`、规则集合或观察者集合只共享引用计数管理的回调对象，
-不要求 `E: Clone`，也不共享每次运行中的可变状态。
+每次 run 都创建独立计量与退避状态。克隆 `RetryConfig`、规则集合或观察者集合只共享引用计数管理的回调对象，
+不要求 `E: Clone`；每次运行中的可变状态保存在执行器上，不会随配置克隆而共享。
 
 ## 准入与计量协议
 
@@ -124,7 +146,7 @@ waker 使用弱 sender，不能掩盖 worker/reaper sender 均已消失的情况
 `into_value_discarding_diagnostics` 会同时丢弃上下文。`map_error` 只消费已保留的业务错误，
 `FnOnce` 映射函数调用零次或一次，其他数据全部保留，不额外要求 Clone/Send/static。
 
-三个公开 run 在 `run_inner` 返回后恰好调用一次 `Retry::complete`。
+三个公开 run 在 `run_inner` 返回后恰好调用一次 `RetryConfig::complete`。
 异步 run future 被丢弃、向外展开栈或进程 abort 时不保证通知；完成观察者失败不会再触发第二次完成事件。
 
 ## 退避数值与提示契约

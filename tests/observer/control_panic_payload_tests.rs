@@ -15,6 +15,9 @@ use std::sync::atomic::Ordering;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
+use qubit_retry::WorkerRetry;
+use qubit_retry::TokioRetry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
@@ -139,7 +142,7 @@ async fn run_matrix(recursive: bool) {
             let rule_drops = Arc::clone(&drops);
             let later_rule = Arc::clone(&later);
             let retry =
-                Retry::<&'static str>::builder(RetryPolicy::builder().max_attempts(2).build().expect("valid policy"))
+                RetryConfig::<&'static str>::builder().max_attempts(2)
                     .observer(Noop)
                     .observer(PayloadObserver {
                         target: phase,
@@ -165,13 +168,13 @@ async fn run_matrix(recursive: bool) {
                         later_rule.fetch_add(1, Ordering::SeqCst);
                         RetryDecision::Retry
                     })
-                    .build();
+                    .build().expect("valid config");
             let result = match facade {
-                Facade::Sync => retry.sync().run(|| Err::<(), _>("business")),
+                Facade::Sync => Retry::new(&retry).run(|| Err::<(), _>("business")),
                 #[cfg(feature = "worker")]
-                Facade::Worker => retry.worker().run(|_| Err::<(), _>("business")),
+                Facade::Worker => WorkerRetry::new(&retry).run(|_| Err::<(), _>("business")),
                 #[cfg(feature = "tokio")]
-                Facade::Async => retry.tokio().run(|| async { Err::<(), _>("business") }).await,
+                Facade::Async => TokioRetry::new(&retry).run(|| async { Err::<(), _>("business") }).await,
             };
             let error: RetryError<&'static str> = result.expect_err("callback terminal");
             let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {

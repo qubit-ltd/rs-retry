@@ -8,27 +8,24 @@
 
 use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryError;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
 use qubit_retry::RetryLimitKind;
-use qubit_retry::RetryPolicy;
 
 use crate::support::UnitTestError;
 
 /// Runs one failing operation to produce a public terminal retry error.
 fn create_exhausted_error() -> RetryError<UnitTestError> {
-    Retry::<UnitTestError>::builder(
-        RetryPolicy::builder()
-            .max_attempts(1)
-            .build()
-            .expect("terminal-accessor policy should be valid"),
-    )
-    .fallback(RetryFallback::Retry)
-    .build()
-    .sync()
-    .run::<(), _>(|| Err(UnitTestError))
-    .expect_err("one failed attempt should exhaust the policy")
+    let config = RetryConfig::<UnitTestError>::builder()
+        .max_attempts(1)
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
+    Retry::new(&config)
+        .run::<(), _>(|| Err(UnitTestError))
+        .expect_err("one failed attempt should exhaust the policy")
 }
 
 /// Verifies public retry-error accessors retain all terminal information.
