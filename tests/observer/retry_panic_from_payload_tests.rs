@@ -21,6 +21,7 @@ use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
@@ -148,6 +149,7 @@ fn test_retry_panic_from_payload_stops_later_callbacks_for_each_case() {
                 phase,
                 calls: Arc::clone(&later_calls),
             })
+            .fallback(RetryFallback::Retry)
             .build();
         let error = retry
             .sync()

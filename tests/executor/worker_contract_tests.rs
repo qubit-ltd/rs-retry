@@ -89,7 +89,9 @@ fn test_worker_facade_retries_with_cooperative_token() {
 #[test]
 fn test_worker_attempt_timeout_has_a_distinct_terminal_reason() {
     let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let retry = Retry::<UnitTestError>::builder(policy).build();
+    let retry = Retry::<UnitTestError>::builder(policy)
+        .fallback(RetryFallback::Retry)
+        .build();
     let clock = ManualMonotonicClock::new_shared();
     let operation_clock = Arc::clone(&clock);
     let error = retry
@@ -166,6 +168,7 @@ fn test_worker_flow_timeout_caps_retry_sleep() {
             .observer(move |_: &AttemptFailure<UnitTestError>, _: &RetryContext| {
                 failed_sender.send(()).expect("test controller alive");
             })
+            .fallback(RetryFallback::Retry)
             .build()
             .worker()
             .timer(worker_clock.new_timer())

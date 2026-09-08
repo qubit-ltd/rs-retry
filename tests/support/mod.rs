@@ -22,6 +22,7 @@ pub(crate) use retry_facade_matrix::assert_matrix_infrastructure;
 pub(crate) use retry_facade_matrix::assert_matrix_limit;
 pub(crate) use retry_facade_matrix::assert_matrix_observer_panic;
 pub(crate) use retry_facade_matrix::assert_matrix_rule_panic;
+#[cfg(any(feature = "tokio", feature = "worker"))]
 pub(crate) use retry_facade_matrix::assert_matrix_timeout;
 pub(crate) use retry_facade_matrix::callback_elapsed_records;
 pub(crate) use retry_facade_matrix::completion_regressing_timer;

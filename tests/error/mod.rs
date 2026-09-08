@@ -9,6 +9,7 @@
 
 mod attempt_failure_contract_tests;
 mod attempt_failure_tests;
+#[cfg(feature = "worker")]
 mod failure_components_tests;
 mod retry_callback_failure_tests;
 mod retry_callback_kind_tests;

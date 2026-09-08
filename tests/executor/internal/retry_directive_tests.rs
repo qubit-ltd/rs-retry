@@ -23,6 +23,7 @@ use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
@@ -77,6 +78,7 @@ fn test_retry_scheduled_is_not_emitted_after_attempt_exhaustion() {
     let policy = RetryPolicy::builder().max_attempts(1).build().expect("valid policy");
     let error = Retry::<TestError>::builder(policy)
         .observer(HintRecordingObserver(Arc::clone(&recorded)))
+        .fallback(RetryFallback::Retry)
         .build()
         .sync()
         .run(|| Err::<(), _>(TestError("last")))
@@ -106,6 +108,7 @@ fn test_retry_scheduled_panic_cannot_mask_exhaustion() {
             .observer(crate::support::PanickingPhaseObserver::new(
                 RetryCallbackPhase::RetryScheduled,
             ))
+            .fallback(RetryFallback::Retry)
             .build()
             .sync()
             .run(|| Err::<(), _>(TestError("retained")))
@@ -138,6 +141,7 @@ fn test_retry_scheduled_rechecks_time_after_resolving_jitter() {
         .expect("valid policy");
     let error = Retry::<TestError>::builder(policy)
         .observer(HintRecordingObserver(Arc::clone(&recorded)))
+        .fallback(RetryFallback::Retry)
         .build()
         .sync()
         .timer(clock.new_timer())

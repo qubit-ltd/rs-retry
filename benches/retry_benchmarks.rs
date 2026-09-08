@@ -212,7 +212,9 @@ fn benchmark_sync_no_delay_retries(c: &mut Criterion) {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("benchmark retry policy should be valid");
-    let retry = Retry::<&'static str>::builder(policy).build();
+    let retry = Retry::<&'static str>::builder(policy)
+        .fallback(qubit_retry::RetryFallback::Retry)
+        .build();
 
     c.bench_function("sync_no_delay_retries", |b| {
         b.iter(|| {

@@ -29,6 +29,7 @@ use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
@@ -190,6 +191,7 @@ fn test_worker_retry_matches_shared_terminal_matrix() {
     assert_matrix_abort(&abort);
 
     let attempts = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+        .fallback(RetryFallback::Retry)
         .build()
         .worker()
         .run(|_| Err::<(), _>(TestError("matrix")))
@@ -208,6 +210,7 @@ fn test_worker_retry_matches_shared_terminal_matrix() {
         };
         let operation_clock = Arc::clone(&clock);
         let error = Retry::<TestError>::builder(policy.build().unwrap())
+            .fallback(RetryFallback::Retry)
             .build()
             .worker()
             .timer(clock.new_timer())
@@ -226,6 +229,7 @@ fn test_worker_retry_matches_shared_terminal_matrix() {
 fn test_worker_retry_matches_shared_callback_matrix() {
     let later_rule_calls = Arc::new(AtomicUsize::new(0));
     let rule_error = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
+        .fallback(RetryFallback::Retry)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("matrix rule panic"))
         .rule({
             let later_rule_calls = Arc::clone(&later_rule_calls);
@@ -255,6 +259,7 @@ fn test_worker_retry_matches_shared_callback_matrix() {
         )
         .observer(PanickingPhaseObserver::new(phase))
         .observer(CountingPhaseObserver(Arc::clone(&later_counts)))
+        .fallback(RetryFallback::Retry)
         .build()
         .worker()
         .run(|_| Err::<(), _>(TestError("matrix")))
@@ -339,6 +344,7 @@ fn test_worker_retry_refreshes_elapsed_time_after_callback_panics() {
         } else {
             Retry::<TestError>::builder(policy)
                 .observer(ElapsedObserverCallback::new(Arc::clone(&clock), phase, records, true))
+                .fallback(RetryFallback::Retry)
                 .build()
                 .worker()
                 .timer(clock.new_timer())
@@ -358,6 +364,7 @@ fn test_worker_retry_matches_shared_infrastructure_and_timeout_matrix() {
             .build()
             .unwrap(),
     )
+    .fallback(RetryFallback::Retry)
     .build()
     .worker()
     .timer(Arc::new(FaultInjectingTimer::backend_unavailable(

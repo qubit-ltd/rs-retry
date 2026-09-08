@@ -11,6 +11,7 @@ use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
 /// Executes the guide's synchronous cancellation contract.
@@ -44,7 +45,10 @@ fn test_readme_completion_diagnostics_and_error_mapping() {
     }
 
     let policy = RetryPolicy::builder().build().expect("valid policy");
-    let retry = Retry::<&'static str>::builder(policy).observer(CompletionAudit).build();
+    let retry = Retry::<&'static str>::builder(policy)
+        .observer(CompletionAudit)
+        .fallback(RetryFallback::Retry)
+        .build();
     let error = retry.sync().run(|| Err::<(), _>("offline")).unwrap_err();
     let mapped = error.map_error(String::from);
     assert_eq!(mapped.last_error().map(String::as_str), Some("offline"));

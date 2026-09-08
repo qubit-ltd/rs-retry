@@ -81,7 +81,9 @@ async fn test_async_attempt_timeout_has_a_distinct_terminal_reason() {
 #[tokio::test]
 async fn test_async_shorter_flow_timeout_reports_flow_source() {
     let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let retry = Retry::<UnitTestError>::builder(policy).build();
+    let retry = Retry::<UnitTestError>::builder(policy)
+        .fallback(RetryFallback::Retry)
+        .build();
     let clock = ManualMonotonicClock::new_shared();
     let executor = retry
         .asynchronous()
@@ -116,7 +118,9 @@ async fn test_async_flow_timeout_caps_retry_sleep() {
         .backoff(BackoffPolicy::fixed(Duration::from_secs(30)))
         .build()
         .unwrap();
-    let retry = Retry::<UnitTestError>::builder(policy).build();
+    let retry = Retry::<UnitTestError>::builder(policy)
+        .fallback(RetryFallback::Retry)
+        .build();
     let clock = ManualMonotonicClock::new_shared();
     let attempts = Arc::new(AtomicU32::new(0));
     let executor = retry

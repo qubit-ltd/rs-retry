@@ -12,6 +12,7 @@ use qubit_retry::Retry;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryPolicy;
 
@@ -31,6 +32,7 @@ fn test_retry_flow_controller_clears_attempt_scope_for_abort_and_limit() {
     assert_eq!(aborted.context().current_hard_attempt_timeout(), None);
 
     let exhausted = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+        .fallback(RetryFallback::Retry)
         .build()
         .sync()
         .run(|| Err::<(), _>(TestError("limit")))

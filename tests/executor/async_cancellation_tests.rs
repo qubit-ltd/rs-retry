@@ -59,6 +59,7 @@ use qubit_retry::RetryDecision;
 use qubit_retry::RetryError;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryObserver;
 #[cfg(feature = "tokio")]
@@ -370,6 +371,7 @@ async fn test_attempt_failed_callback_cancellation_stops_before_rule() {
             .build()
             .expect("failed-callback cancellation policy should be valid"),
     )
+    .fallback(RetryFallback::Retry)
     .observer(CancelOnAttemptFailed {
         token: token.clone(),
         scheduled_calls: Arc::clone(&scheduled_calls),
@@ -463,6 +465,7 @@ async fn test_retry_scheduled_callback_cancellation_stops_before_sleep() {
             .expect("scheduled-callback cancellation policy should be valid"),
     )
     .observer(CancelOnRetryScheduled { token: token.clone() })
+    .fallback(RetryFallback::Retry)
     .build()
     .asynchronous()
     .cancellation_token(token)
