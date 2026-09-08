@@ -112,7 +112,7 @@ impl<E: 'static> Retry<E> {
     #[cfg(feature = "tokio")]
     #[must_use = "configure and run the selected execution facade"]
     #[inline(always)]
-    pub fn asynchronous(&self) -> AsyncRetry<'_, E> {
+    pub fn tokio(&self) -> AsyncRetry<'_, E> {
         AsyncRetry::new(self)
     }
 
