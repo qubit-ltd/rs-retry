@@ -311,7 +311,9 @@ sync/async 操作 panic、异步 run future 被丢弃或进程中止时，不保
 
 0.23 中 `RetrySuccess::into_parts` 返回三元组，`RetryError::into_parts` 返回四元组，
 删除 `into_parts_with_diagnostics` 且不保留别名。旧 `into_value` / `into_failure` 改为显式命名的
-`into_value_discarding_diagnostics` / `into_failure_discarding_diagnostics`，同时丢弃上下文。
+`into_value_discarding_diagnostics` 会同时丢弃上下文和完成诊断。当前没有
+`into_failure_discarding_diagnostics`；需要保留失败时应使用四元素的
+`RetryError::into_parts` 返回值。
 默认行为和各模式优先级见前文；控制回调正常返回后的时钟验证，现在优先于返回的 Abort 决策和取消，回调 panic 仍保留自身主因。
 
 HTTP 在每种重试终态中以完整 `RetryError<HttpError>` 作为 source，并保留请求、状态、预览、提示和脱敏策略；
