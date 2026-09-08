@@ -10,7 +10,7 @@
 use std::error::Error;
 use std::fmt;
 
-use super::AttemptFailureMetadata;
+use crate::AttemptFailureMetadata;
 use crate::RetryCallbackFailure;
 use crate::RetryContext;
 use crate::RetryErrorReason;

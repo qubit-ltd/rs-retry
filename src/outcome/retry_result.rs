@@ -5,13 +5,10 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Retry lifecycle observation.
+//! Result alias returned by retry executors.
 
-mod internal;
-mod retry_observer;
+use super::RetryError;
+use super::RetrySuccess;
 
-pub(crate) use internal::RetryObservers;
-pub use retry_observer::RetryObserver;
-
-/// Compatibility re-export for the runtime retry context.
-pub use crate::context::RetryContext;
+/// Result returned by a retry executor after success or terminal failure.
+pub type RetryResult<T, E> = Result<RetrySuccess<T>, RetryError<E>>;
