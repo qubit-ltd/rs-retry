@@ -1,31 +1,34 @@
 # Qubit Retry User Guide
 
-[简体中文](user_guide.zh_CN.md) · [README](../README.md) · [Design](design.md)
+[简体中文](user_guide.zh_CN.md) · [README](../README.md) · [API reference](https://docs.rs/qubit-retry/0.23.0/qubit_retry/)
 
-## Audience and scenario
+This guide covers **qubit-retry 0.23.0** and requires **Rust 1.94+**. It is for
+Rust developers adding retries to clients, storage access, or reconnect loops.
+You supply the operation and decide which failures are safe to retry.
 
-This guide covers **qubit-retry 0.23** for client and storage authors. A snapshot
-reader must recover from temporary unavailability while preserving permanent
-errors, respecting shutdown, and exposing the final outcome. Success means one
-returned snapshot with an accurate admitted-attempt count; retries must not hide
-an uncertain side effect. The [README fixture](../README.md#quick-start) provides
-the complete minimal implementation and returns `RetryError<io::Error>` intact.
+Start with a simulated storage read: two timeouts followed by success. The
+library controls retries; the simulated responses let you run the example
+without an external service.
+Every Rust block is a complete program that can replace `src/main.rs` in a test app.
 
-## Conceptual model
+## Contents
 
-`RetryPolicy` is reusable configuration; `Retry` adds ordered rules and observers.
-Each `run` creates a fresh budget, backoff index, and context. A policy's
-`max_attempts` includes the first operation. The default is three attempts,
-immediate backoff, no elapsed limits, and aborting unclassified application errors.
-`AttemptFailure` describes one failed operation; `RetryErrorReason` describes why the
-whole flow stopped. A context's `attempts()` counts admissions, whereas
-`current_attempt()` may describe a pre-admission callback or retained active work.
-Set `RetryFallback::Retry` when the application explicitly wants unclassified
-errors to use the policy's retry behavior.
+- [Quick start: read a snapshot](#quick-start-read-a-snapshot)
+- [Understand a retry flow](#understand-a-retry-flow)
+- [Choose an execution mode](#choose-an-execution-mode)
+- [Choose which failures to retry](#choose-which-failures-to-retry)
+- [Configure backoff and server hints](#configure-backoff-and-server-hints)
+- [Set budgets and timeouts](#set-budgets-and-timeouts)
+- [Run async operations](#run-async-operations)
+- [Cancel work and shut down](#cancel-work-and-shut-down)
+- [Handle results and observe execution](#handle-results-and-observe-execution)
+- [Load JSON configuration](#load-json-configuration)
+- [Use standalone budgets and test clocks](#use-standalone-budgets-and-test-clocks)
+- [Troubleshoot](#troubleshoot)
 
-## Installation and minimal configuration
+## Quick start: read a snapshot
 
-Install with Rust 1.94 or newer. Default features are empty:
+Add the dependency to your application's `Cargo.toml`:
 
 <!-- retry-example: kind=cargo features=none -->
 ```toml
@@ -33,52 +36,441 @@ Install with Rust 1.94 or newer. Default features are empty:
 qubit-retry = "0.23"
 ```
 
-Enable `tokio` for async execution and `serde` for configuration wire formats:
+A storage service is temporarily unavailable. Retry its read and return the
+snapshot when it recovers. The separate `read_snapshot` function simulates two
+failed calls followed by success. Its counter only generates test responses;
+it does not implement retry control. `RetryPolicy` sets the attempt limit,
+waiting time, and exponential backoff; the rule classifies retryable errors.
 
-<!-- retry-example: kind=cargo features=tokio,serde -->
-```toml
-[dependencies]
-qubit-retry = { version = "0.23", features = ["tokio", "serde"] }
+<!-- retry-example: kind=run features=none -->
+```rust
+use std::io;
+use std::time::Duration;
+
+use qubit_retry::AttemptFailure;
+use qubit_retry::BackoffPolicy;
+use qubit_retry::Retry;
+use qubit_retry::RetryContext;
+use qubit_retry::RetryDecision;
+use qubit_retry::RetryPolicy;
+
+// Simulate storage: the first and second calls time out; the third succeeds.
+// simulated_calls only produces test responses; it does not limit or schedule retries.
+// Replace this function with a real storage read, without the simulation counter.
+fn read_snapshot(simulated_calls: &mut u32) -> io::Result<&'static str> {
+    *simulated_calls += 1;
+    if *simulated_calls <= 2 {
+        Err(io::Error::new(io::ErrorKind::TimedOut, "storage unavailable"))
+    } else {
+        Ok("snapshot-v2")
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let policy = RetryPolicy::builder()
+        .max_attempts(5)
+        .backoff(BackoffPolicy::exponential(
+            Duration::from_millis(100),
+            2.0,
+            Duration::from_secs(1),
+        )?)
+        .build()?;
+    let retry = Retry::builder(policy)
+        .rule(|failure: &AttemptFailure<io::Error>, _: &RetryContext| {
+            match failure {
+                AttemptFailure::Error(error) if error.kind() == io::ErrorKind::TimedOut => {
+                    RetryDecision::Retry
+                }
+                _ => RetryDecision::Abort,
+            }
+        })
+        .build();
+
+    let mut simulated_calls = 0;
+    let success = retry.sync().run(|| read_snapshot(&mut simulated_calls))?;
+    assert_eq!(*success.value(), "snapshot-v2");
+    assert_eq!(success.context().attempts(), 3);
+    assert!(success.completion_callback_failures().is_empty());
+    println!("{}, attempts={}", success.value(), success.context().attempts());
+    Ok(())
+}
 ```
 
-Guide examples additionally use `qubit-clock` 0.13 with `test-util` for manual
-time, `serde_json` 1 for JSON, and Tokio 1.52 or newer with `rt`, `macros`, `time`
-for the async binary. The document checker supplies these fixture dependencies.
+Add the dependency to your application's `Cargo.toml`, put the complete example
+in `src/main.rs`, and run `cargo run`:
 
-## Core workflow: classify, run, retain the result
+```text
+snapshot-v2, attempts=3
+```
 
-Use a rule to retry only transient snapshot read failures. The first
-non-`UseDefault` decision wins. `Abort` stops after retaining the failure;
-`Retry`, `RetryWithHint`, and `RetryWithJitteredHint` still cannot bypass admission
-limits. When all rules delegate, unclassified application errors abort by default;
-with `RetryFallback::Retry`, they use the policy backoff. Attempt timeouts stop as
-`TimedOut`, and captured worker panics stop as `Aborted`.
+The library calls `read_snapshot`, waits 100 ms after its failure, and calls it
+again. After the second failure it waits 200 ms; the third call succeeds.
+**The fixture chooses responses; the policy controls further attempts and waits.**
+`max_attempts(5)` includes the first call and allows at most four retries.
+`context.attempts()` is the library's recorded execution count.
 
-Select the mode that matches the actual operation:
+Replace `read_snapshot` with your real client call and remove the simulation
+counter; no application retry loop or sleep is needed. Set `max_attempts` to 2
+and the library returns `Exhausted { limit: Attempts }` after the second failure,
+without making the fixture's third call. Unclassified errors abort by default.
 
-| Operation | Mode | Constraints |
+| Scenario to verify | Change | Result |
 | --- | --- | --- |
-| A bounded blocking read on the current thread | `sync()` | Cannot interrupt the closure; borrowed state and `FnMut` are supported |
-| A cancellation-safe asynchronous client call | `asynchronous()` | Tokio feature/runtime; operation futures need not be `Send` or static |
-| A blocking call that cooperatively exits on a token | `worker()` | Requires the `worker` feature; operation: `Fn + Send + Sync + 'static`; result/error: `Send + 'static`; worker and reaper per attempt |
+| Recovery after temporary errors | Run the example as written | Success on the third attempt |
+| Attempts exhausted | Change `max_attempts(5)` to `max_attempts(2)` | `Exhausted` after two failures; no further operation call |
+| Permanent error | Make the simulated read return `PermissionDenied` | `Aborted` after the first failure |
 
-Retain every terminal part: success has a value, context, and diagnostics;
-error additionally has a reason and optional last failure. Use `map_error` when
-only converting the application error type. Its `FnOnce` mapper runs once if an application error
-exists and zero times otherwise; a mapper panic propagates. It preserves terminal
-classification, context and completion diagnostics without imposing extra
-`Clone`, `Send` or `'static` bounds. Merely cloning `Retry` does not clone `E`.
+These changes exercise different branches. In an application, retain the full
+`RetryError<io::Error>`: inspect `reason()` for the stop reason and `last_error()`
+for the original I/O error. Every `run` starts fresh; reusing `Retry` does not
+require resetting the library's counters.
 
-## Timing and shutdown
+## Understand a retry flow
 
-`operation_time_budget` sums admitted-operation durations. `total_time_budget`
-measures monotonic flow time, including control callbacks and sleeps. Both limit
-future admission; an admitted success remains success after crossing them.
-Async/worker `hard_attempt_timeout` and `hard_flow_timeout` bound cooperative waits, not
-arbitrary synchronous work. A callback or blocking future poll can delay every
-check. Completion callbacks are outside both elapsed accounting and timeout control.
+| Concept | Meaning |
+| --- | --- |
+| Attempt | One admitted operation, including the first call |
+| Retry | A subsequent attempt after a failure |
+| Backoff | The delay before a retry |
+| Admission | The check that permits an attempt to start under the remaining limits |
+| `RetryPolicy` | Validated attempt limits, elapsed budgets, and backoff configuration |
+| `Retry<E>` | A reusable policy plus rules and observers for error type `E` |
+| `RetryContext` | A snapshot of counts, elapsed time, and the current phase's attempt/delay information |
 
-For the same-thread reader, cancellation after an error prevents the next read:
+The normal path is:
+
+```text
+check limits → before-attempt callback → recheck → admit and run
+                                                   ├─ success → complete
+                                                   └─ failure → observe → apply rules
+                                                                            ├─ stop → complete
+                                                                            └─ retry → check delay budget
+                                                                                       → observe schedule → wait → recheck
+```
+
+Cancellation, hard timeouts, or infrastructure failures can stop execution at
+control boundaries. A scheduled retry is provisional: later checks can still
+prevent it from starting. `context.attempts()` counts admissions;
+`current_attempt()` may also describe an upcoming attempt during a callback.
+
+Defaults are **three total attempts, immediate backoff, no elapsed budgets, and
+abort for unclassified application errors**. A default policy alone does not
+make failures retryable. Each `run` creates fresh state. Cloning `Retry` shares
+rules and observers without requiring the application error to implement `Clone`.
+
+## Choose an execution mode
+
+
+| Entry point | Feature | Operation requirements | Where it runs |
+| --- | --- | --- | --- |
+| `sync()` | None | `FnMut() -> Result<T, E>`; can borrow local state | Calling thread |
+| `asynchronous()` | `tokio` | `FnMut() -> Fut`; futures need not be `Send` or `'static` | Tokio runtime |
+| `worker()` | `worker` | `Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static`; `T` and `E`: `Send + 'static` | Dedicated worker thread per attempt |
+
+The execution APIs require `E: 'static`, including in sync/async mode; that does
+not require their operation closures to own all captured state. Rules and
+observers are shared `Send + Sync + 'static` callbacks.
+
+Enable async execution with:
+
+<!-- retry-example: kind=cargo features=tokio -->
+```toml
+[dependencies]
+qubit-retry = { version = "0.23", features = ["tokio"] }
+```
+
+The async examples also need a direct Tokio dependency. Add it with:
+
+```bash
+cargo add tokio@1.52 --features rt,macros,time
+```
+
+For blocking worker examples use:
+
+<!-- retry-example: kind=cargo features=worker -->
+```toml
+[dependencies]
+qubit-retry = { version = "0.23", features = ["worker"] }
+```
+
+Features can be combined in the dependency's `features` array. `worker().run()`
+blocks its caller while coordinating the worker; it is not an async thread-pool API.
+
+## Choose which failures to retry
+
+Rules run in registration order. The first decision other than `UseDefault`
+wins; `UseDefault` lets the next rule decide, then uses the fallback if every
+rule delegates.
+
+| Decision | Effect |
+| --- | --- |
+| `RetryDecision::Abort` | Stop and retain the failure |
+| `RetryDecision::Retry` | Request another attempt using policy backoff |
+| `RetryDecision::RetryWithHint(delay)` | Supply a delay hint protected from jitter, but still subject to the final cap |
+| `RetryDecision::RetryWithJitteredHint(delay)` | Supply a hint that allows configured jitter |
+| `RetryDecision::UseDefault` | Continue rule evaluation |
+
+If every application error from a particular operation is retryable, opt in
+explicitly with `RetryFallback::Retry`:
+
+<!-- retry-example: kind=run features=none -->
+```rust
+use qubit_retry::Retry;
+use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
+use qubit_retry::RetryPolicy;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let retry = Retry::<&str>::builder(RetryPolicy::builder().max_attempts(2).build()?)
+        .fallback(RetryFallback::Retry)
+        .build();
+    let error = retry.sync().run(|| Err::<(), _>("temporarily unavailable")).unwrap_err();
+    assert!(matches!(error.reason(), RetryErrorReason::Exhausted { .. }));
+    assert_eq!(error.context().attempts(), 2);
+    Ok(())
+}
+```
+
+Fallback applies to application errors. A captured attempt timeout defaults to
+`TimedOut`, and a captured worker panic defaults to `Aborted`, even with
+`RetryFallback::Retry`. A rule can explicitly request a retry for either, within
+remaining limits. Flow timeout, cancellation, callback failure, and infrastructure
+failure are terminal and cannot be recovered by a retry rule.
+
+An `io::ErrorKind::TimedOut` returned by a client is an application error. It is
+different from `AttemptFailure::TimedOut`, which is created by an execution timeout.
+The quick start classifies the client error `TimedOut`; it does not classify
+an executor timeout.
+For writes, establish whether repeating the operation is safe before adding a
+retry rule: cancelling a wait cannot undo a committed write.
+
+## Configure backoff and server hints
+
+Set backoff with `RetryPolicy::builder().backoff(...)`. Constructors do not sleep;
+the executor waits after a failed attempt when another retry is permitted.
+
+| Constructor | Base delay | Suitable use |
+| --- | --- | --- |
+| `BackoffPolicy::immediate()` | Zero | Fast local retries or examples |
+| `BackoffPolicy::fixed(delay)` | Same delay each time | A known polling interval |
+| `BackoffPolicy::uniform(min, max)?` | Random delay within inclusive bounds | Distributing retries over a chosen interval |
+| `BackoffPolicy::exponential(initial, multiplier, max)?` | Grows from `initial`, capped at `max` | Repeated temporary service failures |
+
+For example, 50 ms with multiplier 2 and a 2 s maximum gives base delays of
+50, 100, 200, 400, 800, 1600, 2000, 2000 ms. The first delay is before the
+second attempt. `uniform` requires `min <= max`; exponential requires
+`initial <= max` and a finite multiplier of at least 1.
+
+`with_full_jitter()` samples from zero to the selected delay.
+`with_bounded_jitter(ratio)?` varies it symmetrically by a finite ratio in `[0, 1]`;
+for example, 0.2 gives approximately 80%–120% of the delay. Constructors start
+without jitter. Use `without_jitter()` to remove it.
+
+An application can parse a server's retry instruction and return
+`RetryWithHint(duration)` from its rule. Qubit Retry accepts a `Duration`; it does
+not parse HTTP headers. These policies determine how to combine the hint:
+
+| Method | With a hint |
+| --- | --- |
+| `use_retry_after_as_minimum()` (default) | Take the larger of the hint and policy delay after permitted jitter |
+| `prefer_retry_after()` | Use the hint after any permitted hint jitter |
+| `ignore_retry_after()` | Use only the policy delay |
+
+### Retry a busy service and log progress
+
+This service supplies a 10 ms retry hint. The rule passes it to the executor;
+the observer reports the chosen delay and successful completion. The default
+hint policy selects the larger of that hint and the 5 ms fixed delay.
+
+<!-- retry-example: kind=run features=none -->
+```rust
+use std::time::Duration;
+
+use qubit_retry::AttemptFailure;
+use qubit_retry::BackoffPolicy;
+use qubit_retry::BackoffStep;
+use qubit_retry::Retry;
+use qubit_retry::RetryContext;
+use qubit_retry::RetryDecision;
+use qubit_retry::RetryObserver;
+use qubit_retry::RetryPolicy;
+
+#[derive(Debug)]
+enum ReadError {
+    Busy { retry_after: Duration },
+}
+
+struct ReadLog;
+impl RetryObserver<ReadError> for ReadLog {
+    fn on_retry_scheduled(&self, step: &BackoffStep, context: &RetryContext) {
+        println!("retry after {:?}, attempts={}", step.effective_delay(), context.attempts());
+    }
+
+    fn on_success(&self, context: &RetryContext) {
+        println!("read complete, attempts={}", context.attempts());
+    }
+}
+
+fn main() -> Result<(), qubit_retry::RetryPolicyError> {
+    let policy = RetryPolicy::builder()
+        .max_attempts(3)
+        .backoff(BackoffPolicy::fixed(Duration::from_millis(5)))
+        .build()?;
+    let retry = Retry::builder(policy)
+        .rule(|failure: &AttemptFailure<ReadError>, _: &RetryContext| {
+            match failure {
+                AttemptFailure::Error(ReadError::Busy { retry_after }) => {
+                    RetryDecision::RetryWithHint(*retry_after)
+                }
+                _ => RetryDecision::Abort,
+            }
+        })
+        .observer(ReadLog)
+        .build();
+    // Simulated server responses; the operation does not implement retry logic.
+    let mut responses = [
+        Err(ReadError::Busy { retry_after: Duration::from_millis(10) }),
+        Ok("snapshot-v2"),
+    ].into_iter();
+    let success = retry.sync()
+        .run(|| responses.next().expect("fixture has two responses"))
+        .expect("read recovers after server hint");
+    assert_eq!(*success.value(), "snapshot-v2");
+    assert_eq!(success.context().attempts(), 2);
+    Ok(())
+}
+```
+
+It prints `retry after 10ms, attempts=1` and then `read complete, attempts=2`.
+Replace the simulated `Busy` response with a delay parsed by your client.
+
+### Calculate delays without running an operation
+
+Here is an exponential policy with jitter and a one-second server minimum:
+
+<!-- retry-example: kind=run features=none -->
+```rust
+use std::time::Duration;
+
+use qubit_retry::BackoffPolicy;
+use qubit_retry::BackoffRequest;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let policy = BackoffPolicy::exponential(
+        Duration::from_millis(50), 2.0, Duration::from_secs(2),
+    )?
+        .with_full_jitter()
+        .use_retry_after_as_minimum();
+    let mut state = policy.start();
+    let step = state.next(BackoffRequest::hint(Duration::from_secs(1)));
+    assert_eq!(step.effective_delay(), Duration::from_secs(1));
+    assert_eq!(step.retry_index(), 1);
+    state.reset();
+    assert_eq!(state.retry_index(), 0);
+    Ok(())
+}
+```
+
+The first base delay is 50 ms; full jitter cannot raise it above the unjittered
+one-second hint, so the effective delay is exactly one second.
+`BackoffState::next` advances the retry index. Start a fresh state for a new flow;
+in a reconnect loop, reset only when the connection meets your stability criterion.
+
+`maximum_delay()` reports the base strategy's maximum. `limit_delay(cap)` is a
+separate final cap applied after hints and jitter. It **can shorten a mandatory
+server minimum**: a 500 ms cap would reduce this example's one-second delay to
+500 ms. To honor the minimum, keep hints unjittered and avoid a smaller final cap.
+If the remaining budget cannot fit the required wait, stop retrying.
+
+## Set budgets and timeouts
+
+| Setting | Configured on | What it limits |
+| --- | --- | --- |
+| `max_attempts(n)` | Policy builder | Total attempts, including the first; zero is invalid |
+| `operation_time_budget(d)` | Policy builder | Cumulative admitted-operation time; excludes backoff and control callbacks |
+| `total_time_budget(d)` | Policy builder | Flow elapsed time, including control callbacks and backoff |
+| `hard_attempt_timeout(d)` | Async/worker executor | Waiting for one attempt |
+| `hard_flow_timeout(d)` | Async/worker executor | Waiting across the flow, including retries and backoff |
+
+Both elapsed budgets are **soft admission limits**. If an operation starts with
+time remaining and finishes successfully after the budget, that success is
+retained when completion accounting is valid. A zero elapsed budget is valid but
+prevents even the first attempt. Omitted budgets mean no elapsed limit.
+
+For a remote read, you might set a 10 s total budget on the policy, then a 2 s
+attempt timeout and a 5 s flow timeout on its async executor. These settings
+answer different questions: may another attempt start, how long may this attempt
+be awaited, and how long may the flow be awaited?
+
+Hard timeouts are cooperative. A blocking future poll or synchronous callback
+can delay checks. Worker cleanup adds its cancellation grace period. Completion
+observers run after timing is frozen and are outside timeout control. These APIs
+do not guarantee that the entire `run` call returns by an exact wall-clock deadline.
+
+## Run async operations
+
+Enable `tokio` and add the direct Tokio dependency shown above. Supply a closure
+that creates a **fresh future for each attempt**, rather than reusing one future.
+This example first recovers from a client error, then times out a pending read:
+
+<!-- retry-example: kind=run features=tokio -->
+```rust
+use std::future;
+use std::io;
+use std::time::Duration;
+
+use qubit_retry::Retry;
+use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
+use qubit_retry::RetryPolicy;
+use qubit_retry::RetryTimeoutScope;
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let retry = Retry::<io::Error>::builder(RetryPolicy::builder().max_attempts(3).build()?)
+        .fallback(RetryFallback::Retry)
+        .build();
+    // Simulated client responses; retry limits are enforced by the policy.
+    let mut responses = [
+        Err(io::Error::new(io::ErrorKind::TimedOut, "storage unavailable")),
+        Ok("snapshot-v2"),
+    ].into_iter();
+    let success = retry.asynchronous().run(|| {
+        let response = responses.next().expect("fixture has two responses");
+        async move { response }
+    }).await?;
+    assert_eq!(success.context().attempts(), 2);
+
+    let error = retry.asynchronous()
+        .hard_attempt_timeout(Duration::from_millis(10))
+        .run(|| future::pending::<Result<(), io::Error>>())
+        .await.unwrap_err();
+    assert!(matches!(error.reason(), RetryErrorReason::TimedOut {
+        scope: RetryTimeoutScope::Attempt
+    }));
+    assert_eq!(error.context().attempts(), 1);
+    Ok(())
+}
+```
+
+The pending read stops after one attempt: retry-all fallback does not retry an
+executor timeout. Use selective rules from the snapshot example when the client
+can also return permanent errors. The response sequence only simulates a client
+that times out and then succeeds; it does not control the retry count. For a real
+client, create each request future in the closure and let the library count and
+stop attempts.
+
+## Cancel work and shut down
+
+Clone a `RetryCancellationToken` into the component responsible for shutdown,
+pass another clone to the executor, and call `cancel()` to request cancellation.
+Clones share permanent cancellation state. Create a new token for independent
+work; tokens have no reset, parent-child hierarchy, or built-in deadline.
+
+### Synchronous operations
+
+Sync checks cancellation around attempts and during backoff, but cannot interrupt
+the closure. This deterministic example requests shutdown during the failed read:
 
 <!-- retry-example: kind=run features=none -->
 ```rust
@@ -102,13 +494,14 @@ fn main() {
 }
 ```
 
-An `Ok` with a valid completion clock wins over sync cancellation. Tokens share
-permanent state across clones; there is no reset, parent tree, or built-in deadline.
-At a normal control callback return, clock refresh precedes cancellation; an
-invalid sample becomes a clock infrastructure error. Callback panic remains the
-primary error with best-effort timing. Backoff cancellation wins over a ready delay.
+The result is cancelled in the `Backoff` phase after one attempt. If the closure
+returns `Ok` instead, success wins over cancellation when completion clock
+accounting is valid. Bound the underlying blocking I/O separately.
 
-For a pending async read, cancellation drops the operation future:
+### Pending async operations
+
+This example triggers cancellation as the attempt creates a pending future;
+an external shutdown task can cancel the same token in an application:
 
 <!-- retry-example: kind=run features=tokio -->
 ```rust
@@ -140,14 +533,18 @@ async fn main() {
 }
 ```
 
-If result, cancellation, and timeout are ready in the same poll, async prefers
-result, then cancellation, then timer. A selected error still enters failure
-handling; a selected success needs valid completion accounting. Equal attempt
-and flow deadlines are attributed to the attempt. Dropping a future does not
-roll back an HTTP request or transaction: use idempotency keys, transactional
-boundaries, or application-specific reconciliation before retrying side effects.
+Cancellation drops the pending operation future. When an operation result,
+cancellation, and timeout are ready in the same poll, async selection prefers
+result, then cancellation, then timer. A selected error still goes through
+failure handling. Equal attempt and flow deadlines are attributed to the attempt.
+Dropping the future does not roll back a request already sent to a server.
 
-For blocking work, cooperate with the per-attempt token:
+### Blocking operations on a worker
+
+Enable `worker`. The closure receives an `AttemptCancellationToken`, distinct
+from the flow token passed to `.cancellation_token(...)`. Check the attempt token
+between bounded pieces of work and release resources promptly when cancelled.
+The loop below only demonstrates that handshake; it simulates no storage I/O.
 
 <!-- retry-example: kind=run features=worker -->
 ```rust
@@ -176,140 +573,66 @@ fn main() {
 }
 ```
 
-The flow checks cancellation, then timer, before accepting both an operation
-result and completed join. Join includes thread-local storage destruction.
-`cancellation_grace` uses real monotonic time even with an injected timer. If
-worker/TLS cleanup exceeds grace, `Infrastructure::WorkerStillRunning` retains
-its `WorkerStopTrigger`; this flow will not start another attempt. The worker
-and detached reaper can remain alive. No timeout/cancellation means exit waiting
-may be unbounded. There is no force-kill facility or worker pool.
+Each attempt creates a worker and a reaper thread; there is no pool. Worker mode
+checks cancellation, then timeout, before accepting a result with confirmed
+thread exit. Exit includes thread-local storage (TLS) destruction.
 
-## Server hints, jitter, and reconnects
+`cancellation_grace` defaults to 100 ms; the example sets one second. It uses real
+monotonic time even with an injected timer. If cleanup exceeds it, the result is
+`Infrastructure { failure: WorkerStillRunning { trigger } }`. The flow starts no
+further attempt, but the worker and reaper may remain alive. Do not automatically
+start replacement work that could overlap it. Without a timeout or cancellation,
+waiting for worker exit can be unbounded. Threads cannot be forcibly killed.
 
-Exponential backoff avoids repeatedly hitting a busy server; jitter spreads
-concurrent clients. Full jitter samples zero through the selected delay;
-bounded jitter uses a validated ratio in `[0, 1]`. Uniform sampling preserves
-exact endpoints and never exceeds its interval for a valid random source.
+## Handle results and observe execution
 
-`BackoffRequest::hint` avoids jittering the server value; `jittered_hint` permits
-it. `prefer_retry_after` selects the hint, `use_retry_after_as_minimum` combines
-it with backoff, and `ignore_retry_after` ignores it. `maximum_delay()` is only
-the base strategy maximum. `limit_delay()` applies last, after hint resolution
-and jitter; this example deliberately truncates a one-second minimum:
+### Preserve the final outcome
 
-<!-- retry-example: kind=run features=none -->
-```rust
-use std::time::Duration;
+| Result | Inspect without consuming | Consume without losing information |
+| --- | --- | --- |
+| `RetrySuccess<T>` | `value()`, `context()`, `completion_callback_failures()` | `into_parts()` → `(value, context, diagnostics)` |
+| `RetryError<E>` | `reason()`, `last_failure()`, `last_error()`, `context()`, `completion_callback_failures()` | `into_parts()` → `(reason, last_failure, context, diagnostics)` |
 
-use qubit_retry::BackoffPolicy;
-use qubit_retry::BackoffRequest;
+`last_failure` is optional: execution can stop before an operation fails.
+`last_error()` is present only for a retained application error, not an executor
+timeout or panic. The success tuple contains a `Vec<RetryCallbackFailure>`;
+the error tuple contains a `Box<[RetryCallbackFailure]>`.
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let policy = BackoffPolicy::exponential(Duration::from_millis(50), 2.0, Duration::from_secs(2))?
-        .with_full_jitter()
-        .use_retry_after_as_minimum()
-        .limit_delay(Duration::from_millis(500));
-    let mut state = policy.start();
-    let step = state.next(BackoffRequest::hint(Duration::from_secs(1)));
-    assert_eq!(step.effective_delay(), Duration::from_millis(500));
-    assert_eq!(step.retry_index(), 1);
-    state.reset();
-    assert_eq!(state.retry_index(), 0);
-    Ok(())
-}
-```
+| `RetryErrorReason` | Meaning |
+| --- | --- |
+| `Aborted` | A rule or default behavior chose to stop |
+| `Exhausted { limit }` | Attempt count, operation budget, or total budget prevented continuation |
+| `TimedOut { scope }` | An attempt or flow hard timeout stopped execution |
+| `Cancelled { phase }` | Cancellation was observed before an attempt, during an attempt, or during backoff |
+| `CallbackFailed { callback }` | A rule or control observer panicked |
+| `Infrastructure { failure }` | A clock, timer, or worker runtime failure prevented continuation |
 
-If the server's minimum is mandatory, do not configure a smaller final cap.
-Stop when the remaining budget cannot accommodate the minimum. `BackoffStep`
-retains base/effective delay and source; reset state only for a new flow or after
-a connection meets your stability criterion. SSE in rs-http independently
-combines `RetryBudget` and `BackoffState`, then enforces its own minimum 1ms and
-server-delay cap; it does not create retry completion diagnostics.
+Use a wildcard arm when matching the non-exhaustive reason enum.
+`map_error` converts only the retained application error while preserving
+context, reason, and diagnostics; its `FnOnce` mapper runs zero or one times.
+For domain adapters, `into_metadata_and_error()` separates an optional application
+error from `RetryErrorMetadata`. Prefer preserving the full `RetryError<E>` as a
+source when no projection is needed. `into_value_discarding_diagnostics()` is an
+explicit option for discarding successful context and diagnostics.
 
-## Standalone budgets and deterministic clocks
+### Observe lifecycle events
 
-Custom reconnect loops can account for admitted work without using an executor.
-Finish every token before beginning another attempt; tokens are bound to their
-original budget. A dropped token leaves that flow closed to further admission.
-`check_retry_after` checks the proposed delay, but the next admission rechecks
-after actual sleep. This manual-clock example needs no filesystem or network:
+Register a `RetryObserver<E>` with `.observer(...)` on the retry builder.
 
-<!-- retry-example: kind=run features=none -->
-```rust
-use std::time::Duration;
+| Callback | When it runs | If it panics |
+| --- | --- | --- |
+| `on_before_attempt` | Before admission; the upcoming attempt is not yet counted | Stops as `CallbackFailed` |
+| `on_attempt_failed` | After an attempt failure is recorded, before rules | Stops as `CallbackFailed` |
+| `on_retry_scheduled` | When the selected delay currently fits continuation limits | Stops as `CallbackFailed` |
+| `on_success` | After the success result is frozen | Adds a diagnostic; preserves success |
+| `on_terminal_failure` | After the terminal error is frozen, including zero-attempt errors | Adds a diagnostic; preserves the error |
 
-use qubit_clock::ManualMonotonicClock;
-use qubit_retry::RetryBudget;
-use qubit_retry::RetryPolicy;
+Keep callbacks short and nonblocking. Count admissions with terminal
+`context.attempts()`, not scheduled notifications. Completion callback failures
+do not prevent later completion observers from running.
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let clock = ManualMonotonicClock::new_shared();
-    let policy = RetryPolicy::builder().max_attempts(2).build()?;
-    let mut budget = RetryBudget::new(clock.as_ref(), *policy.admission_limits())?;
-    let attempt = budget.begin_attempt()?;
-    clock.advance(Duration::from_secs(2))?;
-    let snapshot = budget.finish_attempt(attempt)?;
-    assert_eq!(snapshot.attempts(), 1);
-    assert_eq!(snapshot.operation_elapsed(), Duration::from_secs(2));
-    budget.check_retry_after(Duration::from_secs(1))?;
-    clock.advance(Duration::from_secs(1))?;
-    assert_eq!(budget.snapshot()?.total_elapsed(), Duration::from_secs(3));
-    Ok(())
-}
-```
-
-Inject a timer from the same manual clock into an executor with `.timer(...)`.
-Advance only after the operation or timer-registration boundary under test is
-observable; do not synchronize correctness tests by sleeping real time.
-Clock domain changes and regression return structured errors. Invalid timing
-must not be replaced with fabricated elapsed values. Worker cleanup grace still
-uses real time and therefore needs an explicit release/join protocol in tests.
-
-## Configuration JSON
-
-The serde feature covers validated policy/limit/backoff configuration only.
-Durations use `seconds` and `nanoseconds` (less than one billion); strategy tags
-are stable snake_case. Unknown fields and invalid combinations are rejected.
-Omitted optional elapsed limits mean no limit; `delay_limit` is optional and
-applies after hints and jitter. A bounded jitter ratio must be numeric and present;
-`null` is not absence. Runtime callbacks, results, and errors are not a wire format.
-
-<!-- retry-example: kind=run features=serde -->
-```rust
-use qubit_retry::RetryPolicy;
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let json = r#"{
-        "max_attempts": 4,
-        "operation_time_budget": null,
-        "total_time_budget": {"seconds": 10, "nanoseconds": 0},
-        "backoff": {
-            "strategy": {"type": "fixed", "delay": {"seconds": 0, "nanoseconds": 50000000}},
-            "jitter": {"type": "none"},
-            "retry_after": "at_least_backoff"
-        }
-    }"#;
-    let policy: RetryPolicy = serde_json::from_str(json)?;
-    assert_eq!(policy.admission_limits().max_attempts().get(), 4);
-    let encoded = serde_json::to_string(&policy)?;
-    assert_eq!(serde_json::from_str::<RetryPolicy>(&encoded)?, policy);
-    Ok(())
-}
-```
-
-## Observers and completion diagnostics
-
-Control callbacks execute before admission, after a committed failure, during
-rule selection, and after eligible retry scheduling. A panic stops controls as
-`CallbackFailed`, retaining kind/index/phase/payload. `on_retry_scheduled` means
-only that the delay fits at that point; subsequent callbacks and admission
-recheck cancellation, budgets, and timeout. Count real work with terminal attempts.
-
-`on_success` / `on_terminal_failure` run once for each returned result, including
-zero-attempt failures. Their synchronous work must be short and nonblocking.
-They see a frozen outcome; their panics attach diagnostics and later completion
-observers still run. This example intentionally panics in the audit sink; a panic
-hook may print a message even though the retry result retains the diagnostic:
+This example deliberately makes an audit callback panic and shows how to retain
+its diagnostic while converting the business error to `String`:
 
 <!-- retry-example: kind=run features=none -->
 ```rust
@@ -341,55 +664,191 @@ fn main() {
 }
 ```
 
-Sync/async operation panic, dropping an async run future, and process abort do
-not guarantee completion. Only worker mode captures operation panics. Captured
-static strings, owned strings, and non-string payloads are distinguished. If
-non-string payload destruction panics, classification stays `NonString`; only
-that secondary payload is leaked to avoid recursive destruction. This protection
-does not cover arbitrary business-value destructors, panic hooks, or aborts.
+A panic hook may print `audit sink unavailable` even though the example completes
+successfully. Only worker mode catches **operation** panics; sync/async operation
+panics propagate. Unwinding, dropping an async `run` future, or aborting the process
+does not guarantee completion notifications. Capturing a panic requires unwinding;
+it cannot recover from process abort.
 
-## Adapter boundaries and migration
+## Load JSON configuration
 
-For 0.23, `RetrySuccess::into_parts` returns three values and `RetryError::into_parts` returns four values
-including diagnostics. Remove `into_parts_with_diagnostics`; it has no alias.
-The old `into_value` / `into_failure` names become explicit
-`into_value_discarding_diagnostics` discards context and completion diagnostics.
-There is no `into_failure_discarding_diagnostics`; retain a failure with the
-four-element `RetryError::into_parts` result. Keep defaults and mode-specific
-priorities as described above.
-Normal callback-return clock validation now precedes returned Abort decisions as
-well as cancellation; callback panic preserves its own primary classification.
+Enable `serde`:
 
-HTTP wraps every retry terminal with its complete `RetryError<HttpError>` source
-and preserves request/status/preview/hint/redaction fields; the original HTTP
-error and backend source remain reachable. CAS projects timeout state and domain
-failure while retaining completion diagnostics in `CasError`. EventBus preserves
-its old mapping for empty diagnostics; a nonempty set creates the terminal
-`RetryCompletionDiagnostics` wrapper with a domain source and shared context.
-These adapters currently install no completion observers on successful flows
-and explicitly discard empty success diagnostics; future observer registration
-must provide a success diagnostic outlet at the same time.
+<!-- retry-example: kind=cargo features=serde -->
+```toml
+[dependencies]
+qubit-retry = { version = "0.23", features = ["serde"] }
+```
 
-## Troubleshooting and limits
+For this JSON example also run `cargo add serde_json@1`. Policies are validated
+when deserialized, just as they are when built in Rust:
 
-| Symptom | Check and response |
+<!-- retry-example: kind=run features=serde -->
+```rust
+use qubit_retry::RetryPolicy;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let json = r#"{
+        "max_attempts": 4,
+        "operation_time_budget": null,
+        "total_time_budget": {"seconds": 10, "nanoseconds": 0},
+        "backoff": {
+            "strategy": {"type": "fixed", "delay": {"seconds": 0, "nanoseconds": 50000000}},
+            "jitter": {"type": "none"},
+            "retry_after": "at_least_backoff"
+        }
+    }"#;
+    let policy: RetryPolicy = serde_json::from_str(json)?;
+    assert_eq!(policy.admission_limits().max_attempts().get(), 4);
+    let encoded = serde_json::to_string(&policy)?;
+    assert_eq!(serde_json::from_str::<RetryPolicy>(&encoded)?, policy);
+    Ok(())
+}
+```
+
+Durations use `seconds` and `nanoseconds`, with the nanosecond part below one
+billion. Omitted or `null` optional elapsed budgets mean no limit. Unknown fields,
+zero `max_attempts`, invalid duration values, and invalid backoff parameters are
+rejected. Bounded jitter requires a numeric ratio; `null` is invalid.
+
+The feature serializes validated policies, admission limits, and backoff
+configuration. It does not serialize rules, observers, cancellation tokens,
+results, or errors. Hard timeouts remain execution settings; do not insert them
+into this policy JSON.
+
+## Use standalone budgets and test clocks
+
+If your application already owns a reconnect loop, use `RetryBudget` for admission
+and accounting, and `BackoffState` for delays. These components do not execute
+operations, classify errors, or emit retry observer notifications for you.
+
+For this example add `qubit-clock` directly with its test utilities:
+
+```bash
+cargo add qubit-clock@0.13 --features test-util
+```
+
+Advance a manual clock to verify operation time and total time independently:
+
+<!-- retry-example: kind=run features=none -->
+```rust
+use std::time::Duration;
+
+use qubit_clock::ManualMonotonicClock;
+use qubit_retry::RetryBudget;
+use qubit_retry::RetryPolicy;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let clock = ManualMonotonicClock::new_shared();
+    let policy = RetryPolicy::builder().max_attempts(2).build()?;
+    let mut budget = RetryBudget::new(clock.as_ref(), *policy.admission_limits())?;
+    let attempt = budget.begin_attempt()?;
+    clock.advance(Duration::from_secs(2))?;
+    let snapshot = budget.finish_attempt(attempt)?;
+    assert_eq!(snapshot.attempts(), 1);
+    assert_eq!(snapshot.operation_elapsed(), Duration::from_secs(2));
+    budget.check_retry_after(Duration::from_secs(1))?;
+    clock.advance(Duration::from_secs(1))?;
+    assert_eq!(budget.snapshot()?.total_elapsed(), Duration::from_secs(3));
+    Ok(())
+}
+```
+
+The two-second operation contributes to both counters; the one-second wait only
+contributes to total time. Finish each attempt token before beginning the next.
+Tokens belong to their original budget; dropping an unfinished token prevents
+further admission in that budget. `check_retry_after` validates a proposed wait,
+and admission rechecks limits after the actual wait.
+
+Executors also accept `.timer(...)` and `.random_source(...)`. A manual timer
+should use the same clock domain throughout the flow. Synchronize a test with
+an observable operation or timer registration before advancing time; avoid using
+real sleeps to guess when the executor is ready. Clock regression and domain
+mismatches produce structured errors. Worker cleanup grace still uses real time.
+
+### Test jitter deterministically
+
+Inject a fixed random source to test jitter. This implementation always selects
+the permitted lower bound, so full jitter over 100 ms produces zero:
+
+<!-- retry-example: kind=run features=none -->
+```rust
+use std::sync::Arc;
+use std::time::Duration;
+
+use qubit_retry::BackoffPolicy;
+use qubit_retry::BackoffRequest;
+use qubit_retry::RetryRandomSource;
+
+struct LowerBound;
+impl RetryRandomSource for LowerBound {
+    fn random_f64_inclusive(&self, min: f64, _: f64) -> f64 {
+        min
+    }
+}
+
+fn main() {
+    let policy = BackoffPolicy::fixed(Duration::from_millis(100)).with_full_jitter();
+    let mut state = policy.start_with_random_source(Arc::new(LowerBound));
+    let step = state.next(BackoffRequest::policy());
+    assert_eq!(step.effective_delay(), Duration::ZERO);
+}
+```
+
+`RetryRandomSource` must support concurrent calls and return a finite value within
+the supplied inclusive bounds. For a complete flow, inject the same source with
+`.random_source(Arc::new(LowerBound))` on the executor. This implementation tests
+an endpoint; always selecting the lower bound in an application removes the
+random distribution of retries.
+
+### Additional configuration entry points
+
+| Need | Methods and constraints |
 | --- | --- |
-| No operation ran | Inspect `attempts`, callback phase, zero budgets, cancellation and timer registration failures |
-| Fewer calls than scheduled notifications | Scheduling is provisional; inspect the terminal limit/timeout and callback elapsed time |
-| A synchronous call exceeds the budget | Budgets are soft; bound the operation or select a suitable async/worker API |
-| A cancelled operation still has effects | Cancellation stops waiting, not committed external effects; reconcile/idempotently retry |
-| `Infrastructure::Clock` | Check timer/clock domain and monotonicity; do not reuse tokens or invent replacement timestamps |
-| `WorkerStillRunning` | Inspect the trigger and operation/TLS exit protocol; do not automatically start a replacement flow |
-| Successful value has diagnostics | Inspect completion observers; their failures do not negate the value |
-| Retry-After is shorter than expected | Inspect final cap, hint strategy, jitter permission and downstream SSE constraints |
+| Set or clear an optional budget | `operation_time_budget_opt(Some(d))` / `total_time_budget_opt(Some(d))`; pass `None` to clear it |
+| Explicitly remove elapsed limits | `without_operation_time_budget()` / `without_total_time_budget()` |
+| Reuse callbacks already held in `Arc` | `shared_rule(...)` / `shared_observer(...)` accept the corresponding trait objects and preserve registration order |
+| Identify workers or request stack space | `thread_name(name)` / `worker_stack_size(bytes)` on the worker executor |
+| Wait for cancellation | Poll `is_cancelled()` synchronously or await the flow token's `cancelled()` future |
 
-There is no built-in circuit breaker, cancellation hierarchy, alternative async
-runtime, or thread-pool execution. Choose a bounded number of attempts and budgets
-for remote workloads; evaluate benchmark results for your actual operation costs.
-Run `./align-ci.sh` then `./ci-check.sh` for repository changes. The project CI
-executes every annotated Rust/Cargo block in both languages from temporary path
-consumer crates; rustdoc examples are checked separately.
+Cloned `Retry` values share callback objects, including mutable state such as
+counters inside them; synchronize that state when needed. An injected worker
+timer must progress independently while the calling thread is blocked.
+Standalone `RetryBudgetError` distinguishes `Clock`, `Exhausted`,
+`AttemptInProgress`, and `InvalidAttempt`: invalid timing, an exhausted limit,
+an unfinished prior attempt, or a token that does not identify the active attempt.
+After a normal control callback returns, the clock is refreshed before processing
+cancellation or a rule decision; an invalid sample becomes an infrastructure
+failure. A callback panic keeps `CallbackFailed` as its primary reason with
+best-effort timing.
 
-## Further reading
+## Troubleshoot
 
-[README](../README.md) · [Design](design.md) · [API](https://docs.rs/qubit-retry) · [简体中文](user_guide.zh_CN.md)
+| Symptom | What to check |
+| --- | --- |
+| Only one call despite `max_attempts(3)` | Unclassified errors abort by default. Check the rule and fallback before increasing limits. |
+| `attempts() == 0` | Check pre-cancellation, zero budgets/timeouts, before-attempt callbacks, and infrastructure errors. |
+| `Exhausted` instead of `TimedOut` | Soft budgets stop admission; inspect `limit`. Hard timeout errors carry `scope`. |
+| Sync runs longer than the budget | Its closure cannot be interrupted. Bound the underlying I/O or choose a suitable async/worker operation. |
+| `asynchronous()` or `worker()` is unavailable | Enable its matching Cargo feature; async also needs a Tokio runtime. |
+| Fewer calls than retry-scheduled notifications | Scheduling does not guarantee admission. Later cancellation, callbacks, or limits can prevent the attempt. |
+| `WorkerStillRunning` | Inspect its trigger and the operation/TLS cleanup protocol before starting replacement work. |
+| A successful result contains diagnostics | Inspect completion observers; their panic does not invalidate the business result. |
+| A server hint became shorter | Check hint jitter permission, hint selection, and the final delay cap. |
+| `Infrastructure::Clock` or timer failure | Check the supplied clock/timer and diagnostic message; do not fabricate elapsed values. |
+
+Keep retries bounded for remote workloads, account for any retry behavior already
+inside the client, and define how uncertain side effects are reconciled. The
+library provides no circuit breaker, cancellation hierarchy, alternative async
+runtime, or thread pool.
+
+## Further reading and documentation checks
+
+- [English README](../README.md) · [中文 README](../README.zh_CN.md)
+- [API reference for 0.23.0](https://docs.rs/qubit-retry/0.23.0/qubit_retry/)
+- [Design](design.md) · [中文用户手册](user_guide.zh_CN.md)
+
+From the repository root, run `python3 -B scripts/check_doc_examples.py` to compile
+and execute every annotated Rust/Cargo block in both README and guide languages.
+The checker uses this checkout as a path dependency, temporary consumer crates,
+and offline Cargo resolution; dependencies must already be cached.
