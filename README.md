@@ -38,7 +38,7 @@ for dependencies and examples for each mode.
 A storage service is temporarily unavailable. Retry its read and return the
 snapshot when it recovers. The separate `read_snapshot` function simulates two
 failed calls followed by success. Its counter only generates test responses;
-it does not implement retry control. `RetryPolicy` sets the attempt limit,
+it does not implement retry control. `RetryConfig` sets the attempt limit,
 waiting time, and exponential backoff; the rule classifies retryable errors.
 
 <!-- retry-example: kind=run features=none -->
@@ -49,9 +49,9 @@ use std::time::Duration;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryPolicy;
 
 // Simulate storage: the first and second calls time out; the third succeeds.
 // simulated_calls only produces test responses; it does not limit or schedule retries.
@@ -66,15 +66,13 @@ fn read_snapshot(simulated_calls: &mut u32) -> io::Result<&'static str> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let policy = RetryPolicy::builder()
+    let config = RetryConfig::builder()
         .max_attempts(5)
         .backoff(BackoffPolicy::exponential(
             Duration::from_millis(100),
             2.0,
             Duration::from_secs(1),
         )?)
-        .build()?;
-    let retry = Retry::builder(policy)
         .rule(|failure: &AttemptFailure<io::Error>, _: &RetryContext| {
             match failure {
                 AttemptFailure::Error(error) if error.kind() == io::ErrorKind::TimedOut => {
@@ -83,10 +81,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ => RetryDecision::Abort,
             }
         })
-        .build();
+        .build()?;
 
     let mut simulated_calls = 0;
-    let success = retry.sync().run(|| read_snapshot(&mut simulated_calls))?;
+    let success = Retry::new(&config).run(|| read_snapshot(&mut simulated_calls))?;
     assert_eq!(*success.value(), "snapshot-v2");
     assert_eq!(success.context().attempts(), 3);
     assert!(success.completion_callback_failures().is_empty());

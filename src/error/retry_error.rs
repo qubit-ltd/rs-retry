@@ -22,14 +22,14 @@ use crate::RetrySuccess;
 ///
 /// # Examples
 /// ```
-/// use qubit_retry::{Retry, RetryErrorReason, RetryFallback, RetryPolicy};
+/// use qubit_retry::{Retry, RetryConfig, RetryErrorReason, RetryFallback};
 ///
-/// let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-/// let retry = Retry::<&'static str>::builder(policy)
+/// let config = RetryConfig::<&'static str>::builder()
+///     .max_attempts(1)
 ///     .fallback(RetryFallback::Retry)
-///     .build();
-/// let error = retry
-///     .sync()
+///     .build()
+///     .unwrap();
+/// let error = Retry::new(&config)
 ///     .run(|| Err::<(), _>("offline"))
 ///     .unwrap_err();
 /// assert!(matches!(error.reason(), RetryErrorReason::Exhausted { .. }));

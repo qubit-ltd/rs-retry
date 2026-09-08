@@ -10,17 +10,20 @@
 use std::future::pending;
 use std::time::Duration;
 
-use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
+use qubit_retry::TokioRetry;
 
 /// Verifies a shorter attempt timeout remains the selected boundary.
 #[tokio::test]
 async fn test_prepared_timeout_selects_the_shorter_attempt_timeout() {
-    let error = Retry::<()>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+    let config = RetryConfig::<()>::builder()
+        .max_attempts(1)
         .build()
-        .tokio()
+        .expect("valid config");
+    let error = TokioRetry::new(&config)
         .hard_attempt_timeout(Duration::from_millis(1))
         .hard_flow_timeout(Duration::from_secs(1))
         .run(pending::<Result<(), ()>>)

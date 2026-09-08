@@ -31,6 +31,32 @@ pub struct RetryPolicyBuilder {
 }
 
 impl RetryPolicyBuilder {
+    /// Creates a builder initialized from a validated policy.
+    ///
+    /// # Parameters
+    /// - `policy`: Validated policy whose limits and backoff are copied.
+    ///
+    /// # Returns
+    /// A builder that reproduces the supplied policy on build.
+    #[inline]
+    pub(crate) fn from_policy(policy: RetryPolicy) -> Self {
+        let limits = policy.admission_limits();
+        let mut builder = Self::new()
+            .max_attempts(limits.max_attempts().get())
+            .backoff(policy.backoff().clone());
+        if let Some(budget) = limits.operation_time_budget() {
+            builder = builder.operation_time_budget(budget);
+        } else {
+            builder = builder.without_operation_time_budget();
+        }
+        if let Some(budget) = limits.total_time_budget() {
+            builder = builder.total_time_budget(budget);
+        } else {
+            builder = builder.without_total_time_budget();
+        }
+        builder
+    }
+
     /// Creates a builder with three attempts and immediate retries.
     ///
     /// # Returns

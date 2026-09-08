@@ -23,6 +23,7 @@ use qubit_clock::test_util::TimerFailurePoint;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
@@ -49,10 +50,10 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
         "offline",
     ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
-    let error = Retry::<TestError>::builder(retry_once_policy())
+    let config = RetryConfig::<TestError>::builder().policy(retry_once_policy())
         .fallback(RetryFallback::Retry)
-        .build()
-        .sync()
+        .build().expect("valid config");
+    let error = Retry::new(&config)
         .timer(timer)
         .random_source(random)
         .run(|| Err::<(), _>(TestError("retry")))
@@ -67,16 +68,15 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(error.context().current_hard_attempt_timeout(), None);
 
-    let exhausted = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .operation_time_budget(Duration::ZERO)
-            .build()
-            .unwrap(),
-    )
-    .build()
-    .sync()
-    .run(|| Ok::<_, TestError>(()))
-    .unwrap_err();
+    let exhausted_config = RetryConfig::<TestError>::builder()
+        
+                .operation_time_budget(Duration::ZERO)
+
+        .build()
+        .expect("valid config");
+    let exhausted = Retry::new(&exhausted_config)
+        .run(|| Ok::<_, TestError>(()))
+        .unwrap_err();
     assert!(matches!(
         exhausted.reason(),
         RetryErrorReason::Exhausted {
@@ -85,18 +85,18 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
         }
     ));
 
-    let aborted = Retry::<TestError>::builder(retry_once_policy())
+    let config2 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
-        .build()
-        .sync()
+        .build().expect("valid config");
+    let aborted = Retry::new(&config2)
         .run(|| Err::<(), _>(TestError("fatal")))
         .unwrap_err();
     assert!(matches!(aborted.reason(), RetryErrorReason::Aborted));
 
-    let attempts_exhausted = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+    let config3 = RetryConfig::<TestError>::builder().max_attempts(1)
         .fallback(RetryFallback::Retry)
-        .build()
-        .sync()
+        .build().expect("valid config");
+    let attempts_exhausted = Retry::new(&config3)
         .run(|| Err::<(), _>(TestError("only attempt")))
         .unwrap_err();
     assert!(matches!(
@@ -107,19 +107,18 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
         }
     ));
 
-    let delay_rejected = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .max_attempts(2)
-            .total_time_budget(Duration::from_millis(1))
-            .backoff(BackoffPolicy::fixed(Duration::from_secs(1)))
-            .build()
-            .unwrap(),
-    )
-    .fallback(RetryFallback::Retry)
-    .build()
-    .sync()
-    .run(|| Err::<(), _>(TestError("retry")))
-    .unwrap_err();
+    let delay_config = RetryConfig::<TestError>::builder()
+        
+                .max_attempts(2)
+                .total_time_budget(Duration::from_millis(1))
+                .backoff(BackoffPolicy::fixed(Duration::from_secs(1)))
+
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
+    let delay_rejected = Retry::new(&delay_config)
+        .run(|| Err::<(), _>(TestError("retry")))
+        .unwrap_err();
     assert!(matches!(
         delay_rejected.reason(),
         RetryErrorReason::Exhausted {
@@ -130,18 +129,17 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
 
     let clock = ManualMonotonicClock::new_shared();
     let observer = AdvancingObserver(Arc::clone(&clock));
-    let expired_by_observer = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .total_time_budget(Duration::from_secs(1))
-            .build()
-            .unwrap(),
-    )
-    .observer(observer)
-    .build()
-    .sync()
-    .timer(clock.new_timer())
-    .run(|| Ok::<_, TestError>(()))
-    .unwrap_err();
+    let observer_config = RetryConfig::<TestError>::builder()
+        
+                .total_time_budget(Duration::from_secs(1))
+
+        .observer(observer)
+        .build()
+        .expect("valid config");
+    let expired_by_observer = Retry::new(&observer_config)
+        .timer(clock.new_timer())
+        .run(|| Ok::<_, TestError>(()))
+        .unwrap_err();
     assert!(matches!(
         expired_by_observer.reason(),
         RetryErrorReason::Exhausted {
@@ -151,11 +149,11 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     ));
 
     let attempts = AtomicU32::new(0);
-    let hinted_retry = Retry::<TestError>::builder(retry_once_policy())
+    let config4 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(Duration::ZERO))
         .observer(DefaultObserver)
-        .build()
-        .sync()
+        .build().expect("valid config");
+    let hinted_retry = Retry::new(&config4)
         .run(|| {
             if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
                 Err(TestError("retry"))
@@ -167,10 +165,10 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     assert_eq!(*hinted_retry.value(), 17);
 
     let attempts = AtomicU32::new(0);
-    let jittered_retry = Retry::<TestError>::builder(retry_once_policy())
+    let config5 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithJitteredHint(Duration::ZERO))
-        .build()
-        .sync()
+        .build().expect("valid config");
+    let jittered_retry = Retry::new(&config5)
         .run(|| {
             if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
                 Err(TestError("retry"))
@@ -183,13 +181,14 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
 
     let callback_count = Arc::new(AtomicU32::new(0));
     let callback_count_for_observer = Arc::clone(&callback_count);
-    let _ = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+    let observer_config = RetryConfig::<TestError>::builder()
+        .max_attempts(1)
         .observer(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
             callback_count_for_observer.fetch_add(1, Ordering::SeqCst);
         })
         .build()
-        .sync()
-        .run(|| Err::<(), _>(TestError("observed")));
+        .expect("valid config");
+    let _ = Retry::new(&observer_config).run(|| Err::<(), _>(TestError("observed")));
     assert_eq!(callback_count.load(Ordering::SeqCst), 1);
 }
 
@@ -230,9 +229,9 @@ impl Timer for CommitRegressingClock {
 
 #[test]
 fn test_sync_commit_revalidates_clock_before_counting_operation() {
-    let error = Retry::<TestError>::builder(retry_once_policy())
-        .build()
-        .sync()
+    let config6 = RetryConfig::<TestError>::builder().policy(retry_once_policy())
+        .build().expect("valid config");
+    let error = Retry::new(&config6)
         .timer(Arc::new(CommitRegressingClock {
             domain: ClockDomain::new(),
             samples: AtomicU32::new(0),

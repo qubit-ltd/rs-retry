@@ -9,8 +9,8 @@
 //! thread operations.
 //!
 //! Build a [`RetryPolicy`] once, attach ordered [`RetryRule`] values and
-//! [`RetryObserver`] values through [`Retry::builder`], then select the
-//! execution facade that matches the operation. A policy only decides whether
+//! [`RetryObserver`] values through [`RetryConfig::builder`], then construct
+//! the execution facade that matches the operation. A policy only decides whether
 //! another attempt may be admitted; an admitted success is not revoked by a
 //! soft budget. Cancellation and hard-timeout priorities depend on the selected
 //! facade, and completion requires valid clock accounting.
@@ -58,7 +58,8 @@ pub use executor::TokioRetry;
 #[cfg(feature = "worker")]
 pub use executor::AttemptCancellationToken;
 pub use executor::Retry;
-pub use executor::RetryBuilder;
+pub use executor::RetryConfig;
+pub use executor::RetryConfigBuilder;
 pub use executor::RetryCancellationToken;
 pub use executor::RetryCancelled;
 pub use executor::RetrySuccess;

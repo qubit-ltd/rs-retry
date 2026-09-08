@@ -46,7 +46,8 @@ use qubit_retry::AttemptFailure;
 #[cfg(feature = "tokio")]
 use qubit_retry::BackoffPolicy;
 #[cfg(feature = "tokio")]
-use qubit_retry::Retry;
+use qubit_retry::TokioRetry;
+use qubit_retry::RetryConfig;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryCallbackPhase;
 #[cfg(feature = "tokio")]
@@ -148,26 +149,26 @@ impl Timer for AdvancingAtTimer {
 #[test]
 fn test_async_facade_is_available() {
     let policy = RetryPolicy::builder().build().unwrap();
-    let retry = Retry::<()>::builder(policy).build();
-    let _ = retry.tokio();
+    let retry = RetryConfig::<()>::builder().policy(policy).build().expect("valid config");
+    let _ = TokioRetry::new(&retry);
 }
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
 async fn test_tokio_retry_matches_shared_terminal_matrix() {
-    let abort = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
+    let config = RetryConfig::<TestError>::builder().max_attempts(2)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
-        .build()
-        .tokio()
+        .build().expect("valid config");
+    let abort = TokioRetry::new(&config)
         .run(|| async { Err::<(), _>(TestError("matrix")) })
         .await
         .expect_err("the explicit abort rule must terminate after attempt one");
     assert_matrix_abort(&abort);
 
-    let attempts = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+    let config2 = RetryConfig::<TestError>::builder().max_attempts(1)
         .fallback(RetryFallback::Retry)
-        .build()
-        .tokio()
+        .build().expect("valid config");
+    let attempts = TokioRetry::new(&config2)
         .run(|| async { Err::<(), _>(TestError("matrix")) })
         .await
         .expect_err("one admitted failure must exhaust the attempt limit");
@@ -183,10 +184,10 @@ async fn test_tokio_retry_matches_shared_terminal_matrix() {
             RetryLimitKind::TotalElapsed => policy.total_time_budget(Duration::from_secs(1)),
             RetryLimitKind::Attempts => unreachable!(),
         };
-        let error = Retry::<TestError>::builder(policy.build().unwrap())
+        let config3 = RetryConfig::<TestError>::builder().policy(policy.build().unwrap())
             .fallback(RetryFallback::Retry)
-            .build()
-            .tokio()
+            .build().expect("valid config");
+        let error = TokioRetry::new(&config3)
             .timer(clock.new_timer())
             .run(|| {
                 clock
@@ -204,7 +205,7 @@ async fn test_tokio_retry_matches_shared_terminal_matrix() {
 #[tokio::test]
 async fn test_tokio_retry_matches_shared_callback_matrix() {
     let later_rule_calls = Arc::new(AtomicUsize::new(0));
-    let rule_error = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
+    let rule_config = RetryConfig::<TestError>::builder().max_attempts(2)
         .fallback(RetryFallback::Retry)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("matrix rule panic"))
         .rule({
@@ -214,8 +215,8 @@ async fn test_tokio_retry_matches_shared_callback_matrix() {
                 RetryDecision::Retry
             }
         })
-        .build()
-        .tokio()
+        .build().expect("valid config");
+    let rule_error = TokioRetry::new(&rule_config)
         .run(|| async { Err::<(), _>(TestError("matrix")) })
         .await
         .expect_err("the first panicking rule must fail closed");
@@ -227,21 +228,20 @@ async fn test_tokio_retry_matches_shared_callback_matrix() {
         RetryCallbackPhase::RetryScheduled,
     ] {
         let later_counts = Arc::new(ObserverPhaseCounts::default());
-        let error = Retry::<TestError>::builder(
-            RetryPolicy::builder()
-                .max_attempts(2)
-                .backoff(BackoffPolicy::immediate())
-                .build()
-                .unwrap(),
-        )
-        .observer(PanickingPhaseObserver::new(phase))
-        .observer(CountingPhaseObserver(Arc::clone(&later_counts)))
-        .fallback(RetryFallback::Retry)
-        .build()
-        .tokio()
-        .run(|| async { Err::<(), _>(TestError("matrix")) })
-        .await
-        .expect_err("the first panicking observer must fail closed");
+        let observer_config = RetryConfig::<TestError>::builder()
+            
+                    .max_attempts(2)
+                    .backoff(BackoffPolicy::immediate())
+
+            .observer(PanickingPhaseObserver::new(phase))
+            .observer(CountingPhaseObserver(Arc::clone(&later_counts)))
+            .fallback(RetryFallback::Retry)
+            .build()
+            .expect("valid config");
+        let error = TokioRetry::new(&observer_config)
+            .run(|| async { Err::<(), _>(TestError("matrix")) })
+            .await
+            .expect_err("the first panicking observer must fail closed");
         assert_matrix_observer_panic(&error, phase, later_counts.as_ref());
     }
 }
@@ -257,7 +257,7 @@ async fn test_tokio_retry_refreshes_elapsed_time_between_callback_phases() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("callback elapsed policy should be valid");
-    let error = Retry::<TestError>::builder(policy)
+    let config4 = RetryConfig::<TestError>::builder().policy(policy)
         .observer(ElapsedObserverCallback::new(
             Arc::clone(&clock),
             RetryCallbackPhase::AttemptFailed,
@@ -275,8 +275,8 @@ async fn test_tokio_retry_refreshes_elapsed_time_between_callback_phases() {
             Arc::clone(&records),
             false,
         ))
-        .build()
-        .tokio()
+        .build().expect("valid config");
+    let error = TokioRetry::new(&config4)
         .timer(clock.new_timer())
         .run(|| async { Err::<(), _>(TestError("elapsed")) })
         .await
@@ -316,19 +316,19 @@ async fn test_tokio_retry_refreshes_elapsed_time_after_callback_panics() {
             .build()
             .expect("callback panic policy should be valid");
         let error = if phase == RetryCallbackPhase::RuleDecision {
-            Retry::<TestError>::builder(policy)
+            let chain_config1 = RetryConfig::<TestError>::builder().policy(policy)
                 .rule(ElapsedRuleCallback::new(Arc::clone(&clock), records, true))
-                .build()
-                .tokio()
+                .build().expect("valid config");
+            TokioRetry::new(&chain_config1)
                 .timer(clock.new_timer())
                 .run(|| async { Err::<(), _>(TestError("elapsed")) })
                 .await
         } else {
-            Retry::<TestError>::builder(policy)
+            let chain_config1 = RetryConfig::<TestError>::builder().policy(policy)
                 .observer(ElapsedObserverCallback::new(Arc::clone(&clock), phase, records, true))
                 .fallback(RetryFallback::Retry)
-                .build()
-                .tokio()
+                .build().expect("valid config");
+            TokioRetry::new(&chain_config1)
                 .timer(clock.new_timer())
                 .run(|| async { Err::<(), _>(TestError("elapsed")) })
                 .await
@@ -341,47 +341,50 @@ async fn test_tokio_retry_refreshes_elapsed_time_after_callback_panics() {
 #[cfg(feature = "tokio")]
 #[tokio::test(start_paused = true)]
 async fn test_tokio_retry_matches_shared_infrastructure_and_timeout_matrix() {
-    let timer_error = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .max_attempts(2)
-            .backoff(BackoffPolicy::fixed(Duration::from_millis(1)))
-            .build()
-            .unwrap(),
-    )
-    .fallback(RetryFallback::Retry)
-    .build()
-    .tokio()
-    .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
-        TimerFailurePoint::Registration,
-        "matrix",
-        "offline",
-    )))
-    .run(|| async { Err::<(), _>(TestError("matrix")) })
-    .await
-    .expect_err("retry sleep registration failure must be terminal");
+    let timer_config = RetryConfig::<TestError>::builder()
+        
+                .max_attempts(2)
+                .backoff(BackoffPolicy::fixed(Duration::from_millis(1)))
+
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
+    let timer_error = TokioRetry::new(&timer_config)
+        .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Registration,
+            "matrix",
+            "offline",
+        )))
+        .run(|| async { Err::<(), _>(TestError("matrix")) })
+        .await
+        .expect_err("retry sleep registration failure must be terminal");
     assert_matrix_infrastructure(&timer_error, "timer", 1, None, true);
 
-    let clock_error = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
-        .build()
-        .tokio()
+    let config6 = RetryConfig::<TestError>::builder()
+        .build().expect("valid config");
+    let clock_error = TokioRetry::new(&config6)
         .timer(completion_regressing_timer())
         .run(|| async { Ok::<_, TestError>(()) })
         .await
         .expect_err("completion clock regression must be terminal");
     assert_matrix_infrastructure(&clock_error, "clock", 1, None, false);
 
-    let attempt_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
+    let chain_config2 = RetryConfig::<TestError>::builder()
+        
         .build()
-        .tokio()
+        .expect("valid config");
+    let attempt_timeout = TokioRetry::new(&chain_config2)
         .hard_attempt_timeout(Duration::from_millis(1))
         .run(pending::<Result<(), TestError>>)
         .await
         .expect_err("the pending attempt must hit its attempt timeout");
     assert_matrix_timeout(&attempt_timeout, RetryTimeoutScope::Attempt, 1);
 
-    let flow_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
+    let chain_config3 = RetryConfig::<TestError>::builder()
+        
         .build()
-        .tokio()
+        .expect("valid config");
+    let flow_timeout = TokioRetry::new(&chain_config3)
         .hard_flow_timeout(Duration::from_millis(1))
         .run(pending::<Result<(), TestError>>)
         .await
@@ -393,32 +396,29 @@ async fn test_tokio_retry_matches_shared_infrastructure_and_timeout_matrix() {
 #[tokio::test]
 async fn test_async_timeout_registration_failure_does_not_start_attempt() {
     let poll_count = Arc::new(AtomicUsize::new(0));
-    let error = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .max_attempts(1)
-            .build()
-            .expect("registration failure policy should be valid"),
-    )
-    .build()
-    .tokio()
-    .hard_attempt_timeout(Duration::from_secs(1))
-    .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
-        TimerFailurePoint::Registration,
-        "attempt-timeout",
-        "offline",
-    )))
-    .run({
-        let poll_count = Arc::clone(&poll_count);
-        move || {
+    let config = RetryConfig::<TestError>::builder()
+        .max_attempts(1)
+        .build()
+        .expect("valid config");
+    let error = TokioRetry::new(&config)
+        .hard_attempt_timeout(Duration::from_secs(1))
+        .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Registration,
+            "attempt-timeout",
+            "offline",
+        )))
+        .run({
             let poll_count = Arc::clone(&poll_count);
-            poll_fn(move |_| {
-                poll_count.fetch_add(1, Ordering::SeqCst);
-                Poll::Ready(Ok::<(), TestError>(()))
-            })
-        }
-    })
-    .await
-    .expect_err("timeout registration failure must stop before the attempt");
+            move || {
+                let poll_count = Arc::clone(&poll_count);
+                poll_fn(move |_| {
+                    poll_count.fetch_add(1, Ordering::SeqCst);
+                    Poll::Ready(Ok::<(), TestError>(()))
+                })
+            }
+        })
+        .await
+        .expect_err("timeout registration failure must stop before the attempt");
 
     assert!(matches!(
         error.reason(),
@@ -459,14 +459,11 @@ async fn test_async_timeout_uses_fixed_deadline_and_preserves_selected_scope() {
         let timer = Arc::new(AdvancingAtTimer::new(Arc::clone(&clock), Duration::from_secs(1)));
         let operation_polls = Arc::new(AtomicUsize::new(0));
         let operation_advance = attempt_timeout.min(flow_timeout) - Duration::from_secs(1);
-        let error = Retry::<TestError>::builder(
-            RetryPolicy::builder()
-                .max_attempts(1)
-                .build()
-                .expect("absolute deadline policy should be valid"),
-        )
+        let config = RetryConfig::<TestError>::builder()
+        .max_attempts(1)
         .build()
-        .tokio()
+        .expect("valid config");
+    let error = TokioRetry::new(&config)
         .hard_attempt_timeout(attempt_timeout)
         .hard_flow_timeout(flow_timeout)
         .timer(timer.clone())
@@ -511,14 +508,11 @@ async fn test_async_registration_reaching_deadline_does_not_start_operation() {
     let clock = ManualMonotonicClock::new_shared();
     let timer = Arc::new(AdvancingAtTimer::new(Arc::clone(&clock), Duration::from_secs(1)));
     let poll_count = Arc::new(AtomicUsize::new(0));
-    let error = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .max_attempts(1)
-            .build()
-            .expect("deadline admission policy should be valid"),
-    )
-    .build()
-    .tokio()
+    let config = RetryConfig::<TestError>::builder()
+        .max_attempts(1)
+        .build()
+        .expect("valid config");
+    let error = TokioRetry::new(&config)
     .hard_attempt_timeout(Duration::from_secs(1))
     .timer(timer)
     .run({
@@ -549,23 +543,20 @@ async fn test_async_registration_reaching_deadline_does_not_start_operation() {
 #[cfg(feature = "tokio")]
 #[tokio::test]
 async fn test_async_timeout_polling_failure_retains_active_attempt_scope() {
-    let error = Retry::<TestError>::builder(
-        RetryPolicy::builder()
-            .max_attempts(1)
-            .build()
-            .expect("timer polling failure policy should be valid"),
-    )
-    .build()
-    .tokio()
-    .hard_attempt_timeout(Duration::from_secs(1))
-    .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
-        TimerFailurePoint::Completion,
-        "attempt-timeout",
-        "offline",
-    )))
-    .run(pending::<Result<(), TestError>>)
-    .await
-    .expect_err("timer polling failure must retain the active attempt");
+    let config = RetryConfig::<TestError>::builder()
+        .max_attempts(1)
+        .build()
+        .expect("valid config");
+    let error = TokioRetry::new(&config)
+        .hard_attempt_timeout(Duration::from_secs(1))
+        .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Completion,
+            "attempt-timeout",
+            "offline",
+        )))
+        .run(pending::<Result<(), TestError>>)
+        .await
+        .expect_err("timer polling failure must retain the active attempt");
 
     assert!(matches!(
         error.reason(),
@@ -584,17 +575,19 @@ async fn test_async_timeout_polling_failure_retains_active_attempt_scope() {
 #[cfg(feature = "tokio")]
 #[tokio::test]
 async fn test_async_success_counts_one_started_attempt_with_or_without_timeout() {
-    let without_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
-        .build()
-        .tokio()
+    let config7 = RetryConfig::<TestError>::builder()
+        .build().expect("valid config");
+    let without_timeout = TokioRetry::new(&config7)
         .run(|| async { Ok::<_, TestError>(()) })
         .await
         .expect("an immediate operation without a timeout should succeed");
     assert_eq!(without_timeout.context().attempts(), 1);
 
-    let with_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
+    let chain_config4 = RetryConfig::<TestError>::builder()
+        
         .build()
-        .tokio()
+        .expect("valid config");
+    let with_timeout = TokioRetry::new(&chain_config4)
         .hard_attempt_timeout(Duration::from_secs(1))
         .run(|| async { Ok::<_, TestError>(()) })
         .await

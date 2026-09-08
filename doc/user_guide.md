@@ -39,7 +39,7 @@ qubit-retry = "0.23"
 A storage service is temporarily unavailable. Retry its read and return the
 snapshot when it recovers. The separate `read_snapshot` function simulates two
 failed calls followed by success. Its counter only generates test responses;
-it does not implement retry control. `RetryPolicy` sets the attempt limit,
+it does not implement retry control. `RetryConfig` sets the attempt limit,
 waiting time, and exponential backoff; the rule classifies retryable errors.
 
 <!-- retry-example: kind=run features=none -->
@@ -50,9 +50,9 @@ use std::time::Duration;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
-use qubit_retry::RetryPolicy;
 
 // Simulate storage: the first and second calls time out; the third succeeds.
 // simulated_calls only produces test responses; it does not limit or schedule retries.
@@ -67,15 +67,13 @@ fn read_snapshot(simulated_calls: &mut u32) -> io::Result<&'static str> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let policy = RetryPolicy::builder()
+    let config = RetryConfig::builder()
         .max_attempts(5)
         .backoff(BackoffPolicy::exponential(
             Duration::from_millis(100),
             2.0,
             Duration::from_secs(1),
         )?)
-        .build()?;
-    let retry = Retry::builder(policy)
         .rule(|failure: &AttemptFailure<io::Error>, _: &RetryContext| {
             match failure {
                 AttemptFailure::Error(error) if error.kind() == io::ErrorKind::TimedOut => {
@@ -84,10 +82,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ => RetryDecision::Abort,
             }
         })
-        .build();
+        .build()?;
 
     let mut simulated_calls = 0;
-    let success = retry.sync().run(|| read_snapshot(&mut simulated_calls))?;
+    let success = Retry::new(&config).run(|| read_snapshot(&mut simulated_calls))?;
     assert_eq!(*success.value(), "snapshot-v2");
     assert_eq!(success.context().attempts(), 3);
     assert!(success.completion_callback_failures().is_empty());
@@ -134,7 +132,8 @@ require resetting the library's counters.
 | Backoff | The delay before a retry |
 | Admission | The check that permits an attempt to start under the remaining limits |
 | `RetryPolicy` | Validated attempt limits, elapsed budgets, and backoff configuration |
-| `Retry<E>` | A reusable policy plus rules and observers for error type `E` |
+| `RetryConfig<E>` | Policy, rules, observers, and fallback for error type `E` |
+| `Retry` / `TokioRetry` / `WorkerRetry` | Executors that run operations with a shared `RetryConfig` |
 | `RetryContext` | A snapshot of counts, elapsed time, and the current phase's attempt/delay information |
 
 The normal path is:
@@ -154,8 +153,8 @@ prevent it from starting. `context.attempts()` counts admissions;
 `current_attempt()` may also describe an upcoming attempt during a callback.
 
 Defaults are **three total attempts, immediate backoff, no elapsed budgets, and
-abort for unclassified application errors**. A default policy alone does not
-make failures retryable. Each `run` creates fresh state. Cloning `Retry` shares
+abort for unclassified application errors**. A default configuration alone does not
+make failures retryable. Each `run` creates fresh state. Cloning `RetryConfig` shares
 rules and observers without requiring the application error to implement `Clone`.
 
 ## Choose an execution mode
@@ -163,9 +162,9 @@ rules and observers without requiring the application error to implement `Clone`
 
 | Entry point | Feature | Operation requirements | Where it runs |
 | --- | --- | --- | --- |
-| `sync()` | None | `FnMut() -> Result<T, E>`; can borrow local state | Calling thread |
-| `tokio()` | `tokio` | `FnMut() -> Fut`; futures need not be `Send` or `'static` | Tokio runtime |
-| `worker()` | `worker` | `Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static`; `T` and `E`: `Send + 'static` | Dedicated worker thread per attempt |
+| `Retry::new(&config)` | None | `FnMut() -> Result<T, E>`; can borrow local state | Calling thread |
+| `TokioRetry::new(&config)` | `tokio` | `FnMut() -> Fut`; futures need not be `Send` or `'static` | Tokio runtime |
+| `WorkerRetry::new(&config)` | `worker` | `Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static`; `T` and `E`: `Send + 'static` | Dedicated worker thread per attempt |
 
 The execution APIs require `E: 'static`, including in sync/async mode; that does
 not require their operation closures to own all captured state. Rules and
@@ -193,7 +192,7 @@ For blocking worker examples use:
 qubit-retry = { version = "0.23", features = ["worker"] }
 ```
 
-Features can be combined in the dependency's `features` array. `worker().run()`
+Features can be combined in the dependency's `features` array. `WorkerRetry::new(&config).run()`
 blocks its caller while coordinating the worker; it is not an async thread-pool API.
 
 ## Choose which failures to retry
@@ -216,15 +215,16 @@ explicitly with `RetryFallback::Retry`:
 <!-- retry-example: kind=run features=none -->
 ```rust
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
-use qubit_retry::RetryPolicy;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let retry = Retry::<&str>::builder(RetryPolicy::builder().max_attempts(2).build()?)
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(2)
         .fallback(RetryFallback::Retry)
-        .build();
-    let error = retry.sync().run(|| Err::<(), _>("temporarily unavailable")).unwrap_err();
+        .build()?;
+    let error = Retry::new(&config).run(|| Err::<(), _>("temporarily unavailable")).unwrap_err();
     assert!(matches!(error.reason(), RetryErrorReason::Exhausted { .. }));
     assert_eq!(error.context().attempts(), 2);
     Ok(())
@@ -246,7 +246,7 @@ retry rule: cancelling a wait cannot undo a committed write.
 
 ## Configure backoff and server hints
 
-Set backoff with `RetryPolicy::builder().backoff(...)`. Constructors do not sleep;
+Set backoff with `RetryConfig::builder().backoff(...)`. Constructors do not sleep;
 the executor waits after a failed attempt when another retry is permitted.
 
 | Constructor | Base delay | Suitable use |
@@ -290,10 +290,10 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryObserver;
-use qubit_retry::RetryPolicy;
 
 #[derive(Debug)]
 enum ReadError {
@@ -312,11 +312,9 @@ impl RetryObserver<ReadError> for ReadLog {
 }
 
 fn main() -> Result<(), qubit_retry::RetryPolicyError> {
-    let policy = RetryPolicy::builder()
+    let config = RetryConfig::builder()
         .max_attempts(3)
         .backoff(BackoffPolicy::fixed(Duration::from_millis(5)))
-        .build()?;
-    let retry = Retry::builder(policy)
         .rule(|failure: &AttemptFailure<ReadError>, _: &RetryContext| {
             match failure {
                 AttemptFailure::Error(ReadError::Busy { retry_after }) => {
@@ -326,13 +324,13 @@ fn main() -> Result<(), qubit_retry::RetryPolicyError> {
             }
         })
         .observer(ReadLog)
-        .build();
+        .build()?;
     // Simulated server responses; the operation does not implement retry logic.
     let mut responses = [
         Err(ReadError::Busy { retry_after: Duration::from_millis(10) }),
         Ok("snapshot-v2"),
     ].into_iter();
-    let success = retry.sync()
+    let success = Retry::new(&config)
         .run(|| responses.next().expect("fixture has two responses"))
         .expect("read recovers after server hint");
     assert_eq!(*success.value(), "snapshot-v2");
@@ -419,29 +417,30 @@ use std::future;
 use std::io;
 use std::time::Duration;
 
-use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
-use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
+use qubit_retry::TokioRetry;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let retry = Retry::<io::Error>::builder(RetryPolicy::builder().max_attempts(3).build()?)
+    let config = RetryConfig::<io::Error>::builder()
+        .max_attempts(3)
         .fallback(RetryFallback::Retry)
-        .build();
+        .build()?;
     // Simulated client responses; retry limits are enforced by the policy.
     let mut responses = [
         Err(io::Error::new(io::ErrorKind::TimedOut, "storage unavailable")),
         Ok("snapshot-v2"),
     ].into_iter();
-    let success = retry.tokio().run(|| {
+    let success = TokioRetry::new(&config).run(|| {
         let response = responses.next().expect("fixture has two responses");
         async move { response }
     }).await?;
     assert_eq!(success.context().attempts(), 2);
 
-    let error = retry.tokio()
+    let error = TokioRetry::new(&config)
         .hard_attempt_timeout(Duration::from_millis(10))
         .run(|| future::pending::<Result<(), io::Error>>())
         .await.unwrap_err();
@@ -475,15 +474,15 @@ the closure. This deterministic example requests shutdown during the failed read
 <!-- retry-example: kind=run features=none -->
 ```rust
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryErrorReason;
-use qubit_retry::RetryPolicy;
 
 fn main() {
     let token = RetryCancellationToken::new();
-    let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
-    let error = retry.sync().cancellation_token(token.clone()).run(|| {
+    let config = RetryConfig::<&str>::builder().build().expect("valid config");
+    let error = Retry::new(&config).cancellation_token(token.clone()).run(|| {
         token.cancel();
         Err::<(), _>("temporary read failure")
     }).unwrap_err();
@@ -508,18 +507,18 @@ an external shutdown task can cancel the same token in an application:
 use std::future;
 use std::time::Duration;
 
-use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryErrorReason;
-use qubit_retry::RetryPolicy;
+use qubit_retry::TokioRetry;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
+    let config = RetryConfig::<&str>::builder().build().expect("valid config");
     let token = RetryCancellationToken::new();
     let operation_token = token.clone();
-    let error = retry.tokio()
+    let error = TokioRetry::new(&config)
         .hard_attempt_timeout(Duration::from_secs(2))
         .hard_flow_timeout(Duration::from_secs(5))
         .cancellation_token(token)
@@ -550,16 +549,16 @@ The loop below only demonstrates that handshake; it simulates no storage I/O.
 ```rust
 use std::time::Duration;
 
-use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryErrorReason;
-use qubit_retry::RetryPolicy;
+use qubit_retry::WorkerRetry;
 
 fn main() {
-    let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
+    let config = RetryConfig::<&str>::builder().build().expect("valid config");
     let token = RetryCancellationToken::new();
     let operation_token = token.clone();
-    let error = retry.worker()
+    let error = WorkerRetry::new(&config)
         .cancellation_token(token)
         .cancellation_grace(Duration::from_secs(1))
         .run(move |attempt| {
@@ -637,11 +636,11 @@ its diagnostic while converting the business error to `String`:
 <!-- retry-example: kind=run features=none -->
 ```rust
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
-use qubit_retry::RetryPolicy;
 
 struct Audit;
 impl RetryObserver<&'static str> for Audit {
@@ -651,9 +650,9 @@ impl RetryObserver<&'static str> for Audit {
 }
 
 fn main() {
-    let retry = Retry::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
-        .observer(Audit).build();
-    let error = retry.sync().run(|| Err::<(), _>("offline")).unwrap_err();
+    let config = RetryConfig::builder().max_attempts(1)
+        .observer(Audit).build().expect("valid config");
+    let error = Retry::new(&config).run(|| Err::<(), _>("offline")).unwrap_err();
     let mapped = error.map_error(String::from);
     let (reason, failure, context, diagnostics) = mapped.into_parts();
     assert!(matches!(reason, RetryErrorReason::Aborted));
@@ -830,7 +829,7 @@ best-effort timing.
 | `attempts() == 0` | Check pre-cancellation, zero budgets/timeouts, before-attempt callbacks, and infrastructure errors. |
 | `Exhausted` instead of `TimedOut` | Soft budgets stop admission; inspect `limit`. Hard timeout errors carry `scope`. |
 | Sync runs longer than the budget | Its closure cannot be interrupted. Bound the underlying I/O or choose a suitable async/worker operation. |
-| `tokio()` or `worker()` is unavailable | Enable its matching Cargo feature; async also needs a Tokio runtime. |
+| `TokioRetry` or `WorkerRetry` is unavailable | Enable its matching Cargo feature; async also needs a Tokio runtime. |
 | Fewer calls than retry-scheduled notifications | Scheduling does not guarantee admission. Later cancellation, callbacks, or limits can prevent the attempt. |
 | `WorkerStillRunning` | Inspect its trigger and the operation/TLS cleanup protocol before starting replacement work. |
 | A successful result contains diagnostics | Inspect completion observers; their panic does not invalidate the business result. |

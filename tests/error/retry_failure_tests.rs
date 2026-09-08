@@ -11,6 +11,7 @@ use std::time::Duration;
 use qubit_retry::AttemptCancellationToken;
 use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackFailure;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
@@ -25,6 +26,7 @@ use qubit_retry::RetryObserver;
 use qubit_retry::RetryPanic;
 use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
+use qubit_retry::WorkerRetry;
 
 #[test]
 fn test_retry_error_reason_shape_and_accessors_are_separate() {
@@ -63,9 +65,9 @@ impl RetryObserver<String> for StartedPanickingObserver {
 
 #[test]
 fn test_map_error_preserves_aborted_worker_panic() {
-    let error = Retry::<String>::builder(RetryPolicy::builder().build().expect("policy"))
-        .build()
-        .worker()
+    let config = RetryConfig::<String>::builder()
+        .build().expect("valid config");
+    let error = WorkerRetry::new(&config)
         .run(|_: AttemptCancellationToken| -> Result<(), String> {
             panic!("operation panic");
         })
@@ -84,10 +86,10 @@ fn test_map_error_preserves_aborted_worker_panic() {
 
 #[test]
 fn test_map_error_preserves_exhausted_application_failure() {
-    let error = Retry::<String>::builder(RetryPolicy::builder().max_attempts(1).build().expect("policy"))
+    let config2 = RetryConfig::<String>::builder().max_attempts(1)
         .fallback(RetryFallback::Retry)
-        .build()
-        .sync()
+        .build().expect("valid config");
+    let error = Retry::new(&config2)
         .run(|| Err::<(), _>(String::from("exhausted")))
         .expect_err("one failed attempt must exhaust the flow");
     assert!(matches!(
@@ -102,9 +104,9 @@ fn test_map_error_preserves_exhausted_application_failure() {
 
 #[test]
 fn test_retry_error_retains_timeout_and_cancellation_failures() {
-    let timeout = Retry::<String>::builder(RetryPolicy::builder().build().expect("policy"))
-        .build()
-        .worker()
+    let config3 = RetryConfig::<String>::builder()
+        .build().expect("valid config");
+    let timeout = WorkerRetry::new(&config3)
         .hard_attempt_timeout(Duration::ZERO)
         .run(|_: AttemptCancellationToken| Ok::<(), String>(()))
         .expect_err("zero attempt timeout must stop before admission");
@@ -118,9 +120,9 @@ fn test_retry_error_retains_timeout_and_cancellation_failures() {
 
     let token = RetryCancellationToken::new();
     token.cancel();
-    let cancelled = Retry::<String>::builder(RetryPolicy::builder().build().expect("policy"))
-        .build()
-        .sync()
+    let config4 = RetryConfig::<String>::builder()
+        .build().expect("valid config");
+    let cancelled = Retry::new(&config4)
         .cancellation_token(token)
         .run(|| Ok::<(), String>(()))
         .expect_err("pre-cancelled flow must stop before admission");
@@ -135,10 +137,10 @@ fn test_retry_error_retains_timeout_and_cancellation_failures() {
 
 #[test]
 fn test_retry_error_retains_callback_and_infrastructure_classification() {
-    let callback = Retry::<String>::builder(RetryPolicy::builder().build().expect("policy"))
+    let config5 = RetryConfig::<String>::builder()
         .observer(StartedPanickingObserver)
-        .build()
-        .sync()
+        .build().expect("valid config");
+    let callback = Retry::new(&config5)
         .run(|| Ok::<(), String>(()))
         .expect_err("observer panic must fail closed");
     assert!(matches!(
@@ -149,9 +151,9 @@ fn test_retry_error_retains_callback_and_infrastructure_classification() {
     ));
     assert!(callback.last_failure().is_none());
 
-    let infrastructure = Retry::<String>::builder(RetryPolicy::builder().build().expect("policy"))
-        .build()
-        .worker()
+    let config6 = RetryConfig::<String>::builder()
+        .build().expect("valid config");
+    let infrastructure = WorkerRetry::new(&config6)
         .worker_stack_size(usize::MAX)
         .run(|_: AttemptCancellationToken| Ok::<(), String>(()))
         .expect_err("impossible stack size must fail worker creation");

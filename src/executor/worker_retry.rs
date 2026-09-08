@@ -19,7 +19,7 @@ use super::internal::BlockingBackoffOutcome;
 use super::internal::RetryFlowController;
 use super::internal::WorkerAttemptExecutor;
 use super::internal::wait_for_backoff;
-use super::retry::Retry;
+use super::retry_config::RetryConfig;
 use super::retry_cancellation_token::RetryCancellationToken;
 use crate::AttemptFailure;
 use crate::RetryError;
@@ -42,13 +42,11 @@ use crate::executor::internal::BlockingValueOperation;
 /// # Examples
 ///
 /// ```
-/// use qubit_retry::Retry;
-/// use qubit_retry::RetryPolicy;
+/// use qubit_retry::RetryConfig;
 /// use qubit_retry::WorkerRetry;
 ///
-/// let retry = Retry::<&str>::builder(RetryPolicy::builder().build()?).build();
-/// let execution: WorkerRetry<'_, &str> = retry.worker();
-/// let value = execution.run(|token| {
+/// let config = RetryConfig::<&str>::builder().max_attempts(3).build()?;
+/// let value = WorkerRetry::new(&config).run(|token| {
 ///     assert!(!token.is_cancelled());
 ///     Ok(7)
 /// }).expect("worker returns and exits");
@@ -58,7 +56,7 @@ use crate::executor::internal::BlockingValueOperation;
 #[must_use]
 pub struct WorkerRetry<'a, E> {
     /// Borrowed immutable policy and callbacks.
-    retry: &'a Retry<E>,
+    config: &'a RetryConfig<E>,
     /// OS-visible name assigned to each attempt thread.
     thread_name: Box<str>,
     /// Optional requested stack size; None uses the OS default.
@@ -88,9 +86,9 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     /// # Returns
     /// An execution facade with default runtime controls.
     #[inline]
-    pub(crate) fn new(retry: &'a Retry<E>) -> Self {
+    pub fn new(config: &'a RetryConfig<E>) -> Self {
         Self {
-            retry,
+            config,
             thread_name: "qubit-retry-worker".into(),
             stack_size: None,
             attempt_timeout: None,
@@ -249,7 +247,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         T: Send + 'static,
         F: Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static,
     {
-        self.retry.complete(self.run_inner(operation))
+        self.config.complete(self.run_inner(operation))
     }
 
     /// Executes retry controls and freezes the final result before completion
@@ -290,7 +288,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         let clock = timer.clock();
         let mut controller = RetryFlowController::new(
             clock.now(),
-            self.retry,
+            self.config,
             self.random_source.clone(),
             self.attempt_timeout,
             self.flow_timeout,

@@ -19,6 +19,7 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
@@ -51,11 +52,11 @@ fn test_retry_directive_records_retry_hint_and_resolved_delay() {
         .backoff(BackoffPolicy::fixed(Duration::ZERO).ignore_retry_after())
         .build()
         .unwrap();
-    let result = Retry::<TestError>::builder(policy)
+    let config = RetryConfig::<TestError>::builder().policy(policy)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(Duration::from_secs(3)))
         .observer(HintRecordingObserver(Arc::clone(&recorded)))
-        .build()
-        .sync()
+        .build().expect("valid config");
+    let result = Retry::new(&config)
         .run(|| {
             if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
                 Err(TestError("retry"))
@@ -76,11 +77,11 @@ fn test_retry_directive_records_retry_hint_and_resolved_delay() {
 fn test_retry_scheduled_is_not_emitted_after_attempt_exhaustion() {
     let recorded = Arc::new(Mutex::new(None));
     let policy = RetryPolicy::builder().max_attempts(1).build().expect("valid policy");
-    let error = Retry::<TestError>::builder(policy)
+    let config2 = RetryConfig::<TestError>::builder().policy(policy)
         .observer(HintRecordingObserver(Arc::clone(&recorded)))
         .fallback(RetryFallback::Retry)
-        .build()
-        .sync()
+        .build().expect("valid config");
+    let error = Retry::new(&config2)
         .run(|| Err::<(), _>(TestError("last")))
         .expect_err("one failed attempt exhausts the flow");
     assert_eq!(*recorded.lock().expect("record lock"), None);
@@ -104,13 +105,13 @@ fn test_retry_scheduled_panic_cannot_mask_exhaustion() {
             .build()
             .expect("elapsed policy"),
     ] {
-        let error = Retry::<TestError>::builder(policy)
+        let config3 = RetryConfig::<TestError>::builder().policy(policy)
             .observer(crate::support::PanickingPhaseObserver::new(
                 RetryCallbackPhase::RetryScheduled,
             ))
             .fallback(RetryFallback::Retry)
-            .build()
-            .sync()
+            .build().expect("valid config");
+    let error = Retry::new(&config3)
             .run(|| Err::<(), _>(TestError("retained")))
             .expect_err("budget exhausted");
         assert!(matches!(error.reason(), RetryErrorReason::Exhausted { .. }));
@@ -139,11 +140,11 @@ fn test_retry_scheduled_rechecks_time_after_resolving_jitter() {
         .backoff(BackoffPolicy::fixed(Duration::from_millis(1)).with_full_jitter())
         .build()
         .expect("valid policy");
-    let error = Retry::<TestError>::builder(policy)
+    let config4 = RetryConfig::<TestError>::builder().policy(policy)
         .observer(HintRecordingObserver(Arc::clone(&recorded)))
         .fallback(RetryFallback::Retry)
-        .build()
-        .sync()
+        .build().expect("valid config");
+    let error = Retry::new(&config4)
         .timer(clock.new_timer())
         .random_source(Arc::new(AdvancingRandom(clock)))
         .run(|| Err::<(), _>(TestError("retained")))

@@ -13,6 +13,7 @@ use std::sync::atomic::Ordering;
 
 use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
@@ -33,7 +34,7 @@ impl RetryRule<()> for NoopRule {
 #[test]
 fn test_retry_builder_accepts_ordered_rules() {
     let policy = RetryPolicy::builder().build().unwrap();
-    let retry = Retry::<()>::builder(policy).rule(NoopRule).build();
+    let retry = RetryConfig::<()>::builder().policy(policy).rule(NoopRule).build().expect("valid config");
     let _ = retry;
 }
 
@@ -47,7 +48,7 @@ fn test_retry_rules_preserve_each_panic_payload() {
     ];
     for (payload, expected) in cases {
         let later_calls = Arc::new(AtomicUsize::new(0));
-        let retry = Retry::<()>::builder(RetryPolicy::builder().build().unwrap())
+        let retry = RetryConfig::<()>::builder()
             .rule(move |_: &AttemptFailure<()>, _: &RetryContext| match payload {
                 0 => panic!("static panic"),
                 1 => panic_any(String::from("owned panic")),
@@ -60,8 +61,8 @@ fn test_retry_rules_preserve_each_panic_payload() {
                     RetryDecision::UseDefault
                 }
             })
-            .build();
-        let error = retry.sync().run(|| Err::<(), _>(())).expect_err("the rule must panic");
+            .build().expect("valid config");
+        let error = Retry::new(&retry).run(|| Err::<(), _>(())).expect_err("the rule must panic");
         let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
             panic!("expected a callback-failure terminal");
         };

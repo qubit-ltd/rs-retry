@@ -14,30 +14,55 @@ budget/backoff directly; they do not need a synthetic operation executor.
 
 ```mermaid
 flowchart TD
-    F[SyncRetry / TokioRetry / WorkerRetry] --> C[RetryFlowController]
+    subgraph executors [Execution facades]
+        F1[Retry]
+        F2[TokioRetry]
+        F3[WorkerRetry]
+    end
+    F1 --> CFG[RetryConfig]
+    F2 --> CFG
+    F3 --> CFG
+    CFG --> C[RetryFlowController]
     C --> S[RetryFlowState / RetryBudgetState]
-    C --> P[RetryPolicy / BackoffState]
-    C --> O[RetryRules / RetryObservers controls]
-    F --> R[Retry::complete]
+    CFG --> P[RetryPolicy / BackoffState]
+    CFG --> O[RetryRules / RetryObservers controls]
+    F1 --> R[RetryConfig::complete]
+    F2 --> R
+    F3 --> R
     R --> D[Completion observers and attached diagnostics]
-    F --> W[Timers / blocking wait / worker protocol]
+    F1 --> W[Timers / blocking wait / worker protocol]
+    F2 --> W
+    F3 --> W
     B[Standalone RetryBudget] --> S
 ```
 
+- `RetryPolicy` validates limits and backoff only. It is serializable with `serde`
+  and can be reused across multiple `RetryConfig` values.
+- `RetryConfig` binds a policy to ordered rules, observers, and fallback for one
+  application error type. It holds no runtime resources; cloning shares callback
+  collections through reference counting.
+- `RetryConfigBuilder` forwards the full `RetryPolicyBuilder` surface so callers
+  can chain `.max_attempts(...)`, `.backoff(...)`, and `.rule(...)` in one builder.
+  Use `.policy(prebuilt)` only when a policy already exists (JSON, shared variable,
+  or helper such as `retry_once_policy()`).
+- Execution facades (`Retry`, `TokioRetry`, `WorkerRetry`) take `&RetryConfig`,
+  own per-run runtime options (timer, random source, cancellation token, hard
+  timeouts, worker stack size), and delegate flow decisions to the controller.
 - `policy`, `backoff`, and `budget` validate values and calculate continuation
   decisions. They do not invoke application callbacks or schedule operation execution.
 - `executor/internal/retry_flow_controller.rs` owns one flow's decisions and
   retained failure. State snapshots and plans separate preparation from admission.
-- Execution facades run closures, poll futures, or manage one OS worker attempt.
-  Async attempt/backoff outcomes and worker event/waker types stay internal.
-- `Retry::complete` alone dispatches completion notifications after an executor
-  returns its frozen result. It is outside the controller and never reenters it.
+- Async attempt/backoff outcomes and worker event/waker types stay internal.
+- `RetryConfig::complete` alone dispatches completion notifications after an
+  executor returns its frozen result. It is outside the controller and never
+  reenters it.
 - `internal/retry_panic_from_payload.rs` is the single captured-payload decoder
   used by rules, control/completion observers, workers, and reaper join failures.
 
-Each run creates fresh accounting and backoff state. Cloning `Retry`, rules, or
-observers shares callback objects through reference counting without requiring
-`E: Clone`. Mutable per-run state is never shared by that cloning operation.
+Each run creates fresh accounting and backoff state. Cloning `RetryConfig`, rules,
+or observers shares callback objects through reference counting without requiring
+`E: Clone`. Mutable per-run state lives on the executor and is never shared by
+that cloning operation.
 
 ## Admission and accounting protocol
 
@@ -164,9 +189,10 @@ and completion diagnostics. No lossy failure-consumer alias exists.
 only a retained application error with an `FnOnce` mapper called zero or one times;
 it preserves all other data and imposes no extra Clone/Send/static bounds.
 
-All three public run wrappers delegate exactly once to `Retry::complete` after
-`run_inner` returns. A dropped async run future, outward unwind, or abort has no
-completion guarantee. There is no second completion event after observer failure.
+All three public run wrappers delegate exactly once to `RetryConfig::complete`
+after `run_inner` returns. A dropped async run future, outward unwind, or abort
+has no completion guarantee. There is no second completion event after observer
+failure.
 
 ## Backoff numerical and hint contracts
 
