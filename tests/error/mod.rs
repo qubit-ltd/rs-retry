@@ -15,6 +15,7 @@ mod retry_callback_kind_tests;
 mod retry_callback_phase_tests;
 mod retry_cancellation_phase_tests;
 mod retry_error_tests;
+#[cfg(feature = "worker")]
 mod retry_failure_tests;
 #[cfg(feature = "worker")]
 mod retry_infrastructure_failure_tests;
