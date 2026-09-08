@@ -113,6 +113,7 @@ impl RetryObserver<&'static str> for LaterObserver {
 #[derive(Clone, Copy)]
 enum Facade {
     Sync,
+    #[cfg(feature = "worker")]
     Worker,
     #[cfg(feature = "tokio")]
     Async,
@@ -121,6 +122,7 @@ enum Facade {
 async fn run_matrix(recursive: bool) {
     for facade in [
         Facade::Sync,
+        #[cfg(feature = "worker")]
         Facade::Worker,
         #[cfg(feature = "tokio")]
         Facade::Async,
@@ -166,6 +168,7 @@ async fn run_matrix(recursive: bool) {
                     .build();
             let result = match facade {
                 Facade::Sync => retry.sync().run(|| Err::<(), _>("business")),
+                #[cfg(feature = "worker")]
                 Facade::Worker => retry.worker().run(|_| Err::<(), _>("business")),
                 #[cfg(feature = "tokio")]
                 Facade::Async => retry.asynchronous().run(|| async { Err::<(), _>("business") }).await,

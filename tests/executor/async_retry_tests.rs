@@ -55,6 +55,7 @@ use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryInfrastructureFailure;
 #[cfg(feature = "tokio")]
@@ -164,6 +165,7 @@ async fn test_async_retry_matches_shared_terminal_matrix() {
     assert_matrix_abort(&abort);
 
     let attempts = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+        .fallback(RetryFallback::Retry)
         .build()
         .asynchronous()
         .run(|| async { Err::<(), _>(TestError("matrix")) })
@@ -182,6 +184,7 @@ async fn test_async_retry_matches_shared_terminal_matrix() {
             RetryLimitKind::Attempts => unreachable!(),
         };
         let error = Retry::<TestError>::builder(policy.build().unwrap())
+            .fallback(RetryFallback::Retry)
             .build()
             .asynchronous()
             .timer(clock.new_timer())
@@ -202,6 +205,7 @@ async fn test_async_retry_matches_shared_terminal_matrix() {
 async fn test_async_retry_matches_shared_callback_matrix() {
     let later_rule_calls = Arc::new(AtomicUsize::new(0));
     let rule_error = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
+        .fallback(RetryFallback::Retry)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("matrix rule panic"))
         .rule({
             let later_rule_calls = Arc::clone(&later_rule_calls);
@@ -232,6 +236,7 @@ async fn test_async_retry_matches_shared_callback_matrix() {
         )
         .observer(PanickingPhaseObserver::new(phase))
         .observer(CountingPhaseObserver(Arc::clone(&later_counts)))
+        .fallback(RetryFallback::Retry)
         .build()
         .asynchronous()
         .run(|| async { Err::<(), _>(TestError("matrix")) })
@@ -321,6 +326,7 @@ async fn test_async_retry_refreshes_elapsed_time_after_callback_panics() {
         } else {
             Retry::<TestError>::builder(policy)
                 .observer(ElapsedObserverCallback::new(Arc::clone(&clock), phase, records, true))
+                .fallback(RetryFallback::Retry)
                 .build()
                 .asynchronous()
                 .timer(clock.new_timer())
@@ -342,6 +348,7 @@ async fn test_async_retry_matches_shared_infrastructure_and_timeout_matrix() {
             .build()
             .unwrap(),
     )
+    .fallback(RetryFallback::Retry)
     .build()
     .asynchronous()
     .timer(Arc::new(FaultInjectingTimer::backend_unavailable(

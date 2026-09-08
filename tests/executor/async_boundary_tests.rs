@@ -161,6 +161,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
     let error = Retry::<TestError>::builder(retry_once_policy())
+        .fallback(RetryFallback::Retry)
         .build()
         .asynchronous()
         .timer(timer)
@@ -177,6 +178,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     ));
 
     let attempts_exhausted = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+        .fallback(RetryFallback::Retry)
         .build()
         .asynchronous()
         .run(|| async { Err::<(), _>(TestError("only attempt")) })
@@ -198,6 +200,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
             .build()
             .unwrap(),
     )
+    .fallback(RetryFallback::Retry)
     .build()
     .asynchronous()
     .run(|| async { Err::<(), _>(TestError("retry")) })
@@ -299,6 +302,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
             .build()
             .unwrap(),
     )
+    .fallback(RetryFallback::Retry)
     .build()
     .asynchronous()
     .run(|| async { Ok::<_, TestError>(()) })
@@ -344,6 +348,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
             .build()
             .unwrap(),
     )
+    .fallback(RetryFallback::Retry)
     .build()
     .asynchronous()
     .hard_flow_timeout(Duration::from_secs(1))

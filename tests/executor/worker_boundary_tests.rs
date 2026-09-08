@@ -24,6 +24,7 @@ use qubit_retry::Retry;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryPolicy;
@@ -44,6 +45,7 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
     ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
     let timer_error = Retry::<TestError>::builder(retry_once_policy())
+        .fallback(RetryFallback::Retry)
         .build()
         .worker()
         .timer(timer)
@@ -134,6 +136,7 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
     ));
 
     let attempts_exhausted = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+        .fallback(RetryFallback::Retry)
         .build()
         .worker()
         .run(|_| Err::<(), _>(TestError("only attempt")))
@@ -154,6 +157,7 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
             .build()
             .unwrap(),
     )
+    .fallback(RetryFallback::Retry)
     .build()
     .worker()
     .run(|_| Err::<(), _>(TestError("retry")))

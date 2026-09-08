@@ -17,6 +17,7 @@ use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
@@ -68,6 +69,7 @@ impl RetryObserver<NonCloneError> for TerminalPanickingObserver {
 fn test_map_error_preserves_context_and_completion_diagnostics() {
     let error = Retry::<NonCloneError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
         .observer(TerminalPanickingObserver)
+        .fallback(RetryFallback::Retry)
         .build()
         .sync()
         .run(|| Err::<(), _>(NonCloneError(String::from("retry"))))

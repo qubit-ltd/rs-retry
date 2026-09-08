@@ -18,6 +18,7 @@ use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
@@ -84,6 +85,7 @@ fn test_map_error_preserves_aborted_worker_panic() {
 #[test]
 fn test_map_error_preserves_exhausted_application_failure() {
     let error = Retry::<String>::builder(RetryPolicy::builder().max_attempts(1).build().expect("policy"))
+        .fallback(RetryFallback::Retry)
         .build()
         .sync()
         .run(|| Err::<(), _>(String::from("exhausted")))

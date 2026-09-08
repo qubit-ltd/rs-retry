@@ -26,6 +26,7 @@ use qubit_retry::Retry;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
@@ -49,6 +50,7 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
     let error = Retry::<TestError>::builder(retry_once_policy())
+        .fallback(RetryFallback::Retry)
         .build()
         .sync()
         .timer(timer)
@@ -92,6 +94,7 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     assert!(matches!(aborted.reason(), RetryErrorReason::Aborted));
 
     let attempts_exhausted = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
+        .fallback(RetryFallback::Retry)
         .build()
         .sync()
         .run(|| Err::<(), _>(TestError("only attempt")))
@@ -112,6 +115,7 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
             .build()
             .unwrap(),
     )
+    .fallback(RetryFallback::Retry)
     .build()
     .sync()
     .run(|| Err::<(), _>(TestError("retry")))

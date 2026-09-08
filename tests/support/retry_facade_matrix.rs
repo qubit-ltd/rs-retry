@@ -32,6 +32,7 @@ use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryRule;
+#[cfg(any(feature = "tokio", feature = "worker"))]
 use qubit_retry::RetryTimeoutScope;
 
 use super::TestError;
@@ -252,15 +253,7 @@ pub(crate) fn assert_matrix_limit(
         assert_eq!(error.last_failure(), None);
     }
     assert_eq!(error.last_error(), has_last_failure.then_some(&TestError("matrix")));
-    let suffix = if has_last_failure {
-        "; last attempt failed: matrix"
-    } else {
-        ""
-    };
-    assert_eq!(
-        error.reason().to_string(),
-        format!("retry limit exhausted: {limit}{suffix}")
-    );
+    assert_eq!(error.reason().to_string(), format!("exhausted ({limit})"));
     assert_terminal_context(error.context(), expected_attempts, None);
     match limit {
         RetryLimitKind::Attempts => {
@@ -345,11 +338,6 @@ pub(crate) fn assert_matrix_infrastructure(
         has_last_failure.then_some(&AttemptFailure::Error(TestError("matrix")))
     );
     assert_eq!(error.last_error(), has_last_failure.then_some(&TestError("matrix")));
-    let _suffix = if has_last_failure {
-        "; last attempt failed: matrix"
-    } else {
-        ""
-    };
     assert_eq!(
         error.reason().to_string(),
         format!("infrastructure failure ({failure})")
@@ -358,6 +346,7 @@ pub(crate) fn assert_matrix_infrastructure(
 }
 
 /// Asserts timeout terminal and attempt-failure scopes remain identical.
+#[cfg(any(feature = "tokio", feature = "worker"))]
 pub(crate) fn assert_matrix_timeout(error: &RetryError<TestError>, scope: RetryTimeoutScope, expected_attempts: u32) {
     let RetryErrorReason::TimedOut { scope: terminal_scope } = error.reason() else {
         panic!("expected a timeout terminal failure");

@@ -40,6 +40,7 @@ use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
@@ -188,7 +189,8 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
     if scenario == CompletionScenario::ExhaustedBeforeAttempt {
         policy = policy.total_time_budget(Duration::ZERO);
     }
-    let mut builder = Retry::<TestError>::builder(policy.build().expect("valid completion policy"));
+    let mut builder =
+        Retry::<TestError>::builder(policy.build().expect("valid completion policy")).fallback(RetryFallback::Retry);
     for index in 0..3 {
         builder = builder.observer(CompletionObserver {
             index,
@@ -561,6 +563,7 @@ fn test_completion_result_consumers_preserve_or_explicitly_discard_diagnostics()
     let retry = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().expect("valid policy"))
         .observer(|_: &AttemptFailure<TestError>, _: &RetryContext| {})
         .observer(CompletionPanic)
+        .fallback(RetryFallback::Retry)
         .build();
     let success = retry.sync().run(|| Ok(42)).expect("successful operation");
     assert_eq!(success.completion_callback_failures().len(), 1);
@@ -659,6 +662,7 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 let clock = ManualMonotonicClock::new_shared();
                 let retry =
                     Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().expect("valid policy"))
+                        .fallback(RetryFallback::Retry)
                         .observer(CompletionDropPanicObserver {
                             drops: Arc::clone(&drops),
                             recursive,

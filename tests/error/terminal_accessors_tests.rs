@@ -10,6 +10,7 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
 use qubit_retry::RetryError;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryPolicy;
 
@@ -23,6 +24,7 @@ fn create_exhausted_error() -> RetryError<UnitTestError> {
             .build()
             .expect("terminal-accessor policy should be valid"),
     )
+    .fallback(RetryFallback::Retry)
     .build()
     .sync()
     .run::<(), _>(|| Err(UnitTestError))
