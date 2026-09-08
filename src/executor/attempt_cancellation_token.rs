@@ -14,9 +14,9 @@ use std::sync::atomic::Ordering;
 /// Cooperative cancellation token passed to blocking timeout attempts.
 ///
 /// The retry executor marks the token as cancelled when
-/// [`WorkerRetry::new`](crate::WorkerRetry::new) stops waiting for a worker thread. The worker must
-/// check [`AttemptCancellationToken::is_cancelled`] and return on its own;
-/// Rust threads cannot be safely killed by the executor.
+/// [`WorkerRetry::new`](crate::WorkerRetry::new) stops waiting for a worker
+/// thread. The worker must check [`AttemptCancellationToken::is_cancelled`] and
+/// return on its own; Rust threads cannot be safely killed by the executor.
 #[derive(Debug, Clone, Default)]
 pub struct AttemptCancellationToken {
     /// Shared cancellation flag.

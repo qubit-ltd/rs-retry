@@ -15,9 +15,9 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
@@ -65,10 +65,12 @@ fn test_observers_and_rules_cover_current_lifecycle() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .unwrap();
-    let config = RetryConfig::<TestError>::builder().policy(policy.clone())
+    let config = RetryConfig::<TestError>::builder()
+        .policy(policy.clone())
         .observer(PanickingObserver)
         .observer(RecordingObserver(Arc::clone(&counts)))
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let observer_error = Retry::new(&config)
         .run(|| Ok::<_, TestError>(11_u32))
         .expect_err("the first started observer panic must terminate the flow");
@@ -83,11 +85,13 @@ fn test_observers_and_rules_cover_current_lifecycle() {
     assert_eq!(observer_error.context().current_attempt().map(NonZeroU32::get), Some(1));
     assert_eq!(counts.started.load(Ordering::SeqCst), 0);
 
-    let config2 = RetryConfig::<TestError>::builder().policy(policy)
+    let config2 = RetryConfig::<TestError>::builder()
+        .policy(policy)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("rule panic"))
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::UseDefault)
         .observer(RecordingObserver(Arc::clone(&counts)))
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let rule_error = Retry::new(&config2)
         .run(|| Err::<u32, _>(TestError("retry")))
         .expect_err("the first rule panic must terminate the flow");

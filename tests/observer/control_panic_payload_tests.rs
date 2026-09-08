@@ -15,18 +15,17 @@ use std::sync::atomic::Ordering;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
-use qubit_retry::WorkerRetry;
-use qubit_retry::TokioRetry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryError;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPanic;
-use qubit_retry::RetryPolicy;
+use qubit_retry::TokioRetry;
+use qubit_retry::WorkerRetry;
 
 struct DropPanicPayload {
     drops: Arc<AtomicUsize>,
@@ -141,34 +140,35 @@ async fn run_matrix(recursive: bool) {
             let completed = Arc::new(AtomicUsize::new(0));
             let rule_drops = Arc::clone(&drops);
             let later_rule = Arc::clone(&later);
-            let retry =
-                RetryConfig::<&'static str>::builder().max_attempts(2)
-                    .observer(Noop)
-                    .observer(PayloadObserver {
-                        target: phase,
-                        drops: Arc::clone(&drops),
-                        recursive,
-                    })
-                    .observer(LaterObserver {
-                        target: phase,
-                        controls: Arc::clone(&later),
-                        completed: Arc::clone(&completed),
-                    })
-                    .rule(|_: &AttemptFailure<&'static str>, _: &RetryContext| RetryDecision::UseDefault)
-                    .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
-                        if phase == RetryCallbackPhase::RuleDecision {
-                            panic_any(DropPanicPayload {
-                                drops: Arc::clone(&rule_drops),
-                                recursive,
-                            });
-                        }
-                        RetryDecision::Retry
-                    })
-                    .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
-                        later_rule.fetch_add(1, Ordering::SeqCst);
-                        RetryDecision::Retry
-                    })
-                    .build().expect("valid config");
+            let retry = RetryConfig::<&'static str>::builder()
+                .max_attempts(2)
+                .observer(Noop)
+                .observer(PayloadObserver {
+                    target: phase,
+                    drops: Arc::clone(&drops),
+                    recursive,
+                })
+                .observer(LaterObserver {
+                    target: phase,
+                    controls: Arc::clone(&later),
+                    completed: Arc::clone(&completed),
+                })
+                .rule(|_: &AttemptFailure<&'static str>, _: &RetryContext| RetryDecision::UseDefault)
+                .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
+                    if phase == RetryCallbackPhase::RuleDecision {
+                        panic_any(DropPanicPayload {
+                            drops: Arc::clone(&rule_drops),
+                            recursive,
+                        });
+                    }
+                    RetryDecision::Retry
+                })
+                .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
+                    later_rule.fetch_add(1, Ordering::SeqCst);
+                    RetryDecision::Retry
+                })
+                .build()
+                .expect("valid config");
             let result = match facade {
                 Facade::Sync => Retry::new(&retry).run(|| Err::<(), _>("business")),
                 #[cfg(feature = "worker")]

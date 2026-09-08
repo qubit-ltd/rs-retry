@@ -11,12 +11,12 @@ use std::time::Duration;
 use qubit_retry::AttemptCancellationToken;
 use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackFailure;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
@@ -24,7 +24,6 @@ use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPanic;
-use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
 use qubit_retry::WorkerRetry;
 
@@ -65,8 +64,7 @@ impl RetryObserver<String> for StartedPanickingObserver {
 
 #[test]
 fn test_map_error_preserves_aborted_worker_panic() {
-    let config = RetryConfig::<String>::builder()
-        .build().expect("valid config");
+    let config = RetryConfig::<String>::builder().build().expect("valid config");
     let error = WorkerRetry::new(&config)
         .run(|_: AttemptCancellationToken| -> Result<(), String> {
             panic!("operation panic");
@@ -86,9 +84,11 @@ fn test_map_error_preserves_aborted_worker_panic() {
 
 #[test]
 fn test_map_error_preserves_exhausted_application_failure() {
-    let config2 = RetryConfig::<String>::builder().max_attempts(1)
+    let config2 = RetryConfig::<String>::builder()
+        .max_attempts(1)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let error = Retry::new(&config2)
         .run(|| Err::<(), _>(String::from("exhausted")))
         .expect_err("one failed attempt must exhaust the flow");
@@ -104,8 +104,7 @@ fn test_map_error_preserves_exhausted_application_failure() {
 
 #[test]
 fn test_retry_error_retains_timeout_and_cancellation_failures() {
-    let config3 = RetryConfig::<String>::builder()
-        .build().expect("valid config");
+    let config3 = RetryConfig::<String>::builder().build().expect("valid config");
     let timeout = WorkerRetry::new(&config3)
         .hard_attempt_timeout(Duration::ZERO)
         .run(|_: AttemptCancellationToken| Ok::<(), String>(()))
@@ -120,8 +119,7 @@ fn test_retry_error_retains_timeout_and_cancellation_failures() {
 
     let token = RetryCancellationToken::new();
     token.cancel();
-    let config4 = RetryConfig::<String>::builder()
-        .build().expect("valid config");
+    let config4 = RetryConfig::<String>::builder().build().expect("valid config");
     let cancelled = Retry::new(&config4)
         .cancellation_token(token)
         .run(|| Ok::<(), String>(()))
@@ -139,7 +137,8 @@ fn test_retry_error_retains_timeout_and_cancellation_failures() {
 fn test_retry_error_retains_callback_and_infrastructure_classification() {
     let config5 = RetryConfig::<String>::builder()
         .observer(StartedPanickingObserver)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let callback = Retry::new(&config5)
         .run(|| Ok::<(), String>(()))
         .expect_err("observer panic must fail closed");
@@ -151,8 +150,7 @@ fn test_retry_error_retains_callback_and_infrastructure_classification() {
     ));
     assert!(callback.last_failure().is_none());
 
-    let config6 = RetryConfig::<String>::builder()
-        .build().expect("valid config");
+    let config6 = RetryConfig::<String>::builder().build().expect("valid config");
     let infrastructure = WorkerRetry::new(&config6)
         .worker_stack_size(usize::MAX)
         .run(|_: AttemptCancellationToken| Ok::<(), String>(()))

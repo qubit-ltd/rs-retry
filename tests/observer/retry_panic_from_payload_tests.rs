@@ -17,9 +17,9 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
@@ -143,7 +143,8 @@ fn test_retry_panic_from_payload_stops_later_callbacks_for_each_case() {
     ];
     for (phase, payload) in cases {
         let later_calls = Arc::new(AtomicUsize::new(0));
-        let retry = RetryConfig::<TestError>::builder().policy(two_attempt_policy())
+        let retry = RetryConfig::<TestError>::builder()
+            .policy(two_attempt_policy())
             .observer(NoopObserver)
             .observer(PanickingObserver { phase, payload })
             .observer(CountingObserver {
@@ -151,7 +152,8 @@ fn test_retry_panic_from_payload_stops_later_callbacks_for_each_case() {
                 calls: Arc::clone(&later_calls),
             })
             .fallback(RetryFallback::Retry)
-            .build().expect("valid config");
+            .build()
+            .expect("valid config");
         let error = Retry::new(&retry)
             .run(|| Err::<(), _>(TestError("retry")))
             .expect_err("the selected callback should panic");
@@ -178,7 +180,8 @@ fn test_control_payload_normal_drop_is_not_leaked() {
         .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
             panic_any(CountedPayload(Arc::clone(&captured)))
         })
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
 
     let error = Retry::new(&retry)
         .run(|| Err::<(), _>("business"))

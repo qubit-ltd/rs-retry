@@ -24,13 +24,12 @@ use qubit_clock::MonotonicInstant;
 use qubit_clock::TimeError;
 use qubit_clock::Timer;
 use qubit_clock::TimerFuture;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryInfrastructureFailure;
-use qubit_retry::RetryPolicy;
-use qubit_retry::WorkerStopTrigger;
 use qubit_retry::WorkerRetry;
+use qubit_retry::WorkerStopTrigger;
 
 struct ExitGate {
     entered: Sender<()>,

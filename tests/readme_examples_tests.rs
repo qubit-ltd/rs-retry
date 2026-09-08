@@ -7,9 +7,9 @@
 // =============================================================================
 
 use qubit_retry::Retry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
@@ -20,7 +20,10 @@ use qubit_retry::RetryPolicy;
 fn test_readme_synchronous_cancellation() {
     let token = RetryCancellationToken::new();
     let policy = RetryPolicy::builder().build().expect("valid policy");
-    let retry = RetryConfig::<&'static str>::builder().policy(policy).build().expect("valid config");
+    let retry = RetryConfig::<&'static str>::builder()
+        .policy(policy)
+        .build()
+        .expect("valid config");
     let mut calls = 0;
     let error = Retry::new(&retry)
         .cancellation_token(token.clone())
@@ -45,10 +48,12 @@ fn test_readme_completion_diagnostics_and_error_mapping() {
     }
 
     let policy = RetryPolicy::builder().build().expect("valid policy");
-    let retry = RetryConfig::<&'static str>::builder().policy(policy)
+    let retry = RetryConfig::<&'static str>::builder()
+        .policy(policy)
         .observer(CompletionAudit)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let error = Retry::new(&retry).run(|| Err::<(), _>("offline")).unwrap_err();
     let mapped = error.map_error(String::from);
     assert_eq!(mapped.last_error().map(String::as_str), Some("offline"));

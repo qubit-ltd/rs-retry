@@ -12,7 +12,6 @@ use std::time::Duration;
 
 use qubit_retry::RetryConfig;
 use qubit_retry::RetryErrorReason;
-use qubit_retry::RetryPolicy;
 use qubit_retry::RetryTimeoutScope;
 use qubit_retry::TokioRetry;
 

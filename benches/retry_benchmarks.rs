@@ -18,15 +18,15 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffRequest;
 use qubit_retry::Retry;
-use qubit_retry::WorkerRetry;
-use qubit_retry::TokioRetry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
+use qubit_retry::TokioRetry;
+use qubit_retry::WorkerRetry;
 
 /// No-op lifecycle observer used to isolate observer dispatch overhead.
 struct NoopObserver;
@@ -57,7 +57,10 @@ fn benchmark_sync_success(c: &mut Criterion) {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("benchmark retry policy should be valid");
-    let retry = RetryConfig::<&'static str>::builder().policy(policy).build().expect("valid config");
+    let retry = RetryConfig::<&'static str>::builder()
+        .policy(policy)
+        .build()
+        .expect("valid config");
 
     c.bench_function("sync_success", |b| {
         b.iter(|| {
@@ -83,7 +86,10 @@ fn benchmark_sync_cancellation_token(c: &mut Criterion) {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("benchmark retry policy should be valid");
-    let retry = RetryConfig::<&'static str>::builder().policy(policy).build().expect("valid config");
+    let retry = RetryConfig::<&'static str>::builder()
+        .policy(policy)
+        .build()
+        .expect("valid config");
     let without_token = Retry::new(&retry);
     let with_token = Retry::new(&retry).cancellation_token(RetryCancellationToken::new());
 
@@ -108,16 +114,23 @@ fn benchmark_observer_counts(c: &mut Criterion) {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("benchmark retry policy should be valid");
-    let retry_0 = RetryConfig::<&'static str>::builder().policy(policy.clone()).build().expect("valid config");
-    let retry_1 = RetryConfig::<&'static str>::builder().policy(policy.clone())
+    let retry_0 = RetryConfig::<&'static str>::builder()
+        .policy(policy.clone())
+        .build()
+        .expect("valid config");
+    let retry_1 = RetryConfig::<&'static str>::builder()
+        .policy(policy.clone())
         .observer(NoopObserver)
-        .build().expect("valid config");
-    let retry_4 = RetryConfig::<&'static str>::builder().policy(policy)
+        .build()
+        .expect("valid config");
+    let retry_4 = RetryConfig::<&'static str>::builder()
+        .policy(policy)
         .observer(NoopObserver)
         .observer(NoopObserver)
         .observer(NoopObserver)
         .observer(NoopObserver)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
 
     for (name, retry) in [
         ("observer_count/0", retry_0),
@@ -141,16 +154,23 @@ fn benchmark_rule_counts(c: &mut Criterion) {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("benchmark retry policy should be valid");
-    let retry_0 = RetryConfig::<&'static str>::builder().policy(policy.clone()).build().expect("valid config");
-    let retry_1 = RetryConfig::<&'static str>::builder().policy(policy.clone())
+    let retry_0 = RetryConfig::<&'static str>::builder()
+        .policy(policy.clone())
+        .build()
+        .expect("valid config");
+    let retry_1 = RetryConfig::<&'static str>::builder()
+        .policy(policy.clone())
         .rule(use_default_rule)
-        .build().expect("valid config");
-    let retry_4 = RetryConfig::<&'static str>::builder().policy(policy)
+        .build()
+        .expect("valid config");
+    let retry_4 = RetryConfig::<&'static str>::builder()
+        .policy(policy)
         .rule(use_default_rule)
         .rule(use_default_rule)
         .rule(use_default_rule)
         .rule(use_default_rule)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
 
     for (name, retry) in [
         ("rule_count/0", retry_0),
@@ -174,7 +194,11 @@ fn benchmark_completion_observer(c: &mut Criterion) {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("benchmark retry policy should be valid");
-    let retry = RetryConfig::<&'static str>::builder().policy(policy).observer(NoopObserver).build().expect("valid config");
+    let retry = RetryConfig::<&'static str>::builder()
+        .policy(policy)
+        .observer(NoopObserver)
+        .build()
+        .expect("valid config");
     let facade = Retry::new(&retry);
 
     c.bench_function("completion_observer_success", |b| {
@@ -194,7 +218,10 @@ fn benchmark_worker_noop(c: &mut Criterion) {
             .backoff(BackoffPolicy::immediate())
             .build()
             .expect("benchmark retry policy should be valid");
-        let retry = RetryConfig::<&'static str>::builder().policy(policy).build().expect("valid config");
+        let retry = RetryConfig::<&'static str>::builder()
+            .policy(policy)
+            .build()
+            .expect("valid config");
         let facade = WorkerRetry::new(&retry);
 
         c.bench_function("worker_noop_success", |b| {
@@ -215,9 +242,11 @@ fn benchmark_sync_no_delay_retries(c: &mut Criterion) {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("benchmark retry policy should be valid");
-    let retry = RetryConfig::<&'static str>::builder().policy(policy)
+    let retry = RetryConfig::<&'static str>::builder()
+        .policy(policy)
         .fallback(qubit_retry::RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
 
     c.bench_function("sync_no_delay_retries", |b| {
         b.iter(|| {
@@ -242,7 +271,11 @@ fn benchmark_sync_failure_listener(c: &mut Criterion) {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("benchmark retry policy should be valid");
-    let retry = RetryConfig::<&'static str>::builder().policy(policy).observer(observe_failure).build().expect("valid config");
+    let retry = RetryConfig::<&'static str>::builder()
+        .policy(policy)
+        .observer(observe_failure)
+        .build()
+        .expect("valid config");
 
     c.bench_function("sync_failure_listener", |b| {
         b.iter(|| {
@@ -259,12 +292,14 @@ fn benchmark_rule_chain_decision(c: &mut Criterion) {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("benchmark retry policy should be valid");
-    let retry = RetryConfig::<&'static str>::builder().policy(policy)
+    let retry = RetryConfig::<&'static str>::builder()
+        .policy(policy)
         .rule(use_default_rule)
         .rule(use_default_rule)
         .rule(use_default_rule)
         .rule(abort_rule)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
 
     c.bench_function("rule_chain_decision", |b| {
         b.iter(|| {
@@ -305,11 +340,15 @@ fn benchmark_async_success(c: &mut Criterion) {
             .backoff(BackoffPolicy::immediate())
             .build()
             .expect("benchmark retry policy should be valid");
-        let retry = RetryConfig::<&'static str>::builder().policy(policy).build().expect("valid config");
+        let retry = RetryConfig::<&'static str>::builder()
+            .policy(policy)
+            .build()
+            .expect("valid config");
 
         c.bench_function("async_success", |b| {
             b.iter(|| {
-                let result = runtime.block_on(TokioRetry::new(&retry).run(|| async { Ok::<u64, &'static str>(black_box(42)) }));
+                let result =
+                    runtime.block_on(TokioRetry::new(&retry).run(|| async { Ok::<u64, &'static str>(black_box(42)) }));
                 let _ = black_box(result);
             });
         });

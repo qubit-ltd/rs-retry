@@ -15,8 +15,8 @@ use qubit_clock::Timer;
 use super::internal::BlockingBackoffOutcome;
 use super::internal::RetryFlowController;
 use super::internal::wait_for_backoff;
-use super::retry_config::RetryConfig;
 use super::retry_cancellation_token::RetryCancellationToken;
+use super::retry_config::RetryConfig;
 use crate::AttemptFailure;
 use crate::RetryError;
 use crate::RetryInfrastructureFailure;
@@ -166,8 +166,7 @@ impl<'a, E: 'static> Retry<'a, E> {
         let default_timer = StdTimer::new();
         let timer: &dyn Timer = self.timer.as_deref().unwrap_or(&default_timer);
         let clock = timer.clock();
-        let mut controller =
-            RetryFlowController::new(clock.now(), self.config, self.random_source.clone(), None, None);
+        let mut controller = RetryFlowController::new(clock.now(), self.config, self.random_source.clone(), None, None);
 
         loop {
             let cancellation = self.cancellation_token.as_ref();

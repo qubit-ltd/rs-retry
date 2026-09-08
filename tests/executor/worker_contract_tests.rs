@@ -21,8 +21,8 @@ use qubit_clock::Timer;
 use qubit_clock::TimerFuture;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
@@ -67,9 +67,11 @@ impl Timer for RegistrationAdvancingTimer {
 #[test]
 fn test_worker_facade_retries_with_cooperative_token() {
     let policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
-    let retry = RetryConfig::<UnitTestError>::builder().policy(policy)
+    let retry = RetryConfig::<UnitTestError>::builder()
+        .policy(policy)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let attempts = Arc::new(AtomicU32::new(0));
     let result = WorkerRetry::new(&retry)
         .run({
@@ -89,9 +91,11 @@ fn test_worker_facade_retries_with_cooperative_token() {
 #[test]
 fn test_worker_attempt_timeout_has_a_distinct_terminal_reason() {
     let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let retry = RetryConfig::<UnitTestError>::builder().policy(policy)
+    let retry = RetryConfig::<UnitTestError>::builder()
+        .policy(policy)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let clock = ManualMonotonicClock::new_shared();
     let operation_clock = Arc::clone(&clock);
     let error = WorkerRetry::new(&retry)
@@ -120,7 +124,10 @@ fn test_worker_attempt_timeout_has_a_distinct_terminal_reason() {
 #[test]
 fn test_worker_shorter_flow_timeout_reports_flow_source() {
     let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let retry = RetryConfig::<UnitTestError>::builder().policy(policy).build().expect("valid config");
+    let retry = RetryConfig::<UnitTestError>::builder()
+        .policy(policy)
+        .build()
+        .expect("valid config");
     let clock = ManualMonotonicClock::new_shared();
     let operation_clock = Arc::clone(&clock);
     let error = WorkerRetry::new(&retry)
@@ -162,12 +169,14 @@ fn test_worker_flow_timeout_caps_retry_sleep() {
             .backoff(BackoffPolicy::fixed(Duration::from_millis(500)))
             .build()
             .unwrap();
-        let config = RetryConfig::<UnitTestError>::builder().policy(policy)
+        let config = RetryConfig::<UnitTestError>::builder()
+            .policy(policy)
             .observer(move |_: &AttemptFailure<UnitTestError>, _: &RetryContext| {
                 failed_sender.send(()).expect("test controller alive");
             })
             .fallback(RetryFallback::Retry)
-            .build().expect("valid config");
+            .build()
+            .expect("valid config");
         WorkerRetry::new(&config)
             .timer(worker_clock.new_timer())
             .hard_flow_timeout(Duration::from_millis(10))
@@ -230,10 +239,12 @@ fn test_worker_backoff_registration_does_not_move_flow_deadline() {
             .backoff(BackoffPolicy::fixed(Duration::from_secs(20)))
             .build()
             .expect("valid retry policy");
-        let config = RetryConfig::<UnitTestError>::builder().policy(policy)
+        let config = RetryConfig::<UnitTestError>::builder()
+            .policy(policy)
             .fallback(RetryFallback::Retry)
-            .build().expect("valid config");
-    WorkerRetry::new(&config)
+            .build()
+            .expect("valid config");
+        WorkerRetry::new(&config)
             .timer(timer)
             .hard_flow_timeout(Duration::from_secs(10))
             .run(move |_| {

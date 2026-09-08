@@ -12,16 +12,15 @@ use std::error::Error;
 
 use qubit_retry::AttemptFailure;
 use qubit_retry::Retry;
-use qubit_retry::RetryConfig;
 use qubit_retry::RetryCallbackKind;
 use qubit_retry::RetryCallbackPhase;
+use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryObserver;
-use qubit_retry::RetryPolicy;
 
 use crate::support::TestError;
 
@@ -29,9 +28,11 @@ use crate::support::TestError;
 /// application error as its standard error source.
 #[test]
 fn test_retry_error_preserves_terminal_failure_and_context() {
-    let retry = RetryConfig::<TestError>::builder().max_attempts(2)
+    let retry = RetryConfig::<TestError>::builder()
+        .max_attempts(2)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
 
     let error = Retry::new(&retry)
         .run(|| Err::<(), _>(TestError("fatal")))
@@ -67,10 +68,12 @@ impl RetryObserver<NonCloneError> for TerminalPanickingObserver {
 /// Verifies retry-error mapping preserves context and completion diagnostics.
 #[test]
 fn test_map_error_preserves_context_and_completion_diagnostics() {
-    let config = RetryConfig::<NonCloneError>::builder().max_attempts(1)
+    let config = RetryConfig::<NonCloneError>::builder()
+        .max_attempts(1)
         .observer(TerminalPanickingObserver)
         .fallback(RetryFallback::Retry)
-        .build().expect("valid config");
+        .build()
+        .expect("valid config");
     let error = Retry::new(&config)
         .run(|| Err::<(), _>(NonCloneError(String::from("retry"))))
         .expect_err("the only failed attempt must exhaust the flow");

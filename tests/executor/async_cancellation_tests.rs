@@ -46,12 +46,10 @@ use qubit_retry::BackoffPolicy;
 #[cfg(feature = "tokio")]
 use qubit_retry::BackoffStep;
 #[cfg(feature = "tokio")]
-use qubit_retry::TokioRetry;
-use qubit_retry::RetryConfig;
-#[cfg(feature = "tokio")]
 use qubit_retry::RetryCancellationPhase;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryCancellationToken;
+use qubit_retry::RetryConfig;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryContext;
 #[cfg(feature = "tokio")]
@@ -64,9 +62,9 @@ use qubit_retry::RetryFallback;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryObserver;
 #[cfg(feature = "tokio")]
-use qubit_retry::RetryPolicy;
-#[cfg(feature = "tokio")]
 use qubit_retry::RetryTimeoutScope;
+#[cfg(feature = "tokio")]
+use qubit_retry::TokioRetry;
 
 #[cfg(feature = "tokio")]
 use crate::support::TestError;
@@ -270,11 +268,11 @@ async fn test_backoff_cancellation_wins_when_timer_is_ready_in_same_poll() {
     let token = RetryCancellationToken::new();
     let operation_calls = Arc::new(AtomicUsize::new(0));
     let config = RetryConfig::<TestError>::builder()
-            .max_attempts(2)
-            .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
-
-    .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
-    .build().expect("valid config");
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
+        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
+        .build()
+        .expect("valid config");
     let executor = TokioRetry::new(&config).cancellation_token(token.clone());
     let future = executor.run({
         let operation_calls = Arc::clone(&operation_calls);
@@ -314,17 +312,17 @@ async fn test_before_attempt_callback_cancellation_stops_before_operation() {
     let operation_calls = Arc::new(AtomicUsize::new(0));
     let rule_calls = Arc::new(AtomicUsize::new(0));
     let config = RetryConfig::<TestError>::builder()
-            .max_attempts(2)
-
-    .observer(CancelOnBeforeAttempt { token: token.clone() })
-    .rule({
-        let rule_calls = Arc::clone(&rule_calls);
-        move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-            rule_calls.fetch_add(1, Ordering::SeqCst);
-            RetryDecision::Retry
-        }
-    })
-    .build().expect("valid config");
+        .max_attempts(2)
+        .observer(CancelOnBeforeAttempt { token: token.clone() })
+        .rule({
+            let rule_calls = Arc::clone(&rule_calls);
+            move |_: &AttemptFailure<TestError>, _: &RetryContext| {
+                rule_calls.fetch_add(1, Ordering::SeqCst);
+                RetryDecision::Retry
+            }
+        })
+        .build()
+        .expect("valid config");
     let error = TokioRetry::new(&config)
         .cancellation_token(token)
         .run({
@@ -351,22 +349,22 @@ async fn test_attempt_failed_callback_cancellation_stops_before_rule() {
     let rule_calls = Arc::new(AtomicUsize::new(0));
     let scheduled_calls = Arc::new(AtomicUsize::new(0));
     let config = RetryConfig::<TestError>::builder()
-            .max_attempts(2)
-            .backoff(BackoffPolicy::immediate())
-
-    .fallback(RetryFallback::Retry)
-    .observer(CancelOnAttemptFailed {
-        token: token.clone(),
-        scheduled_calls: Arc::clone(&scheduled_calls),
-    })
-    .rule({
-        let rule_calls = Arc::clone(&rule_calls);
-        move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-            rule_calls.fetch_add(1, Ordering::SeqCst);
-            RetryDecision::Retry
-        }
-    })
-    .build().expect("valid config");
+        .max_attempts(2)
+        .backoff(BackoffPolicy::immediate())
+        .fallback(RetryFallback::Retry)
+        .observer(CancelOnAttemptFailed {
+            token: token.clone(),
+            scheduled_calls: Arc::clone(&scheduled_calls),
+        })
+        .rule({
+            let rule_calls = Arc::clone(&rule_calls);
+            move |_: &AttemptFailure<TestError>, _: &RetryContext| {
+                rule_calls.fetch_add(1, Ordering::SeqCst);
+                RetryDecision::Retry
+            }
+        })
+        .build()
+        .expect("valid config");
     let error = TokioRetry::new(&config)
         .cancellation_token(token)
         .run({
@@ -397,20 +395,20 @@ async fn test_rule_callback_cancellation_stops_before_retry_scheduling() {
     let operation_calls = Arc::new(AtomicUsize::new(0));
     let scheduled_calls = Arc::new(AtomicUsize::new(0));
     let config = RetryConfig::<TestError>::builder()
-            .max_attempts(2)
-            .backoff(BackoffPolicy::immediate())
-
-    .rule({
-        let token = token.clone();
-        move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-            token.cancel();
-            RetryDecision::Retry
-        }
-    })
-    .observer(CountRetryScheduled {
-        calls: Arc::clone(&scheduled_calls),
-    })
-    .build().expect("valid config");
+        .max_attempts(2)
+        .backoff(BackoffPolicy::immediate())
+        .rule({
+            let token = token.clone();
+            move |_: &AttemptFailure<TestError>, _: &RetryContext| {
+                token.cancel();
+                RetryDecision::Retry
+            }
+        })
+        .observer(CountRetryScheduled {
+            calls: Arc::clone(&scheduled_calls),
+        })
+        .build()
+        .expect("valid config");
     let error = TokioRetry::new(&config)
         .cancellation_token(token)
         .run({
@@ -438,23 +436,23 @@ async fn test_retry_scheduled_callback_cancellation_stops_before_sleep() {
     let token = RetryCancellationToken::new();
     let operation_calls = Arc::new(AtomicUsize::new(0));
     let config = RetryConfig::<TestError>::builder()
-            .max_attempts(2)
-            .backoff(BackoffPolicy::fixed(delay))
-
-    .observer(CancelOnRetryScheduled { token: token.clone() })
-    .fallback(RetryFallback::Retry)
-    .build().expect("valid config");
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(delay))
+        .observer(CancelOnRetryScheduled { token: token.clone() })
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
     let error = TokioRetry::new(&config)
         .cancellation_token(token)
-    .run({
-        let operation_calls = Arc::clone(&operation_calls);
-        move || {
-            operation_calls.fetch_add(1, Ordering::SeqCst);
-            async { Err::<(), _>(TestError("scheduled")) }
-        }
-    })
-    .await
-    .expect_err("scheduled callback cancellation must stop before sleeping");
+        .run({
+            let operation_calls = Arc::clone(&operation_calls);
+            move || {
+                operation_calls.fetch_add(1, Ordering::SeqCst);
+                async { Err::<(), _>(TestError("scheduled")) }
+            }
+        })
+        .await
+        .expect_err("scheduled callback cancellation must stop before sleeping");
 
     assert_eq!(
         assert_cancelled(&error, RetryCancellationPhase::Backoff),
@@ -477,17 +475,17 @@ async fn test_backoff_registration_cancellation_wins_over_timer_failure() {
         registrations: Arc::clone(&registrations),
     });
     let config2 = RetryConfig::<TestError>::builder()
-            .max_attempts(2)
-            .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
-
-    .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
-    .build().expect("valid config");
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
+        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
+        .build()
+        .expect("valid config");
     let error = TokioRetry::new(&config2)
         .timer(timer)
-    .cancellation_token(token)
-    .run(|| async { Err::<(), _>(TestError("registration")) })
-    .await
-    .expect_err("registration-time cancellation must stop the retry");
+        .cancellation_token(token)
+        .run(|| async { Err::<(), _>(TestError("registration")) })
+        .await
+        .expect_err("registration-time cancellation must stop the retry");
 
     assert_eq!(registrations.load(Ordering::SeqCst), 1);
     assert_eq!(error.context().attempts(), 1);
@@ -515,8 +513,7 @@ async fn test_async_ready_result_cancellation_and_equal_deadline_priority() {
         let token = RetryCancellationToken::new();
         let operation_token = token.clone();
         let deadline = Duration::from_secs(5);
-        let config3 = RetryConfig::<&str>::builder()
-            .build().expect("valid config");
+        let config3 = RetryConfig::<&str>::builder().build().expect("valid config");
         let result = TokioRetry::new(&config3)
             .timer(clock.new_timer())
             .hard_attempt_timeout(deadline)
