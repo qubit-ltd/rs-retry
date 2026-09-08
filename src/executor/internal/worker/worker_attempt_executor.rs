@@ -32,15 +32,15 @@ use std::time::Instant;
 
 use qubit_clock::TimerFuture;
 
-use super::super::attempt_cancellation_token::AttemptCancellationToken;
-use super::super::retry_cancellation_token::RetryCancellationToken;
 use super::worker_event::WorkerEvent;
 use super::worker_wake::WorkerWake;
 use crate::AttemptFailure;
 use crate::RetryTimeoutScope;
 use crate::WorkerStopTrigger;
+use crate::executor::attempt_cancellation_token::AttemptCancellationToken;
 use crate::executor::internal::BlockingAttempt;
 use crate::executor::internal::BlockingAttemptOutcome;
+use crate::executor::retry_cancellation_token::RetryCancellationToken;
 use crate::internal::retry_panic_from_payload;
 
 /// Runs one blocking attempt on a worker thread.
