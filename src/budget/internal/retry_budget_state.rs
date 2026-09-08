@@ -7,7 +7,7 @@
 // =============================================================================
 //! Shared continuation accounting driven by explicit monotonic samples.
 
-#![cfg_attr(not(any(feature = "tokio", feature = "worker")), allow(dead_code))]
+#![cfg_attr(not(any(feature = "async", feature = "worker")), allow(dead_code))]
 
 use std::time::Duration;
 

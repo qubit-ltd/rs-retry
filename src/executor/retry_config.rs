@@ -23,6 +23,10 @@ use crate::rule::RetryRules;
 ///
 /// Construct an executor with [`Retry::new`](super::Retry::new).
 #[cfg_attr(
+    feature = "async",
+    doc = " For runtime-independent async code use [`AsyncRetry::new`](super::AsyncRetry::new)."
+)]
+#[cfg_attr(
     feature = "tokio",
     doc = " For async code use [`TokioRetry::new`](super::TokioRetry::new)."
 )]

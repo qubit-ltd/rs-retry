@@ -11,137 +11,77 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use qubit_clock::MonotonicInstant;
-use qubit_clock::TimeError;
 use qubit_clock::Timer;
-use qubit_clock::TimerFuture;
 use qubit_clock::TokioTimer;
 
-use super::internal::AsyncAttemptOutcome;
-use super::internal::AsyncBackoffOutcome;
-use super::internal::RetryFlowController;
+use super::async_retry::AsyncRetry;
 use super::retry_config::RetryConfig;
-use crate::AttemptFailure;
 use crate::RetryCancellationToken;
 use crate::RetryError;
-use crate::RetryInfrastructureFailure;
 use crate::RetryRandomSource;
 use crate::RetrySuccess;
-use crate::RetryTimeoutScope;
 
 /// Tokio retry execution with explicit attempt and flow timeout controls.
 ///
-/// # Type Parameters
-/// - `'a`: Lifetime of the borrowed retry definition.
-/// - `E`: Application error; operation futures need not be Send.
-///
-/// # Examples
-///
-/// ```
-/// use std::future;
-/// use std::time::Duration;
-///
-/// use qubit_retry::RetryConfig;
-/// use qubit_retry::TokioRetry;
-/// use qubit_retry::RetryCancellationPhase;
-/// use qubit_retry::RetryCancellationToken;
-/// use qubit_retry::RetryErrorReason;
-///
-/// #[tokio::main(flavor = "current_thread")]
-/// async fn main() {
-///     let config = RetryConfig::<&str>::builder().max_attempts(3).build().unwrap();
-///     let token = RetryCancellationToken::new();
-///     let operation_token = token.clone();
-///     let execution = TokioRetry::new(&config);
-///     let error = execution
-///         .hard_attempt_timeout(Duration::from_secs(2))
-///         .hard_flow_timeout(Duration::from_secs(5))
-///         .cancellation_token(token)
-///         .run(move || {
-///             operation_token.cancel();
-///             future::pending::<Result<(), &str>>()
-///         }).await.unwrap_err();
-///     assert!(matches!(error.reason(), RetryErrorReason::Cancelled {
-///         phase: RetryCancellationPhase::Attempt, ..
-///     }));
-/// }
-/// ```
+/// This facade preserves the Tokio-backed default timer while sharing the
+/// runtime-independent retry implementation with [`AsyncRetry`].
 #[must_use]
 pub struct TokioRetry<'a, E> {
-    /// Borrowed immutable policy and callbacks.
-    config: &'a RetryConfig<E>,
-    /// Optional hard limit for each admitted attempt.
-    attempt_timeout: Option<Duration>,
-    /// Optional hard limit measured from execution start.
-    flow_timeout: Option<Duration>,
-    /// Optional shared cancellation source; None disables external
-    /// cancellation.
-    cancellation_token: Option<RetryCancellationToken>,
-    /// Timer and monotonic clock used by this execution.
-    timer: Option<Arc<dyn Timer>>,
-    /// Shared random source for uniform delays and jitter.
-    random_source: Option<Arc<dyn RetryRandomSource>>,
+    /// Runtime-independent async facade configured for this execution.
+    inner: AsyncRetry<'a, E>,
 }
 
 impl<'a, E: 'static> TokioRetry<'a, E> {
-    ///
-    /// Creates a facade borrowing the immutable retry definition.
+    /// Creates a Tokio retry executor from one immutable configuration.
     ///
     /// # Parameters
-    /// - `retry`: Definition that must outlive this facade.
+    /// - `config`: Configuration that must outlive this facade.
     ///
     /// # Returns
-    /// An execution facade with default runtime controls.
+    /// A Tokio-backed async execution facade.
     #[inline]
     pub fn new(config: &'a RetryConfig<E>) -> Self {
         Self {
-            config,
-            attempt_timeout: None,
-            flow_timeout: None,
-            cancellation_token: None,
-            timer: None,
-            random_source: None,
+            inner: AsyncRetry::new(config),
         }
     }
 
     /// Sets the maximum duration of one admitted attempt.
     ///
     /// # Parameters
-    /// - `timeout`: Duration measured by the configured monotonic clock; zero
-    ///   prevents admission.
+    /// - `timeout`: Hard duration for one attempt.
     ///
     /// # Returns
-    /// This facade with the selected hard timeout enabled.
+    /// This facade with the selected timeout.
     #[inline(always)]
     pub fn hard_attempt_timeout(mut self, timeout: Duration) -> Self {
-        self.attempt_timeout = Some(timeout);
+        self.inner = self.inner.hard_attempt_timeout(timeout);
         self
     }
 
     /// Sets the wall-clock timeout for the entire flow.
     ///
     /// # Parameters
-    /// - `timeout`: Duration measured by the configured monotonic clock; zero
-    ///   prevents admission.
+    /// - `timeout`: Hard duration for the complete retry flow.
     ///
     /// # Returns
-    /// This facade with the selected hard timeout enabled.
+    /// This facade with the selected timeout.
     #[inline(always)]
     pub fn hard_flow_timeout(mut self, timeout: Duration) -> Self {
-        self.flow_timeout = Some(timeout);
+        self.inner = self.inner.hard_flow_timeout(timeout);
         self
     }
 
     /// Sets the cooperative cancellation token observed by this execution.
     ///
     /// # Parameters
-    /// - `token`: Cancellation source shared with the caller.
+    /// - `token`: Token shared with the caller.
     ///
     /// # Returns
-    /// This facade observing the supplied source.
+    /// This facade observing the supplied token.
     #[inline(always)]
     pub fn cancellation_token(mut self, token: RetryCancellationToken) -> Self {
-        self.cancellation_token = Some(token);
+        self.inner = self.inner.cancellation_token(token);
         self
     }
 
@@ -151,297 +91,39 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
     /// - `timer`: Shared timer and monotonic clock.
     ///
     /// # Returns
-    /// This facade using the supplied runtime resource.
+    /// This facade using the supplied timer instead of its Tokio default.
     #[inline(always)]
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
-        self.timer = Some(timer);
+        self.inner = self.inner.timer(timer);
         self
     }
 
-    /// Injects the random source used by uniform backoff delays and jitter.
+    /// Injects the random source used by backoff jitter.
     ///
     /// # Parameters
-    /// - `random_source`: Shared sampler for uniform delays and jitter.
+    /// - `random_source`: Shared retry random source.
     ///
     /// # Returns
-    /// This facade using the supplied runtime resource.
+    /// This facade using the supplied random source.
     #[inline(always)]
     pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
-        self.random_source = Some(random_source);
+        self.inner = self.inner.random_source(random_source);
         self
     }
 
-    /// Executes one future per attempt.
-    ///
-    /// Completion observers run synchronously with the frozen result; their
-    /// panics are attached as diagnostics and do not change the outcome.
-    /// Dropping this future or an operation panic does not guarantee completion
-    /// notification. The operation future need not be `Send` or static.
-    ///
-    /// # Type Parameters
-    /// - `T`: Successful value returned to the caller.
-    /// - `F`: Operation factory invoked once per admitted attempt.
-    /// - `Fut`: Future produced for one attempt; need not be Send.
+    /// Executes one future per attempt on the current Tokio runtime.
     ///
     /// # Parameters
-    /// - `operation`: Operation whose errors are classified by the registered
-    ///   rules.
+    /// - `operation`: Factory creating one future for each admitted attempt.
     ///
     /// # Returns
-    /// The successful value with its frozen context and completion diagnostics.
-    ///
-    /// # Errors
-    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
-    /// or infrastructure failure with its context.
-    ///
-    /// # Panics
-    /// Operation panics unwind through the caller; custom timer, random source,
-    /// or clock panics are not intercepted.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the public error intentionally retains lossless terminal context"
-    )]
-    #[inline(always)]
+    /// The successful value or terminal retry error.
     pub async fn run<T, F, Fut>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
-        self.config.complete(self.run_inner(operation).await)
-    }
-
-    /// Executes retry controls and freezes the final result before completion
-    /// observers run. Returns the original terminal error on control failure.
-    ///
-    /// # Type Parameters
-    /// - `T`: Successful value returned to the caller.
-    /// - `F`: Operation factory invoked once per admitted attempt.
-    /// - `Fut`: Future produced for one attempt; need not be Send.
-    ///
-    /// # Parameters
-    /// - `operation`: Operation whose errors are classified by the registered
-    ///   rules.
-    ///
-    /// # Returns
-    /// The successful value with its frozen context and initially empty
-    /// diagnostics.
-    ///
-    /// # Errors
-    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
-    /// or infrastructure failure with its context.
-    ///
-    /// # Panics
-    /// Operation panics unwind through the caller; custom timer, random source,
-    /// or clock panics are not intercepted.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the internal helper propagates the lossless public terminal error"
-    )]
-    async fn run_inner<T, F, Fut>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
-    where
-        F: FnMut() -> Fut,
-        Fut: Future<Output = Result<T, E>>,
-    {
         let default_timer = TokioTimer::current();
-        let timer: &dyn Timer = self.timer.as_deref().unwrap_or(&default_timer);
-        let clock = timer.clock();
-        let mut controller = RetryFlowController::new(
-            clock.now(),
-            self.config,
-            self.random_source.clone(),
-            self.attempt_timeout,
-            self.flow_timeout,
-        );
-
-        loop {
-            let cancellation = self.cancellation_token.as_ref();
-            let admission_sample = controller.before_attempt(clock, cancellation)?;
-            let plan = controller.prepare_attempt(admission_sample)?;
-            let timeout_future = match register_timeout(&timer, plan.deadline()) {
-                Ok(timeout_future) => timeout_future,
-                Err(error) => {
-                    return Err(controller.record_inactive_infrastructure_failure(timer_failure(error), clock.now()));
-                }
-            };
-            controller.commit_prepared_attempt(plan, clock, cancellation)?;
-            let outcome = execute_attempt(timeout_future, plan.scope(), cancellation, operation()).await;
-
-            let directive = match outcome {
-                AsyncAttemptOutcome::Completed(Ok(value)) => {
-                    let context = controller.finish_success(clock)?;
-                    return Ok(RetrySuccess::new(value, context));
-                }
-                AsyncAttemptOutcome::Completed(Err(error)) => {
-                    controller.record_failure(AttemptFailure::Error(error), clock, cancellation)?
-                }
-                AsyncAttemptOutcome::TimedOut(scope) => {
-                    controller.record_failure(AttemptFailure::TimedOut { scope }, clock, cancellation)?
-                }
-                AsyncAttemptOutcome::Cancelled => {
-                    return Err(controller.record_attempt_cancellation(clock));
-                }
-                AsyncAttemptOutcome::TimerFailed(error) => {
-                    let error = controller.record_active_infrastructure_failure(timer_failure(error), clock.now());
-                    return Err(error);
-                }
-            };
-            match sleep(&timer, directive.deadline(), directive.is_immediate(), cancellation).await {
-                AsyncBackoffOutcome::Elapsed => {}
-                AsyncBackoffOutcome::Cancelled => {
-                    return Err(controller.record_backoff_cancellation(clock));
-                }
-                AsyncBackoffOutcome::TimerFailed(error) => {
-                    let error = controller.record_inactive_infrastructure_failure(timer_failure(error), clock.now());
-                    return Err(error);
-                }
-            }
-        }
-    }
-}
-
-/// Polls one operation with its optional cooperative timeout.
-///
-/// # Type Parameters
-/// - `T`: Successful operation value.
-/// - `E`: Application error.
-/// - `F`: Future for this single attempt.
-///
-/// # Parameters
-/// - `timeout_future`: Registered timeout, or None for no hard deadline.
-/// - `timeout_scope`: Source of the registered deadline, or None without a
-///   timer.
-/// - `cancellation`: Optional shared flow cancellation source.
-/// - `operation`: Future polled before cancellation and timeout on each select
-///   cycle.
-///
-/// # Returns
-/// The first selected outcome; a ready operation wins a same-poll tie.
-///
-/// # Panics
-/// Panics if a registered timer lacks its scope, indicating an internal
-/// invariant failure. Operation panics propagate.
-async fn execute_attempt<T, E, F>(
-    timeout_future: Option<TimerFuture>,
-    timeout_scope: Option<RetryTimeoutScope>,
-    cancellation: Option<&RetryCancellationToken>,
-    operation: F,
-) -> AsyncAttemptOutcome<T, E>
-where
-    F: Future<Output = Result<T, E>>,
-{
-    tokio::pin!(operation);
-    match (timeout_future, cancellation) {
-        (Some(mut timer_future), Some(token)) => {
-            let cancellation = token.cancelled();
-            tokio::pin!(cancellation);
-            let timeout_scope = timeout_scope.expect("a registered attempt timeout always retains its scope");
-            tokio::select! {
-                biased;
-                result = &mut operation => AsyncAttemptOutcome::Completed(result),
-                () = &mut cancellation => AsyncAttemptOutcome::Cancelled,
-                result = &mut timer_future => match result {
-                    Ok(()) => AsyncAttemptOutcome::TimedOut(timeout_scope),
-                    Err(error) => AsyncAttemptOutcome::TimerFailed(error),
-                },
-            }
-        }
-        (Some(mut timer_future), None) => {
-            let timeout_scope = timeout_scope.expect("a registered attempt timeout always retains its scope");
-            tokio::select! {
-                biased;
-                result = &mut operation => AsyncAttemptOutcome::Completed(result),
-                result = &mut timer_future => match result {
-                    Ok(()) => AsyncAttemptOutcome::TimedOut(timeout_scope),
-                    Err(error) => AsyncAttemptOutcome::TimerFailed(error),
-                },
-            }
-        }
-        (None, Some(token)) => {
-            let cancellation = token.cancelled();
-            tokio::pin!(cancellation);
-            tokio::select! {
-                biased;
-                result = &mut operation => AsyncAttemptOutcome::Completed(result),
-                () = &mut cancellation => AsyncAttemptOutcome::Cancelled,
-            }
-        }
-        (None, None) => AsyncAttemptOutcome::Completed(operation.await),
-    }
-}
-
-/// Registers the optional absolute deadline before counting the attempt.
-///
-/// # Errors
-/// Returns the timer's registration error without polling an operation future.
-///
-/// # Parameters
-/// - `timer`: Timer belonging to the current flow clock.
-/// - `deadline`: Absolute deadline, or None to disable the timer.
-///
-/// # Returns
-/// Some registered future, or None when no deadline was supplied.
-#[inline]
-fn register_timeout(timer: &dyn Timer, deadline: Option<MonotonicInstant>) -> Result<Option<TimerFuture>, TimeError> {
-    deadline.map(|deadline| timer.at(deadline)).transpose()
-}
-
-/// Waits for one retry delay using the configured timer and cancellation token.
-///
-/// # Parameters
-/// - `timer`: Timer used for the selected delay.
-/// - `deadline`: Absolute backoff deadline.
-/// - `cancellation`: Optional cancellation source.
-///
-/// # Returns
-/// Elapsed, cancelled, or timer-failed status; cancellation wins same-poll
-/// readiness.
-async fn sleep(
-    timer: &dyn Timer,
-    deadline: MonotonicInstant,
-    immediate: bool,
-    cancellation: Option<&RetryCancellationToken>,
-) -> AsyncBackoffOutcome {
-    if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
-        return AsyncBackoffOutcome::Cancelled;
-    }
-    if immediate {
-        return AsyncBackoffOutcome::Elapsed;
-    }
-    let mut timer_future = match timer.at(deadline) {
-        Ok(future) => future,
-        Err(_) if cancellation.is_some_and(RetryCancellationToken::is_cancelled) => {
-            return AsyncBackoffOutcome::Cancelled;
-        }
-        Err(error) => return AsyncBackoffOutcome::TimerFailed(error),
-    };
-    let Some(token) = cancellation else {
-        return match timer_future.await {
-            Ok(()) => AsyncBackoffOutcome::Elapsed,
-            Err(error) => AsyncBackoffOutcome::TimerFailed(error),
-        };
-    };
-    let cancellation = token.cancelled();
-    tokio::pin!(cancellation);
-    tokio::select! {
-        biased;
-        () = &mut cancellation => AsyncBackoffOutcome::Cancelled,
-        result = &mut timer_future => match result {
-            Ok(()) => AsyncBackoffOutcome::Elapsed,
-            Err(error) => AsyncBackoffOutcome::TimerFailed(error),
-        },
-    }
-}
-
-/// Converts one timer error into the public infrastructure failure model.
-///
-/// # Parameters
-/// - `error`: Timer error whose display text is retained.
-///
-/// # Returns
-/// A structured timer infrastructure failure.
-#[inline]
-fn timer_failure(error: TimeError) -> RetryInfrastructureFailure {
-    RetryInfrastructureFailure::Timer {
-        message: error.to_string().into_boxed_str(),
+        self.inner.run_with_default_timer(&default_timer, operation).await
     }
 }

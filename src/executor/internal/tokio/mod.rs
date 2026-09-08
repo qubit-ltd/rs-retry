@@ -1,4 +1,4 @@
-//! Tokio-specific retry outcomes.
+//! Shared asynchronous retry outcomes.
 
 mod async_attempt_outcome;
 mod async_backoff_outcome;
