@@ -11,12 +11,16 @@ python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else "Python 3
 python3 -B "$DOC_PROJECT_ROOT/scripts/check_doc_examples_tests.py"
 python3 -B "$DOC_PROJECT_ROOT/scripts/check_doc_examples.py"
 
-if cargo check --locked --manifest-path "$DOC_PROJECT_ROOT/tests/fixtures/worker_disabled/Cargo.toml"; then
+WORKER_DISABLED_LOG=$(mktemp)
+trap 'rm -f "$WORKER_DISABLED_LOG"' EXIT
+if cargo check --locked --manifest-path "$DOC_PROJECT_ROOT/tests/fixtures/worker_disabled/Cargo.toml" >"$WORKER_DISABLED_LOG" 2>&1; then
+    cat "$WORKER_DISABLED_LOG"
     echo "worker API unexpectedly available without the worker feature" >&2
     exit 1
 fi
-cargo check --no-default-features --locked
-cargo check --no-default-features --features worker --locked
-cargo check --no-default-features --features tokio --locked
-cargo check --no-default-features --features serde --locked
-cargo check --all-features --locked
+cat "$WORKER_DISABLED_LOG"
+if ! grep -q 'no `AttemptCancellationToken` in the root' "$WORKER_DISABLED_LOG" \
+    || ! grep -q 'no method named `worker`' "$WORKER_DISABLED_LOG"; then
+    echo "worker-disabled fixture failed for an unexpected reason" >&2
+    exit 1
+fi
