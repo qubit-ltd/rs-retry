@@ -119,8 +119,9 @@ waker 使用弱 sender，不能掩盖 worker/reaper sender 均已消失的情况
 若析构再次 panic，原分类仍为 NonString，只遗忘二次载荷，防止递归析构。
 这不保证任意业务结果/错误值析构、panic hook、进程 abort 或 TLS 析构双重 panic 的安全性。
 
-`RetrySuccess::into_parts` 和 `RetryError::into_parts` 都返回包含完成诊断的三元组，不保留旧有损别名。
-显式 `*_discarding_diagnostics` 方法同时丢弃上下文。`map_error` 只消费已保留的业务错误，
+`RetrySuccess::into_parts` 返回包含完成诊断的三元组；`RetryError::into_parts`
+返回原因、最后一次失败、上下文和完成诊断四个元素。不存在有损的失败消费别名。
+`into_value_discarding_diagnostics` 会同时丢弃上下文。`map_error` 只消费已保留的业务错误，
 `FnOnce` 映射函数调用零次或一次，其他数据全部保留，不额外要求 Clone/Send/static。
 
 三个公开 run 在 `run_inner` 返回后恰好调用一次 `Retry::complete`。

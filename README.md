@@ -133,11 +133,15 @@ diagnostics and do not replace the result; later completion observers still run.
 Completion time is excluded from context and timeout control. Unwinding, dropping
 an async run future, or process abort does not guarantee notification.
 
-`into_parts()` preserves value/failure, context, and diagnostics. `map_error`
+`into_parts()` preserves value/failure, context, and diagnostics. Use the full
+parts tuple when retaining a failure; there is no lossy `into_failure()` alias.
+`map_error`
 converts a retained application error with an `FnOnce` mapper called zero or one
 times, without additional `Clone`, `Send`, or `'static` bounds. Explicit
-`into_value_discarding_diagnostics()` and `into_failure_discarding_diagnostics()`
-also discard context. Use them only at a boundary that intentionally ignores both.
+`into_value_discarding_diagnostics()` discards context and diagnostics. There is
+no `into_failure_discarding_diagnostics()`; retain failures with the full
+four-element error tuple. Use lossy conversion only at a boundary that
+intentionally ignores the discarded information.
 
 `BackoffState` can be used independently for SSE or reconnect loops. Immediate,
 fixed, uniform, and exponential policies support full/bounded jitter and server
@@ -160,7 +164,7 @@ The `serde` feature covers configuration, not runtime errors, results or callbac
 - `attempt_timeout` and `flow_timeout` are now `hard_attempt_timeout` and
   `hard_flow_timeout`. Worker execution is opt-in through the `worker` feature.
 - Replace `into_value()` / `into_failure()` with the explicit diagnostic-discarding
-  names only when loss is intended. Prefer the full triple for conversions.
+  names only when loss is intended. Prefer the full result tuple for conversions.
 - Normal control callback return now refreshes the clock before cancellation or
   a returned decision. An invalid clock becomes `Infrastructure::Clock`; callback
   panic remains `CallbackFailed` with best-effort timing. Callback time is included

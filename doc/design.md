@@ -157,9 +157,10 @@ remains the classification and only the secondary payload is forgotten to preven
 recursive destruction. This is not a guarantee for arbitrary result/error
 value destructors, panic hooks, process abort, or TLS destructor double panic.
 
-Both `RetrySuccess::into_parts` and `RetryError::into_parts` return a triple with
-completion diagnostics. No old lossy aliases remain. Explicitly named
-`*_discarding_diagnostics` methods also discard context. `map_error` consumes
+`RetrySuccess::into_parts` returns a triple with completion diagnostics;
+`RetryError::into_parts` returns four elements: reason, last failure, context,
+and completion diagnostics. No lossy failure-consumer alias exists.
+`into_value_discarding_diagnostics` also discards context. `map_error` consumes
 only a retained application error with an `FnOnce` mapper called zero or one times;
 it preserves all other data and imposes no extra Clone/Send/static bounds.
 

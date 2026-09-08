@@ -353,8 +353,10 @@ does not cover arbitrary business-value destructors, panic hooks, or aborts.
 For 0.23, `RetrySuccess::into_parts` returns three values and `RetryError::into_parts` returns four values
 including diagnostics. Remove `into_parts_with_diagnostics`; it has no alias.
 The old `into_value` / `into_failure` names become explicit
-`into_value_discarding_diagnostics` / `into_failure_discarding_diagnostics`, which
-also discard context. Keep defaults and mode-specific priorities as described above.
+`into_value_discarding_diagnostics` discards context and completion diagnostics.
+There is no `into_failure_discarding_diagnostics`; retain a failure with the
+four-element `RetryError::into_parts` result. Keep defaults and mode-specific
+priorities as described above.
 Normal callback-return clock validation now precedes returned Abort decisions as
 well as cancellation; callback panic preserves its own primary classification.
 

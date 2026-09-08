@@ -115,9 +115,12 @@ worker 清理宽限期结束后仍未退出，会返回带触发原因的 `Worke
 不会替换结果，后续完成观察者仍会执行。完成耗时不计入上下文，也不受重试超时控制。
 操作展开栈、异步 run future 被丢弃或进程中止时，不保证完成通知。
 
-`into_parts()` 同时保留值或失败、上下文和诊断。`map_error` 只转换已保留的业务错误，`FnOnce` 映射函数调用零次或一次，
+`into_parts()` 同时保留值或失败、上下文和诊断。需要保留失败信息时应使用完整拆解结果，当前没有有损的 `into_failure()` 别名。
+`map_error` 只转换已保留的业务错误，`FnOnce` 映射函数调用零次或一次，
 不增加 `Clone`、`Send` 或 `'static` 约束。显式命名的 `into_value_discarding_diagnostics()` 和
-`into_failure_discarding_diagnostics()` 也会丢弃上下文，只应在明确不需要这两类信息的出口使用。
+`into_value_discarding_diagnostics()` 会丢弃上下文和诊断。当前没有
+`into_failure_discarding_diagnostics()`；需要保留失败时应使用完整的四元素错误拆解结果。
+有损转换只应在明确不需要被丢弃信息的出口使用。
 
 `BackoffState` 可以独立用于 SSE 或其他重连循环。立即、固定、均匀和指数退避支持 full/bounded 抖动及服务端提示。
 `maximum_delay()` 只描述基础策略，`limit_delay()` 则在提示和抖动之后限制最终延迟，**可能截短服务端要求的最小等待**。
