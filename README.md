@@ -131,9 +131,9 @@ consume another request's retry allowance.
 
 | Mode | Use it for | Boundary |
 | --- | --- | --- |
-| `sync()` | A bounded operation on the calling thread | Cannot interrupt the operation |
-| `tokio()` | An async client on Tokio | Cancels a pending future; cannot interrupt blocking code inside it |
-| `worker()` | Blocking work that checks a cancellation token | Requests thread exit and waits for cleanup; cannot forcibly terminate a thread |
+| `Retry::new(&config)` | A bounded operation on the calling thread | Cannot interrupt the operation |
+| `TokioRetry::new(&config)` | An async client on Tokio | Cancels a pending future; cannot interrupt blocking code inside it |
+| `WorkerRetry::new(&config)` | Blocking work that checks a cancellation token | Requests thread exit and waits for cleanup; cannot forcibly terminate a thread |
 
 Elapsed budgets control whether another attempt may start. They do not impose
 a deadline on an already running synchronous call. Cancellation also cannot undo
