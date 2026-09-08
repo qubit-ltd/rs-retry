@@ -14,7 +14,7 @@ budget/backoff directly; they do not need a synthetic operation executor.
 
 ```mermaid
 flowchart TD
-    F[SyncRetry / AsyncRetry / WorkerRetry] --> C[RetryFlowController]
+    F[SyncRetry / TokioRetry / WorkerRetry] --> C[RetryFlowController]
     C --> S[RetryFlowState / RetryBudgetState]
     C --> P[RetryPolicy / BackoffState]
     C --> O[RetryRules / RetryObservers controls]

@@ -154,7 +154,7 @@ fn test_async_facade_is_available() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn test_async_retry_matches_shared_terminal_matrix() {
+async fn test_tokio_retry_matches_shared_terminal_matrix() {
     let abort = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
         .build()
@@ -202,7 +202,7 @@ async fn test_async_retry_matches_shared_terminal_matrix() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn test_async_retry_matches_shared_callback_matrix() {
+async fn test_tokio_retry_matches_shared_callback_matrix() {
     let later_rule_calls = Arc::new(AtomicUsize::new(0));
     let rule_error = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
         .fallback(RetryFallback::Retry)
@@ -248,7 +248,7 @@ async fn test_async_retry_matches_shared_callback_matrix() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn test_async_retry_refreshes_elapsed_time_between_callback_phases() {
+async fn test_tokio_retry_refreshes_elapsed_time_between_callback_phases() {
     let clock = ManualMonotonicClock::new_shared();
     let records = callback_elapsed_records();
     let policy = RetryPolicy::builder()
@@ -302,7 +302,7 @@ async fn test_async_retry_refreshes_elapsed_time_between_callback_phases() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn test_async_retry_refreshes_elapsed_time_after_callback_panics() {
+async fn test_tokio_retry_refreshes_elapsed_time_after_callback_panics() {
     for phase in [
         RetryCallbackPhase::AttemptFailed,
         RetryCallbackPhase::RuleDecision,
@@ -340,7 +340,7 @@ async fn test_async_retry_refreshes_elapsed_time_after_callback_panics() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test(start_paused = true)]
-async fn test_async_retry_matches_shared_infrastructure_and_timeout_matrix() {
+async fn test_tokio_retry_matches_shared_infrastructure_and_timeout_matrix() {
     let timer_error = Retry::<TestError>::builder(
         RetryPolicy::builder()
             .max_attempts(2)

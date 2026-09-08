@@ -8,7 +8,7 @@
 //! Immutable retry facade.
 
 #[cfg(feature = "tokio")]
-use super::async_retry::AsyncRetry;
+use super::tokio_retry::TokioRetry;
 use super::retry_builder::RetryBuilder;
 use super::sync_retry::SyncRetry;
 #[cfg(feature = "worker")]
@@ -112,8 +112,8 @@ impl<E: 'static> Retry<E> {
     #[cfg(feature = "tokio")]
     #[must_use = "configure and run the selected execution facade"]
     #[inline(always)]
-    pub fn tokio(&self) -> AsyncRetry<'_, E> {
-        AsyncRetry::new(self)
+    pub fn tokio(&self) -> TokioRetry<'_, E> {
+        TokioRetry::new(self)
     }
 
     /// Selects worker-thread execution with cooperative cancellation.
