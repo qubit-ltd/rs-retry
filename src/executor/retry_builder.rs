@@ -24,6 +24,7 @@ use crate::rule::RetryRules;
 pub struct RetryBuilder<E> {
     /// Validated limits and backoff shared by executions.
     policy: RetryPolicy,
+    /// Action used when no registered rule classifies an application failure.
     fallback: RetryFallback,
     /// Ordered decision callbacks shared across executions.
     rules: Vec<Arc<dyn RetryRule<E>>>,
@@ -78,14 +79,14 @@ impl<E: 'static> RetryBuilder<E> {
 
     /// Appends an already shared rule without wrapping it in another `Arc`.
     #[inline(always)]
-    pub fn shared_rule(mut self, rule: std::sync::Arc<dyn RetryRule<E>>) -> Self {
+    pub fn shared_rule(mut self, rule: Arc<dyn RetryRule<E>>) -> Self {
         self.rules.push(rule);
         self
     }
 
     /// Appends an already shared observer without wrapping it in another `Arc`.
     #[inline(always)]
-    pub fn shared_observer(mut self, observer: std::sync::Arc<dyn RetryObserver<E>>) -> Self {
+    pub fn shared_observer(mut self, observer: Arc<dyn RetryObserver<E>>) -> Self {
         self.observers.push(observer);
         self
     }
