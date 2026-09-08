@@ -353,7 +353,9 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                     return Err(error);
                 }
                 BlockingAttemptOutcome::Stopped { trigger } => match trigger {
-                    WorkerStopTrigger::TimerFailure => unreachable!("timer failure has a structured outcome"),
+                    WorkerStopTrigger::TimerFailure => {
+                        unreachable!("timer failure has a structured outcome")
+                    }
                     WorkerStopTrigger::Cancellation => {
                         return Err(controller.record_attempt_cancellation(clock));
                     }
