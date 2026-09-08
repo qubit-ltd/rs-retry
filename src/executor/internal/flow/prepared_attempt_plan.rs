@@ -7,7 +7,7 @@
 // =============================================================================
 //! Timed admission plan with an immutable timeout deadline.
 
-#![cfg_attr(not(any(feature = "tokio", feature = "worker")), allow(dead_code))]
+#![cfg_attr(not(any(feature = "async", feature = "worker")), allow(dead_code))]
 
 use std::time::Duration;
 

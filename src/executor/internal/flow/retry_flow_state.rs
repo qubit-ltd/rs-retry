@@ -7,7 +7,7 @@
 // =============================================================================
 //! Runtime-independent state used by the retry flow controller.
 
-#![cfg_attr(not(any(feature = "tokio", feature = "worker")), allow(dead_code))]
+#![cfg_attr(not(any(feature = "async", feature = "worker")), allow(dead_code))]
 
 use std::num::NonZeroU32;
 use std::sync::Arc;

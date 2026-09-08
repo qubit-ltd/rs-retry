@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! AsyncAttemptOutcome state used by the Tokio executor.
+//! AsyncAttemptOutcome state shared by asynchronous executors.
 
 use qubit_clock::TimeError;
 

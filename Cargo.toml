@@ -39,7 +39,8 @@ harness = false
 default = []
 worker = []
 serde = ["dep:serde"]
-tokio = ["dep:tokio", "qubit-clock/tokio"]
+async = []
+tokio = ["async", "dep:tokio", "qubit-clock/tokio"]
 
 [dependencies]
 qubit-budget = { version = "0.5", features = ["time"] }
