@@ -57,33 +57,8 @@ impl<E> Default for RetryRules<E> {
 }
 
 impl<E: 'static> RetryRules<E> {
-    /// Appends one rule in evaluation order.
-    ///
-    /// # Type Parameters
-    /// - `R`: Thread-safe rule stored behind a shared pointer.
-    ///
-    /// # Parameters
-    /// - `rule`: Callback consumed and appended after all existing
-    ///   registrations.
-    #[inline]
-    pub(crate) fn push<R>(&mut self, rule: R)
-    where
-        R: RetryRule<E>,
-    {
-        let mut rules: Vec<_> = self.rules.iter().cloned().collect();
-        rules.push(Arc::new(rule));
-        self.rules = rules.into();
-    }
-
-    /// Appends an already shared rule in evaluation order.
-    ///
-    /// # Parameters
-    /// - `rule`: Shared callback appended after all existing registrations.
-    #[inline]
-    pub(crate) fn push_shared(&mut self, rule: Arc<dyn RetryRule<E>>) {
-        let mut rules: Vec<_> = self.rules.iter().cloned().collect();
-        rules.push(rule);
-        self.rules = rules.into();
+    pub(crate) fn from_vec(rules: Vec<Arc<dyn RetryRule<E>>>) -> Self {
+        Self { rules: rules.into() }
     }
 
     /// Resolves the first non-default decision.

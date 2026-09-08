@@ -286,7 +286,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                     return Err(error);
                 }
             };
-            match sleep(&timer, directive.deadline(), cancellation).await {
+            match sleep(&timer, directive.deadline(), directive.is_immediate(), cancellation).await {
                 AsyncBackoffOutcome::Elapsed => {}
                 AsyncBackoffOutcome::Cancelled => {
                     return Err(controller.record_backoff_cancellation(clock));
@@ -399,10 +399,14 @@ fn register_timeout(timer: &dyn Timer, deadline: Option<MonotonicInstant>) -> Re
 async fn sleep(
     timer: &dyn Timer,
     deadline: MonotonicInstant,
+    immediate: bool,
     cancellation: Option<&RetryCancellationToken>,
 ) -> AsyncBackoffOutcome {
     if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
         return AsyncBackoffOutcome::Cancelled;
+    }
+    if immediate {
+        return AsyncBackoffOutcome::Elapsed;
     }
     let mut timer_future = match timer.at(deadline) {
         Ok(future) => future,

@@ -11,18 +11,24 @@ use qubit_clock::MonotonicInstant;
 pub(crate) struct PreparedBackoffPlan {
     /// Absolute deadline at which the selected backoff ends.
     deadline: MonotonicInstant,
+    immediate: bool,
 }
 
 impl PreparedBackoffPlan {
     /// Creates a plan with an absolute deadline.
     #[inline]
-    pub(crate) fn new(deadline: MonotonicInstant) -> Self {
-        Self { deadline }
+    pub(crate) fn new(deadline: MonotonicInstant, immediate: bool) -> Self {
+        Self { deadline, immediate }
     }
 
     /// Returns the absolute deadline that was prepared for backoff.
     #[inline]
     pub(crate) fn deadline(&self) -> MonotonicInstant {
         self.deadline
+    }
+
+    #[inline]
+    pub(crate) fn is_immediate(&self) -> bool {
+        self.immediate
     }
 }

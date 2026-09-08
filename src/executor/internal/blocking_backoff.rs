@@ -41,10 +41,14 @@ use crate::RetryCancellationToken;
 pub(crate) fn wait_for_backoff(
     timer: &dyn Timer,
     deadline: MonotonicInstant,
+    immediate: bool,
     cancellation: Option<&RetryCancellationToken>,
 ) -> BlockingBackoffOutcome {
     if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
         return BlockingBackoffOutcome::Cancelled;
+    }
+    if immediate {
+        return BlockingBackoffOutcome::Elapsed;
     }
     let mut timer_future = match timer.at(deadline) {
         Ok(future) => future,
