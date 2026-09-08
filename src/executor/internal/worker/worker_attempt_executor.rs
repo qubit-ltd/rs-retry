@@ -231,7 +231,8 @@ fn wait_for_worker<E: Send + 'static>(
             Ok(WorkerEvent::Joined(Ok(()))) => joined = true,
             Ok(WorkerEvent::Joined(Err(panic))) => {
                 // A failed join may have no Completed event. Its panic is the
-                // attempt result, but observed cancellation still takes priority.
+                // attempt result, but observed cancellation still takes
+                // priority.
                 joined = true;
                 completed = Some(Err(AttemptFailure::Panicked { panic }));
             }

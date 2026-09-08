@@ -53,11 +53,21 @@ impl fmt::Display for RetryErrorReason {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Aborted => formatter.write_str("aborted"),
-            Self::Exhausted { limit } => write!(formatter, "exhausted ({limit})"),
-            Self::TimedOut { scope } => write!(formatter, "timed out ({scope})"),
-            Self::Cancelled { phase } => write!(formatter, "cancelled ({phase})"),
-            Self::CallbackFailed { callback } => write!(formatter, "callback failed ({callback})"),
-            Self::Infrastructure { failure } => write!(formatter, "infrastructure failure ({failure})"),
+            Self::Exhausted { limit } => {
+                write!(formatter, "exhausted ({limit})")
+            }
+            Self::TimedOut { scope } => {
+                write!(formatter, "timed out ({scope})")
+            }
+            Self::Cancelled { phase } => {
+                write!(formatter, "cancelled ({phase})")
+            }
+            Self::CallbackFailed { callback } => {
+                write!(formatter, "callback failed ({callback})")
+            }
+            Self::Infrastructure { failure } => {
+                write!(formatter, "infrastructure failure ({failure})")
+            }
         }
     }
 }
