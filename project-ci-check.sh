@@ -20,7 +20,7 @@ if cargo check --locked --manifest-path "$DOC_PROJECT_ROOT/tests/fixtures/worker
 fi
 cat "$WORKER_DISABLED_LOG"
 if ! grep -q 'no `AttemptCancellationToken` in the root' "$WORKER_DISABLED_LOG" \
-    || ! grep -q 'no method named `worker`' "$WORKER_DISABLED_LOG"; then
+    || ! grep -q 'no `WorkerRetry` in the root' "$WORKER_DISABLED_LOG"; then
     echo "worker-disabled fixture failed for an unexpected reason" >&2
     exit 1
 fi
