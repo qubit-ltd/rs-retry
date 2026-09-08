@@ -306,11 +306,7 @@ fn benchmark_async_success(c: &mut Criterion) {
 
         c.bench_function("async_success", |b| {
             b.iter(|| {
-                let result = runtime.block_on(
-                    retry
-                        .asynchronous()
-                        .run(|| async { Ok::<u64, &'static str>(black_box(42)) }),
-                );
+                let result = runtime.block_on(retry.tokio().run(|| async { Ok::<u64, &'static str>(black_box(42)) }));
                 let _ = black_box(result);
             });
         });

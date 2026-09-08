@@ -156,7 +156,7 @@ async fn test_regression_control_cancellation_refreshes_async_context() {
     ] {
         let (retry, clock, token) = cancellation_case(phase);
         let error = retry
-            .asynchronous()
+            .tokio()
             .timer(clock.new_timer())
             .cancellation_token(token)
             .run(|| async { Err::<(), _>("offline") })
@@ -304,7 +304,7 @@ async fn test_async_control_clock_failures_and_cancellation_have_explicit_preced
             for panic_after in [false, true] {
                 let (retry, timer, token) = invalid_clock_case(phase, mode, panic_after);
                 let error = retry
-                    .asynchronous()
+                    .tokio()
                     .timer(timer)
                     .cancellation_token(token)
                     .run(|| async { Err::<(), _>("offline") })

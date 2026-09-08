@@ -149,7 +149,7 @@ impl Timer for AdvancingAtTimer {
 fn test_async_facade_is_available() {
     let policy = RetryPolicy::builder().build().unwrap();
     let retry = Retry::<()>::builder(policy).build();
-    let _ = retry.asynchronous();
+    let _ = retry.tokio();
 }
 
 #[cfg(feature = "tokio")]
@@ -158,7 +158,7 @@ async fn test_async_retry_matches_shared_terminal_matrix() {
     let abort = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(2).build().unwrap())
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
         .build()
-        .asynchronous()
+        .tokio()
         .run(|| async { Err::<(), _>(TestError("matrix")) })
         .await
         .expect_err("the explicit abort rule must terminate after attempt one");
@@ -167,7 +167,7 @@ async fn test_async_retry_matches_shared_terminal_matrix() {
     let attempts = Retry::<TestError>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
         .fallback(RetryFallback::Retry)
         .build()
-        .asynchronous()
+        .tokio()
         .run(|| async { Err::<(), _>(TestError("matrix")) })
         .await
         .expect_err("one admitted failure must exhaust the attempt limit");
@@ -186,7 +186,7 @@ async fn test_async_retry_matches_shared_terminal_matrix() {
         let error = Retry::<TestError>::builder(policy.build().unwrap())
             .fallback(RetryFallback::Retry)
             .build()
-            .asynchronous()
+            .tokio()
             .timer(clock.new_timer())
             .run(|| {
                 clock
@@ -215,7 +215,7 @@ async fn test_async_retry_matches_shared_callback_matrix() {
             }
         })
         .build()
-        .asynchronous()
+        .tokio()
         .run(|| async { Err::<(), _>(TestError("matrix")) })
         .await
         .expect_err("the first panicking rule must fail closed");
@@ -238,7 +238,7 @@ async fn test_async_retry_matches_shared_callback_matrix() {
         .observer(CountingPhaseObserver(Arc::clone(&later_counts)))
         .fallback(RetryFallback::Retry)
         .build()
-        .asynchronous()
+        .tokio()
         .run(|| async { Err::<(), _>(TestError("matrix")) })
         .await
         .expect_err("the first panicking observer must fail closed");
@@ -276,7 +276,7 @@ async fn test_async_retry_refreshes_elapsed_time_between_callback_phases() {
             false,
         ))
         .build()
-        .asynchronous()
+        .tokio()
         .timer(clock.new_timer())
         .run(|| async { Err::<(), _>(TestError("elapsed")) })
         .await
@@ -319,7 +319,7 @@ async fn test_async_retry_refreshes_elapsed_time_after_callback_panics() {
             Retry::<TestError>::builder(policy)
                 .rule(ElapsedRuleCallback::new(Arc::clone(&clock), records, true))
                 .build()
-                .asynchronous()
+                .tokio()
                 .timer(clock.new_timer())
                 .run(|| async { Err::<(), _>(TestError("elapsed")) })
                 .await
@@ -328,7 +328,7 @@ async fn test_async_retry_refreshes_elapsed_time_after_callback_panics() {
                 .observer(ElapsedObserverCallback::new(Arc::clone(&clock), phase, records, true))
                 .fallback(RetryFallback::Retry)
                 .build()
-                .asynchronous()
+                .tokio()
                 .timer(clock.new_timer())
                 .run(|| async { Err::<(), _>(TestError("elapsed")) })
                 .await
@@ -350,7 +350,7 @@ async fn test_async_retry_matches_shared_infrastructure_and_timeout_matrix() {
     )
     .fallback(RetryFallback::Retry)
     .build()
-    .asynchronous()
+    .tokio()
     .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
         TimerFailurePoint::Registration,
         "matrix",
@@ -363,7 +363,7 @@ async fn test_async_retry_matches_shared_infrastructure_and_timeout_matrix() {
 
     let clock_error = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
         .build()
-        .asynchronous()
+        .tokio()
         .timer(completion_regressing_timer())
         .run(|| async { Ok::<_, TestError>(()) })
         .await
@@ -372,7 +372,7 @@ async fn test_async_retry_matches_shared_infrastructure_and_timeout_matrix() {
 
     let attempt_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
         .build()
-        .asynchronous()
+        .tokio()
         .hard_attempt_timeout(Duration::from_millis(1))
         .run(pending::<Result<(), TestError>>)
         .await
@@ -381,7 +381,7 @@ async fn test_async_retry_matches_shared_infrastructure_and_timeout_matrix() {
 
     let flow_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
         .build()
-        .asynchronous()
+        .tokio()
         .hard_flow_timeout(Duration::from_millis(1))
         .run(pending::<Result<(), TestError>>)
         .await
@@ -400,7 +400,7 @@ async fn test_async_timeout_registration_failure_does_not_start_attempt() {
             .expect("registration failure policy should be valid"),
     )
     .build()
-    .asynchronous()
+    .tokio()
     .hard_attempt_timeout(Duration::from_secs(1))
     .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
         TimerFailurePoint::Registration,
@@ -466,7 +466,7 @@ async fn test_async_timeout_uses_fixed_deadline_and_preserves_selected_scope() {
                 .expect("absolute deadline policy should be valid"),
         )
         .build()
-        .asynchronous()
+        .tokio()
         .hard_attempt_timeout(attempt_timeout)
         .hard_flow_timeout(flow_timeout)
         .timer(timer.clone())
@@ -518,7 +518,7 @@ async fn test_async_registration_reaching_deadline_does_not_start_operation() {
             .expect("deadline admission policy should be valid"),
     )
     .build()
-    .asynchronous()
+    .tokio()
     .hard_attempt_timeout(Duration::from_secs(1))
     .timer(timer)
     .run({
@@ -556,7 +556,7 @@ async fn test_async_timeout_polling_failure_retains_active_attempt_scope() {
             .expect("timer polling failure policy should be valid"),
     )
     .build()
-    .asynchronous()
+    .tokio()
     .hard_attempt_timeout(Duration::from_secs(1))
     .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
         TimerFailurePoint::Completion,
@@ -586,7 +586,7 @@ async fn test_async_timeout_polling_failure_retains_active_attempt_scope() {
 async fn test_async_success_counts_one_started_attempt_with_or_without_timeout() {
     let without_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
         .build()
-        .asynchronous()
+        .tokio()
         .run(|| async { Ok::<_, TestError>(()) })
         .await
         .expect("an immediate operation without a timeout should succeed");
@@ -594,7 +594,7 @@ async fn test_async_success_counts_one_started_attempt_with_or_without_timeout()
 
     let with_timeout = Retry::<TestError>::builder(RetryPolicy::builder().build().unwrap())
         .build()
-        .asynchronous()
+        .tokio()
         .hard_attempt_timeout(Duration::from_secs(1))
         .run(|| async { Ok::<_, TestError>(()) })
         .await

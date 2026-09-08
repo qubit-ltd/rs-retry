@@ -155,7 +155,7 @@ snapshot-v2, attempts=3
 | 入口 | 所需 feature | 操作要求 | 执行位置 |
 | --- | --- | --- | --- |
 | `sync()` | 无 | `FnMut() -> Result<T, E>`，可借用局部状态 | 调用线程 |
-| `asynchronous()` | `tokio` | `FnMut() -> Fut`，future 无需满足 `Send` 或 `'static` | Tokio 运行时 |
+| `tokio()` | `tokio` | `FnMut() -> Fut`，future 无需满足 `Send` 或 `'static` | Tokio 运行时 |
 | `worker()` | `worker` | `Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static`；`T`、`E` 须为 `Send + 'static` | 每次尝试创建独立工作线程 |
 
 各执行接口都要求 `E: 'static`，同步与异步模式也不例外；但这不意味着它们的操作闭包必须拥有所有捕获状态。
@@ -412,13 +412,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(io::Error::new(io::ErrorKind::TimedOut, "storage unavailable")),
         Ok("snapshot-v2"),
     ].into_iter();
-    let success = retry.asynchronous().run(|| {
+    let success = retry.tokio().run(|| {
         let response = responses.next().expect("fixture has two responses");
         async move { response }
     }).await?;
     assert_eq!(success.context().attempts(), 2);
 
-    let error = retry.asynchronous()
+    let error = retry.tokio()
         .hard_attempt_timeout(Duration::from_millis(10))
         .run(|| future::pending::<Result<(), io::Error>>())
         .await.unwrap_err();
@@ -492,7 +492,7 @@ async fn main() {
     let retry = Retry::<&str>::builder(RetryPolicy::builder().build().unwrap()).build();
     let token = RetryCancellationToken::new();
     let operation_token = token.clone();
-    let error = retry.asynchronous()
+    let error = retry.tokio()
         .hard_attempt_timeout(Duration::from_secs(2))
         .hard_flow_timeout(Duration::from_secs(5))
         .cancellation_token(token)
@@ -784,7 +784,7 @@ fn main() {
 | `attempts() == 0` | 检查预先取消、零预算或零超时、尝试前回调以及基础设施错误。 |
 | 返回 `Exhausted` 而非 `TimedOut` | 软预算限制准入，应检查 `limit`；硬超时错误带有 `scope`。 |
 | 同步操作运行时间超过预算 | 无法打断同步闭包。限制底层 I/O，或选择合适的 async/worker 操作。 |
-| 找不到 `asynchronous()` 或 `worker()` | 检查对应 Cargo feature 是否开启；异步执行还需要 Tokio 运行时。 |
+| 找不到 `tokio()` 或 `worker()` | 检查对应 Cargo feature 是否开启；异步执行还需要 Tokio 运行时。 |
 | 操作次数少于重试调度通知数 | 调度不保证准入，后续取消、回调或限制可能阻止执行。 |
 | `WorkerStillRunning` | 检查触发原因及操作、TLS 的清理流程，再决定是否启动替代任务。 |
 | 成功结果中有诊断 | 检查完成观察者，其 panic 不会否定业务成功。 |

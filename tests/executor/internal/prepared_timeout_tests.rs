@@ -20,7 +20,7 @@ use qubit_retry::RetryTimeoutScope;
 async fn test_prepared_timeout_selects_the_shorter_attempt_timeout() {
     let error = Retry::<()>::builder(RetryPolicy::builder().max_attempts(1).build().unwrap())
         .build()
-        .asynchronous()
+        .tokio()
         .hard_attempt_timeout(Duration::from_millis(1))
         .hard_flow_timeout(Duration::from_secs(1))
         .run(pending::<Result<(), ()>>)

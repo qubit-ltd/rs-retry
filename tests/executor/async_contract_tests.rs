@@ -33,7 +33,7 @@ async fn test_async_facade_retries_and_preserves_success() {
         .build();
     let attempts = Arc::new(AtomicU32::new(0));
     let result = retry
-        .asynchronous()
+        .tokio()
         .run({
             let attempts = Arc::clone(&attempts);
             move || {
@@ -60,7 +60,7 @@ async fn test_async_attempt_timeout_has_a_distinct_terminal_reason() {
         .fallback(RetryFallback::Retry)
         .build();
     let error = retry
-        .asynchronous()
+        .tokio()
         .hard_attempt_timeout(Duration::from_millis(1))
         .run(|| async {
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -86,7 +86,7 @@ async fn test_async_shorter_flow_timeout_reports_flow_source() {
         .build();
     let clock = ManualMonotonicClock::new_shared();
     let executor = retry
-        .asynchronous()
+        .tokio()
         .hard_attempt_timeout(Duration::from_secs(30))
         .hard_flow_timeout(Duration::from_secs(1))
         .timer(clock.new_timer());
@@ -124,7 +124,7 @@ async fn test_async_flow_timeout_caps_retry_sleep() {
     let clock = ManualMonotonicClock::new_shared();
     let attempts = Arc::new(AtomicU32::new(0));
     let executor = retry
-        .asynchronous()
+        .tokio()
         .hard_flow_timeout(Duration::from_secs(1))
         .timer(clock.new_timer());
     let future = executor.run({

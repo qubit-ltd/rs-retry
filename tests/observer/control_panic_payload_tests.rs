@@ -171,7 +171,7 @@ async fn run_matrix(recursive: bool) {
                 #[cfg(feature = "worker")]
                 Facade::Worker => retry.worker().run(|_| Err::<(), _>("business")),
                 #[cfg(feature = "tokio")]
-                Facade::Async => retry.asynchronous().run(|| async { Err::<(), _>("business") }).await,
+                Facade::Async => retry.tokio().run(|| async { Err::<(), _>("business") }).await,
             };
             let error: RetryError<&'static str> = result.expect_err("callback terminal");
             let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
