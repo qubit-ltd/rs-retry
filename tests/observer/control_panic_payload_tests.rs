@@ -24,7 +24,9 @@ use qubit_retry::RetryError;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPanic;
+#[cfg(feature = "tokio")]
 use qubit_retry::TokioRetry;
+#[cfg(feature = "worker")]
 use qubit_retry::WorkerRetry;
 
 struct DropPanicPayload {
