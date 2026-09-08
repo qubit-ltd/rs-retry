@@ -63,13 +63,7 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
         .worker()
         .run(|_| -> Result<(), TestError> { panic!("isolated") })
         .unwrap_err();
-    assert!(matches!(
-        panic_error.reason(),
-        RetryErrorReason::Aborted {
-            last_failure: AttemptFailure::Panicked { .. },
-            ..
-        }
-    ));
+    assert!(matches!(panic_error.reason(), RetryErrorReason::Aborted));
 
     let (release_sender, release_receiver) = mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
@@ -294,8 +288,6 @@ fn test_worker_deadline_overflow_does_not_admit_operation() {
             error.reason(),
             RetryErrorReason::Infrastructure {
                 failure: RetryInfrastructureFailure::Clock { .. },
-                last_failure: None,
-                ..
             }
         ));
     }

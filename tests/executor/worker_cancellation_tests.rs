@@ -36,6 +36,7 @@ use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
@@ -182,6 +183,7 @@ fn test_worker_backoff_without_cancellation_token_reaches_next_attempt() {
                 .build()
                 .expect("no-token backoff policy should be valid"),
         )
+        .fallback(RetryFallback::Retry)
         .build()
         .worker()
         .timer(timer)
@@ -236,14 +238,11 @@ fn test_worker_pre_cancellation_does_not_start_operation() {
     })
     .expect_err("pre-cancellation must stop before spawning an operation");
 
-    let RetryErrorReason::Cancelled {
-        phase, last_failure, ..
-    } = error.reason()
-    else {
+    let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal");
     };
     assert_eq!(*phase, RetryCancellationPhase::BeforeAttempt);
-    assert!(last_failure.is_none());
+    assert!(error.last_failure().is_none());
     assert_eq!(error.context().attempts(), 0);
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(operation_calls.load(Ordering::SeqCst), 0);
@@ -274,14 +273,11 @@ fn test_worker_attempt_cancellation_discards_late_success() {
     })
     .expect_err("active cancellation must win over a late success");
 
-    let RetryErrorReason::Cancelled {
-        phase, last_failure, ..
-    } = error.reason()
-    else {
+    let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal");
     };
     assert_eq!(*phase, RetryCancellationPhase::Attempt);
-    assert!(last_failure.is_none());
+    assert!(error.last_failure().is_none());
     assert!(
         observed_token
             .lock()
@@ -315,14 +311,11 @@ fn test_worker_attempt_cancellation_supports_maximum_grace() {
     })
     .expect_err("cooperative cancellation must remain a cancellation terminal");
 
-    let RetryErrorReason::Cancelled {
-        phase, last_failure, ..
-    } = error.reason()
-    else {
+    let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal");
     };
     assert_eq!(*phase, RetryCancellationPhase::Attempt);
-    assert!(last_failure.is_none());
+    assert!(error.last_failure().is_none());
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
 }
@@ -361,14 +354,11 @@ fn test_worker_attempt_cancellation_discards_late_error() {
         })
         .expect_err("active cancellation must win over a late error");
 
-    let RetryErrorReason::Cancelled {
-        phase, last_failure, ..
-    } = error.reason()
-    else {
+    let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal");
     };
     assert_eq!(*phase, RetryCancellationPhase::Attempt);
-    assert!(last_failure.is_none());
+    assert!(error.last_failure().is_none());
     assert_eq!(failed_observer_calls.load(Ordering::SeqCst), 0);
     assert_eq!(rule_calls.load(Ordering::SeqCst), 0);
 }
@@ -427,15 +417,13 @@ fn test_worker_cancellation_reports_still_running_with_cancellation_trigger() {
 
     let RetryErrorReason::Infrastructure {
         failure: RetryInfrastructureFailure::WorkerStillRunning { trigger },
-        last_failure,
-        ..
     } = error.reason()
     else {
         panic!("expected a worker-still-running infrastructure failure");
     };
     assert_eq!(*trigger, WorkerStopTrigger::Cancellation);
     assert_eq!(
-        last_failure.as_ref().and_then(AttemptFailure::as_error),
+        error.last_failure().and_then(AttemptFailure::as_error),
         Some(&TestError("previous failure"))
     );
     assert_eq!(error.context().attempts(), 2);
@@ -495,15 +483,12 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
         .expect_err("backoff cancellation must terminate the retry");
     runner.join().expect("worker retry runner should not panic");
 
-    let RetryErrorReason::Cancelled {
-        phase, last_failure, ..
-    } = error.reason()
-    else {
+    let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal");
     };
     assert_eq!(*phase, RetryCancellationPhase::Backoff);
     assert_eq!(
-        last_failure.as_ref().and_then(AttemptFailure::as_error),
+        error.last_failure().and_then(AttemptFailure::as_error),
         Some(&TestError("backoff"))
     );
     assert_eq!(error.context().attempts(), 1);
@@ -540,15 +525,12 @@ fn test_worker_backoff_registration_cancellation_wins_over_timer_failure() {
     .expect_err("registration-time cancellation must stop the retry");
 
     assert_eq!(registrations.load(Ordering::SeqCst), 1);
-    let RetryErrorReason::Cancelled {
-        phase, last_failure, ..
-    } = error.reason()
-    else {
+    let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal");
     };
     assert_eq!(*phase, RetryCancellationPhase::Backoff);
     assert_eq!(
-        last_failure.as_ref().and_then(AttemptFailure::as_error),
+        error.last_failure().and_then(AttemptFailure::as_error),
         Some(&TestError("registration"))
     );
     assert_eq!(error.context().attempts(), 1);

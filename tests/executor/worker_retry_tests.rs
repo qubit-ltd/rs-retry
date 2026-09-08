@@ -98,14 +98,12 @@ fn test_regression_worker_preserves_non_string_payload_after_drop_panic() {
         assert_eq!(completed.load(Ordering::SeqCst), 1);
         assert_eq!(error.context().attempts(), 1);
         assert!(error.completion_callback_failures().is_empty());
+        assert!(matches!(error.reason(), RetryErrorReason::Aborted));
         assert!(matches!(
-            error.reason(),
-            RetryErrorReason::Aborted {
-                last_failure: AttemptFailure::Panicked {
-                    panic: RetryPanic::NonString
-                },
-                ..
-            }
+            error.last_failure(),
+            Some(AttemptFailure::Panicked {
+                panic: RetryPanic::NonString
+            })
         ));
     }
 }
@@ -148,14 +146,12 @@ fn test_worker_spawn_failure_preserves_infrastructure_diagnostic() {
     assert_eq!(rule_calls.load(Ordering::SeqCst), 0);
     let RetryErrorReason::Infrastructure {
         failure: RetryInfrastructureFailure::WorkerSpawn { message },
-        last_failure,
-        ..
     } = error.reason()
     else {
         panic!("expected a worker-spawn infrastructure failure");
     };
     assert!(!message.is_empty());
-    assert!(last_failure.is_none());
+    assert!(error.last_failure().is_none());
     assert_eq!(error.context().attempts(), 0);
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(error.context().current_hard_attempt_timeout(), None);
@@ -172,13 +168,11 @@ fn test_worker_retry_clock_failure_retains_the_captured_operation_panic() {
 
     let RetryErrorReason::Infrastructure {
         failure: RetryInfrastructureFailure::Clock { .. },
-        last_failure: Some(last_failure),
-        ..
     } = error.reason()
     else {
         panic!("expected post-rule clock failure with the retained operation panic");
     };
-    let AttemptFailure::Panicked { panic } = last_failure else {
+    let Some(AttemptFailure::Panicked { panic }) = error.last_failure() else {
         panic!("expected the operation panic as the last attempt failure");
     };
     assert_eq!(panic.message(), Some("operation panic"));
@@ -443,14 +437,12 @@ fn test_worker_retry_reports_still_running_with_active_scope() {
 
     let RetryErrorReason::Infrastructure {
         failure: RetryInfrastructureFailure::WorkerStillRunning { trigger },
-        last_failure,
-        ..
     } = error.reason()
     else {
         panic!("expected a worker-still-running infrastructure failure");
     };
     assert_eq!(*trigger, WorkerStopTrigger::AttemptTimeout);
-    assert_eq!(last_failure, &None);
+    assert_eq!(error.last_failure(), None);
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
     assert_eq!(

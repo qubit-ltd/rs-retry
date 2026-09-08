@@ -21,7 +21,8 @@ fn test_total_budget_rejects_delay_reaching_deadline() {
         .total_time_budget(Duration::from_secs(5))
         .build()
         .expect("retry policy should be valid");
-    let mut budget = RetryBudget::new(&clock, *policy.admission_limits()).expect("manual clock should represent the deadline");
+    let mut budget =
+        RetryBudget::new(&clock, *policy.admission_limits()).expect("manual clock should represent the deadline");
 
     assert!(matches!(
         budget.check_retry_after(Duration::from_secs(5)),
@@ -37,7 +38,8 @@ fn test_operation_overrun_only_blocks_future_attempts() {
         .operation_time_budget(Duration::from_secs(1))
         .build()
         .expect("retry policy should be valid");
-    let mut budget = RetryBudget::new(&clock, *policy.admission_limits()).expect("manual clock should represent the policy");
+    let mut budget =
+        RetryBudget::new(&clock, *policy.admission_limits()).expect("manual clock should represent the policy");
     let attempt = budget.begin_attempt().expect("first attempt is admitted");
     clock
         .advance(Duration::from_secs(2))
@@ -60,7 +62,8 @@ fn test_attempt_budget_is_the_only_attempt_counter() {
         .max_attempts(1)
         .build()
         .expect("retry policy should be valid");
-    let mut budget = RetryBudget::new(&clock, *policy.admission_limits()).expect("manual clock should represent the policy");
+    let mut budget =
+        RetryBudget::new(&clock, *policy.admission_limits()).expect("manual clock should represent the policy");
     let attempt = budget.begin_attempt().expect("first attempt is admitted");
     let _ = budget.finish_attempt(attempt).expect("valid completion");
 

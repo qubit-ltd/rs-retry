@@ -41,8 +41,10 @@ fn test_first_rule_wins_and_failure_kind_is_stable() {
         error.reason(),
         RetryErrorReason::Exhausted {
             limit: RetryLimitKind::Attempts,
-            last_failure: Some(AttemptFailure::Error(UnitTestError)),
-            ..
         }
+    ));
+    assert!(matches!(
+        error.last_failure(),
+        Some(AttemptFailure::Error(UnitTestError))
     ));
 }

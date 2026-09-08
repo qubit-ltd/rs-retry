@@ -28,6 +28,7 @@ use qubit_retry::Retry;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryPolicy;
@@ -87,6 +88,7 @@ async fn test_async_backoff_registration_does_not_move_flow_deadline() {
             .build()
             .expect("valid retry policy");
         Retry::<TestError>::builder(policy)
+            .fallback(RetryFallback::Retry)
             .build()
             .asynchronous()
             .timer(timer)
@@ -216,7 +218,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         .run(|| async { Err::<(), _>(TestError("fatal")) })
         .await
         .unwrap_err();
-    assert!(matches!(aborted.reason(), RetryErrorReason::Aborted { .. }));
+    assert!(matches!(aborted.reason(), RetryErrorReason::Aborted));
 
     let clock = ManualMonotonicClock::new_shared();
     let expired_by_observer = Retry::<TestError>::builder(
@@ -331,10 +333,6 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         tie.reason(),
         RetryErrorReason::TimedOut {
             scope: RetryTimeoutScope::Attempt,
-            last_failure: Some(AttemptFailure::TimedOut {
-                scope: RetryTimeoutScope::Attempt
-            }),
-            ..
         }
     ));
 

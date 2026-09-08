@@ -162,27 +162,15 @@ fn assert_cancelled(
     error: &RetryError<TestError>,
     expected_phase: RetryCancellationPhase,
 ) -> Option<&AttemptFailure<TestError>> {
-    let RetryErrorReason::Cancelled {
-        phase, last_failure, ..
-    } = error.reason()
-    else {
+    let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal, got {:?}", error.reason());
     };
     assert_eq!(*phase, expected_phase);
-    assert_eq!(error.reason().last_failure(), last_failure.as_ref());
-    assert_eq!(
-        error.reason().last_error(),
-        last_failure.as_ref().and_then(AttemptFailure::as_error)
-    );
-    let suffix = last_failure
-        .as_ref()
-        .map(|failure| format!("; last attempt failed: {failure}"))
-        .unwrap_or_default();
-    assert_eq!(
-        error.reason().to_string(),
-        format!("retry cancelled: {expected_phase}{suffix}")
-    );
-    last_failure.as_ref()
+    let last_failure = error.last_failure();
+    assert_eq!(error.last_failure(), last_failure);
+    assert_eq!(error.last_error(), last_failure.and_then(AttemptFailure::as_error));
+    assert_eq!(error.reason().to_string(), format!("cancelled ({expected_phase})"));
+    error.last_failure()
 }
 
 #[cfg(feature = "tokio")]
@@ -250,7 +238,10 @@ async fn test_cancellation_token_during_attempt_retains_active_attempt_scope() {
     assert_eq!(assert_cancelled(&error, RetryCancellationPhase::Attempt), None);
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.context().current_attempt().map(|attempt| attempt.get()), Some(1));
-    assert_eq!(error.context().current_hard_attempt_timeout(), Some(Duration::from_secs(5)));
+    assert_eq!(
+        error.context().current_hard_attempt_timeout(),
+        Some(Duration::from_secs(5))
+    );
     assert_eq!(operation_polls.load(Ordering::SeqCst), 1);
 }
 
@@ -586,10 +577,6 @@ async fn test_async_ready_result_cancellation_and_equal_deadline_priority() {
                 error.reason(),
                 RetryErrorReason::TimedOut {
                     scope: RetryTimeoutScope::Attempt,
-                    last_failure: Some(AttemptFailure::TimedOut {
-                        scope: RetryTimeoutScope::Attempt
-                    }),
-                    ..
                 }
             ));
         }

@@ -28,7 +28,8 @@ fn test_retry_limits_data_rejects_invalid_attempts_duration_and_fields() {
         "operation_time_budget": null,
         "total_time_budget": { "seconds": 0, "nanoseconds": 1_000_000_000 }
     });
-    let error = from_value::<RetryAdmissionLimits>(invalid_duration).expect_err("invalid retry-limit duration must be rejected");
+    let error = from_value::<RetryAdmissionLimits>(invalid_duration)
+        .expect_err("invalid retry-limit duration must be rejected");
     assert!(error.to_string().contains("nanoseconds"));
 
     let unknown_field = json!({

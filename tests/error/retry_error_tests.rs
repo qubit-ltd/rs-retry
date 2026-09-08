@@ -36,27 +36,16 @@ fn test_retry_error_preserves_terminal_failure_and_context() {
         .run(|| Err::<(), _>(TestError("fatal")))
         .expect_err("the rule should abort the retry flow");
 
-    assert!(matches!(
-        error.reason(),
-        RetryErrorReason::Aborted {
-            last_failure: AttemptFailure::Error(TestError("fatal")),
-            ..
-        }
-    ));
+    assert!(matches!(error.reason(), RetryErrorReason::Aborted));
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.last_error(), Some(&TestError("fatal")));
     assert_eq!(Error::source(&error).map(ToString::to_string), Some("fatal".to_owned()));
-    assert_eq!(error.to_string(), "retry aborted: fatal after 1 attempt(s)");
+    assert_eq!(error.to_string(), "retry aborted after 1 attempt(s)");
 
-    let (failure, context, diagnostics) = error.into_parts();
+    let (reason, last_failure, context, diagnostics) = error.into_parts();
     assert!(diagnostics.is_empty());
-    assert!(matches!(
-        failure,
-        RetryErrorReason::Aborted {
-            last_failure: AttemptFailure::Error(TestError("fatal")),
-            ..
-        }
-    ));
+    assert!(matches!(reason, RetryErrorReason::Aborted));
+    assert!(matches!(last_failure, Some(AttemptFailure::Error(TestError("fatal")))));
     assert_eq!(context.attempts(), 1);
 }
 
@@ -92,14 +81,11 @@ fn test_map_error_preserves_context_and_completion_diagnostics() {
     });
 
     assert_eq!(*mapped.context(), expected_context);
-    let RetryErrorReason::Exhausted {
-        limit, last_failure, ..
-    } = mapped.reason()
-    else {
+    let RetryErrorReason::Exhausted { limit } = mapped.reason() else {
         panic!("expected an exhausted failure");
     };
     assert_eq!(*limit, RetryLimitKind::Attempts);
-    assert_eq!(last_failure, &Some(AttemptFailure::Error(String::from("retry!"))));
+    assert_eq!(mapped.last_error(), Some(&String::from("retry!")));
     let [diagnostic] = mapped.completion_callback_failures() else {
         panic!("expected one completion diagnostic");
     };

@@ -53,7 +53,7 @@ fn test_readme_completion_diagnostics_and_error_mapping() {
         mapped.completion_callback_failures()[0].phase(),
         RetryCallbackPhase::TerminalFailure
     );
-    let (_failure, context, diagnostics) = mapped.into_parts();
+    let (_reason, _failure, context, diagnostics) = mapped.into_parts();
     assert_eq!(context.attempts(), 3);
     assert_eq!(diagnostics.len(), 1);
 }

@@ -289,7 +289,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                 "{facade:?} {scenario:?}"
             );
             match scenario {
-                CompletionScenario::Abort => assert!(matches!(error.reason(), RetryErrorReason::Aborted { .. })),
+                CompletionScenario::Abort => assert!(matches!(error.reason(), RetryErrorReason::Aborted)),
                 CompletionScenario::Exhausted | CompletionScenario::ExhaustedBeforeAttempt => {
                     let expected = if zero_attempts {
                         RetryLimitKind::TotalElapsed
@@ -343,11 +343,11 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                 error.completion_callback_failures().len(),
                 if panic_on_completion { 2 } else { 0 }
             );
-            let (failure, context, failures) = error.into_parts();
-            assert_eq!(format!("{failure:?}"), original_failure);
+            let (reason, _last_failure, context, failures) = error.into_parts();
+            assert_eq!(format!("{reason:?}"), original_failure);
             (
                 context,
-                failures,
+                failures.into_vec(),
                 RetryCallbackPhase::TerminalFailure,
                 Some(original_failure),
             )
@@ -580,20 +580,21 @@ fn test_completion_result_consumers_preserve_or_explicitly_discard_diagnostics()
         .expect_err("exhausted");
     assert_eq!(error.completion_callback_failures().len(), 1);
     assert_eq!(error.completion_callback_failures()[0].index(), 1);
-    let (failure, context, diagnostics) = error.into_parts();
+    let (reason, last_failure, context, diagnostics) = error.into_parts();
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].index(), 1);
-    assert_eq!(failure.last_error(), Some(&TestError("original error")));
+    assert!(matches!(reason, RetryErrorReason::Exhausted { .. }));
+    assert_eq!(
+        last_failure.as_ref().and_then(AttemptFailure::as_error),
+        Some(&TestError("original error"))
+    );
     assert_eq!(context.attempts(), 1);
     let error = retry
         .sync()
         .run(|| Err::<(), _>(TestError("original error")))
         .expect_err("exhausted");
     assert_eq!(error.completion_callback_failures().len(), 1);
-    assert_eq!(
-        error.into_failure_discarding_diagnostics().last_error(),
-        Some(&TestError("original error"))
-    );
+    assert_eq!(error.last_error(), Some(&TestError("original error")));
 }
 
 /// Non-string panic payload whose destructor raises another panic payload.
@@ -710,16 +711,19 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                     }
                     Err(error) => {
                         assert!(!successful);
-                        let (failure, context, failures) = error.into_parts();
+                        let (reason, last_failure, context, failures) = error.into_parts();
                         assert!(matches!(
-                            failure,
+                            reason,
                             RetryErrorReason::Exhausted {
                                 limit: RetryLimitKind::Attempts,
                                 ..
                             }
                         ));
-                        assert_eq!(failure.last_error(), Some(&TestError("original error")));
-                        (context, failures, RetryCallbackPhase::TerminalFailure)
+                        assert_eq!(
+                            last_failure.as_ref().and_then(AttemptFailure::as_error),
+                            Some(&TestError("original error"))
+                        );
+                        (context, failures.into_vec(), RetryCallbackPhase::TerminalFailure)
                     }
                 };
                 assert_eq!(context.attempts(), 1);
