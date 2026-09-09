@@ -78,10 +78,7 @@ impl<'a> RetryBudget<'a> {
     /// # Errors
     /// Returns `Clock` when the initial sample does not belong to `clock`.
     #[inline]
-    pub fn new(
-        clock: &'a dyn MonotonicClock,
-        limits: RetryAdmissionLimits,
-    ) -> Result<Self, RetryBudgetError> {
+    pub fn new(clock: &'a dyn MonotonicClock, limits: RetryAdmissionLimits) -> Result<Self, RetryBudgetError> {
         let now = clock.now();
         now.validate_domain(clock.domain())?;
         Ok(Self {
@@ -143,10 +140,7 @@ impl<'a> RetryBudget<'a> {
     /// # Errors
     /// Returns `InvalidAttempt` for a foreign/inactive token, or `Clock` for
     /// invalid completion timing. The consumed token cannot be retried.
-    pub fn finish_attempt(
-        &mut self,
-        attempt: RetryAttempt,
-    ) -> Result<RetryBudgetSnapshot, RetryBudgetError> {
+    pub fn finish_attempt(&mut self, attempt: RetryAttempt) -> Result<RetryBudgetSnapshot, RetryBudgetError> {
         if !Arc::ptr_eq(&self.owner, &attempt.owner)
             || !self.state.has_active_attempt()
             || attempt.number != self.state.attempts()
@@ -169,10 +163,7 @@ impl<'a> RetryBudget<'a> {
     ///
     /// # Errors
     /// Returns `AttemptInProgress`, `Clock`, or the first `Exhausted` limit.
-    pub fn check_retry_after(
-        &mut self,
-        delay: Duration,
-    ) -> Result<(), RetryBudgetError> {
+    pub fn check_retry_after(&mut self, delay: Duration) -> Result<(), RetryBudgetError> {
         if self.state.has_active_attempt() {
             return Err(RetryBudgetError::AttemptInProgress);
         }
@@ -195,12 +186,8 @@ impl<'a> RetryBudget<'a> {
             None => Ok(()),
             Some(limit) => Err(RetryBudgetError::Exhausted(match limit {
                 RetryLimitKind::Attempts => RetryBudgetExhausted::Attempts,
-                RetryLimitKind::OperationElapsed => {
-                    RetryBudgetExhausted::OperationElapsed
-                }
-                RetryLimitKind::TotalElapsed => {
-                    RetryBudgetExhausted::TotalElapsed
-                }
+                RetryLimitKind::OperationElapsed => RetryBudgetExhausted::OperationElapsed,
+                RetryLimitKind::TotalElapsed => RetryBudgetExhausted::TotalElapsed,
             })),
         }
     }

@@ -38,8 +38,5 @@ fn test_blocking_attempt_runs_with_uncancelled_token_on_worker_thread() {
         })
         .expect("blocking attempt should succeed");
 
-    assert_ne!(
-        worker_thread.into_value_discarding_diagnostics(),
-        caller_thread
-    );
+    assert_ne!(worker_thread.into_value_discarding_diagnostics(), caller_thread);
 }

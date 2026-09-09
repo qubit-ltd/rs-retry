@@ -22,11 +22,7 @@ use qubit_retry::RetryRule;
 struct AbortRule;
 
 impl RetryRule<()> for AbortRule {
-    fn decide(
-        &self,
-        _: &AttemptFailure<()>,
-        _: &RetryContext,
-    ) -> RetryDecision {
+    fn decide(&self, _: &AttemptFailure<()>, _: &RetryContext) -> RetryDecision {
         RetryDecision::Abort
     }
 }
@@ -34,11 +30,7 @@ impl RetryRule<()> for AbortRule {
 struct CountingRule(Arc<AtomicUsize>);
 
 impl RetryRule<()> for CountingRule {
-    fn decide(
-        &self,
-        _: &AttemptFailure<()>,
-        _: &RetryContext,
-    ) -> RetryDecision {
+    fn decide(&self, _: &AttemptFailure<()>, _: &RetryContext) -> RetryDecision {
         self.0.fetch_add(1, Ordering::SeqCst);
         RetryDecision::Abort
     }

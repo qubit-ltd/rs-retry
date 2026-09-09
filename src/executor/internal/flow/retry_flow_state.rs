@@ -61,15 +61,10 @@ impl<'a> RetryFlowState<'a> {
     ) -> Self {
         Self {
             policy,
-            budget: RetryBudgetState::new(
-                started_at,
-                *policy.admission_limits(),
-            ),
+            budget: RetryBudgetState::new(started_at, *policy.admission_limits()),
             backoff: random_source.map_or_else(
                 || policy.backoff().start(),
-                |random_source| {
-                    policy.backoff().start_with_random_source(random_source)
-                },
+                |random_source| policy.backoff().start_with_random_source(random_source),
             ),
             flow_timeout,
         }
@@ -82,9 +77,8 @@ impl<'a> RetryFlowState<'a> {
     #[inline(always)]
     #[must_use]
     pub(crate) fn flow_timed_out(&self) -> bool {
-        self.flow_timeout.is_some_and(|limit| {
-            self.budget.snapshot().total_elapsed() >= limit
-        })
+        self.flow_timeout
+            .is_some_and(|limit| self.budget.snapshot().total_elapsed() >= limit)
     }
 
     /// Returns the first continuation limit that prevents another action.
@@ -108,10 +102,7 @@ impl<'a> RetryFlowState<'a> {
     /// fits.
     #[inline(always)]
     #[must_use]
-    pub(crate) fn retry_limit(
-        &self,
-        delay: Duration,
-    ) -> Option<RetryLimitKind> {
+    pub(crate) fn retry_limit(&self, delay: Duration) -> Option<RetryLimitKind> {
         self.budget.retry_limit(delay)
     }
 
@@ -123,9 +114,8 @@ impl<'a> RetryFlowState<'a> {
     #[inline(always)]
     #[must_use]
     pub(crate) fn flow_remaining(&self) -> Option<Duration> {
-        self.flow_timeout.map(|limit| {
-            limit.saturating_sub(self.budget.snapshot().total_elapsed())
-        })
+        self.flow_timeout
+            .map(|limit| limit.saturating_sub(self.budget.snapshot().total_elapsed()))
     }
 
     /// Returns the absolute hard-flow deadline, when configured.
@@ -138,9 +128,7 @@ impl<'a> RetryFlowState<'a> {
     /// Some absolute hard-flow deadline, or None when no limit is configured.
     #[inline]
     #[must_use = "use the prepared value or inspect the result"]
-    pub(crate) fn flow_deadline(
-        &self,
-    ) -> Result<Option<MonotonicInstant>, TimeError> {
+    pub(crate) fn flow_deadline(&self) -> Result<Option<MonotonicInstant>, TimeError> {
         self.flow_timeout
             .map(|timeout| self.budget.started_at().checked_add(timeout))
             .transpose()
@@ -156,10 +144,7 @@ impl<'a> RetryFlowState<'a> {
     /// belong to Attempt.
     #[inline(always)]
     #[must_use]
-    pub(crate) fn effective_timeout(
-        &self,
-        attempt_timeout: Option<Duration>,
-    ) -> Option<EffectiveTimeout> {
+    pub(crate) fn effective_timeout(&self, attempt_timeout: Option<Duration>) -> Option<EffectiveTimeout> {
         EffectiveTimeout::select(attempt_timeout, self.flow_remaining())
     }
 
@@ -174,9 +159,7 @@ impl<'a> RetryFlowState<'a> {
         let Some(flow_deadline) = self.flow_deadline()? else {
             return Ok(requested);
         };
-        if requested.elapsed_since_origin()
-            <= flow_deadline.elapsed_since_origin()
-        {
+        if requested.elapsed_since_origin() <= flow_deadline.elapsed_since_origin() {
             Ok(requested)
         } else {
             Ok(flow_deadline)
@@ -195,8 +178,7 @@ impl<'a> RetryFlowState<'a> {
     #[inline]
     #[must_use]
     pub(crate) fn next_attempt(&self) -> NonZeroU32 {
-        NonZeroU32::new(self.budget.attempts().saturating_add(1))
-            .expect("an attempt ordinal is always non-zero")
+        NonZeroU32::new(self.budget.attempts().saturating_add(1)).expect("an attempt ordinal is always non-zero")
     }
 
     /// Builds a context from the latest coherent state snapshot.
@@ -209,23 +191,14 @@ impl<'a> RetryFlowState<'a> {
     /// A coherent context without controller-specific timeout or scheduling
     /// overlays.
     #[inline]
-    pub(crate) fn context(
-        &self,
-        current_attempt: Option<NonZeroU32>,
-    ) -> RetryContext {
+    pub(crate) fn context(&self, current_attempt: Option<NonZeroU32>) -> RetryContext {
         let snapshot = self.budget.snapshot();
         RetryContext::from_parts(RetryContextParts {
             attempts: snapshot.attempts(),
             current_attempt,
             max_attempts: self.policy.admission_limits().max_attempts().get(),
-            operation_time_budget: self
-                .policy
-                .admission_limits()
-                .operation_time_budget(),
-            total_time_budget: self
-                .policy
-                .admission_limits()
-                .total_time_budget(),
+            operation_time_budget: self.policy.admission_limits().operation_time_budget(),
+            total_time_budget: self.policy.admission_limits().total_time_budget(),
             operation_elapsed: snapshot.operation_elapsed(),
             total_elapsed: snapshot.total_elapsed(),
             last_attempt_elapsed: snapshot.attempt_elapsed(),
@@ -247,10 +220,7 @@ impl<'a> RetryFlowState<'a> {
     /// # Returns
     /// Unit after updating total elapsed time.
     #[inline(always)]
-    pub(crate) fn refresh(
-        &mut self,
-        now: MonotonicInstant,
-    ) -> Result<(), TimeError> {
+    pub(crate) fn refresh(&mut self, now: MonotonicInstant) -> Result<(), TimeError> {
         self.budget.refresh(now)
     }
 
@@ -275,10 +245,7 @@ impl<'a> RetryFlowState<'a> {
     /// Returns a clock-domain or regression error; no incoherent elapsed value
     /// is committed.
     #[inline(always)]
-    pub(crate) fn finish_attempt(
-        &mut self,
-        now: MonotonicInstant,
-    ) -> Result<(), TimeError> {
+    pub(crate) fn finish_attempt(&mut self, now: MonotonicInstant) -> Result<(), TimeError> {
         self.budget.finish_attempt(now)
     }
 
@@ -294,10 +261,7 @@ impl<'a> RetryFlowState<'a> {
     /// # Errors
     /// Returns the clock error when this sample cannot be used.
     #[inline]
-    pub(crate) fn finish_for_infrastructure(
-        &mut self,
-        now: MonotonicInstant,
-    ) -> Result<(), TimeError> {
+    pub(crate) fn finish_for_infrastructure(&mut self, now: MonotonicInstant) -> Result<(), TimeError> {
         if self.budget.has_active_attempt() {
             self.budget.finish_attempt(now)
         } else {
@@ -312,18 +276,11 @@ impl<'a> RetryFlowState<'a> {
     ///
     /// # Returns
     /// The next policy step; advances this flow’s sequence index.
-    pub(crate) fn next_backoff(
-        &mut self,
-        decision: RetryDecision,
-    ) -> BackoffStep {
+    pub(crate) fn next_backoff(&mut self, decision: RetryDecision) -> BackoffStep {
         let request = match decision {
             RetryDecision::RetryWithHint(delay) => BackoffRequest::hint(delay),
-            RetryDecision::RetryWithJitteredHint(delay) => {
-                BackoffRequest::jittered_hint(delay)
-            }
-            RetryDecision::Retry
-            | RetryDecision::UseDefault
-            | RetryDecision::Abort => BackoffRequest::policy(),
+            RetryDecision::RetryWithJitteredHint(delay) => BackoffRequest::jittered_hint(delay),
+            RetryDecision::Retry | RetryDecision::UseDefault | RetryDecision::Abort => BackoffRequest::policy(),
         };
         self.backoff.next(request)
     }
