@@ -105,7 +105,9 @@ async fn test_async_shorter_flow_timeout_reports_flow_source() {
     };
     assert_eq!(reached.elapsed_since_origin(), Duration::from_secs(1));
 
-    let error = future.await.expect_err("flow timeout should terminate retry");
+    let error = future
+        .await
+        .expect_err("flow timeout should terminate retry");
     assert!(matches!(
         error.reason(),
         RetryErrorReason::TimedOut {
@@ -153,7 +155,9 @@ async fn test_async_flow_timeout_caps_retry_sleep() {
         "the flow deadline, not the full backoff, must drive the timer"
     );
 
-    let error = future.await.expect_err("flow timeout should terminate retry");
+    let error = future
+        .await
+        .expect_err("flow timeout should terminate retry");
     assert!(matches!(
         error.reason(),
         RetryErrorReason::TimedOut {
