@@ -25,15 +25,9 @@ fn test_retry_random_source_exposes_float_samples() {
 /// Exercises the default thread random source through public backoff sampling.
 #[test]
 fn test_default_random_source_keeps_uniform_jitter_in_bounds() {
-    let mut state = BackoffPolicy::uniform(
-        Duration::from_nanos(1),
-        Duration::from_nanos(2),
-    )
-    .expect("valid uniform range")
-    .with_full_jitter()
-    .start();
-    assert!(
-        state.next(BackoffRequest::policy()).effective_delay()
-            <= Duration::from_nanos(2)
-    );
+    let mut state = BackoffPolicy::uniform(Duration::from_nanos(1), Duration::from_nanos(2))
+        .expect("valid uniform range")
+        .with_full_jitter()
+        .start();
+    assert!(state.next(BackoffRequest::policy()).effective_delay() <= Duration::from_nanos(2));
 }

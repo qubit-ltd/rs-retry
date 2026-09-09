@@ -36,34 +36,19 @@ struct NoopObserver;
 impl RetryObserver<&'static str> for NoopObserver {
     fn on_success(&self, _context: &RetryContext) {}
 
-    fn on_terminal_failure(
-        &self,
-        _reason: &RetryErrorReason,
-        _context: &RetryContext,
-    ) {
-    }
+    fn on_terminal_failure(&self, _reason: &RetryErrorReason, _context: &RetryContext) {}
 }
 
 /// No-op failure listener used to measure listener dispatch overhead.
-fn observe_failure(
-    _failure: &AttemptFailure<&'static str>,
-    _context: &RetryContext,
-) {
-}
+fn observe_failure(_failure: &AttemptFailure<&'static str>, _context: &RetryContext) {}
 
 /// Continues rule-chain dispatch without selecting a terminal decision.
-fn use_default_rule(
-    _failure: &AttemptFailure<&'static str>,
-    _context: &RetryContext,
-) -> RetryDecision {
+fn use_default_rule(_failure: &AttemptFailure<&'static str>, _context: &RetryContext) -> RetryDecision {
     RetryDecision::UseDefault
 }
 
 /// Terminates rule-chain dispatch after preceding default decisions.
-fn abort_rule(
-    _failure: &AttemptFailure<&'static str>,
-    _context: &RetryContext,
-) -> RetryDecision {
+fn abort_rule(_failure: &AttemptFailure<&'static str>, _context: &RetryContext) -> RetryDecision {
     RetryDecision::Abort
 }
 
@@ -81,8 +66,7 @@ fn benchmark_sync_success(c: &mut Criterion) {
 
     c.bench_function("sync_success", |b| {
         b.iter(|| {
-            let result = Retry::new(&retry)
-                .run(|| Ok::<u64, &'static str>(black_box(42)));
+            let result = Retry::new(&retry).run(|| Ok::<u64, &'static str>(black_box(42)));
             let _ = black_box(result);
         });
     });
@@ -109,20 +93,17 @@ fn benchmark_sync_cancellation_token(c: &mut Criterion) {
         .build()
         .expect("valid config");
     let without_token = Retry::new(&retry);
-    let with_token =
-        Retry::new(&retry).cancellation_token(RetryCancellationToken::new());
+    let with_token = Retry::new(&retry).cancellation_token(RetryCancellationToken::new());
 
     c.bench_function("sync_success_without_token", |b| {
         b.iter(|| {
-            let result =
-                without_token.run(|| Ok::<u64, &'static str>(black_box(42)));
+            let result = without_token.run(|| Ok::<u64, &'static str>(black_box(42)));
             let _ = black_box(result);
         });
     });
     c.bench_function("sync_success_with_token", |b| {
         b.iter(|| {
-            let result =
-                with_token.run(|| Ok::<u64, &'static str>(black_box(42)));
+            let result = with_token.run(|| Ok::<u64, &'static str>(black_box(42)));
             let _ = black_box(result);
         });
     });
@@ -161,8 +142,7 @@ fn benchmark_observer_counts(c: &mut Criterion) {
         let facade = Retry::new(&retry);
         c.bench_function(name, |b| {
             b.iter(|| {
-                let result =
-                    facade.run(|| Ok::<u64, &'static str>(black_box(42)));
+                let result = facade.run(|| Ok::<u64, &'static str>(black_box(42)));
                 let _ = black_box(result);
             });
         });
@@ -202,8 +182,7 @@ fn benchmark_rule_counts(c: &mut Criterion) {
         let facade = Retry::new(&retry);
         c.bench_function(name, |b| {
             b.iter(|| {
-                let result = facade
-                    .run(|| Err::<u64, &'static str>(black_box("failure")));
+                let result = facade.run(|| Err::<u64, &'static str>(black_box("failure")));
                 let _ = black_box(result);
             });
         });
@@ -249,8 +228,7 @@ fn benchmark_worker_noop(c: &mut Criterion) {
 
         c.bench_function("worker_noop_success", |b| {
             b.iter(|| {
-                let result =
-                    facade.run(|_| Ok::<u64, &'static str>(black_box(42)));
+                let result = facade.run(|_| Ok::<u64, &'static str>(black_box(42)));
                 let _ = black_box(result);
             });
         });
@@ -303,8 +281,7 @@ fn benchmark_sync_failure_listener(c: &mut Criterion) {
 
     c.bench_function("sync_failure_listener", |b| {
         b.iter(|| {
-            let result = Retry::new(&retry)
-                .run(|| Err::<u64, &'static str>(black_box("failure")));
+            let result = Retry::new(&retry).run(|| Err::<u64, &'static str>(black_box("failure")));
             let _ = black_box(result);
         });
     });
@@ -328,8 +305,7 @@ fn benchmark_rule_chain_decision(c: &mut Criterion) {
 
     c.bench_function("rule_chain_decision", |b| {
         b.iter(|| {
-            let result = Retry::new(&retry)
-                .run(|| Err::<u64, &'static str>(black_box("failure")));
+            let result = Retry::new(&retry).run(|| Err::<u64, &'static str>(black_box("failure")));
             let _ = black_box(result);
         });
     });
@@ -337,12 +313,8 @@ fn benchmark_rule_chain_decision(c: &mut Criterion) {
 
 /// Measures one exponential backoff calculation with fresh state.
 fn benchmark_backoff_calculation(c: &mut Criterion) {
-    let policy = BackoffPolicy::exponential(
-        Duration::from_millis(10),
-        2.0,
-        Duration::from_secs(1),
-    )
-    .expect("benchmark backoff policy should be valid");
+    let policy = BackoffPolicy::exponential(Duration::from_millis(10), 2.0, Duration::from_secs(1))
+        .expect("benchmark backoff policy should be valid");
     let request = BackoffRequest::policy();
 
     c.bench_function("backoff_calculation", |b| {
@@ -378,9 +350,7 @@ fn benchmark_async_success(c: &mut Criterion) {
         c.bench_function("async_success", |b| {
             b.iter(|| {
                 let result =
-                    runtime.block_on(TokioRetry::new(&retry).run(|| async {
-                        Ok::<u64, &'static str>(black_box(42))
-                    }));
+                    runtime.block_on(TokioRetry::new(&retry).run(|| async { Ok::<u64, &'static str>(black_box(42)) }));
                 let _ = black_box(result);
             });
         });

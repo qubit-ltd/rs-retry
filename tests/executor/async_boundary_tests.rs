@@ -99,21 +99,17 @@ async fn test_async_backoff_registration_does_not_move_flow_deadline() {
             .run(|| async { Err::<(), _>(TestError("retry")) })
             .await
     });
-    let deadline = tokio::task::spawn_blocking(move || {
-        receiver.recv_timeout(Duration::from_secs(1))
-    })
-    .await
-    .expect("deadline receiver task")
-    .expect("backoff registration");
+    let deadline = tokio::task::spawn_blocking(move || receiver.recv_timeout(Duration::from_secs(1)))
+        .await
+        .expect("deadline receiver task")
+        .expect("backoff registration");
     if deadline.elapsed_since_origin() != Duration::from_secs(10) {
         task.abort();
         let _ = task.await;
         assert_eq!(deadline.elapsed_since_origin(), Duration::from_secs(10));
         return;
     }
-    clock
-        .advance(Duration::from_secs(20))
-        .expect("reach flow deadline");
+    clock.advance(Duration::from_secs(20)).expect("reach flow deadline");
     let error = task
         .await
         .expect("async retry task completes")
@@ -149,10 +145,7 @@ impl Timer for SecondRegistrationFailsTimer {
         self.clock.as_ref()
     }
 
-    fn at(
-        &self,
-        _deadline: MonotonicInstant,
-    ) -> Result<TimerFuture, TimeError> {
+    fn at(&self, _deadline: MonotonicInstant) -> Result<TimerFuture, TimeError> {
         if self.registrations.fetch_add(1, Ordering::SeqCst) == 0 {
             Ok(Box::pin(future::pending()))
         } else {
@@ -164,12 +157,11 @@ impl Timer for SecondRegistrationFailsTimer {
 #[cfg(feature = "tokio")]
 #[tokio::test(start_paused = true)]
 async fn test_async_facade_reports_timer_failure_with_injected_components() {
-    let timer: Arc<dyn Timer> =
-        Arc::new(FaultInjectingTimer::backend_unavailable(
-            TimerFailurePoint::Registration,
-            "retry-test",
-            "offline",
-        ));
+    let timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
+        TimerFailurePoint::Registration,
+        "retry-test",
+        "offline",
+    ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
     let config2 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
@@ -228,9 +220,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
 
     let config4 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::Abort
-        })
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
         .build()
         .expect("valid config");
     let aborted = TokioRetry::new(&config4)
@@ -258,12 +248,11 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         }
     ));
 
-    let registration_timer: Arc<dyn Timer> =
-        Arc::new(FaultInjectingTimer::backend_unavailable(
-            TimerFailurePoint::Registration,
-            "retry-test",
-            "offline",
-        ));
+    let registration_timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
+        TimerFailurePoint::Registration,
+        "retry-test",
+        "offline",
+    ));
     let chain_config1 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
         .build()
@@ -282,12 +271,11 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         }
     ));
 
-    let completion_timer: Arc<dyn Timer> =
-        Arc::new(FaultInjectingTimer::backend_unavailable(
-            TimerFailurePoint::Completion,
-            "retry-test",
-            "offline",
-        ));
+    let completion_timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
+        TimerFailurePoint::Completion,
+        "retry-test",
+        "offline",
+    ));
     let chain_config2 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
         .build()
@@ -308,19 +296,14 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
 
     let config5 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            panic!("rule panic")
-        })
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("rule panic"))
         .build()
         .expect("valid config");
     let rule_panics = TokioRetry::new(&config5)
         .run(|| async { Err::<(), _>(TestError("retry")) })
         .await
         .unwrap_err();
-    assert!(matches!(
-        rule_panics.reason(),
-        RetryErrorReason::CallbackFailed { .. }
-    ));
+    assert!(matches!(rule_panics.reason(), RetryErrorReason::CallbackFailed { .. }));
 
     let zero_config = RetryConfig::<TestError>::builder()
         .total_time_budget(Duration::ZERO)
@@ -367,8 +350,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         }
     ));
 
-    let cap_timer: Arc<dyn Timer> =
-        Arc::new(SecondRegistrationFailsTimer::new());
+    let cap_timer: Arc<dyn Timer> = Arc::new(SecondRegistrationFailsTimer::new());
     let cap_config = RetryConfig::<TestError>::builder()
         .max_attempts(2)
         .backoff(BackoffPolicy::fixed(Duration::from_secs(2)))
@@ -429,9 +411,7 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let attempts = AtomicUsize::new(0);
     let config7 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::RetryWithJitteredHint(Duration::ZERO)
-        })
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithJitteredHint(Duration::ZERO))
         .build()
         .expect("valid config");
     let jittered_retry = TokioRetry::new(&config7)

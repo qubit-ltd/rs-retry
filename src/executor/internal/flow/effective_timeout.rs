@@ -34,10 +34,7 @@ impl EffectiveTimeout {
     /// # Returns
     /// Some shorter enabled limit; None when neither is configured.
     #[must_use]
-    pub(crate) fn select(
-        attempt_timeout: Option<Duration>,
-        flow_remaining: Option<Duration>,
-    ) -> Option<Self> {
+    pub(crate) fn select(attempt_timeout: Option<Duration>, flow_remaining: Option<Duration>) -> Option<Self> {
         match (attempt_timeout, flow_remaining) {
             (Some(attempt), Some(flow)) if attempt <= flow => Some(Self {
                 duration: attempt,

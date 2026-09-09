@@ -38,8 +38,7 @@ use qubit_retry::RetryTimeoutScope;
 use super::TestError;
 
 /// Ordered callback phase and elapsed-time observations.
-pub(crate) type CallbackElapsedRecords =
-    Arc<Mutex<Vec<(RetryCallbackPhase, Duration)>>>;
+pub(crate) type CallbackElapsedRecords = Arc<Mutex<Vec<(RetryCallbackPhase, Duration)>>>;
 
 /// Observer that records and advances one selected callback phase.
 pub(crate) struct ElapsedObserverCallback {
@@ -84,20 +83,12 @@ impl ElapsedObserverCallback {
 
 impl RetryObserver<TestError> for ElapsedObserverCallback {
     /// Records and advances the attempt-failed phase when selected.
-    fn on_attempt_failed(
-        &self,
-        _failure: &AttemptFailure<TestError>,
-        context: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _failure: &AttemptFailure<TestError>, context: &RetryContext) {
         self.observe(RetryCallbackPhase::AttemptFailed, context);
     }
 
     /// Records and advances the retry-scheduled phase when selected.
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        context: &RetryContext,
-    ) {
+    fn on_retry_scheduled(&self, _backoff: &BackoffStep, context: &RetryContext) {
         self.observe(RetryCallbackPhase::RetryScheduled, context);
     }
 }
@@ -126,11 +117,7 @@ impl ElapsedRuleCallback {
 
 impl RetryRule<TestError> for ElapsedRuleCallback {
     /// Records the rule context, advances one second, and optionally panics.
-    fn decide(
-        &self,
-        _failure: &AttemptFailure<TestError>,
-        context: &RetryContext,
-    ) -> RetryDecision {
+    fn decide(&self, _failure: &AttemptFailure<TestError>, context: &RetryContext) -> RetryDecision {
         self.records
             .lock()
             .expect("callback elapsed records should not be poisoned")
@@ -149,12 +136,8 @@ pub(crate) fn callback_elapsed_records() -> CallbackElapsedRecords {
 }
 
 /// Asserts one callback-panic terminal includes time consumed before panic.
-pub(crate) fn assert_callback_panic_elapsed(
-    error: &RetryError<TestError>,
-    phase: RetryCallbackPhase,
-) {
-    let RetryErrorReason::CallbackFailed { callback, .. } = error.reason()
-    else {
+pub(crate) fn assert_callback_panic_elapsed(error: &RetryError<TestError>, phase: RetryCallbackPhase) {
+    let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
         panic!("expected a callback failure, got {:?}", error.reason());
     };
     let expected_kind = if phase == RetryCallbackPhase::RuleDecision {
@@ -179,18 +162,10 @@ impl ObserverPhaseCounts {
     /// Returns the number of calls observed for `phase`.
     pub(crate) fn calls(&self, phase: RetryCallbackPhase) -> usize {
         match phase {
-            RetryCallbackPhase::BeforeAttempt => {
-                self.started.load(Ordering::SeqCst)
-            }
-            RetryCallbackPhase::AttemptFailed => {
-                self.failed.load(Ordering::SeqCst)
-            }
-            RetryCallbackPhase::RetryScheduled => {
-                self.scheduled.load(Ordering::SeqCst)
-            }
-            RetryCallbackPhase::RuleDecision
-            | RetryCallbackPhase::Success
-            | RetryCallbackPhase::TerminalFailure => 0,
+            RetryCallbackPhase::BeforeAttempt => self.started.load(Ordering::SeqCst),
+            RetryCallbackPhase::AttemptFailed => self.failed.load(Ordering::SeqCst),
+            RetryCallbackPhase::RetryScheduled => self.scheduled.load(Ordering::SeqCst),
+            RetryCallbackPhase::RuleDecision | RetryCallbackPhase::Success | RetryCallbackPhase::TerminalFailure => 0,
         }
     }
 }
@@ -216,22 +191,14 @@ impl RetryObserver<TestError> for PanickingPhaseObserver {
     }
 
     /// Panics when attempt-failed is the selected phase.
-    fn on_attempt_failed(
-        &self,
-        _failure: &AttemptFailure<TestError>,
-        _context: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _failure: &AttemptFailure<TestError>, _context: &RetryContext) {
         if self.phase == RetryCallbackPhase::AttemptFailed {
             panic!("matrix observer panic");
         }
     }
 
     /// Panics when retry-scheduled is the selected phase.
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        _context: &RetryContext,
-    ) {
+    fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {
         if self.phase == RetryCallbackPhase::RetryScheduled {
             panic!("matrix observer panic");
         }
@@ -248,20 +215,12 @@ impl RetryObserver<TestError> for CountingPhaseObserver {
     }
 
     /// Records one attempt-failed callback.
-    fn on_attempt_failed(
-        &self,
-        _failure: &AttemptFailure<TestError>,
-        _context: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _failure: &AttemptFailure<TestError>, _context: &RetryContext) {
         self.0.failed.fetch_add(1, Ordering::SeqCst);
     }
 
     /// Records one retry-scheduled callback.
-    fn on_retry_scheduled(
-        &self,
-        _backoff: &BackoffStep,
-        _context: &RetryContext,
-    ) {
+    fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {
         self.0.scheduled.fetch_add(1, Ordering::SeqCst);
     }
 }
@@ -271,10 +230,7 @@ pub(crate) fn assert_matrix_abort(error: &RetryError<TestError>) {
     let RetryErrorReason::Aborted = error.reason() else {
         panic!("expected an aborted terminal failure");
     };
-    assert_eq!(
-        error.last_failure(),
-        Some(&AttemptFailure::Error(TestError("matrix")))
-    );
+    assert_eq!(error.last_failure(), Some(&AttemptFailure::Error(TestError("matrix"))));
     assert_eq!(error.last_error(), Some(&TestError("matrix")));
     assert_eq!(error.reason().to_string(), "aborted");
     assert_terminal_context(error.context(), 1, None);
@@ -287,25 +243,16 @@ pub(crate) fn assert_matrix_limit(
     expected_attempts: u32,
     has_last_failure: bool,
 ) {
-    let RetryErrorReason::Exhausted {
-        limit: actual_limit,
-    } = error.reason()
-    else {
+    let RetryErrorReason::Exhausted { limit: actual_limit } = error.reason() else {
         panic!("expected an exhausted terminal failure");
     };
     assert_eq!(*actual_limit, limit);
     if has_last_failure {
-        assert_eq!(
-            error.last_failure(),
-            Some(&AttemptFailure::Error(TestError("matrix")))
-        );
+        assert_eq!(error.last_failure(), Some(&AttemptFailure::Error(TestError("matrix"))));
     } else {
         assert_eq!(error.last_failure(), None);
     }
-    assert_eq!(
-        error.last_error(),
-        has_last_failure.then_some(&TestError("matrix"))
-    );
+    assert_eq!(error.last_error(), has_last_failure.then_some(&TestError("matrix")));
     assert_eq!(error.reason().to_string(), format!("exhausted ({limit})"));
     assert_terminal_context(error.context(), expected_attempts, None);
     match limit {
@@ -313,34 +260,19 @@ pub(crate) fn assert_matrix_limit(
             assert_eq!(error.context().max_attempts(), 1);
         }
         RetryLimitKind::OperationElapsed => {
-            assert_eq!(
-                error.context().operation_time_budget(),
-                Some(Duration::from_secs(1))
-            );
-            assert_eq!(
-                error.context().operation_elapsed(),
-                Duration::from_secs(1)
-            );
-            assert_eq!(
-                error.context().last_attempt_elapsed(),
-                Duration::from_secs(1)
-            );
+            assert_eq!(error.context().operation_time_budget(), Some(Duration::from_secs(1)));
+            assert_eq!(error.context().operation_elapsed(), Duration::from_secs(1));
+            assert_eq!(error.context().last_attempt_elapsed(), Duration::from_secs(1));
         }
         RetryLimitKind::TotalElapsed => {
-            assert_eq!(
-                error.context().total_time_budget(),
-                Some(Duration::from_secs(1))
-            );
+            assert_eq!(error.context().total_time_budget(), Some(Duration::from_secs(1)));
             assert_eq!(error.context().total_elapsed(), Duration::from_secs(1));
         }
     }
 }
 
 /// Asserts structured rule-panic attribution and retained attempt data.
-pub(crate) fn assert_matrix_rule_panic(
-    error: &RetryError<TestError>,
-    later_rule_calls: &AtomicUsize,
-) {
+pub(crate) fn assert_matrix_rule_panic(error: &RetryError<TestError>, later_rule_calls: &AtomicUsize) {
     assert_matrix_callback(
         error,
         RetryCallbackKind::Rule,
@@ -360,8 +292,7 @@ pub(crate) fn assert_matrix_observer_panic(
 ) {
     let (has_last_failure, attempts, current_attempt) = match phase {
         RetryCallbackPhase::BeforeAttempt => (false, 0, Some(1)),
-        RetryCallbackPhase::AttemptFailed
-        | RetryCallbackPhase::RetryScheduled => (true, 1, Some(1)),
+        RetryCallbackPhase::AttemptFailed | RetryCallbackPhase::RetryScheduled => (true, 1, Some(1)),
         RetryCallbackPhase::RuleDecision => {
             panic!("rule decision is not an observer phase")
         }
@@ -406,39 +337,22 @@ pub(crate) fn assert_matrix_infrastructure(
         error.last_failure(),
         has_last_failure.then_some(&AttemptFailure::Error(TestError("matrix")))
     );
-    assert_eq!(
-        error.last_error(),
-        has_last_failure.then_some(&TestError("matrix"))
-    );
+    assert_eq!(error.last_error(), has_last_failure.then_some(&TestError("matrix")));
     assert_eq!(
         error.reason().to_string(),
         format!("infrastructure failure ({failure})")
     );
-    assert_terminal_context(
-        error.context(),
-        expected_attempts,
-        current_attempt,
-    );
+    assert_terminal_context(error.context(), expected_attempts, current_attempt);
 }
 
 /// Asserts timeout terminal and attempt-failure scopes remain identical.
 #[cfg(any(feature = "tokio", feature = "worker"))]
-pub(crate) fn assert_matrix_timeout(
-    error: &RetryError<TestError>,
-    scope: RetryTimeoutScope,
-    expected_attempts: u32,
-) {
-    let RetryErrorReason::TimedOut {
-        scope: terminal_scope,
-    } = error.reason()
-    else {
+pub(crate) fn assert_matrix_timeout(error: &RetryError<TestError>, scope: RetryTimeoutScope, expected_attempts: u32) {
+    let RetryErrorReason::TimedOut { scope: terminal_scope } = error.reason() else {
         panic!("expected a timeout terminal failure");
     };
     assert_eq!(*terminal_scope, scope);
-    assert_eq!(
-        error.last_failure(),
-        Some(&AttemptFailure::TimedOut { scope })
-    );
+    assert_eq!(error.last_failure(), Some(&AttemptFailure::TimedOut { scope }));
     assert_eq!(error.last_error(), None);
     assert_eq!(error.reason().to_string(), format!("timed out ({scope})"));
     assert_terminal_context(error.context(), expected_attempts, None);
@@ -466,16 +380,9 @@ pub(crate) fn rule_terminal_regressing_timer() -> Arc<dyn Timer> {
 }
 
 /// Asserts shared terminal context fields used throughout the facade matrix.
-fn assert_terminal_context(
-    context: &RetryContext,
-    attempts: u32,
-    current_attempt: Option<u32>,
-) {
+fn assert_terminal_context(context: &RetryContext, attempts: u32, current_attempt: Option<u32>) {
     assert_eq!(context.attempts(), attempts);
-    assert_eq!(
-        context.current_attempt().map(NonZeroU32::get),
-        current_attempt
-    );
+    assert_eq!(context.current_attempt().map(NonZeroU32::get), current_attempt);
     if current_attempt.is_none() {
         assert_eq!(context.current_hard_attempt_timeout(), None);
     }
@@ -506,19 +413,13 @@ fn assert_matrix_callback(
         error.last_failure(),
         has_last_failure.then_some(&AttemptFailure::Error(TestError("matrix")))
     );
-    assert_eq!(
-        error.last_error(),
-        has_last_failure.then_some(&TestError("matrix"))
-    );
+    assert_eq!(error.last_error(), has_last_failure.then_some(&TestError("matrix")));
     let _suffix = if has_last_failure {
         "; last attempt failed: matrix"
     } else {
         ""
     };
-    assert_eq!(
-        error.reason().to_string(),
-        format!("callback failed ({callback})")
-    );
+    assert_eq!(error.reason().to_string(), format!("callback failed ({callback})"));
     assert_terminal_context(error.context(), attempts, current_attempt);
 }
 
