@@ -77,9 +77,7 @@ unsafe fn clone_cancel_on_clone_waker(data: *const ()) -> RawWaker {
     // SAFETY: `data` owns one strong reference created by
     // `cancel_on_clone_waker`; `ManuallyDrop` retains that source reference
     // while the cloned reference is transferred to the returned raw waker.
-    let token = ManuallyDrop::new(unsafe {
-        Arc::<RetryCancellationToken>::from_raw(data.cast())
-    });
+    let token = ManuallyDrop::new(unsafe { Arc::<RetryCancellationToken>::from_raw(data.cast()) });
     token.cancel();
     let cloned = Arc::clone(&token);
     RawWaker::new(Arc::into_raw(cloned).cast(), &CANCEL_ON_CLONE_WAKER_VTABLE)
@@ -105,10 +103,7 @@ unsafe fn drop_cancel_on_clone_waker(data: *const ()) {
 /// Creates a waker that cancels the supplied token when it is cloned.
 fn cancel_on_clone_waker(token: &RetryCancellationToken) -> Waker {
     let token = Arc::new(token.clone());
-    let raw_waker = RawWaker::new(
-        Arc::into_raw(token).cast(),
-        &CANCEL_ON_CLONE_WAKER_VTABLE,
-    );
+    let raw_waker = RawWaker::new(Arc::into_raw(token).cast(), &CANCEL_ON_CLONE_WAKER_VTABLE);
     // SAFETY: the callback table maintains exactly one `Arc` strong reference
     // for each raw waker and consumes it in `wake` or `drop`.
     unsafe { Waker::from_raw(raw_waker) }
@@ -127,9 +122,7 @@ unsafe fn clone_drop_cancel_waker(data: *const ()) -> RawWaker {
     // SAFETY: `data` owns one strong reference created by
     // `drop_cancelling_waker`; `ManuallyDrop` retains the source reference
     // while the cloned reference is transferred to the returned raw waker.
-    let token = ManuallyDrop::new(unsafe {
-        Arc::<RetryCancellationToken>::from_raw(data.cast())
-    });
+    let token = ManuallyDrop::new(unsafe { Arc::<RetryCancellationToken>::from_raw(data.cast()) });
     let cloned = Arc::clone(&token);
     RawWaker::new(Arc::into_raw(cloned).cast(), &DROP_CANCEL_WAKER_VTABLE)
 }
@@ -155,19 +148,14 @@ unsafe fn drop_drop_cancel_waker(data: *const ()) {
 /// Creates a waker that cancels `token` whenever a cloned waker is dropped.
 fn drop_cancelling_waker(token: &RetryCancellationToken) -> Waker {
     let token = Arc::new(token.clone());
-    let raw_waker =
-        RawWaker::new(Arc::into_raw(token).cast(), &DROP_CANCEL_WAKER_VTABLE);
+    let raw_waker = RawWaker::new(Arc::into_raw(token).cast(), &DROP_CANCEL_WAKER_VTABLE);
     // SAFETY: the callback table maintains exactly one `Arc` strong reference
     // for each raw waker and consumes it in `wake` or `drop`.
     unsafe { Waker::from_raw(raw_waker) }
 }
 
 /// Asserts a controlled re-entrant callback completed without deadlocking.
-fn assert_reentrant_callback_completes(
-    receiver: mpsc::Receiver<bool>,
-    handle: thread::JoinHandle<()>,
-    callback: &str,
-) {
+fn assert_reentrant_callback_completes(receiver: mpsc::Receiver<bool>, handle: thread::JoinHandle<()>, callback: &str) {
     match receiver.recv_timeout(Duration::from_secs(5)) {
         Ok(true) => handle
             .join()
@@ -311,17 +299,10 @@ fn test_retry_cancellation_token_repoll_drop_can_reenter_cancellation() {
             .expect("test receiver must remain available");
     });
 
-    assert_reentrant_callback_completes(
-        receiver,
-        handle,
-        "waker replacement drop",
-    );
+    assert_reentrant_callback_completes(receiver, handle, "waker replacement drop");
     assert!(token.is_cancelled());
     let mut cancelled = Box::pin(token.cancelled());
-    assert_eq!(
-        Poll::Ready(()),
-        poll_once(cancelled.as_mut(), Waker::noop())
-    );
+    assert_eq!(Poll::Ready(()), poll_once(cancelled.as_mut(), Waker::noop()));
 }
 
 /// Verifies dropping a pending future drops its waker after unlocking the
@@ -336,20 +317,11 @@ fn test_retry_cancellation_token_drop_can_reenter_cancellation() {
         let mut cancelled = Box::pin(thread_token.cancelled());
         let pending = poll_once(cancelled.as_mut(), &waker) == Poll::Pending;
         drop(cancelled);
-        sender
-            .send(pending)
-            .expect("test receiver must remain available");
+        sender.send(pending).expect("test receiver must remain available");
     });
 
-    assert_reentrant_callback_completes(
-        receiver,
-        handle,
-        "pending future drop",
-    );
+    assert_reentrant_callback_completes(receiver, handle, "pending future drop");
     assert!(token.is_cancelled());
     let mut cancelled = Box::pin(token.cancelled());
-    assert_eq!(
-        Poll::Ready(()),
-        poll_once(cancelled.as_mut(), Waker::noop())
-    );
+    assert_eq!(Poll::Ready(()), poll_once(cancelled.as_mut(), Waker::noop()));
 }

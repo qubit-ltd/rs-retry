@@ -49,16 +49,11 @@ impl CancellingControl {
     /// Simulates callback work without depending on OS scheduling.
     fn act(&self, phase: RetryCallbackPhase) {
         if self.phase == phase {
-            self.clock
-                .advance(Duration::from_secs(7))
-                .expect("valid advance");
+            self.clock.advance(Duration::from_secs(7)).expect("valid advance");
             self.token.cancel();
             if let Some((state, mode, panic_after)) = &self.fault {
                 state.store(*mode, Ordering::SeqCst);
-                assert!(
-                    !panic_after,
-                    "control callback panic after invalidating its clock"
-                );
+                assert!(!panic_after, "control callback panic after invalidating its clock");
             }
         }
     }
@@ -69,11 +64,7 @@ impl RetryObserver<&'static str> for CancellingControl {
         self.act(RetryCallbackPhase::BeforeAttempt);
     }
 
-    fn on_attempt_failed(
-        &self,
-        _: &AttemptFailure<&'static str>,
-        _: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _: &AttemptFailure<&'static str>, _: &RetryContext) {
         self.act(RetryCallbackPhase::AttemptFailed);
     }
 
@@ -115,25 +106,16 @@ fn build_case(control: CancellingControl) -> RetryConfig<&'static str> {
 }
 
 /// Checks both elapsed accounting and terminal ownership of the attempt.
-fn assert_cancelled(
-    error: &RetryError<&'static str>,
-    phase: RetryCallbackPhase,
-) {
+fn assert_cancelled(error: &RetryError<&'static str>, phase: RetryCallbackPhase) {
     let before = phase == RetryCallbackPhase::BeforeAttempt;
-    assert_eq!(
-        error.context().total_elapsed(),
-        Duration::from_secs(7),
-        "{phase:?}"
-    );
+    assert_eq!(error.context().total_elapsed(), Duration::from_secs(7), "{phase:?}");
     assert_eq!(error.context().operation_elapsed(), Duration::ZERO);
     assert_eq!(error.context().attempts(), u32::from(!before));
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(error.context().current_hard_attempt_timeout(), None);
     assert_eq!(error.last_error().copied(), (!before).then_some("offline"));
-    assert!(
-        matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. }
-        if *phase == if before { RetryCancellationPhase::BeforeAttempt } else { RetryCancellationPhase::Backoff })
-    );
+    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. }
+        if *phase == if before { RetryCancellationPhase::BeforeAttempt } else { RetryCancellationPhase::Backoff }));
     assert_eq!(
         error.context().next_delay(),
         (phase == RetryCallbackPhase::RetryScheduled).then_some(Duration::ZERO)
@@ -205,10 +187,7 @@ impl MonotonicClock for InvalidatingClock {
     fn now(&self) -> MonotonicInstant {
         match self.mode.load(Ordering::SeqCst) {
             1 => MonotonicInstant::new(self.domain(), Duration::ZERO),
-            2 => MonotonicInstant::new(
-                self.foreign_domain,
-                Duration::from_secs(8),
-            ),
+            2 => MonotonicInstant::new(self.foreign_domain, Duration::from_secs(8)),
             _ => self.base.now(),
         }
     }
@@ -236,14 +215,9 @@ fn invalid_clock_case(
     phase: RetryCallbackPhase,
     mode: u8,
     panic_after: bool,
-) -> (
-    RetryConfig<&'static str>,
-    Arc<dyn Timer>,
-    RetryCancellationToken,
-) {
+) -> (RetryConfig<&'static str>, Arc<dyn Timer>, RetryCancellationToken) {
     let base = ManualMonotonicClock::new_shared();
-    base.advance(Duration::from_secs(1))
-        .expect("nonzero initial sample");
+    base.advance(Duration::from_secs(1)).expect("nonzero initial sample");
     let clock = InvalidatingClock {
         base: Arc::clone(&base),
         foreign_domain: ManualMonotonicClock::new_shared().domain(),
@@ -260,11 +234,7 @@ fn invalid_clock_case(
 }
 
 /// Invalid post-callback samples cannot replace a coherent snapshot.
-fn assert_clock_terminal(
-    error: &RetryError<&'static str>,
-    phase: RetryCallbackPhase,
-    panic_after: bool,
-) {
+fn assert_clock_terminal(error: &RetryError<&'static str>, phase: RetryCallbackPhase, panic_after: bool) {
     assert_eq!(error.context().total_elapsed(), Duration::ZERO);
     assert_eq!(
         error.context().attempts(),
@@ -303,8 +273,7 @@ fn test_control_clock_failures_and_cancellation_have_explicit_precedence() {
         for mode in [1, 2] {
             for panic_after in [false, true] {
                 for worker in [false, true] {
-                    let (retry, timer, token) =
-                        invalid_clock_case(phase, mode, panic_after);
+                    let (retry, timer, token) = invalid_clock_case(phase, mode, panic_after);
                     let error = if worker {
                         WorkerRetry::new(&retry)
                             .timer(timer)
@@ -316,9 +285,7 @@ fn test_control_clock_failures_and_cancellation_have_explicit_precedence() {
                             .cancellation_token(token)
                             .run(|| Err::<(), _>("offline"))
                     }
-                    .expect_err(
-                        "invalid clock or callback panic must terminate",
-                    );
+                    .expect_err("invalid clock or callback panic must terminate");
                     assert_clock_terminal(&error, phase, panic_after);
                 }
             }
@@ -329,8 +296,7 @@ fn test_control_clock_failures_and_cancellation_have_explicit_precedence() {
 /// Async execution has the same fault precedence at every control boundary.
 #[cfg(feature = "tokio")]
 #[tokio::test]
-async fn test_async_control_clock_failures_and_cancellation_have_explicit_precedence()
- {
+async fn test_async_control_clock_failures_and_cancellation_have_explicit_precedence() {
     for phase in [
         RetryCallbackPhase::BeforeAttempt,
         RetryCallbackPhase::AttemptFailed,
@@ -339,8 +305,7 @@ async fn test_async_control_clock_failures_and_cancellation_have_explicit_preced
     ] {
         for mode in [1, 2] {
             for panic_after in [false, true] {
-                let (retry, timer, token) =
-                    invalid_clock_case(phase, mode, panic_after);
+                let (retry, timer, token) = invalid_clock_case(phase, mode, panic_after);
                 let error = TokioRetry::new(&retry)
                     .timer(timer)
                     .cancellation_token(token)

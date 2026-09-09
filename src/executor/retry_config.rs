@@ -182,24 +182,14 @@ impl<E: 'static> RetryConfig<E> {
     /// Returns the original terminal failure with completion diagnostics
     /// attached; completion observers do not replace or reclassify the
     /// failure.
-    #[allow(
-        clippy::result_large_err,
-        reason = "completion preserves the lossless public result"
-    )]
-    pub(super) fn complete<T>(
-        &self,
-        mut result: RetryResult<T, E>,
-    ) -> RetryResult<T, E> {
+    #[allow(clippy::result_large_err, reason = "completion preserves the lossless public result")]
+    pub(super) fn complete<T>(&self, mut result: RetryResult<T, E>) -> RetryResult<T, E> {
         let diagnostics = match &result {
             Ok(success) => self.observers.notify_success(success.context()),
-            Err(error) => self
-                .observers
-                .notify_terminal_failure(error.reason(), error.context()),
+            Err(error) => self.observers.notify_terminal_failure(error.reason(), error.context()),
         };
         match &mut result {
-            Ok(success) => {
-                success.set_completion_callback_failures(diagnostics)
-            }
+            Ok(success) => success.set_completion_callback_failures(diagnostics),
             Err(error) => error.set_completion_callback_failures(diagnostics),
         }
         result

@@ -252,10 +252,7 @@ impl RetryContext {
     /// # Returns
     /// A copy with only the selected overlay field changed.
     #[inline(always)]
-    pub(crate) fn with_retry_after_hint(
-        mut self,
-        hint: Option<Duration>,
-    ) -> Self {
+    pub(crate) fn with_retry_after_hint(mut self, hint: Option<Duration>) -> Self {
         self.retry_after_hint = hint;
         self
     }
@@ -268,10 +265,7 @@ impl RetryContext {
     /// # Returns
     /// A copy with only the selected overlay field changed.
     #[inline(always)]
-    pub(crate) fn with_hard_attempt_timeout(
-        mut self,
-        timeout: Option<Duration>,
-    ) -> Self {
+    pub(crate) fn with_hard_attempt_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.current_hard_attempt_timeout = timeout;
         self
     }

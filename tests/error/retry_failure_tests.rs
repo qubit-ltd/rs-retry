@@ -64,9 +64,7 @@ impl RetryObserver<String> for StartedPanickingObserver {
 
 #[test]
 fn test_map_error_preserves_aborted_worker_panic() {
-    let config = RetryConfig::<String>::builder()
-        .build()
-        .expect("valid config");
+    let config = RetryConfig::<String>::builder().build().expect("valid config");
     let error = WorkerRetry::new(&config)
         .run(|_: AttemptCancellationToken| -> Result<(), String> {
             panic!("operation panic");
@@ -81,10 +79,7 @@ fn test_map_error_preserves_aborted_worker_panic() {
     ));
     let mapped = error.map_error(|value| value.into_bytes());
     assert!(matches!(mapped.reason(), RetryErrorReason::Aborted));
-    assert!(matches!(
-        mapped.last_failure(),
-        Some(AttemptFailure::Panicked { .. })
-    ));
+    assert!(matches!(mapped.last_failure(), Some(AttemptFailure::Panicked { .. })));
 }
 
 #[test]
@@ -109,9 +104,7 @@ fn test_map_error_preserves_exhausted_application_failure() {
 
 #[test]
 fn test_retry_error_retains_timeout_and_cancellation_failures() {
-    let config3 = RetryConfig::<String>::builder()
-        .build()
-        .expect("valid config");
+    let config3 = RetryConfig::<String>::builder().build().expect("valid config");
     let timeout = WorkerRetry::new(&config3)
         .hard_attempt_timeout(Duration::ZERO)
         .run(|_: AttemptCancellationToken| Ok::<(), String>(()))
@@ -126,9 +119,7 @@ fn test_retry_error_retains_timeout_and_cancellation_failures() {
 
     let token = RetryCancellationToken::new();
     token.cancel();
-    let config4 = RetryConfig::<String>::builder()
-        .build()
-        .expect("valid config");
+    let config4 = RetryConfig::<String>::builder().build().expect("valid config");
     let cancelled = Retry::new(&config4)
         .cancellation_token(token)
         .run(|| Ok::<(), String>(()))
@@ -159,9 +150,7 @@ fn test_retry_error_retains_callback_and_infrastructure_classification() {
     ));
     assert!(callback.last_failure().is_none());
 
-    let config6 = RetryConfig::<String>::builder()
-        .build()
-        .expect("valid config");
+    let config6 = RetryConfig::<String>::builder().build().expect("valid config");
     let infrastructure = WorkerRetry::new(&config6)
         .worker_stack_size(usize::MAX)
         .run(|_: AttemptCancellationToken| Ok::<(), String>(()))

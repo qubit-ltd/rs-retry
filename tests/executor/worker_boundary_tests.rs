@@ -38,12 +38,11 @@ use crate::support::retry_once_policy;
 
 #[test]
 fn test_worker_facade_reports_timer_panic_and_detached_worker() {
-    let timer: Arc<dyn Timer> =
-        Arc::new(FaultInjectingTimer::backend_unavailable(
-            TimerFailurePoint::Registration,
-            "retry-test",
-            "offline",
-        ));
+    let timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
+        TimerFailurePoint::Registration,
+        "retry-test",
+        "offline",
+    ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
     let config = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
@@ -105,10 +104,7 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
             ..
         }
     ));
-    assert_eq!(
-        detached.context().current_attempt().map(NonZeroU32::get),
-        Some(1)
-    );
+    assert_eq!(detached.context().current_attempt().map(NonZeroU32::get), Some(1));
     assert_eq!(
         detached.context().current_hard_attempt_timeout(),
         Some(Duration::from_millis(1))
@@ -201,18 +197,13 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
 
     let config5 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            panic!("rule panic")
-        })
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| panic!("rule panic"))
         .build()
         .expect("valid config");
     let rule_panics = WorkerRetry::new(&config5)
         .run(|_| Err::<(), _>(TestError("retry")))
         .unwrap_err();
-    assert!(matches!(
-        rule_panics.reason(),
-        RetryErrorReason::CallbackFailed { .. }
-    ));
+    assert!(matches!(rule_panics.reason(), RetryErrorReason::CallbackFailed { .. }));
 
     let zero_config = RetryConfig::<TestError>::builder()
         .total_time_budget(Duration::ZERO)
@@ -229,12 +220,11 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
         }
     ));
 
-    let cap_timer: Arc<dyn Timer> =
-        Arc::new(FaultInjectingTimer::backend_unavailable(
-            TimerFailurePoint::Registration,
-            "retry-test",
-            "offline",
-        ));
+    let cap_timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
+        TimerFailurePoint::Registration,
+        "retry-test",
+        "offline",
+    ));
     let cap_config = RetryConfig::<TestError>::builder()
         .max_attempts(2)
         .backoff(BackoffPolicy::fixed(Duration::from_secs(2)))
@@ -255,9 +245,7 @@ fn test_worker_facade_reports_timer_panic_and_detached_worker() {
 
     let config6 = RetryConfig::<TestError>::builder()
         .max_attempts(1)
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::Retry
-        })
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Retry)
         .build()
         .expect("valid config");
     let explicit_retry = WorkerRetry::new(&config6)
@@ -281,9 +269,7 @@ fn test_worker_facade_accepts_thread_name() {
         .expect("valid config");
     let result = WorkerRetry::new(&config)
         .thread_name("coverage-worker")
-        .run(|_| {
-            Ok::<_, TestError>(thread::current().name().map(str::to_owned))
-        })
+        .run(|_| Ok::<_, TestError>(thread::current().name().map(str::to_owned)))
         .expect("named worker should start");
 
     assert_eq!(result.value().as_deref(), Some("coverage-worker"));
@@ -293,9 +279,7 @@ fn test_worker_facade_accepts_thread_name() {
 fn test_worker_deadline_overflow_does_not_admit_operation() {
     for flow_timeout in [false, true] {
         let clock = ManualMonotonicClock::new_shared();
-        clock
-            .advance(Duration::from_nanos(1))
-            .expect("nonzero clock origin");
+        clock.advance(Duration::from_nanos(1)).expect("nonzero clock origin");
         let retry = RetryConfig::<TestError>::builder()
             .policy(retry_once_policy())
             .build()
@@ -307,11 +291,7 @@ fn test_worker_deadline_overflow_does_not_admit_operation() {
             execution.hard_attempt_timeout(Duration::MAX)
         };
         let error = execution
-            .run(|_| -> Result<(), TestError> {
-                panic!(
-                    "overflow must reject admission before spawning user work"
-                )
-            })
+            .run(|_| -> Result<(), TestError> { panic!("overflow must reject admission before spawning user work") })
             .unwrap_err();
         assert_eq!(error.context().attempts(), 0);
         assert_eq!(error.context().current_attempt(), None);
