@@ -146,10 +146,7 @@ impl<'a, E: 'static> Retry<'a, E> {
         reason = "the public error intentionally retains lossless terminal context"
     )]
     #[inline(always)]
-    pub fn run<T, F>(
-        &self,
-        operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,
     {
@@ -162,23 +159,14 @@ impl<'a, E: 'static> Retry<'a, E> {
         clippy::result_large_err,
         reason = "the internal helper propagates the lossless public terminal error"
     )]
-    fn run_inner<T, F>(
-        &self,
-        mut operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    fn run_inner<T, F>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,
     {
         let default_timer = StdTimer::new();
         let timer: &dyn Timer = self.timer.as_deref().unwrap_or(&default_timer);
         let clock = timer.clock();
-        let mut controller = RetryFlowController::new(
-            clock.now(),
-            self.config,
-            self.random_source.clone(),
-            None,
-            None,
-        );
+        let mut controller = RetryFlowController::new(clock.now(), self.config, self.random_source.clone(), None, None);
 
         loop {
             let cancellation = self.cancellation_token.as_ref();
@@ -192,33 +180,19 @@ impl<'a, E: 'static> Retry<'a, E> {
                     return Ok(RetrySuccess::new(value, context));
                 }
                 Err(error) => {
-                    let directive = controller.record_failure(
-                        AttemptFailure::Error(error),
-                        clock,
-                        cancellation,
-                    )?;
-                    match wait_for_backoff(
-                        timer,
-                        directive.deadline(),
-                        directive.is_immediate(),
-                        cancellation,
-                    ) {
+                    let directive = controller.record_failure(AttemptFailure::Error(error), clock, cancellation)?;
+                    match wait_for_backoff(timer, directive.deadline(), directive.is_immediate(), cancellation) {
                         BlockingBackoffOutcome::Elapsed => {}
                         BlockingBackoffOutcome::Cancelled => {
-                            return Err(
-                                controller.record_backoff_cancellation(clock)
-                            );
+                            return Err(controller.record_backoff_cancellation(clock));
                         }
                         BlockingBackoffOutcome::TimerFailed(timer_error) => {
-                            let error = controller
-                                .record_inactive_infrastructure_failure(
-                                    RetryInfrastructureFailure::Timer {
-                                        message: timer_error
-                                            .to_string()
-                                            .into_boxed_str(),
-                                    },
-                                    clock.now(),
-                                );
+                            let error = controller.record_inactive_infrastructure_failure(
+                                RetryInfrastructureFailure::Timer {
+                                    message: timer_error.to_string().into_boxed_str(),
+                                },
+                                clock.now(),
+                            );
                             return Err(error);
                         }
                     }

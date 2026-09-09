@@ -31,19 +31,12 @@ pub trait RetryRule<E>: Send + Sync + 'static {
     /// UseDefault to delegate, Abort to stop, or a retry request still subject
     /// to cancellation, timeout, and continuation budgets.
     #[must_use = "the decision controls retry continuation"]
-    fn decide(
-        &self,
-        failure: &AttemptFailure<E>,
-        context: &RetryContext,
-    ) -> RetryDecision;
+    fn decide(&self, failure: &AttemptFailure<E>, context: &RetryContext) -> RetryDecision;
 }
 
 impl<E, F> RetryRule<E> for F
 where
-    F: Fn(&AttemptFailure<E>, &RetryContext) -> RetryDecision
-        + Send
-        + Sync
-        + 'static,
+    F: Fn(&AttemptFailure<E>, &RetryContext) -> RetryDecision + Send + Sync + 'static,
 {
     /// Forwards failure classification to this closure.
     ///
@@ -57,11 +50,7 @@ where
     /// # Panics
     /// Propagates closure panic to the executor's rule capture boundary.
     #[inline(always)]
-    fn decide(
-        &self,
-        failure: &AttemptFailure<E>,
-        context: &RetryContext,
-    ) -> RetryDecision {
+    fn decide(&self, failure: &AttemptFailure<E>, context: &RetryContext) -> RetryDecision {
         self(failure, context)
     }
 }

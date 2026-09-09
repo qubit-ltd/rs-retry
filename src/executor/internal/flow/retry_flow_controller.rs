@@ -89,12 +89,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         flow_timeout: Option<Duration>,
     ) -> Self {
         Self {
-            state: RetryFlowState::new(
-                started_at,
-                config.policy(),
-                random_source,
-                flow_timeout,
-            ),
+            state: RetryFlowState::new(started_at, config.policy(), random_source, flow_timeout),
             rules: config.rules(),
             observers: config.observers(),
             fallback: config.fallback(),
@@ -147,20 +142,11 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         self.next_delay = None;
         self.retry_after_hint = None;
         let started_context = self.snapshot();
-        if let Err(callback) =
-            self.observers.try_before_attempt(&started_context)
-        {
-            return Err(self.callback_failed_after_refresh(
-                callback,
-                started_context,
-                clock,
-            ));
+        if let Err(callback) = self.observers.try_before_attempt(&started_context) {
+            return Err(self.callback_failed_after_refresh(callback, started_context, clock));
         }
-        let admission_sample = self.refresh_after_control_callback(
-            clock,
-            cancellation,
-            RetryCancellationPhase::BeforeAttempt,
-        )?;
+        let admission_sample =
+            self.refresh_after_control_callback(clock, cancellation, RetryCancellationPhase::BeforeAttempt)?;
         if self.state.flow_timed_out() {
             return Err(self.timed_out(RetryTimeoutScope::Flow));
         }
@@ -330,20 +316,10 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
             .last_failure
             .as_ref()
             .expect("recorded failure must remain available to callbacks");
-        if let Err(callback) =
-            self.observers.try_attempt_failed(failure, &failed_context)
-        {
-            return Err(self.callback_failed_after_refresh(
-                callback,
-                failed_context,
-                clock,
-            ));
+        if let Err(callback) = self.observers.try_attempt_failed(failure, &failed_context) {
+            return Err(self.callback_failed_after_refresh(callback, failed_context, clock));
         }
-        let _ = self.refresh_after_control_callback(
-            clock,
-            cancellation,
-            RetryCancellationPhase::Backoff,
-        )?;
+        let _ = self.refresh_after_control_callback(clock, cancellation, RetryCancellationPhase::Backoff)?;
 
         let rule_context = self.snapshot();
         let failure = self
@@ -353,18 +329,10 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         let decision = match self.rules.try_decide(failure, &rule_context) {
             Ok(decision) => decision,
             Err(callback) => {
-                return Err(self.callback_failed_after_refresh(
-                    callback,
-                    rule_context,
-                    clock,
-                ));
+                return Err(self.callback_failed_after_refresh(callback, rule_context, clock));
             }
         };
-        let _ = self.refresh_after_control_callback(
-            clock,
-            cancellation,
-            RetryCancellationPhase::Backoff,
-        )?;
+        let _ = self.refresh_after_control_callback(clock, cancellation, RetryCancellationPhase::Backoff)?;
         let failure = self
             .last_failure
             .as_ref()
@@ -374,15 +342,13 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         } else {
             None
         };
-        let default_panic = matches!(decision, RetryDecision::UseDefault)
-            && failure.panic().is_some();
+        let default_panic = matches!(decision, RetryDecision::UseDefault) && failure.panic().is_some();
         if let Some(scope) = default_timeout {
             return Err(self.timed_out(scope));
         }
         if matches!(decision, RetryDecision::Abort)
             || default_panic
-            || (matches!(decision, RetryDecision::UseDefault)
-                && matches!(self.fallback, RetryFallback::Abort))
+            || (matches!(decision, RetryDecision::UseDefault) && matches!(self.fallback, RetryFallback::Abort))
         {
             return Err(self.aborted());
         }
@@ -402,22 +368,11 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
             return Err(self.exhausted(limit));
         }
         let scheduled_context = self.snapshot();
-        if let Err(callback) = self
-            .observers
-            .try_retry_scheduled(&backoff, &scheduled_context)
-        {
-            return Err(self.callback_failed_after_refresh(
-                callback,
-                scheduled_context,
-                clock,
-            ));
+        if let Err(callback) = self.observers.try_retry_scheduled(&backoff, &scheduled_context) {
+            return Err(self.callback_failed_after_refresh(callback, scheduled_context, clock));
         }
         self.clear_current_attempt();
-        let _ = self.refresh_after_control_callback(
-            clock,
-            cancellation,
-            RetryCancellationPhase::Backoff,
-        )?;
+        let _ = self.refresh_after_control_callback(clock, cancellation, RetryCancellationPhase::Backoff)?;
         if self.state.flow_timed_out() {
             return Err(self.timed_out(RetryTimeoutScope::Flow));
         }
@@ -432,10 +387,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
             .state
             .backoff_deadline(clock.now(), backoff.effective_delay())
             .map_err(|error| self.inactive_clock_failure(error))?;
-        Ok(PreparedBackoffPlan::new(
-            deadline,
-            backoff.effective_delay().is_zero(),
-        ))
+        Ok(PreparedBackoffPlan::new(deadline, backoff.effective_delay().is_zero()))
     }
 
     /// Finishes a successful operation and builds its terminal context.
@@ -454,10 +406,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         reason = "the controller constructs the lossless public terminal error"
     )]
     #[inline]
-    pub(crate) fn finish_success(
-        &mut self,
-        clock: &dyn MonotonicClock,
-    ) -> Result<RetryContext, RetryError<E>> {
+    pub(crate) fn finish_success(&mut self, clock: &dyn MonotonicClock) -> Result<RetryContext, RetryError<E>> {
         let now = clock.now();
         if let Err(error) = self.state.finish_attempt(now) {
             return Err(self.inactive_clock_failure(error));
@@ -544,17 +493,11 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// A cancellation error with coherent context, or a clock infrastructure
     /// failure.
     #[inline]
-    pub(crate) fn record_attempt_cancellation(
-        &mut self,
-        clock: &dyn MonotonicClock,
-    ) -> RetryError<E> {
+    pub(crate) fn record_attempt_cancellation(&mut self, clock: &dyn MonotonicClock) -> RetryError<E> {
         if let Err(error) = self.state.finish_attempt(clock.now()) {
             return self.inactive_clock_failure(error);
         }
-        self.cancelled_with_context(
-            RetryCancellationPhase::Attempt,
-            self.snapshot(),
-        )
+        self.cancelled_with_context(RetryCancellationPhase::Attempt, self.snapshot())
     }
 
     /// Records cancellation while no operation is active during backoff.
@@ -570,17 +513,11 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// A cancellation error with coherent context, or a clock infrastructure
     /// failure.
     #[inline]
-    pub(crate) fn record_backoff_cancellation(
-        &mut self,
-        clock: &dyn MonotonicClock,
-    ) -> RetryError<E> {
+    pub(crate) fn record_backoff_cancellation(&mut self, clock: &dyn MonotonicClock) -> RetryError<E> {
         if let Err(error) = self.state.refresh(clock.now()) {
             return self.inactive_clock_failure(error);
         }
-        self.cancelled_with_context(
-            RetryCancellationPhase::Backoff,
-            self.snapshot(),
-        )
+        self.cancelled_with_context(RetryCancellationPhase::Backoff, self.snapshot())
     }
 
     /// Builds a context from state and the controller's event metadata.
@@ -623,18 +560,12 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     fn prepare_timeout(
         &self,
         now: MonotonicInstant,
-    ) -> Result<
-        Option<(MonotonicInstant, Duration, RetryTimeoutScope)>,
-        TimeError,
-    > {
-        let Some(timeout) = self.state.effective_timeout(self.attempt_timeout)
-        else {
+    ) -> Result<Option<(MonotonicInstant, Duration, RetryTimeoutScope)>, TimeError> {
+        let Some(timeout) = self.state.effective_timeout(self.attempt_timeout) else {
             return Ok(None);
         };
         let deadline = match timeout.scope() {
-            RetryTimeoutScope::Attempt => {
-                now.checked_add(timeout.duration())?
-            }
+            RetryTimeoutScope::Attempt => now.checked_add(timeout.duration())?,
             RetryTimeoutScope::Flow => self
                 .state
                 .flow_deadline()?
@@ -655,10 +586,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// # Errors
     /// Returns a clock-domain mismatch error.
     #[inline]
-    fn deadline_reached(
-        now: MonotonicInstant,
-        deadline: MonotonicInstant,
-    ) -> Result<bool, TimeError> {
+    fn deadline_reached(now: MonotonicInstant, deadline: MonotonicInstant) -> Result<bool, TimeError> {
         deadline.validate_domain(now.domain())?;
         Ok(now.elapsed_since_origin() >= deadline.elapsed_since_origin())
     }
@@ -679,10 +607,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         reason = "the controller constructs the lossless public terminal error"
     )]
     #[inline]
-    fn refresh_or_error(
-        &mut self,
-        now: MonotonicInstant,
-    ) -> Result<(), RetryError<E>> {
+    fn refresh_or_error(&mut self, now: MonotonicInstant) -> Result<(), RetryError<E>> {
         if let Err(error) = self.state.refresh(now) {
             return Err(self.inactive_clock_failure(error));
         }
@@ -732,8 +657,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
         let context = context
             .with_hard_attempt_timeout(self.current_hard_attempt_timeout)
             .with_retry_after_hint(self.retry_after_hint);
-        self.next_delay
-            .map_or(context, |delay| context.with_next_delay(delay))
+        self.next_delay.map_or(context, |delay| context.with_next_delay(delay))
     }
 
     /// Constructs an aborted terminal error and consumes the last failure.
@@ -751,11 +675,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
             .take()
             .expect("an abort decision always follows an attempt failure");
         self.clear_current_attempt();
-        RetryError::new(
-            RetryErrorReason::Aborted,
-            Some(last_failure),
-            self.snapshot(),
-        )
+        RetryError::new(RetryErrorReason::Aborted, Some(last_failure), self.snapshot())
     }
 
     /// Constructs an exhausted terminal error from the current snapshot.
@@ -815,16 +735,8 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// # Returns
     /// An owned cancellation error retaining the last failed attempt.
     #[inline]
-    fn cancelled_with_context(
-        &mut self,
-        phase: RetryCancellationPhase,
-        context: RetryContext,
-    ) -> RetryError<E> {
-        RetryError::new(
-            RetryErrorReason::Cancelled { phase },
-            self.last_failure.take(),
-            context,
-        )
+    fn cancelled_with_context(&mut self, phase: RetryCancellationPhase, context: RetryContext) -> RetryError<E> {
+        RetryError::new(RetryErrorReason::Cancelled { phase }, self.last_failure.take(), context)
     }
 
     /// Constructs a callback terminal error from its exact callback context.
@@ -836,11 +748,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// # Returns
     /// A terminal callback failure owning any last attempt failure.
     #[inline]
-    fn callback_failed(
-        &mut self,
-        callback: RetryCallbackFailure,
-        context: RetryContext,
-    ) -> RetryError<E> {
+    fn callback_failed(&mut self, callback: RetryCallbackFailure, context: RetryContext) -> RetryError<E> {
         RetryError::new(
             RetryErrorReason::CallbackFailed { callback },
             self.last_failure.take(),
@@ -884,11 +792,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     /// # Returns
     /// An owned infrastructure error retaining the last attempt failure.
     #[inline]
-    fn infrastructure(
-        &mut self,
-        failure: RetryInfrastructureFailure,
-        context: RetryContext,
-    ) -> RetryError<E> {
+    fn infrastructure(&mut self, failure: RetryInfrastructureFailure, context: RetryContext) -> RetryError<E> {
         RetryError::new(
             RetryErrorReason::Infrastructure { failure },
             self.last_failure.take(),

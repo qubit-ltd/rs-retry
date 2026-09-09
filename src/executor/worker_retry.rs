@@ -209,10 +209,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     /// # Returns
     /// This facade using the supplied runtime resource.
     #[inline(always)]
-    pub fn random_source(
-        mut self,
-        random_source: Arc<dyn RetryRandomSource>,
-    ) -> Self {
+    pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
         self.random_source = Some(random_source);
         self
     }
@@ -245,10 +242,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         reason = "the public error intentionally retains lossless terminal context"
     )]
     #[inline(always)]
-    pub fn run<T, F>(
-        &self,
-        operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         T: Send + 'static,
         F: Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static,
@@ -282,10 +276,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         clippy::result_large_err,
         reason = "the internal helper propagates the lossless public terminal error"
     )]
-    fn run_inner<T, F>(
-        &self,
-        operation: F,
-    ) -> Result<RetrySuccess<T>, RetryError<E>>
+    fn run_inner<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         T: Send + 'static,
         F: Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static,
@@ -305,23 +296,17 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
 
         loop {
             let cancellation = self.cancellation_token.as_ref();
-            let admission_sample =
-                controller.before_attempt(clock, cancellation)?;
+            let admission_sample = controller.before_attempt(clock, cancellation)?;
             let plan = controller.prepare_attempt(admission_sample)?;
-            let timeout_future = match plan
-                .deadline()
-                .map(|deadline| timer.at(deadline))
-                .transpose()
-            {
+            let timeout_future = match plan.deadline().map(|deadline| timer.at(deadline)).transpose() {
                 Ok(future) => future,
                 Err(error) => {
-                    return Err(controller
-                        .record_inactive_infrastructure_failure(
-                            RetryInfrastructureFailure::Timer {
-                                message: error.to_string().into_boxed_str(),
-                            },
-                            clock.now(),
-                        ));
+                    return Err(controller.record_inactive_infrastructure_failure(
+                        RetryInfrastructureFailure::Timer {
+                            message: error.to_string().into_boxed_str(),
+                        },
+                        clock.now(),
+                    ));
                 }
             };
             let outcome = WorkerAttemptExecutor::run(
@@ -330,62 +315,41 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                 self.stack_size,
                 self.cancellation_grace,
                 cancellation,
-                timeout_future.map(|future| {
-                    (
-                        plan.scope()
-                            .expect("registered timeout retains its scope"),
-                        future,
-                    )
-                }),
-                || {
-                    controller.commit_prepared_attempt(
-                        plan,
-                        clock,
-                        cancellation,
-                    )
-                },
+                timeout_future.map(|future| (plan.scope().expect("registered timeout retains its scope"), future)),
+                || controller.commit_prepared_attempt(plan, clock, cancellation),
             )?;
 
             match outcome {
                 BlockingAttemptOutcome::Completed(Ok(())) => {
                     let context = controller.finish_success(clock)?;
-                    return Ok(RetrySuccess::new(
-                        operation.take_value(),
-                        context,
-                    ));
+                    return Ok(RetrySuccess::new(operation.take_value(), context));
                 }
                 BlockingAttemptOutcome::TimerFailed { error } => {
-                    return Err(controller
-                        .record_inactive_infrastructure_failure(
-                            RetryInfrastructureFailure::Timer {
-                                message: error.to_string().into_boxed_str(),
-                            },
-                            clock.now(),
-                        ));
+                    return Err(controller.record_inactive_infrastructure_failure(
+                        RetryInfrastructureFailure::Timer {
+                            message: error.to_string().into_boxed_str(),
+                        },
+                        clock.now(),
+                    ));
                 }
                 BlockingAttemptOutcome::WorkerSpawnFailed { message } => {
-                    let error = controller
-                        .record_inactive_infrastructure_failure(
-                            RetryInfrastructureFailure::WorkerSpawn { message },
-                            clock.now(),
-                        );
+                    let error = controller.record_inactive_infrastructure_failure(
+                        RetryInfrastructureFailure::WorkerSpawn { message },
+                        clock.now(),
+                    );
                     return Err(error);
                 }
                 BlockingAttemptOutcome::WorkerChannelClosed => {
-                    return Err(controller
-                        .record_active_infrastructure_failure(
-                            RetryInfrastructureFailure::WorkerChannelClosed,
-                            clock.now(),
-                        ));
+                    return Err(controller.record_active_infrastructure_failure(
+                        RetryInfrastructureFailure::WorkerChannelClosed,
+                        clock.now(),
+                    ));
                 }
                 BlockingAttemptOutcome::WorkerStillRunning { trigger } => {
-                    let error = controller
-                        .record_active_infrastructure_failure(
-                            RetryInfrastructureFailure::WorkerStillRunning {
-                                trigger,
-                            },
-                            clock.now(),
-                        );
+                    let error = controller.record_active_infrastructure_failure(
+                        RetryInfrastructureFailure::WorkerStillRunning { trigger },
+                        clock.now(),
+                    );
                     return Err(error);
                 }
                 BlockingAttemptOutcome::Stopped { trigger } => match trigger {
@@ -393,9 +357,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                         unreachable!("timer failure has a structured outcome")
                     }
                     WorkerStopTrigger::Cancellation => {
-                        return Err(
-                            controller.record_attempt_cancellation(clock)
-                        );
+                        return Err(controller.record_attempt_cancellation(clock));
                     }
                     WorkerStopTrigger::AttemptTimeout => {
                         self.finish_failed_attempt(
@@ -419,12 +381,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                     }
                 },
                 BlockingAttemptOutcome::Completed(Err(failure)) => {
-                    self.finish_failed_attempt(
-                        timer,
-                        &mut controller,
-                        clock,
-                        failure,
-                    )?;
+                    self.finish_failed_attempt(timer, &mut controller, clock, failure)?;
                 }
             }
         }
@@ -454,11 +411,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         clock: &dyn MonotonicClock,
         failure: AttemptFailure<E>,
     ) -> Result<(), RetryError<E>> {
-        let directive = controller.record_failure(
-            failure,
-            clock,
-            self.cancellation_token.as_ref(),
-        )?;
+        let directive = controller.record_failure(failure, clock, self.cancellation_token.as_ref())?;
         match wait_for_backoff(
             timer,
             directive.deadline(),

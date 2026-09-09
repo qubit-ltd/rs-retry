@@ -69,11 +69,7 @@ impl RetryObserver<&'static str> for PayloadObserver {
         self.raise_if(RetryCallbackPhase::BeforeAttempt);
     }
 
-    fn on_attempt_failed(
-        &self,
-        _: &AttemptFailure<&'static str>,
-        _: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _: &AttemptFailure<&'static str>, _: &RetryContext) {
         self.raise_if(RetryCallbackPhase::AttemptFailed);
     }
 
@@ -105,11 +101,7 @@ impl RetryObserver<&'static str> for LaterObserver {
         self.record(RetryCallbackPhase::BeforeAttempt);
     }
 
-    fn on_attempt_failed(
-        &self,
-        _: &AttemptFailure<&'static str>,
-        _: &RetryContext,
-    ) {
+    fn on_attempt_failed(&self, _: &AttemptFailure<&'static str>, _: &RetryContext) {
         self.record(RetryCallbackPhase::AttemptFailed);
     }
 
@@ -163,50 +155,31 @@ async fn run_matrix(recursive: bool) {
                     controls: Arc::clone(&later),
                     completed: Arc::clone(&completed),
                 })
-                .rule(|_: &AttemptFailure<&'static str>, _: &RetryContext| {
-                    RetryDecision::UseDefault
+                .rule(|_: &AttemptFailure<&'static str>, _: &RetryContext| RetryDecision::UseDefault)
+                .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
+                    if phase == RetryCallbackPhase::RuleDecision {
+                        panic_any(DropPanicPayload {
+                            drops: Arc::clone(&rule_drops),
+                            recursive,
+                        });
+                    }
+                    RetryDecision::Retry
                 })
-                .rule(
-                    move |_: &AttemptFailure<&'static str>,
-                          _: &RetryContext| {
-                        if phase == RetryCallbackPhase::RuleDecision {
-                            panic_any(DropPanicPayload {
-                                drops: Arc::clone(&rule_drops),
-                                recursive,
-                            });
-                        }
-                        RetryDecision::Retry
-                    },
-                )
-                .rule(
-                    move |_: &AttemptFailure<&'static str>,
-                          _: &RetryContext| {
-                        later_rule.fetch_add(1, Ordering::SeqCst);
-                        RetryDecision::Retry
-                    },
-                )
+                .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
+                    later_rule.fetch_add(1, Ordering::SeqCst);
+                    RetryDecision::Retry
+                })
                 .build()
                 .expect("valid config");
             let result = match facade {
-                Facade::Sync => {
-                    Retry::new(&retry).run(|| Err::<(), _>("business"))
-                }
+                Facade::Sync => Retry::new(&retry).run(|| Err::<(), _>("business")),
                 #[cfg(feature = "worker")]
-                Facade::Worker => {
-                    WorkerRetry::new(&retry).run(|_| Err::<(), _>("business"))
-                }
+                Facade::Worker => WorkerRetry::new(&retry).run(|_| Err::<(), _>("business")),
                 #[cfg(feature = "tokio")]
-                Facade::Async => {
-                    TokioRetry::new(&retry)
-                        .run(|| async { Err::<(), _>("business") })
-                        .await
-                }
+                Facade::Async => TokioRetry::new(&retry).run(|| async { Err::<(), _>("business") }).await,
             };
-            let error: RetryError<&'static str> =
-                result.expect_err("callback terminal");
-            let RetryErrorReason::CallbackFailed { callback, .. } =
-                error.reason()
-            else {
+            let error: RetryError<&'static str> = result.expect_err("callback terminal");
+            let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
                 panic!("must preserve callback terminal");
             };
             assert_eq!(callback.phase(), phase);

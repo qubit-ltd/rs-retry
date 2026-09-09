@@ -70,12 +70,9 @@ impl RetryCancellationState {
         waker: Waker,
     ) -> (u64, Option<Waker>, Option<Waker>, bool) {
         let mut waiters = self.lock_waiters();
-        let (registration_id, replaced) =
-            waiters.register(registration_id, waker);
+        let (registration_id, replaced) = waiters.register(registration_id, waker);
         let cancelled = self.cancelled.load(Ordering::Acquire);
-        let removed = cancelled
-            .then(|| waiters.unregister(registration_id))
-            .flatten();
+        let removed = cancelled.then(|| waiters.unregister(registration_id)).flatten();
         (registration_id, replaced, removed, cancelled)
     }
 
@@ -89,10 +86,7 @@ impl RetryCancellationState {
     /// # Returns
     /// Some removed waker, or None if cancellation already drained it.
     #[inline(always)]
-    pub(in crate::executor) fn unregister(
-        &self,
-        registration_id: u64,
-    ) -> Option<Waker> {
+    pub(in crate::executor) fn unregister(&self, registration_id: u64) -> Option<Waker> {
         self.lock_waiters().unregister(registration_id)
     }
 
@@ -102,8 +96,6 @@ impl RetryCancellationState {
     /// An exclusive guard; poisoning preserves the registry for cleanup.
     #[inline]
     fn lock_waiters(&self) -> MutexGuard<'_, WakerRegistry> {
-        self.waiters
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.waiters.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }

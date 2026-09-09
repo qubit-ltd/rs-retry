@@ -51,18 +51,12 @@ impl RetryBudgetState {
     /// Empty accounting whose latest sample equals its start.
     #[inline]
     #[must_use = "use the prepared value or inspect the result"]
-    pub(crate) fn new(
-        started_at: MonotonicInstant,
-        limits: RetryAdmissionLimits,
-    ) -> Self {
+    pub(crate) fn new(started_at: MonotonicInstant, limits: RetryAdmissionLimits) -> Self {
         Self {
             limits,
             started_at,
             sampled_at: started_at,
-            attempts: ResourceBudget::new(
-                RetryResource::Attempts,
-                limits.max_attempts().get(),
-            ),
+            attempts: ResourceBudget::new(RetryResource::Attempts, limits.max_attempts().get()),
             operation_elapsed: Duration::ZERO,
             last_attempt_elapsed: Duration::ZERO,
             attempt_started_at: None,
@@ -126,10 +120,7 @@ impl RetryBudgetState {
     /// Returns a domain/regression error without mutating state.
     #[inline]
     #[must_use = "handle the budget snapshot result"]
-    pub(crate) fn snapshot_at(
-        &self,
-        now: MonotonicInstant,
-    ) -> Result<RetryBudgetSnapshot, TimeError> {
+    pub(crate) fn snapshot_at(&self, now: MonotonicInstant) -> Result<RetryBudgetSnapshot, TimeError> {
         let _ = now.duration_since(self.sampled_at)?;
         Ok(RetryBudgetSnapshot::new(
             self.attempts(),
@@ -149,10 +140,7 @@ impl RetryBudgetState {
     /// `Some(kind)` for the first exhausted limit (attempts, operation, total),
     /// or `None` while all continuation limits permit another operation.
     #[must_use]
-    pub(crate) fn retry_limit(
-        &self,
-        delay: Duration,
-    ) -> Option<RetryLimitKind> {
+    pub(crate) fn retry_limit(&self, delay: Duration) -> Option<RetryLimitKind> {
         if self.attempts.remaining() == 0 {
             return Some(RetryLimitKind::Attempts);
         }
@@ -163,9 +151,11 @@ impl RetryBudgetState {
         {
             return Some(RetryLimitKind::OperationElapsed);
         }
-        if self.limits.total_time_budget().is_some_and(|limit| {
-            self.snapshot().total_elapsed().saturating_add(delay) >= limit
-        }) {
+        if self
+            .limits
+            .total_time_budget()
+            .is_some_and(|limit| self.snapshot().total_elapsed().saturating_add(delay) >= limit)
+        {
             return Some(RetryLimitKind::TotalElapsed);
         }
         None
@@ -182,10 +172,7 @@ impl RetryBudgetState {
     /// # Errors
     /// Returns the clock validation error and retains previous accounting.
     #[inline]
-    pub(crate) fn refresh(
-        &mut self,
-        now: MonotonicInstant,
-    ) -> Result<(), TimeError> {
+    pub(crate) fn refresh(&mut self, now: MonotonicInstant) -> Result<(), TimeError> {
         let _ = self.snapshot_at(now)?;
         self.sampled_at = now;
         Ok(())
@@ -223,10 +210,7 @@ impl RetryBudgetState {
     ///
     /// # Panics
     /// Panics when called without a committed active attempt.
-    pub(crate) fn finish_attempt(
-        &mut self,
-        now: MonotonicInstant,
-    ) -> Result<(), TimeError> {
+    pub(crate) fn finish_attempt(&mut self, now: MonotonicInstant) -> Result<(), TimeError> {
         let started_at = self
             .attempt_started_at
             .expect("an admitted attempt must be active before completion");
