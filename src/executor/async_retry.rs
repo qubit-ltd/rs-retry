@@ -169,7 +169,10 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     /// # Returns
     /// This facade using the supplied runtime resource.
     #[inline(always)]
-    pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
+    pub fn random_source(
+        mut self,
+        random_source: Arc<dyn RetryRandomSource>,
+    ) -> Self {
         self.random_source = Some(random_source);
         self
     }
@@ -205,7 +208,10 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         reason = "the public error intentionally retains lossless terminal context"
     )]
     #[inline(always)]
-    pub async fn run<T, F, Fut>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub async fn run<T, F, Fut>(
+        &self,
+        operation: F,
+    ) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -251,7 +257,8 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
-        self.config.complete(self.run_inner(default_timer, operation).await)
+        self.config
+            .complete(self.run_inner(default_timer, operation).await)
     }
 
     /// Executes the retry loop with a caller-selected default timer.
@@ -288,43 +295,76 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
 
         loop {
             let cancellation = self.cancellation_token.as_ref();
-            let admission_sample = controller.before_attempt(clock, cancellation)?;
+            let admission_sample =
+                controller.before_attempt(clock, cancellation)?;
             let plan = controller.prepare_attempt(admission_sample)?;
-            let timeout_future = match register_timeout(&timer, plan.deadline()) {
+            let timeout_future = match register_timeout(&timer, plan.deadline())
+            {
                 Ok(timeout_future) => timeout_future,
                 Err(error) => {
-                    return Err(controller.record_inactive_infrastructure_failure(timer_failure(error), clock.now()));
+                    return Err(controller
+                        .record_inactive_infrastructure_failure(
+                            timer_failure(error),
+                            clock.now(),
+                        ));
                 }
             };
             controller.commit_prepared_attempt(plan, clock, cancellation)?;
-            let outcome = execute_attempt(timeout_future, plan.scope(), cancellation, operation()).await;
+            let outcome = execute_attempt(
+                timeout_future,
+                plan.scope(),
+                cancellation,
+                operation(),
+            )
+            .await;
 
             let directive = match outcome {
                 AsyncAttemptOutcome::Completed(Ok(value)) => {
                     let context = controller.finish_success(clock)?;
                     return Ok(RetrySuccess::new(value, context));
                 }
-                AsyncAttemptOutcome::Completed(Err(error)) => {
-                    controller.record_failure(AttemptFailure::Error(error), clock, cancellation)?
-                }
-                AsyncAttemptOutcome::TimedOut(scope) => {
-                    controller.record_failure(AttemptFailure::TimedOut { scope }, clock, cancellation)?
-                }
+                AsyncAttemptOutcome::Completed(Err(error)) => controller
+                    .record_failure(
+                        AttemptFailure::Error(error),
+                        clock,
+                        cancellation,
+                    )?,
+                AsyncAttemptOutcome::TimedOut(scope) => controller
+                    .record_failure(
+                        AttemptFailure::TimedOut { scope },
+                        clock,
+                        cancellation,
+                    )?,
                 AsyncAttemptOutcome::Cancelled => {
                     return Err(controller.record_attempt_cancellation(clock));
                 }
                 AsyncAttemptOutcome::TimerFailed(error) => {
-                    let error = controller.record_active_infrastructure_failure(timer_failure(error), clock.now());
+                    let error = controller
+                        .record_active_infrastructure_failure(
+                            timer_failure(error),
+                            clock.now(),
+                        );
                     return Err(error);
                 }
             };
-            match sleep(&timer, directive.deadline(), directive.is_immediate(), cancellation).await {
+            match sleep(
+                &timer,
+                directive.deadline(),
+                directive.is_immediate(),
+                cancellation,
+            )
+            .await
+            {
                 AsyncBackoffOutcome::Elapsed => {}
                 AsyncBackoffOutcome::Cancelled => {
                     return Err(controller.record_backoff_cancellation(clock));
                 }
                 AsyncBackoffOutcome::TimerFailed(error) => {
-                    let error = controller.record_inactive_infrastructure_failure(timer_failure(error), clock.now());
+                    let error = controller
+                        .record_inactive_infrastructure_failure(
+                            timer_failure(error),
+                            clock.now(),
+                        );
                     return Err(error);
                 }
             }
@@ -366,7 +406,9 @@ where
     match (timeout_future, cancellation) {
         (Some(mut timer_future), Some(token)) => {
             let mut cancellation = pin!(token.cancelled());
-            let timeout_scope = timeout_scope.expect("a registered attempt timeout always retains its scope");
+            let timeout_scope = timeout_scope.expect(
+                "a registered attempt timeout always retains its scope",
+            );
             poll_fn(move |context| {
                 if let Poll::Ready(result) = operation.as_mut().poll(context) {
                     return Poll::Ready(AsyncAttemptOutcome::Completed(result));
@@ -375,22 +417,32 @@ where
                     return Poll::Ready(AsyncAttemptOutcome::Cancelled);
                 }
                 match timer_future.as_mut().poll(context) {
-                    Poll::Ready(Ok(())) => Poll::Ready(AsyncAttemptOutcome::TimedOut(timeout_scope)),
-                    Poll::Ready(Err(error)) => Poll::Ready(AsyncAttemptOutcome::TimerFailed(error)),
+                    Poll::Ready(Ok(())) => Poll::Ready(
+                        AsyncAttemptOutcome::TimedOut(timeout_scope),
+                    ),
+                    Poll::Ready(Err(error)) => {
+                        Poll::Ready(AsyncAttemptOutcome::TimerFailed(error))
+                    }
                     Poll::Pending => Poll::Pending,
                 }
             })
             .await
         }
         (Some(mut timer_future), None) => {
-            let timeout_scope = timeout_scope.expect("a registered attempt timeout always retains its scope");
+            let timeout_scope = timeout_scope.expect(
+                "a registered attempt timeout always retains its scope",
+            );
             poll_fn(move |context| {
                 if let Poll::Ready(result) = operation.as_mut().poll(context) {
                     return Poll::Ready(AsyncAttemptOutcome::Completed(result));
                 }
                 match timer_future.as_mut().poll(context) {
-                    Poll::Ready(Ok(())) => Poll::Ready(AsyncAttemptOutcome::TimedOut(timeout_scope)),
-                    Poll::Ready(Err(error)) => Poll::Ready(AsyncAttemptOutcome::TimerFailed(error)),
+                    Poll::Ready(Ok(())) => Poll::Ready(
+                        AsyncAttemptOutcome::TimedOut(timeout_scope),
+                    ),
+                    Poll::Ready(Err(error)) => {
+                        Poll::Ready(AsyncAttemptOutcome::TimerFailed(error))
+                    }
                     Poll::Pending => Poll::Pending,
                 }
             })
@@ -425,7 +477,10 @@ where
 /// # Returns
 /// Some registered future, or None when no deadline was supplied.
 #[inline]
-fn register_timeout(timer: &dyn Timer, deadline: Option<MonotonicInstant>) -> Result<Option<TimerFuture>, TimeError> {
+fn register_timeout(
+    timer: &dyn Timer,
+    deadline: Option<MonotonicInstant>,
+) -> Result<Option<TimerFuture>, TimeError> {
     deadline.map(|deadline| timer.at(deadline)).transpose()
 }
 
@@ -453,7 +508,10 @@ async fn sleep(
     }
     let mut timer_future = match timer.at(deadline) {
         Ok(future) => future,
-        Err(_) if cancellation.is_some_and(RetryCancellationToken::is_cancelled) => {
+        Err(_)
+            if cancellation
+                .is_some_and(RetryCancellationToken::is_cancelled) =>
+        {
             return AsyncBackoffOutcome::Cancelled;
         }
         Err(error) => return AsyncBackoffOutcome::TimerFailed(error),
@@ -471,7 +529,9 @@ async fn sleep(
         }
         match timer_future.as_mut().poll(context) {
             Poll::Ready(Ok(())) => Poll::Ready(AsyncBackoffOutcome::Elapsed),
-            Poll::Ready(Err(error)) => Poll::Ready(AsyncBackoffOutcome::TimerFailed(error)),
+            Poll::Ready(Err(error)) => {
+                Poll::Ready(AsyncBackoffOutcome::TimerFailed(error))
+            }
             Poll::Pending => Poll::Pending,
         }
     })

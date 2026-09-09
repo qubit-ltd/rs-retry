@@ -47,7 +47,9 @@ impl RetryDecision {
     #[must_use]
     pub(crate) fn retry_after_hint(self) -> Option<Duration> {
         match self {
-            Self::RetryWithHint(hint) | Self::RetryWithJitteredHint(hint) => Some(hint),
+            Self::RetryWithHint(hint) | Self::RetryWithJitteredHint(hint) => {
+                Some(hint)
+            }
             Self::UseDefault | Self::Retry | Self::Abort => None,
         }
     }

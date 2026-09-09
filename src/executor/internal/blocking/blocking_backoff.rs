@@ -52,12 +52,16 @@ pub(crate) fn wait_for_backoff(
     }
     let mut timer_future = match timer.at(deadline) {
         Ok(future) => future,
-        Err(_) if cancellation.is_some_and(RetryCancellationToken::is_cancelled) => {
+        Err(_)
+            if cancellation
+                .is_some_and(RetryCancellationToken::is_cancelled) =>
+        {
             return BlockingBackoffOutcome::Cancelled;
         }
         Err(error) => return BlockingBackoffOutcome::TimerFailed(error),
     };
-    let mut cancellation_future = cancellation.map(|token| Box::pin(token.cancelled()));
+    let mut cancellation_future =
+        cancellation.map(|token| Box::pin(token.cancelled()));
     let (sender, receiver) = mpsc::channel();
     let waker = Waker::from(Arc::new(BlockingBackoffWake { sender }));
     let mut context = Context::from_waker(&waker);
@@ -73,6 +77,8 @@ pub(crate) fn wait_for_backoff(
                 Err(error) => BlockingBackoffOutcome::TimerFailed(error),
             };
         }
-        receiver.recv().expect("backoff futures must retain their shared waker");
+        receiver
+            .recv()
+            .expect("backoff futures must retain their shared waker");
     }
 }
