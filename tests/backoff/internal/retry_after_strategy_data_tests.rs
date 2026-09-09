@@ -16,8 +16,14 @@ use serde_json::to_value;
 fn test_retry_after_strategy_data_serializes_every_public_tag() {
     let cases = [
         (BackoffPolicy::immediate(), "at_least_backoff"),
-        (BackoffPolicy::immediate().prefer_retry_after(), "prefer_hint"),
-        (BackoffPolicy::immediate().ignore_retry_after(), "ignore_hint"),
+        (
+            BackoffPolicy::immediate().prefer_retry_after(),
+            "prefer_hint",
+        ),
+        (
+            BackoffPolicy::immediate().ignore_retry_after(),
+            "ignore_hint",
+        ),
     ];
     for (policy, expected) in cases {
         assert_eq!(to_value(policy).unwrap()["retry_after"], expected);

@@ -23,7 +23,8 @@ struct NonCloneValue {
 
 /// Verifies blocking worker value capture through the public retry API.
 #[test]
-fn test_blocking_value_operation_is_observable_through_non_clone_success_value() {
+fn test_blocking_value_operation_is_observable_through_non_clone_success_value()
+{
     let policy = RetryPolicy::builder()
         .max_attempts(1)
         .backoff(BackoffPolicy::immediate())
@@ -35,8 +36,13 @@ fn test_blocking_value_operation_is_observable_through_non_clone_success_value()
         .expect("valid config");
 
     let value = WorkerRetry::new(&retry)
-        .run(|_token: AttemptCancellationToken| Ok::<_, TestError>(NonCloneValue { text: "ok" }))
+        .run(|_token: AttemptCancellationToken| {
+            Ok::<_, TestError>(NonCloneValue { text: "ok" })
+        })
         .expect("worker operation should succeed");
 
-    assert_eq!(value.into_value_discarding_diagnostics(), NonCloneValue { text: "ok" });
+    assert_eq!(
+        value.into_value_discarding_diagnostics(),
+        NonCloneValue { text: "ok" }
+    );
 }

@@ -54,9 +54,15 @@ impl<'de> Deserialize<'de> for JitterStrategyData {
         match (raw.tag, raw.ratio) {
             (JitterStrategyTag::None, RatioField::Missing) => Ok(Self::None),
             (JitterStrategyTag::Full, RatioField::Missing) => Ok(Self::Full),
-            (JitterStrategyTag::Bounded, RatioField::Present(ratio)) => Ok(Self::Bounded { ratio }),
-            (JitterStrategyTag::Bounded, RatioField::Missing) => Err(D::Error::custom("bounded jitter requires ratio")),
-            (_, RatioField::Present(_)) => Err(D::Error::custom("jitter ratio is only valid for bounded jitter")),
+            (JitterStrategyTag::Bounded, RatioField::Present(ratio)) => {
+                Ok(Self::Bounded { ratio })
+            }
+            (JitterStrategyTag::Bounded, RatioField::Missing) => {
+                Err(D::Error::custom("bounded jitter requires ratio"))
+            }
+            (_, RatioField::Present(_)) => Err(D::Error::custom(
+                "jitter ratio is only valid for bounded jitter",
+            )),
         }
     }
 }

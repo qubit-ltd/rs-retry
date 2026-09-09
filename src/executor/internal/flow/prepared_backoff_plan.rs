@@ -18,7 +18,10 @@ impl PreparedBackoffPlan {
     /// Creates a plan with an absolute deadline.
     #[inline]
     pub(crate) fn new(deadline: MonotonicInstant, immediate: bool) -> Self {
-        Self { deadline, immediate }
+        Self {
+            deadline,
+            immediate,
+        }
     }
 
     /// Returns the absolute deadline that was prepared for backoff.
