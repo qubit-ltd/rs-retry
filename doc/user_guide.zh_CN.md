@@ -793,7 +793,7 @@ fn main() {
 | `attempts() == 0` | 检查预先取消、零预算或零超时、尝试前回调以及基础设施错误。 |
 | 返回 `Exhausted` 而非 `TimedOut` | 软预算限制准入，应检查 `limit`；硬超时错误带有 `scope`。 |
 | 同步操作运行时间超过预算 | 无法打断同步闭包。限制底层 I/O，或选择合适的 async/worker 操作。 |
-| 找不到 `AsyncRetry`、`TokioRetry` 或 `WorkerRetry` | 检查对应 Cargo feature 是否开启；`AsyncRetry` 由应用提供执行器，`TokioRetry` 需要 Tokio 运行时。 |
+| 找不到 `AsyncRetry`、`TokioRetry` 或 `WorkerRetry` | 检查对应的 `async`、`tokio` 或 `worker` feature 是否开启；`AsyncRetry` 只需要调用方提供 executor。 |
 | 操作次数少于重试调度通知数 | 调度不保证准入，后续取消、回调或限制可能阻止执行。 |
 | `WorkerStillRunning` | 检查触发原因及操作、TLS 的清理流程，再决定是否启动替代任务。 |
 | 成功结果中有诊断 | 检查完成观察者，其 panic 不会否定业务成功。 |
