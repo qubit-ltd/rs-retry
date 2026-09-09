@@ -12,7 +12,10 @@ use qubit_retry::RetryBudgetExhausted;
 /// Verifies continuation exhaustion categories remain distinct values.
 #[test]
 fn test_categories_are_distinct() {
-    assert_ne!(RetryBudgetExhausted::Attempts, RetryBudgetExhausted::OperationElapsed,);
+    assert_ne!(
+        RetryBudgetExhausted::Attempts,
+        RetryBudgetExhausted::OperationElapsed,
+    );
     assert_ne!(
         RetryBudgetExhausted::OperationElapsed,
         RetryBudgetExhausted::TotalElapsed,

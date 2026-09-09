@@ -73,7 +73,10 @@ fn test_worker_exit_timer_failure_bounds_tls_destructor() {
 }
 
 /// Installs a controlled destructor and always releases it before asserting.
-fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger) {
+fn assert_tls_exit_is_bounded(
+    operation_fails: bool,
+    trigger: WorkerStopTrigger,
+) {
     let (entered_sender, entered_receiver) = mpsc::channel();
     let (release_sender, release_receiver) = mpsc::channel();
     let (result_sender, result_receiver) = mpsc::channel();
@@ -91,7 +94,9 @@ fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger)
         fail: trigger == WorkerStopTrigger::TimerFailure,
     });
     let runner = thread::spawn(move || {
-        let retry = RetryConfig::<&'static str>::builder().build().expect("valid config");
+        let retry = RetryConfig::<&'static str>::builder()
+            .build()
+            .expect("valid config");
         let mut worker = WorkerRetry::new(&retry)
             .timer(timer)
             .cancellation_token(runner_token)
@@ -101,7 +106,9 @@ fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger)
         }
         let result = worker.run(move |_| {
             operation_calls.fetch_add(1, Ordering::SeqCst);
-            EXIT_GATE.with(|slot| *slot.borrow_mut() = gate.lock().expect("gate lock").take());
+            EXIT_GATE.with(|slot| {
+                *slot.borrow_mut() = gate.lock().expect("gate lock").take()
+            });
             if operation_fails {
                 Err("operation failed")
             } else {
@@ -120,7 +127,9 @@ fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger)
     }
     let result = result_receiver.recv_timeout(Duration::from_secs(2));
     let _ = release_sender.send(());
-    runner.join().expect("retry runner joins after gate release");
+    runner
+        .join()
+        .expect("retry runner joins after gate release");
     entered.expect("worker entered TLS destruction");
     let error = result
         .expect("retry must return before TLS gate release")
@@ -148,7 +157,11 @@ impl Timer for ExitTimer {
         let fail = self.fail;
         Ok(Box::pin(async move {
             future.await?;
-            if fail { Err(TimeError::InstantOverflow) } else { Ok(()) }
+            if fail {
+                Err(TimeError::InstantOverflow)
+            } else {
+                Ok(())
+            }
         }))
     }
 }

@@ -55,7 +55,9 @@ fn test_async_retry_succeeds_without_tokio() {
         .max_attempts(2)
         .build()
         .expect("config should be valid");
-    let result = block_on(AsyncRetry::new(&config).run(|| std::future::ready(Ok::<_, &str>(7))));
+    let result = block_on(
+        AsyncRetry::new(&config).run(|| std::future::ready(Ok::<_, &str>(7))),
+    );
 
     let success = result.expect("async retry should succeed");
     assert_eq!(*success.value(), 7);
@@ -73,7 +75,11 @@ fn test_async_retry_retries_application_failure_without_tokio() {
         let attempts = Arc::clone(&attempts);
         move || {
             let attempt = attempts.fetch_add(1, Ordering::SeqCst);
-            std::future::ready(if attempt == 0 { Err("temporary") } else { Ok(9) })
+            std::future::ready(if attempt == 0 {
+                Err("temporary")
+            } else {
+                Ok(9)
+            })
         }
     }));
 
@@ -129,7 +135,10 @@ fn test_async_retry_timer_injection_reports_registration_failure() {
     )
     .expect_err("timer registration should fail before the operation");
 
-    assert!(matches!(error.reason(), RetryErrorReason::Infrastructure { .. }));
+    assert!(matches!(
+        error.reason(),
+        RetryErrorReason::Infrastructure { .. }
+    ));
     assert_eq!(started.load(Ordering::SeqCst), 0);
 }
 
@@ -140,10 +149,14 @@ fn test_async_retry_cancellation_interrupts_pending_operation() {
         .build()
         .expect("config should be valid");
     let token = RetryCancellationToken::new();
-    let error = block_on(AsyncRetry::new(&config).cancellation_token(token.clone()).run(move || {
-        token.cancel();
-        std::future::pending::<Result<(), &str>>()
-    }))
+    let error = block_on(
+        AsyncRetry::new(&config)
+            .cancellation_token(token.clone())
+            .run(move || {
+                token.cancel();
+                std::future::pending::<Result<(), &str>>()
+            }),
+    )
     .expect_err("cancelled operation should terminate the attempt");
 
     assert!(matches!(

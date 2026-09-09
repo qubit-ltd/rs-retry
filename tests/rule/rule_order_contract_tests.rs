@@ -22,13 +22,21 @@ use crate::support::UnitTestError;
 fn test_first_rule_wins_and_failure_kind_is_stable() {
     struct RetryOnly;
     impl RetryRule<UnitTestError> for RetryOnly {
-        fn decide(&self, _: &AttemptFailure<UnitTestError>, _: &RetryContext) -> RetryDecision {
+        fn decide(
+            &self,
+            _: &AttemptFailure<UnitTestError>,
+            _: &RetryContext,
+        ) -> RetryDecision {
             RetryDecision::Retry
         }
     }
     struct AbortRule;
     impl RetryRule<UnitTestError> for AbortRule {
-        fn decide(&self, _: &AttemptFailure<UnitTestError>, _: &RetryContext) -> RetryDecision {
+        fn decide(
+            &self,
+            _: &AttemptFailure<UnitTestError>,
+            _: &RetryContext,
+        ) -> RetryDecision {
             RetryDecision::Abort
         }
     }
@@ -39,7 +47,9 @@ fn test_first_rule_wins_and_failure_kind_is_stable() {
         .rule(AbortRule)
         .build()
         .expect("valid config");
-    let error = Retry::new(&retry).run::<(), _>(|| Err(UnitTestError)).unwrap_err();
+    let error = Retry::new(&retry)
+        .run::<(), _>(|| Err(UnitTestError))
+        .unwrap_err();
     assert!(matches!(
         error.reason(),
         RetryErrorReason::Exhausted {

@@ -36,7 +36,8 @@ fn test_map_error_does_not_call_mapper_for_timeout() {
         scope: RetryTimeoutScope::Attempt,
     };
 
-    let mapped: AttemptFailure<usize> = failure.map_error(|_| panic!("timeout must not call the mapper"));
+    let mapped: AttemptFailure<usize> =
+        failure.map_error(|_| panic!("timeout must not call the mapper"));
 
     assert_eq!(
         mapped,
@@ -53,7 +54,8 @@ fn test_map_error_does_not_call_mapper_for_panic() {
         panic: RetryPanic::String(String::from("operation panic")),
     };
 
-    let mapped: AttemptFailure<usize> = failure.map_error(|_| panic!("panic failure must not call the mapper"));
+    let mapped: AttemptFailure<usize> =
+        failure.map_error(|_| panic!("panic failure must not call the mapper"));
 
     assert_eq!(
         mapped,

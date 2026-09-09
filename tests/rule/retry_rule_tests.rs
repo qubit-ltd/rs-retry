@@ -13,11 +13,12 @@ use qubit_retry::RetryRule;
 
 #[test]
 fn test_rule_trait_accepts_function_callbacks() {
-    let rule: Box<dyn RetryRule<()>> = Box::new(|failure: &AttemptFailure<()>, context: &RetryContext| {
-        assert_eq!(failure, &AttemptFailure::Error(()));
-        assert_eq!(context.attempts(), 0);
-        RetryDecision::Abort
-    });
+    let rule: Box<dyn RetryRule<()>> =
+        Box::new(|failure: &AttemptFailure<()>, context: &RetryContext| {
+            assert_eq!(failure, &AttemptFailure::Error(()));
+            assert_eq!(context.attempts(), 0);
+            RetryDecision::Abort
+        });
     assert_eq!(
         rule.decide(&AttemptFailure::Error(()), &RetryContext::new(0, 1)),
         RetryDecision::Abort

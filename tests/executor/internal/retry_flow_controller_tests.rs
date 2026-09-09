@@ -23,7 +23,9 @@ use crate::support::TestError;
 fn test_retry_flow_controller_clears_attempt_scope_for_abort_and_limit() {
     let config = RetryConfig::<TestError>::builder()
         .max_attempts(2)
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            RetryDecision::Abort
+        })
         .build()
         .expect("valid config");
     let aborted = Retry::new(&config)
