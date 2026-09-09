@@ -20,5 +20,8 @@ fn test_retry_cancelled_is_ready_after_public_cancellation() {
     token.cancel();
     let mut future = Box::pin(token.cancelled());
     let waker = Waker::noop();
-    assert_eq!(future.as_mut().poll(&mut Context::from_waker(waker)), Poll::Ready(()));
+    assert_eq!(
+        future.as_mut().poll(&mut Context::from_waker(waker)),
+        Poll::Ready(())
+    );
 }

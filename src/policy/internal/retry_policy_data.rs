@@ -43,8 +43,12 @@ impl From<&RetryPolicy> for RetryPolicyData {
         let limits = policy.admission_limits();
         Self {
             max_attempts: limits.max_attempts().get(),
-            operation_time_budget: limits.operation_time_budget().map(DurationData::from),
-            total_time_budget: limits.total_time_budget().map(DurationData::from),
+            operation_time_budget: limits
+                .operation_time_budget()
+                .map(DurationData::from),
+            total_time_budget: limits
+                .total_time_budget()
+                .map(DurationData::from),
             backoff: policy.backoff().clone(),
         }
     }
@@ -65,11 +69,12 @@ impl TryFrom<RetryPolicyData> for RetryPolicy {
     /// # Errors
     /// Rejects zero attempts and invalid encoded elapsed durations.
     fn try_from(data: RetryPolicyData) -> Result<Self, Self::Error> {
-        let limits = RetryAdmissionLimits::try_from(super::RetryAdmissionLimitsData {
-            max_attempts: data.max_attempts,
-            operation_time_budget: data.operation_time_budget,
-            total_time_budget: data.total_time_budget,
-        })?;
+        let limits =
+            RetryAdmissionLimits::try_from(super::RetryAdmissionLimitsData {
+                max_attempts: data.max_attempts,
+                operation_time_budget: data.operation_time_budget,
+                total_time_budget: data.total_time_budget,
+            })?;
         Ok(Self::new(limits, data.backoff))
     }
 }

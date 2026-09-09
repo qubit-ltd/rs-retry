@@ -89,15 +89,20 @@ impl<E: 'static> RetryConfigBuilder<E> {
     #[inline(always)]
     pub fn operation_time_budget(mut self, elapsed: Duration) -> Self {
         self.ensure_policy_builder();
-        self.policy_builder = self.policy_builder.operation_time_budget(elapsed);
+        self.policy_builder =
+            self.policy_builder.operation_time_budget(elapsed);
         self
     }
 
     /// Sets or removes the cumulative operation-time budget.
     #[inline(always)]
-    pub fn operation_time_budget_opt(mut self, elapsed: Option<Duration>) -> Self {
+    pub fn operation_time_budget_opt(
+        mut self,
+        elapsed: Option<Duration>,
+    ) -> Self {
         self.ensure_policy_builder();
-        self.policy_builder = self.policy_builder.operation_time_budget_opt(elapsed);
+        self.policy_builder =
+            self.policy_builder.operation_time_budget_opt(elapsed);
         self
     }
 
@@ -105,7 +110,8 @@ impl<E: 'static> RetryConfigBuilder<E> {
     #[inline(always)]
     pub fn without_operation_time_budget(mut self) -> Self {
         self.ensure_policy_builder();
-        self.policy_builder = self.policy_builder.without_operation_time_budget();
+        self.policy_builder =
+            self.policy_builder.without_operation_time_budget();
         self
     }
 
@@ -121,7 +127,8 @@ impl<E: 'static> RetryConfigBuilder<E> {
     #[inline(always)]
     pub fn total_time_budget_opt(mut self, elapsed: Option<Duration>) -> Self {
         self.ensure_policy_builder();
-        self.policy_builder = self.policy_builder.total_time_budget_opt(elapsed);
+        self.policy_builder =
+            self.policy_builder.total_time_budget_opt(elapsed);
         self
     }
 
@@ -168,7 +175,10 @@ impl<E: 'static> RetryConfigBuilder<E> {
 
     /// Appends an already shared observer without wrapping it in another `Arc`.
     #[inline(always)]
-    pub fn shared_observer(mut self, observer: Arc<dyn RetryObserver<E>>) -> Self {
+    pub fn shared_observer(
+        mut self,
+        observer: Arc<dyn RetryObserver<E>>,
+    ) -> Self {
         self.observers.push(observer);
         self
     }

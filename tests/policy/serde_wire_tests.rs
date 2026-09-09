@@ -23,8 +23,12 @@ fn test_serde_serializes_configuration_with_stable_golden_json() {
         .max_attempts(4)
         .total_time_budget(Duration::from_secs(10))
         .backoff(
-            BackoffPolicy::exponential(Duration::from_millis(50), 2.0, Duration::from_secs(2))
-                .expect("the golden exponential policy should be valid"),
+            BackoffPolicy::exponential(
+                Duration::from_millis(50),
+                2.0,
+                Duration::from_secs(2),
+            )
+            .expect("the golden exponential policy should be valid"),
         )
         .build()
         .expect("the golden retry policy should be valid");

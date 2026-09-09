@@ -171,9 +171,11 @@ fn test_worker_flow_timeout_caps_retry_sleep() {
             .unwrap();
         let config = RetryConfig::<UnitTestError>::builder()
             .policy(policy)
-            .observer(move |_: &AttemptFailure<UnitTestError>, _: &RetryContext| {
-                failed_sender.send(()).expect("test controller alive");
-            })
+            .observer(
+                move |_: &AttemptFailure<UnitTestError>, _: &RetryContext| {
+                    failed_sender.send(()).expect("test controller alive");
+                },
+            )
             .fallback(RetryFallback::Retry)
             .build()
             .expect("valid config");
@@ -195,7 +197,9 @@ fn test_worker_flow_timeout_caps_retry_sleep() {
         None
     };
     if deadline.is_some() {
-        clock.advance(Duration::from_millis(10)).expect("expire capped backoff");
+        clock
+            .advance(Duration::from_millis(10))
+            .expect("expire capped backoff");
     } else {
         cancellation.cancel();
     }
@@ -257,7 +261,9 @@ fn test_worker_backoff_registration_does_not_move_flow_deadline() {
         .recv_timeout(Duration::from_secs(1))
         .expect("backoff timer registration");
     assert_eq!(deadline.elapsed_since_origin(), Duration::from_secs(10));
-    clock.advance(Duration::from_secs(20)).expect("reach flow deadline");
+    clock
+        .advance(Duration::from_secs(20))
+        .expect("reach flow deadline");
     let error = handle
         .join()
         .expect("worker runner joins")

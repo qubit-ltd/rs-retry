@@ -26,8 +26,11 @@ use crate::RetryPanic;
 ///
 /// # Returns
 /// A borrowed static string, owned String, or NonString classification.
-pub(crate) fn retry_panic_from_payload(payload: Box<dyn Any + Send>) -> RetryPanic {
-    match catch_unwind(AssertUnwindSafe(|| decode_retry_panic_payload(payload))) {
+pub(crate) fn retry_panic_from_payload(
+    payload: Box<dyn Any + Send>,
+) -> RetryPanic {
+    match catch_unwind(AssertUnwindSafe(|| decode_retry_panic_payload(payload)))
+    {
         Ok(panic) => panic,
         Err(secondary_payload) => {
             forget(secondary_payload);
