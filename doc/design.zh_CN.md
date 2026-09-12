@@ -2,7 +2,7 @@
 
 [English](design.md) · [用户指南](user_guide.zh_CN.md) · [README](../README.zh_CN.md)
 
-本文记录 **qubit-retry 0.23** 的长期维护契约。公开 API 的使用方法见用户指南；内部实现变更应遵守这里的不变量。
+本文记录 **qubit-retry 0.24** 的长期维护契约。公开 API 的使用方法见用户指南；内部实现变更应遵守这里的不变量。
 
 ## 范围与依赖方向
 

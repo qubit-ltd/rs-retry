@@ -135,7 +135,7 @@ Qubit Retry 将这些判断集中到可复用的 `Retry` 中。每次 `run` 都�
 ## 延伸阅读
 
 - [中文用户手册](doc/user_guide.zh_CN.md) · [English user guide](doc/user_guide.md)：完整用法、超时、错误处理、配置
-- [Rust API 文档](https://docs.rs/qubit-retry/0.23.0/qubit_retry/)：公开类型与方法
+- [Rust API 文档](https://docs.rs/qubit-retry/0.24.0/qubit_retry/)：公开类型与方法
 - [设计文档](doc/design.zh_CN.md)：执行顺序与内部契约
 - [English README](README.md)
 

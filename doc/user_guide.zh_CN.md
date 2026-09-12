@@ -1,8 +1,8 @@
 # Qubit Retry 用户手册
 
-[English](user_guide.md) · [README](../README.zh_CN.md) · [API 文档](https://docs.rs/qubit-retry/0.23.0/qubit_retry/)
+[English](user_guide.md) · [README](../README.zh_CN.md) · [API 文档](https://docs.rs/qubit-retry/0.24.0/qubit_retry/)
 
-本手册适用于 **qubit-retry 0.23.0**，需要 **Rust 1.94 或更新版本**，
+本手册适用于 **qubit-retry 0.24.0**，需要 **Rust 1.94 或更新版本**，
 面向需要为客户端、存储访问或重连循环添加重试能力的 Rust 开发者。
 业务操作由你提供，哪些错误可以安全重试也由业务决定。
 
@@ -33,7 +33,7 @@
 <!-- retry-example: kind=cargo features=none -->
 ```toml
 [dependencies]
-qubit-retry = "0.23"
+qubit-retry = "0.24"
 ```
 
 存储服务暂时不可用时，我们希望自动重试，恢复后返回快照。
@@ -166,7 +166,7 @@ snapshot-v2, attempts=3
 <!-- retry-example: kind=cargo features=async -->
 ```toml
 [dependencies]
-qubit-retry = { version = "0.23", features = ["async"] }
+qubit-retry = { version = "0.24", features = ["async"] }
 ```
 
 `AsyncRetry` 返回标准库 `Future`，默认使用 `StdTimer`；调用方负责提供
@@ -175,7 +175,7 @@ executor。若希望使用 Tokio 原生计时器，请开启 `tokio`：
 <!-- retry-example: kind=cargo features=tokio -->
 ```toml
 [dependencies]
-qubit-retry = { version = "0.23", features = ["tokio"] }
+qubit-retry = { version = "0.24", features = ["tokio"] }
 ```
 
 运行手册中的异步示例，还需为应用添加直接 Tokio 依赖：
@@ -189,7 +189,7 @@ cargo add tokio@1.52 --features rt,macros,time
 <!-- retry-example: kind=cargo features=worker -->
 ```toml
 [dependencies]
-qubit-retry = { version = "0.23", features = ["worker"] }
+qubit-retry = { version = "0.24", features = ["worker"] }
 ```
 
 多个 feature 可以放入同一依赖的 `features` 数组。`WorkerRetry::new(&config).run()` 在协调工作线程期间会阻塞调用方，
@@ -651,7 +651,7 @@ Panic 捕获依赖栈展开，无法从进程 abort 中恢复。
 <!-- retry-example: kind=cargo features=serde -->
 ```toml
 [dependencies]
-qubit-retry = { version = "0.23", features = ["serde"] }
+qubit-retry = { version = "0.24", features = ["serde"] }
 ```
 
 运行下面的 JSON 示例还需执行 `cargo add serde_json@1`。
@@ -807,7 +807,7 @@ fn main() {
 ## 延伸阅读与文档校验
 
 - [中文 README](../README.zh_CN.md) · [English README](../README.md)
-- [0.23.0 API 文档](https://docs.rs/qubit-retry/0.23.0/qubit_retry/)
+- [0.24.0 API 文档](https://docs.rs/qubit-retry/0.24.0/qubit_retry/)
 - [设计文档](design.zh_CN.md) · [English user guide](user_guide.md)
 
 在仓库根目录运行 `python3 -B scripts/check_doc_examples.py`，可以编译并执行两种语言的 README

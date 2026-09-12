@@ -146,7 +146,7 @@ breaker, or worker pool.
 ## Learn more
 
 - [User guide](doc/user_guide.md) · [中文用户手册](doc/user_guide.zh_CN.md): complete workflows, timeouts, error handling, and configuration
-- [Rust API documentation](https://docs.rs/qubit-retry/0.23.0/qubit_retry/): public types and methods
+- [Rust API documentation](https://docs.rs/qubit-retry/0.24.0/qubit_retry/): public types and methods
 - [Design](doc/design.md): execution ordering and internal contracts
 - [中文 README](README.zh_CN.md)
 
