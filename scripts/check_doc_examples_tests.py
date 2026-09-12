@@ -31,7 +31,7 @@ class ExampleContractTests(unittest.TestCase):
         self.assertEqual(examples[0]["features"], ["worker"])
 
     def test_async_feature_is_accepted(self):
-        examples = self.parse("<!-- retry-example: kind=cargo features=async -->\n```toml\n[dependencies]\nqubit-retry = { version = \"0.23\", features = [\"async\"] }\n```\n")
+        examples = self.parse("<!-- retry-example: kind=cargo features=async -->\n```toml\n[dependencies]\nqubit-retry = { version = \"0.24\", features = [\"async\"] }\n```\n")
         self.assertEqual(examples[0]["features"], ["async"])
 
     def test_rust_modifiers_cannot_silently_skip_validation(self):

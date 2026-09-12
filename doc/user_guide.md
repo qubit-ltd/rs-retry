@@ -1,8 +1,8 @@
 # Qubit Retry User Guide
 
-[简体中文](user_guide.zh_CN.md) · [README](../README.md) · [API reference](https://docs.rs/qubit-retry/0.23.0/qubit_retry/)
+[简体中文](user_guide.zh_CN.md) · [README](../README.md) · [API reference](https://docs.rs/qubit-retry/0.24.0/qubit_retry/)
 
-This guide covers **qubit-retry 0.23.0** and requires **Rust 1.94+**. It is for
+This guide covers **qubit-retry 0.24.0** and requires **Rust 1.94+**. It is for
 Rust developers adding retries to clients, storage access, or reconnect loops.
 You supply the operation and decide which failures are safe to retry.
 
@@ -33,7 +33,7 @@ Add the dependency to your application's `Cargo.toml`:
 <!-- retry-example: kind=cargo features=none -->
 ```toml
 [dependencies]
-qubit-retry = "0.23"
+qubit-retry = "0.24"
 ```
 
 A storage service is temporarily unavailable. Retry its read and return the
@@ -176,7 +176,7 @@ Enable runtime-independent async execution with:
 <!-- retry-example: kind=cargo features=async -->
 ```toml
 [dependencies]
-qubit-retry = { version = "0.23", features = ["async"] }
+qubit-retry = { version = "0.24", features = ["async"] }
 ```
 
 `AsyncRetry` returns a standard `Future` and uses `StdTimer` by default. The
@@ -186,7 +186,7 @@ enable `tokio`:
 <!-- retry-example: kind=cargo features=tokio -->
 ```toml
 [dependencies]
-qubit-retry = { version = "0.23", features = ["tokio"] }
+qubit-retry = { version = "0.24", features = ["tokio"] }
 ```
 
 The async examples also need a direct Tokio dependency. Add it with:
@@ -200,7 +200,7 @@ For blocking worker examples use:
 <!-- retry-example: kind=cargo features=worker -->
 ```toml
 [dependencies]
-qubit-retry = { version = "0.23", features = ["worker"] }
+qubit-retry = { version = "0.24", features = ["worker"] }
 ```
 
 Features can be combined in the dependency's `features` array. `WorkerRetry::new(&config).run()`
@@ -687,7 +687,7 @@ Enable `serde`:
 <!-- retry-example: kind=cargo features=serde -->
 ```toml
 [dependencies]
-qubit-retry = { version = "0.23", features = ["serde"] }
+qubit-retry = { version = "0.24", features = ["serde"] }
 ```
 
 For this JSON example also run `cargo add serde_json@1`. Policies are validated
@@ -855,7 +855,7 @@ thread pool.
 ## Further reading and documentation checks
 
 - [English README](../README.md) · [中文 README](../README.zh_CN.md)
-- [API reference for 0.23.0](https://docs.rs/qubit-retry/0.23.0/qubit_retry/)
+- [API reference for 0.24.0](https://docs.rs/qubit-retry/0.24.0/qubit_retry/)
 - [Design](design.md) · [中文用户手册](user_guide.zh_CN.md)
 
 From the repository root, run `python3 -B scripts/check_doc_examples.py` to compile
