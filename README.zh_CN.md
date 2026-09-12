@@ -19,7 +19,7 @@ Qubit Retry 是一个 Rust 重试库，适用于存储读取、客户端重连�
 <!-- retry-example: kind=cargo features=none -->
 ```toml
 [dependencies]
-qubit-retry = "0.23"
+qubit-retry = "0.24"
 ```
 
 | Feature | 提供的能力 |
