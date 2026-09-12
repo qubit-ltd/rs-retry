@@ -7,11 +7,11 @@
 // =============================================================================
 //! Benchmarks for representative retry execution and policy paths.
 
+use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::BatchSize;
 use criterion::Criterion;
-use criterion::black_box;
 use criterion::criterion_group;
 use criterion::criterion_main;
 use qubit_retry::AttemptFailure;

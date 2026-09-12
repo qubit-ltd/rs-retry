@@ -21,7 +21,7 @@ Requires **Rust 1.94+**. The Cargo package is `qubit-retry`; import it as
 <!-- retry-example: kind=cargo features=none -->
 ```toml
 [dependencies]
-qubit-retry = "0.23"
+qubit-retry = "0.24"
 ```
 
 | Feature | Adds |
