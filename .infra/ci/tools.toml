@@ -6,7 +6,7 @@ package = "qubit-infra-style"
 
 [rs-infra-verify]
 source = "https://github.com/qubit-ltd/rs-infra-verify.git"
-revision = "a13a59d78f2d0c07137ccd29273ce7fc81bee3a0"
+revision = "468368033249d703ec98588f93cc39cbbb7dcb6b"
 binary = "rs-infra-verify"
 package = "qubit-infra-verify"
 
