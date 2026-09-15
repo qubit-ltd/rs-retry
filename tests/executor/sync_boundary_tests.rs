@@ -43,11 +43,12 @@ impl RetryObserver<TestError> for DefaultObserver {}
 
 #[test]
 fn test_sync_facade_reports_timer_and_budget_boundaries() {
-    let timer: Arc<dyn Timer> = Arc::new(FaultInjectingTimer::backend_unavailable(
-        TimerFailurePoint::Registration,
-        "retry-test",
-        "offline",
-    ));
+    let timer: Arc<dyn Timer> =
+        Arc::new(FaultInjectingTimer::backend_unavailable(
+            TimerFailurePoint::Registration,
+            "retry-test",
+            "offline",
+        ));
     let random = Arc::new(FixedRetryRandomSource::new(0.5));
     let config = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
@@ -86,7 +87,9 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
 
     let config2 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            RetryDecision::Abort
+        })
         .build()
         .expect("valid config");
     let aborted = Retry::new(&config2)
@@ -150,7 +153,9 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     let attempts = AtomicU32::new(0);
     let config4 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(Duration::ZERO))
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            RetryDecision::RetryWithHint(Duration::ZERO)
+        })
         .observer(DefaultObserver)
         .build()
         .expect("valid config");
@@ -168,7 +173,9 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     let attempts = AtomicU32::new(0);
     let config5 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithJitteredHint(Duration::ZERO))
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            RetryDecision::RetryWithJitteredHint(Duration::ZERO)
+        })
         .build()
         .expect("valid config");
     let jittered_retry = Retry::new(&config5)
@@ -191,7 +198,8 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
         })
         .build()
         .expect("valid config");
-    let _ = Retry::new(&observer_config).run(|| Err::<(), _>(TestError("observed")));
+    let _ = Retry::new(&observer_config)
+        .run(|| Err::<(), _>(TestError("observed")));
     assert_eq!(callback_count.load(Ordering::SeqCst), 1);
 }
 
@@ -226,7 +234,9 @@ impl Timer for CommitRegressingClock {
         self
     }
     fn at(&self, _: MonotonicInstant) -> Result<TimerFuture, TimeError> {
-        panic!("no timer should be registered before rejected synchronous admission")
+        panic!(
+            "no timer should be registered before rejected synchronous admission"
+        )
     }
 }
 
@@ -241,7 +251,9 @@ fn test_sync_commit_revalidates_clock_before_counting_operation() {
             domain: ClockDomain::new(),
             samples: AtomicU32::new(0),
         }))
-        .run(|| -> Result<(), TestError> { panic!("invalid commitment must not start user code") })
+        .run(|| -> Result<(), TestError> {
+            panic!("invalid commitment must not start user code")
+        })
         .unwrap_err();
     assert_eq!(error.context().attempts(), 0);
     assert_eq!(error.context().current_attempt(), None);
