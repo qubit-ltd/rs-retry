@@ -81,3 +81,14 @@ external/
 *.tar.gz
 *.rar
 *.7z
+
+# Locally installed pinned rs-infra tools
+.infra/tools/bin/
+
+# Generated rs-infra coverage reports
+/coverage.json
+/coverage.txt
+/coverage-summary.md
+/coverage-badge.json
+/lcov.info
+/ci-summary.json
