@@ -53,7 +53,12 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     ///   replace it.
     /// - `_context`: Borrowed snapshot, including failures before admission.
     #[inline(always)]
-    fn on_terminal_failure(&self, _reason: &RetryErrorReason, _context: &RetryContext) {}
+    fn on_terminal_failure(
+        &self,
+        _reason: &RetryErrorReason,
+        _context: &RetryContext,
+    ) {
+    }
 
     /// Observes the context before an attempt is admitted.
     ///
@@ -74,7 +79,12 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     ///
     /// A panic is captured as a control failure when invoked by an executor.
     #[inline(always)]
-    fn on_attempt_failed(&self, _failure: &AttemptFailure<E>, _context: &RetryContext) {}
+    fn on_attempt_failed(
+        &self,
+        _failure: &AttemptFailure<E>,
+        _context: &RetryContext,
+    ) {
+    }
 
     /// Observes a delay that currently fits the continuation budgets.
     ///
@@ -89,7 +99,12 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     ///
     /// A panic is captured as a control failure when invoked by an executor.
     #[inline(always)]
-    fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {}
+    fn on_retry_scheduled(
+        &self,
+        _backoff: &BackoffStep,
+        _context: &RetryContext,
+    ) {
+    }
 }
 
 impl<E, F> RetryObserver<E> for F
@@ -105,7 +120,11 @@ where
     /// # Panics
     /// Propagates a closure panic to the executor's callback capture boundary.
     #[inline(always)]
-    fn on_attempt_failed(&self, failure: &AttemptFailure<E>, context: &RetryContext) {
+    fn on_attempt_failed(
+        &self,
+        failure: &AttemptFailure<E>,
+        context: &RetryContext,
+    ) {
         self(failure, context);
     }
 }

@@ -13,7 +13,9 @@ use crate::executor::AttemptCancellationToken;
 /// Type-erased blocking worker attempt used by the retry loop.
 /// # Type Parameters
 /// - `E`: Application error transferred through the worker result channel.
-pub(in crate::executor) trait BlockingAttempt<E>: Send + Sync {
+pub(in crate::executor) trait BlockingAttempt<E>:
+    Send + Sync
+{
     /// Calls the wrapped operation once.
     ///
     /// # Parameters
@@ -28,5 +30,8 @@ pub(in crate::executor) trait BlockingAttempt<E>: Send + Sync {
     /// # Panics
     /// The operation may unwind; the worker executor owns the panic capture
     /// boundary.
-    fn call(&self, token: AttemptCancellationToken) -> Result<(), AttemptFailure<E>>;
+    fn call(
+        &self,
+        token: AttemptCancellationToken,
+    ) -> Result<(), AttemptFailure<E>>;
 }

@@ -54,7 +54,9 @@ fn test_readme_completion_diagnostics_and_error_mapping() {
         .fallback(RetryFallback::Retry)
         .build()
         .expect("valid config");
-    let error = Retry::new(&retry).run(|| Err::<(), _>("offline")).unwrap_err();
+    let error = Retry::new(&retry)
+        .run(|| Err::<(), _>("offline"))
+        .unwrap_err();
     let mapped = error.map_error(String::from);
     assert_eq!(mapped.last_error().map(String::as_str), Some("offline"));
     assert_eq!(mapped.completion_callback_failures().len(), 1);

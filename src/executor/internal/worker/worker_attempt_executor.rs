@@ -113,7 +113,9 @@ impl WorkerAttemptExecutor {
             // Worker mode is the only synchronous mode with a panic
             // isolation boundary. Convert panic payloads into retry
             // failures so policy and listeners can handle them normally.
-            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| operation.call(worker_token)));
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                operation.call(worker_token)
+            }));
             let attempt_result = match result {
                 Ok(result) => result,
                 Err(payload) => Err(AttemptFailure::Panicked {
@@ -140,7 +142,8 @@ impl WorkerAttemptExecutor {
             });
         }
 
-        let mut cancellation_future = cancellation.map(|token| Box::pin(token.cancelled()));
+        let mut cancellation_future =
+            cancellation.map(|token| Box::pin(token.cancelled()));
         if let Some(future) = cancellation_future.as_mut() {
             register_cancellation_waker(future, &sender);
         }
@@ -202,22 +205,38 @@ fn wait_for_worker<E: Send + 'static>(
     let mut joined = false;
     loop {
         if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
-            return stop_worker(&receiver, token, grace, WorkerStopTrigger::Cancellation, joined);
+            return stop_worker(
+                &receiver,
+                token,
+                grace,
+                WorkerStopTrigger::Cancellation,
+                joined,
+            );
         }
         if let Some((scope, future)) = timeout.as_mut()
             && let Poll::Ready(result) = future.as_mut().poll(&mut context)
         {
             match result {
                 Ok(()) => {
-                    return stop_worker(&receiver, token, grace, timeout_trigger(*scope), joined);
+                    return stop_worker(
+                        &receiver,
+                        token,
+                        grace,
+                        timeout_trigger(*scope),
+                        joined,
+                    );
                 }
                 Err(error) => {
                     token.cancel();
                     return match observe_worker_exit(&receiver, grace, joined) {
-                        Ok(true) => BlockingAttemptOutcome::TimerFailed { error },
-                        Ok(false) => BlockingAttemptOutcome::WorkerStillRunning {
-                            trigger: WorkerStopTrigger::TimerFailure,
-                        },
+                        Ok(true) => {
+                            BlockingAttemptOutcome::TimerFailed { error }
+                        }
+                        Ok(false) => {
+                            BlockingAttemptOutcome::WorkerStillRunning {
+                                trigger: WorkerStopTrigger::TimerFailure,
+                            }
+                        }
                         Err(_) => BlockingAttemptOutcome::WorkerChannelClosed,
                     };
                 }
@@ -265,10 +284,12 @@ fn spawn_reaper<E: Send + 'static>(
     if FAIL_REAPER_SPAWN.with(|fail| fail.replace(false)) {
         return Err(io::Error::other("injected reaper spawn failure"));
     }
-    ThreadBuilder::new().name("retry-reaper".into()).spawn(move || {
-        let joined = worker.join().map_err(retry_panic_from_payload);
-        let _ = sender.send(WorkerEvent::Joined(joined));
-    })?;
+    ThreadBuilder::new()
+        .name("retry-reaper".into())
+        .spawn(move || {
+            let joined = worker.join().map_err(retry_panic_from_payload);
+            let _ = sender.send(WorkerEvent::Joined(joined));
+        })?;
     Ok(())
 }
 
@@ -383,7 +404,9 @@ fn observe_worker_exit<E>(
                 }
             }
         } else if let Some(deadline) = deadline {
-            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            let Some(remaining) =
+                deadline.checked_duration_since(Instant::now())
+            else {
                 return Ok(false);
             };
             match receiver.recv_timeout(remaining) {
@@ -452,7 +475,10 @@ mod tests {
                 None,
                 Waker::noop(),
             );
-            assert!(matches!(result, BlockingAttemptOutcome::Completed(Ok(()))));
+            assert!(matches!(
+                result,
+                BlockingAttemptOutcome::Completed(Ok(()))
+            ));
         }
     }
 
@@ -481,7 +507,10 @@ mod tests {
                     &attempt_token,
                     Duration::ZERO,
                     Some(&flow_token),
-                    Some((RetryTimeoutScope::Attempt, Box::pin(async { Ok(()) }))),
+                    Some((
+                        RetryTimeoutScope::Attempt,
+                        Box::pin(async { Ok(()) }),
+                    )),
                     Waker::noop(),
                 );
                 let expected = if cancelled {
@@ -489,7 +518,9 @@ mod tests {
                 } else {
                     WorkerStopTrigger::AttemptTimeout
                 };
-                assert!(matches!(outcome, BlockingAttemptOutcome::Stopped { trigger } if trigger == expected));
+                assert!(
+                    matches!(outcome, BlockingAttemptOutcome::Stopped { trigger } if trigger == expected)
+                );
                 assert!(attempt_token.is_cancelled());
             }
         }
@@ -500,7 +531,9 @@ mod tests {
     fn test_worker_join_panic_needs_no_completed_event() {
         let (sender, receiver) = mpsc::channel::<WorkerEvent<()>>();
         sender
-            .send(WorkerEvent::Joined(Err(RetryPanic::StaticStr("join panic"))))
+            .send(WorkerEvent::Joined(Err(RetryPanic::StaticStr(
+                "join panic",
+            ))))
             .expect("receiver alive");
         drop(sender);
         let result = wait_for_worker(
@@ -544,7 +577,10 @@ mod tests {
                 None,
                 &waker,
             );
-            assert!(matches!(result, BlockingAttemptOutcome::WorkerChannelClosed));
+            assert!(matches!(
+                result,
+                BlockingAttemptOutcome::WorkerChannelClosed
+            ));
         }
     }
 
@@ -552,11 +588,21 @@ mod tests {
     #[test]
     fn test_worker_grace_ignores_completed_and_wake() {
         let (sender, receiver) = mpsc::channel::<WorkerEvent<()>>();
-        sender.send(WorkerEvent::Completed(Ok(()))).expect("receiver alive");
+        sender
+            .send(WorkerEvent::Completed(Ok(())))
+            .expect("receiver alive");
         sender.send(WorkerEvent::Wake).expect("receiver alive");
-        assert!(!observe_worker_exit(&receiver, Duration::ZERO, false).expect("channel open"));
-        sender.send(WorkerEvent::Joined(Ok(()))).expect("receiver alive");
-        assert!(observe_worker_exit(&receiver, Duration::ZERO, false).expect("channel open"));
+        assert!(
+            !observe_worker_exit(&receiver, Duration::ZERO, false)
+                .expect("channel open")
+        );
+        sender
+            .send(WorkerEvent::Joined(Ok(())))
+            .expect("receiver alive");
+        assert!(
+            observe_worker_exit(&receiver, Duration::ZERO, false)
+                .expect("channel open")
+        );
     }
 
     /// Disconnection during any grace mode is infrastructure failure, never
@@ -567,8 +613,17 @@ mod tests {
             let (sender, receiver) = mpsc::channel::<WorkerEvent<()>>();
             drop(sender);
             let token = AttemptCancellationToken::new();
-            let result = stop_worker(&receiver, &token, grace, WorkerStopTrigger::Cancellation, false);
-            assert!(matches!(result, BlockingAttemptOutcome::WorkerChannelClosed));
+            let result = stop_worker(
+                &receiver,
+                &token,
+                grace,
+                WorkerStopTrigger::Cancellation,
+                false,
+            );
+            assert!(matches!(
+                result,
+                BlockingAttemptOutcome::WorkerChannelClosed
+            ));
             assert!(token.is_cancelled());
         }
     }
@@ -582,7 +637,9 @@ mod tests {
             .build()
             .expect("valid config");
         let error = WorkerRetry::new(&config)
-            .run(|_| -> Result<(), ()> { panic!("operation must remain behind gate") })
+            .run(|_| -> Result<(), ()> {
+                panic!("operation must remain behind gate")
+            })
             .expect_err("reaper spawn fails");
         assert_eq!(error.context().attempts(), 0);
         assert_eq!(error.context().current_attempt(), None);

@@ -47,7 +47,8 @@ fn test_callback_failure_stops_later_callback_kinds() {
     let error = Retry::new(&retry)
         .run(|| Err::<(), _>(TestError("retry")))
         .expect_err("the observer must panic first");
-    let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
+    let RetryErrorReason::CallbackFailed { callback, .. } = error.reason()
+    else {
         panic!("expected a callback-failure terminal");
     };
     assert_eq!(callback.callback(), RetryCallbackKind::Observer);

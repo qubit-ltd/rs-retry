@@ -52,13 +52,17 @@ impl<E> Default for RetryRules<E> {
     /// A collection with no registered callbacks and no vector allocation.
     #[inline]
     fn default() -> Self {
-        Self { rules: Arc::from([]) }
+        Self {
+            rules: Arc::from([]),
+        }
     }
 }
 
 impl<E: 'static> RetryRules<E> {
     pub(crate) fn from_vec(rules: Vec<Arc<dyn RetryRule<E>>>) -> Self {
-        Self { rules: rules.into() }
+        Self {
+            rules: rules.into(),
+        }
     }
 
     /// Resolves the first non-default decision.
@@ -82,7 +86,10 @@ impl<E: 'static> RetryRules<E> {
         context: &RetryContext,
     ) -> Result<RetryDecision, RetryCallbackFailure> {
         for (index, rule) in self.rules.iter().enumerate() {
-            let decision = catch_unwind(AssertUnwindSafe(|| rule.decide(failure, context))).map_err(|payload| {
+            let decision = catch_unwind(AssertUnwindSafe(|| {
+                rule.decide(failure, context)
+            }))
+            .map_err(|payload| {
                 RetryCallbackFailure::new(
                     RetryCallbackKind::Rule,
                     index,

@@ -106,7 +106,10 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
     /// # Returns
     /// This facade using the supplied random source.
     #[inline(always)]
-    pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
+    pub fn random_source(
+        mut self,
+        random_source: Arc<dyn RetryRandomSource>,
+    ) -> Self {
         self.inner = self.inner.random_source(random_source);
         self
     }
@@ -118,12 +121,17 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
     ///
     /// # Returns
     /// The successful value or terminal retry error.
-    pub async fn run<T, F, Fut>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub async fn run<T, F, Fut>(
+        &self,
+        operation: F,
+    ) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
         let default_timer = TokioTimer::current();
-        self.inner.run_with_default_timer(&default_timer, operation).await
+        self.inner
+            .run_with_default_timer(&default_timer, operation)
+            .await
     }
 }
