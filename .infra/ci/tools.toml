@@ -24,7 +24,7 @@ package = "qubit-infra-pages"
 
 [rs-infra-ci]
 source = "https://github.com/qubit-ltd/rs-infra-ci.git"
-revision = "86163395b3b40fb1a73ce904bef4f97b7fc606cc"
+revision = "98463821cf1898dfa6468b4af8edd20e943406a0"
 binary = "rs-infra-ci"
 package = "qubit-infra-ci"
 
