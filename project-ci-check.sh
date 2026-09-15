@@ -1,5 +1,5 @@
 #!/bin/bash
-# Project-owned bilingual documentation checks, invoked by rs-ci.
+# Project-owned bilingual documentation checks, invoked by rs-infra-ci.
 set -euo pipefail
 
 DOC_PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
