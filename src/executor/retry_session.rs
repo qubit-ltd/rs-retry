@@ -14,6 +14,7 @@ use qubit_clock::MonotonicInstant;
 use qubit_clock::Timer;
 
 use super::internal::RetryFlowController;
+use super::retry_session_step::RetrySessionStep;
 use crate::AttemptFailure;
 use crate::RetryCancellationToken;
 use crate::RetryConfig;
@@ -21,21 +22,6 @@ use crate::RetryError;
 use crate::RetryRandomSource;
 use crate::RetryResult;
 use crate::RetrySuccess;
-
-/// Result of recording one operation in a [`RetrySession`].
-///
-/// `T` is the successful value and `E` is the owned application error.
-#[derive(Debug)]
-#[must_use]
-pub enum RetrySessionStep<T, E> {
-    /// The operation succeeded; completion observers have been notified.
-    Complete(RetrySuccess<T>),
-    /// Resume at this absolute instant in the session timer's clock domain.
-    /// The owner supplies the wait and must call `begin_attempt` again.
-    RetryAt(MonotonicInstant),
-    /// The flow terminated; completion observers have been notified.
-    Failed(RetryError<E>),
-}
 
 /// Legal phases of the single outstanding operation protocol.
 #[derive(Clone, Copy, PartialEq, Eq)]
