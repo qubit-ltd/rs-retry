@@ -10,7 +10,6 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use qubit_clock::MonotonicInstant;
 use qubit_clock::Timer;
 
 use super::internal::RetryFlowController;
