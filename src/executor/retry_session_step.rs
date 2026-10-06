@@ -12,7 +12,7 @@ use qubit_clock::MonotonicInstant;
 use crate::RetryError;
 use crate::RetrySuccess;
 
-/// Result of recording one operation in an incremental retry session.
+/// Result of recording one operation in a [`super::RetrySession`].
 ///
 /// `T` is the successful value and `E` is the owned application error.
 #[derive(Debug)]
