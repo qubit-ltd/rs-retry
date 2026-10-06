@@ -64,6 +64,8 @@ pub use executor::RetryCancellationToken;
 pub use executor::RetryCancelled;
 pub use executor::RetryConfig;
 pub use executor::RetryConfigBuilder;
+pub use executor::RetrySession;
+pub use executor::RetrySessionStep;
 pub use executor::RetrySuccess;
 #[cfg(feature = "tokio")]
 pub use executor::TokioRetry;

@@ -28,6 +28,7 @@ mod internal;
 mod retry_cancellation_state_tests;
 mod retry_cancellation_token_tests;
 mod retry_cancelled_tests;
+mod retry_session_tests;
 mod retry_tests;
 mod sync_boundary_tests;
 mod sync_contract_tests;

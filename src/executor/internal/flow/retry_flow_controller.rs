@@ -39,16 +39,15 @@ use crate::rule::RetryRules;
 
 /// Owns all runtime-independent decisions and terminal error construction.
 /// # Type Parameters
-/// - `'a`: Lifetime of the immutable retry definition.
 /// - `E`: Owned application error retained until success or terminal
 ///   conversion.
-pub(crate) struct RetryFlowController<'a, E> {
+pub(crate) struct RetryFlowController<E> {
     /// Attempt, elapsed-budget, and backoff state.
-    state: RetryFlowState<'a>,
+    state: RetryFlowState,
     /// Ordered retry rules.
-    rules: &'a RetryRules<E>,
+    rules: RetryRules<E>,
     /// Ordered retry observers.
-    observers: &'a RetryObservers<E>,
+    observers: RetryObservers<E>,
     /// Action used when all retry rules delegate the failure.
     fallback: RetryFallback,
     /// Last failed attempt retained until success or terminal failure.
@@ -65,13 +64,13 @@ pub(crate) struct RetryFlowController<'a, E> {
     retry_after_hint: Option<Duration>,
 }
 
-impl<'a, E: 'static> RetryFlowController<'a, E> {
+impl<E: 'static> RetryFlowController<E> {
     /// Creates a controller from one immutable retry definition and clock
     /// sample.
     ///
     /// # Parameters
     /// - `started_at`: Initial coherent monotonic sample.
-    /// - `retry`: Borrowed policy and callback definition.
+    /// - `config`: Policy and callback definition cloned into owned state.
     /// - `random_source`: Sampler for uniform delays and jitter shared with
     ///   backoff state.
     /// - `attempt_timeout`: Optional hard per-attempt duration.
@@ -83,7 +82,7 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
     #[must_use = "use the prepared value or inspect the result"]
     pub(crate) fn new(
         started_at: MonotonicInstant,
-        config: &'a RetryConfig<E>,
+        config: &RetryConfig<E>,
         random_source: Option<Arc<dyn RetryRandomSource>>,
         attempt_timeout: Option<Duration>,
         flow_timeout: Option<Duration>,
@@ -95,8 +94,8 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
                 random_source,
                 flow_timeout,
             ),
-            rules: config.rules(),
-            observers: config.observers(),
+            rules: config.rules().clone(),
+            observers: config.observers().clone(),
             fallback: config.fallback(),
             last_failure: None,
             attempt_timeout,
@@ -105,6 +104,12 @@ impl<'a, E: 'static> RetryFlowController<'a, E> {
             next_delay: None,
             retry_after_hint: None,
         }
+    }
+
+    /// Returns the number of operations admitted by this controller.
+    #[inline]
+    pub(crate) fn attempts(&self) -> u32 {
+        self.state.context(None).attempts()
     }
 
     /// Checks all pre-attempt gates and invokes the before-attempt observers.

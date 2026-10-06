@@ -450,7 +450,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     fn finish_failed_attempt(
         &self,
         timer: &dyn Timer,
-        controller: &mut RetryFlowController<'_, E>,
+        controller: &mut RetryFlowController<E>,
         clock: &dyn MonotonicClock,
         failure: AttemptFailure<E>,
     ) -> Result<(), RetryError<E>> {

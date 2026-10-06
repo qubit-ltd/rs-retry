@@ -29,9 +29,9 @@ use crate::context::RetryContextParts;
 use crate::rule::RetryDecision;
 
 /// Mutable timing, attempt, and backoff state for one retry flow.
-pub(crate) struct RetryFlowState<'a> {
+pub(crate) struct RetryFlowState {
     /// Immutable continuation and backoff policy.
-    policy: &'a RetryPolicy,
+    policy: RetryPolicy,
     /// Shared continuation and operation accounting.
     budget: RetryBudgetState,
     /// Mutable backoff sequence.
@@ -40,12 +40,12 @@ pub(crate) struct RetryFlowState<'a> {
     flow_timeout: Option<Duration>,
 }
 
-impl<'a> RetryFlowState<'a> {
+impl RetryFlowState {
     /// Creates state from one coherent initial monotonic sample.
     ///
     /// # Parameters
     /// - `started_at`: Initial sample defining the flow clock domain.
-    /// - `policy`: Immutable policy borrowed for this flow.
+    /// - `policy`: Immutable policy cloned into this flow.
     /// - `random_source`: Shared sampler for uniform delays and jitter.
     /// - `flow_timeout`: Optional hard whole-flow timeout.
     ///
@@ -55,12 +55,12 @@ impl<'a> RetryFlowState<'a> {
     #[must_use = "use the prepared value or inspect the result"]
     pub(crate) fn new(
         started_at: MonotonicInstant,
-        policy: &'a RetryPolicy,
+        policy: &RetryPolicy,
         random_source: Option<Arc<dyn RetryRandomSource>>,
         flow_timeout: Option<Duration>,
     ) -> Self {
         Self {
-            policy,
+            policy: policy.clone(),
             budget: RetryBudgetState::new(
                 started_at,
                 *policy.admission_limits(),
