@@ -26,11 +26,7 @@ use qubit_retry::RetryRule;
 struct NoopRule;
 
 impl RetryRule<()> for NoopRule {
-    fn decide(
-        &self,
-        _failure: &AttemptFailure<()>,
-        _context: &RetryContext,
-    ) -> RetryDecision {
+    fn decide(&self, _failure: &AttemptFailure<()>, _context: &RetryContext) -> RetryDecision {
         RetryDecision::UseDefault
     }
 }
@@ -57,13 +53,11 @@ fn test_retry_rules_preserve_each_panic_payload() {
     for (payload, expected) in cases {
         let later_calls = Arc::new(AtomicUsize::new(0));
         let retry = RetryConfig::<()>::builder()
-            .rule(
-                move |_: &AttemptFailure<()>, _: &RetryContext| match payload {
-                    0 => panic!("static panic"),
-                    1 => panic_any(String::from("owned panic")),
-                    _ => panic_any(17_u32),
-                },
-            )
+            .rule(move |_: &AttemptFailure<()>, _: &RetryContext| match payload {
+                0 => panic!("static panic"),
+                1 => panic_any(String::from("owned panic")),
+                _ => panic_any(17_u32),
+            })
             .rule({
                 let later_calls = Arc::clone(&later_calls);
                 move |_: &AttemptFailure<()>, _: &RetryContext| {
@@ -76,8 +70,7 @@ fn test_retry_rules_preserve_each_panic_payload() {
         let error = Retry::new(&retry)
             .run(|| Err::<(), _>(()))
             .expect_err("the rule must panic");
-        let RetryErrorReason::CallbackFailed { callback, .. } = error.reason()
-        else {
+        let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {
             panic!("expected a callback-failure terminal");
         };
         assert_eq!(callback.callback(), RetryCallbackKind::Rule);

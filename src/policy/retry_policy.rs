@@ -122,10 +122,7 @@ impl RetryPolicy {
     /// # Returns
     /// An immutable policy owning both components.
     #[inline]
-    pub(crate) fn new(
-        limits: RetryAdmissionLimits,
-        backoff: BackoffPolicy,
-    ) -> Self {
+    pub(crate) fn new(limits: RetryAdmissionLimits, backoff: BackoffPolicy) -> Self {
         Self { limits, backoff }
     }
 

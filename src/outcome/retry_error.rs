@@ -79,9 +79,7 @@ impl<E> RetryError<E> {
     /// exists.
     #[must_use = "inspect the application error"]
     pub fn last_error(&self) -> Option<&E> {
-        self.last_failure
-            .as_ref()
-            .and_then(AttemptFailure::as_error)
+        self.last_failure.as_ref().and_then(AttemptFailure::as_error)
     }
 
     /// Returns completion callback failures captured after the terminal result
@@ -99,9 +97,7 @@ impl<E> RetryError<E> {
     pub fn map_error<U, F: FnOnce(E) -> U>(self, map: F) -> RetryError<U> {
         RetryError {
             reason: self.reason,
-            last_failure: self
-                .last_failure
-                .map(|failure| failure.map_error(map)),
+            last_failure: self.last_failure.map(|failure| failure.map_error(map)),
             context: self.context,
             completion_callback_failures: self.completion_callback_failures,
         }
@@ -130,18 +126,11 @@ impl<E> RetryError<E> {
     /// error.
     #[must_use]
     pub fn into_metadata_and_error(self) -> (RetryErrorMetadata, Option<E>) {
-        let (reason, last_failure, context, completion_callback_failures) =
-            self.into_parts();
+        let (reason, last_failure, context, completion_callback_failures) = self.into_parts();
         let (last_attempt, application_error) = match last_failure {
-            Some(AttemptFailure::Error(error)) => {
-                (Some(AttemptFailureMetadata::ApplicationError), Some(error))
-            }
-            Some(AttemptFailure::TimedOut { scope }) => {
-                (Some(AttemptFailureMetadata::TimedOut { scope }), None)
-            }
-            Some(AttemptFailure::Panicked { panic }) => {
-                (Some(AttemptFailureMetadata::Panicked { panic }), None)
-            }
+            Some(AttemptFailure::Error(error)) => (Some(AttemptFailureMetadata::ApplicationError), Some(error)),
+            Some(AttemptFailure::TimedOut { scope }) => (Some(AttemptFailureMetadata::TimedOut { scope }), None),
+            Some(AttemptFailure::Panicked { panic }) => (Some(AttemptFailureMetadata::Panicked { panic }), None),
             None => (None, None),
         };
         (
@@ -156,10 +145,7 @@ impl<E> RetryError<E> {
     }
 
     /// Stores completion callback diagnostics on the frozen terminal error.
-    pub(crate) fn set_completion_callback_failures(
-        &mut self,
-        failures: Vec<RetryCallbackFailure>,
-    ) {
+    pub(crate) fn set_completion_callback_failures(&mut self, failures: Vec<RetryCallbackFailure>) {
         self.completion_callback_failures = failures.into_boxed_slice();
     }
 }
@@ -179,7 +165,6 @@ impl<E: fmt::Display> fmt::Display for RetryError<E> {
 impl<E: Error + 'static> Error for RetryError<E> {
     /// Exposes the last application error as the standard error source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.last_error()
-            .map(|error| error as &(dyn Error + 'static))
+        self.last_error().map(|error| error as &(dyn Error + 'static))
     }
 }

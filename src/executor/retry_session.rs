@@ -89,18 +89,8 @@ impl<E: 'static> RetrySession<E> {
     }
 
     /// Initializes owned state from the supplied runtime resources.
-    fn new_inner(
-        config: RetryConfig<E>,
-        timer: Arc<dyn Timer>,
-        random: Option<Arc<dyn RetryRandomSource>>,
-    ) -> Self {
-        let controller = RetryFlowController::new(
-            timer.clock().now(),
-            &config,
-            random,
-            None,
-            None,
-        );
+    fn new_inner(config: RetryConfig<E>, timer: Arc<dyn Timer>, random: Option<Arc<dyn RetryRandomSource>>) -> Self {
+        let controller = RetryFlowController::new(timer.clock().now(), &config, random, None, None);
         Self {
             config,
             controller,
@@ -113,10 +103,7 @@ impl<E: 'static> RetrySession<E> {
     /// Observes `token` at admission and failure boundaries, returning this
     /// flow. Cancellation does not interrupt an operation already admitted.
     #[inline]
-    pub fn with_cancellation_token(
-        mut self,
-        token: RetryCancellationToken,
-    ) -> Self {
+    pub fn with_cancellation_token(mut self, token: RetryCancellationToken) -> Self {
         self.cancellation_token = Some(token);
         self
     }
@@ -139,10 +126,7 @@ impl<E: 'static> RetrySession<E> {
     /// # Panics
     /// Panics if an operation is already active or the session has finished.
     /// Custom clock panics propagate.
-    #[allow(
-        clippy::result_large_err,
-        reason = "preserves lossless terminal retry context"
-    )]
+    #[allow(clippy::result_large_err, reason = "preserves lossless terminal retry context")]
     pub fn begin_attempt(&mut self) -> Result<NonZeroU32, RetryError<E>> {
         assert!(
             matches!(self.phase, SessionPhase::Ready | SessionPhase::Waiting),
@@ -150,22 +134,18 @@ impl<E: 'static> RetrySession<E> {
         );
         let clock = self.timer.clock();
         let cancellation = self.cancellation_token.as_ref();
-        let result = if self.phase == SessionPhase::Waiting
-            && cancellation.is_some_and(RetryCancellationToken::is_cancelled)
-        {
-            Err(self.controller.record_backoff_cancellation(clock))
-        } else {
-            self.controller
-                .before_attempt(clock, cancellation)
-                .and_then(|_| {
-                    self.controller.commit_attempt(clock, cancellation)
-                })
-        };
+        let result =
+            if self.phase == SessionPhase::Waiting && cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
+                Err(self.controller.record_backoff_cancellation(clock))
+            } else {
+                self.controller
+                    .before_attempt(clock, cancellation)
+                    .and_then(|_| self.controller.commit_attempt(clock, cancellation))
+            };
         match result {
             Ok(()) => {
                 self.phase = SessionPhase::Active;
-                Ok(NonZeroU32::new(self.controller.attempts())
-                    .expect("a committed attempt has a nonzero ordinal"))
+                Ok(NonZeroU32::new(self.controller.attempts()).expect("a committed attempt has a nonzero ordinal"))
             }
             Err(error) => {
                 self.phase = SessionPhase::Finished;
@@ -188,10 +168,7 @@ impl<E: 'static> RetrySession<E> {
     /// # Panics
     /// Panics without a matching successful `begin_attempt`, or after
     /// completion. Custom random-source and clock panics propagate.
-    pub fn record_result<T>(
-        &mut self,
-        result: Result<T, E>,
-    ) -> RetrySessionStep<T, E> {
+    pub fn record_result<T>(&mut self, result: Result<T, E>) -> RetrySessionStep<T, E> {
         assert!(
             self.phase == SessionPhase::Active,
             "record_result requires an active attempt"

@@ -38,11 +38,7 @@ impl PreparedTimeout {
     /// An immutable timeout transaction.
     #[inline(always)]
     #[must_use]
-    pub(super) fn new(
-        deadline: MonotonicInstant,
-        duration: Duration,
-        scope: RetryTimeoutScope,
-    ) -> Self {
+    pub(super) fn new(deadline: MonotonicInstant, duration: Duration, scope: RetryTimeoutScope) -> Self {
         Self {
             deadline,
             duration,

@@ -124,10 +124,7 @@ impl<T> RetrySuccess<T> {
     /// - `failures`: Ordered completion diagnostics replacing the empty
     ///   collection.
     #[inline(always)]
-    pub(crate) fn set_completion_callback_failures(
-        &mut self,
-        failures: Vec<RetryCallbackFailure>,
-    ) {
+    pub(crate) fn set_completion_callback_failures(&mut self, failures: Vec<RetryCallbackFailure>) {
         self.completion_callback_failures = failures;
     }
 }

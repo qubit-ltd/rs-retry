@@ -15,12 +15,7 @@ use qubit_retry::RetryPolicy;
 #[test]
 fn test_policy_validates_limits_and_backoff_state() {
     assert!(RetryPolicy::builder().max_attempts(0).build().is_err());
-    let policy = BackoffPolicy::exponential(
-        Duration::from_millis(10),
-        2.0,
-        Duration::from_millis(25),
-    )
-    .unwrap();
+    let policy = BackoffPolicy::exponential(Duration::from_millis(10), 2.0, Duration::from_millis(25)).unwrap();
     let mut state = policy.start();
     assert_eq!(state.next(BackoffRequest::policy()).retry_index(), 1);
     assert_eq!(

@@ -34,13 +34,9 @@ impl PreparedAttemptPlan {
     /// An immutable plan retaining all supplied timeout data.
     #[inline]
     #[must_use]
-    pub(super) fn from_timeout(
-        timeout: Option<(MonotonicInstant, Duration, RetryTimeoutScope)>,
-    ) -> Self {
+    pub(super) fn from_timeout(timeout: Option<(MonotonicInstant, Duration, RetryTimeoutScope)>) -> Self {
         Self {
-            timeout: timeout.map(|(deadline, duration, scope)| {
-                PreparedTimeout::new(deadline, duration, scope)
-            }),
+            timeout: timeout.map(|(deadline, duration, scope)| PreparedTimeout::new(deadline, duration, scope)),
         }
     }
 
@@ -84,10 +80,7 @@ impl PreparedAttemptPlan {
     /// None for an unbounded attempt.
     #[inline(always)]
     #[must_use]
-    pub(super) fn deadline_and_scope(
-        &self,
-    ) -> Option<(MonotonicInstant, RetryTimeoutScope)> {
-        self.timeout
-            .map(|timeout| (timeout.deadline(), timeout.scope()))
+    pub(super) fn deadline_and_scope(&self) -> Option<(MonotonicInstant, RetryTimeoutScope)> {
+        self.timeout.map(|timeout| (timeout.deadline(), timeout.scope()))
     }
 }
