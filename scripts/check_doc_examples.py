@@ -18,8 +18,9 @@ import sys
 import tempfile
 import tomllib
 
-ANNOTATION = re.compile(r"<!-- retry-example: kind=(run|cargo) features=([a-z,]+) -->")
+ANNOTATION = re.compile(r"<!-- retry-example: (.*?) -->")
 DOCUMENTS = ("README.md", "README.zh_CN.md", "doc/user_guide.md", "doc/user_guide.zh_CN.md")
+CONSUMER_DEPENDENCIES = {"clock", "clock-test-util"}
 
 
 def extract(path):
@@ -38,12 +39,33 @@ def extract(path):
         annotation = ANNOTATION.fullmatch(lines[index - 1].strip()) if index else None
         if annotation is None:
             raise ValueError(f"{path}:{start + 1}: missing executable example annotation")
-        kind, feature_text = annotation.groups()
+        attributes = {}
+        for item in annotation.group(1).split():
+            key, separator, value = item.partition("=")
+            if separator and key == "deps" and not value:
+                raise ValueError(f"{path}:{start + 1}: empty consumer dependency declaration")
+            if not separator or not key or not value:
+                raise ValueError(f"{path}:{start + 1}: invalid executable example annotation")
+            if key in attributes:
+                raise ValueError(f"{path}:{start + 1}: repeated {key} annotation attribute")
+            attributes[key] = value
+        if not {"kind", "features"}.issubset(attributes) or set(attributes) - {"kind", "features", "deps"}:
+            raise ValueError(f"{path}:{start + 1}: invalid executable example annotation attributes")
+        kind = attributes["kind"]
+        feature_text = attributes["features"]
+        if kind not in ("run", "cargo") or not re.fullmatch(r"[a-z,]+", feature_text):
+            raise ValueError(f"{path}:{start + 1}: invalid executable example annotation")
         if (language == "rust") != (kind == "run"):
             raise ValueError(f"{path}:{start + 1}: example kind disagrees with fence language")
         features = [] if feature_text == "none" else feature_text.split(",")
         if any(feature not in ("async", "serde", "tokio", "worker") for feature in features) or len(set(features)) != len(features):
             raise ValueError(f"{path}:{start + 1}: unknown feature or repeated feature")
+        deps_text = attributes.get("deps", "")
+        deps = deps_text.split(",") if deps_text else []
+        if any(dependency not in CONSUMER_DEPENDENCIES for dependency in deps) or len(set(deps)) != len(deps):
+            raise ValueError(f"{path}:{start + 1}: unknown or repeated consumer dependency")
+        if kind == "cargo" and deps:
+            raise ValueError(f"{path}:{start + 1}: Cargo example cannot declare consumer dependencies")
         index += 1
         body = []
         while index < len(lines) and lines[index].strip() != "```":
@@ -51,7 +73,7 @@ def extract(path):
             index += 1
         if index == len(lines):
             raise ValueError(f"{path}:{start + 1}: unclosed code block")
-        result.append(dict(path=path, line=start + 2, kind=kind, features=features, code="\n".join(body) + "\n"))
+        result.append(dict(path=path, line=start + 2, kind=kind, features=features, deps=deps, code="\n".join(body) + "\n"))
         index += 1
     return result
 
@@ -74,6 +96,23 @@ def cargo_dependency(example, version):
     return dependency
 
 
+def consumer_manifest(root: Path, example: dict) -> str:
+    """Build the smallest consumer manifest required by one documentation example."""
+    manifest = (
+        '[package]\nname = "retry-doc-example"\nversion = "0.0.0"\nedition = "2024"\n'
+        '[dependencies]\nqubit-retry = { path = ' + json.dumps(str(root)) +
+        ', default-features = false, features = ' + json.dumps(example["features"]) + ' }\n'
+    )
+    if "clock-test-util" in example["deps"]:
+        manifest += 'qubit-clock = { version = "0.13", features = ["test-util"] }\n'
+    elif "clock" in example["deps"]:
+        manifest += 'qubit-clock = "0.13"\n'
+    manifest += 'serde_json = "1"\n'
+    if "tokio" in example["features"]:
+        manifest += 'tokio = { version = "1.52", features = ["rt", "macros", "time"] }\n'
+    return manifest
+
+
 def run_examples(root):
     """Compile and run every language variant without relying on repository cwd."""
     if shutil.which("cargo") is None:
@@ -91,14 +130,7 @@ def run_examples(root):
                     cargo_dependency(example, package["package"]["version"])
                 consumer = workspace / f"example-{ordinal}"
                 (consumer / "src").mkdir(parents=True)
-                manifest = (
-                    '[package]\nname = "retry-doc-example"\nversion = "0.0.0"\nedition = "2024"\n'
-                    '[dependencies]\nqubit-retry = { path = ' + json.dumps(str(root)) +
-                    ', default-features = false, features = ' + json.dumps(example["features"]) + ' }\n'
-                    'qubit-clock = { version = "0.13", features = ["test-util"] }\nserde_json = "1"\n'
-                )
-                if "tokio" in example["features"]:
-                    manifest += 'tokio = { version = "1.52", features = ["rt", "macros", "time"] }\n'
+                manifest = consumer_manifest(root, example)
                 (consumer / "Cargo.toml").write_text(manifest, encoding="utf-8")
                 # Reuse the verified dependency resolution, including locked yanked versions.
                 # Cargo prunes unused development dependencies for each consumer.

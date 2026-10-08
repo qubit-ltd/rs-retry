@@ -34,6 +34,70 @@ class ExampleContractTests(unittest.TestCase):
         examples = self.parse("<!-- retry-example: kind=cargo features=async -->\n```toml\n[dependencies]\nqubit-retry = { version = \"0.24\", features = [\"async\"] }\n```\n")
         self.assertEqual(examples[0]["features"], ["async"])
 
+    def test_legacy_annotation_has_no_consumer_dependencies(self):
+        examples = self.parse("<!-- retry-example: kind=run features=none -->\n```rust\nfn main() {}\n```\n")
+        self.assertEqual(examples[0]["deps"], [])
+
+    def test_clock_dependency_is_parsed(self):
+        examples = self.parse("<!-- retry-example: kind=run features=none deps=clock -->\n```rust\nfn main() {}\n```\n")
+        self.assertEqual(examples[0]["deps"], ["clock"])
+
+    def test_clock_test_util_dependency_is_parsed(self):
+        examples = self.parse("<!-- retry-example: kind=run features=none deps=clock-test-util -->\n```rust\nfn main() {}\n```\n")
+        self.assertEqual(examples[0]["deps"], ["clock-test-util"])
+
+    def test_invalid_dependency_declarations_fail_with_location(self):
+        cases = (
+            ("kind=run features=none deps=unknown", "rust", "unknown or repeated"),
+            ("kind=run features=none deps=clock,clock", "rust", "unknown or repeated"),
+            ("kind=run features=none deps=", "rust", "empty consumer dependency"),
+            ("kind=run features=none deps=clock deps=clock-test-util", "rust", "repeated deps"),
+            ("kind=cargo features=none deps=clock", "toml", "Cargo example cannot"),
+        )
+        for annotation, language, message in cases:
+            with self.subTest(annotation=annotation):
+                with self.assertRaisesRegex(ValueError, rf"guide.zh_CN.md:2:.*{message}"):
+                    self.parse(f"<!-- retry-example: {annotation} -->\n```{language}\nexample\n```\n")
+
+    def test_consumer_manifest_omits_undeclared_clock_dependency(self):
+        self.assertNotIn("qubit-clock", self.consumer_manifest("kind=run features=none"))
+
+    def consumer_manifest(self, annotation):
+        example = self.parse(f"<!-- retry-example: {annotation} -->\n```rust\nfn main() {{}}\n```\n")[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Cargo.toml").write_text('[package]\nversion = "0.26.0"\n', encoding="utf-8")
+            return MODULE.consumer_manifest(root, example)
+
+    def test_consumer_manifest_adds_declared_clock_dependency(self):
+        manifest = self.consumer_manifest("kind=run features=none deps=clock")
+        self.assertIn('qubit-clock = "0.13"', manifest)
+        self.assertIn('serde_json = "1"', manifest)
+
+    def test_consumer_manifest_adds_test_util_clock_dependency(self):
+        manifest = self.consumer_manifest("kind=run features=none deps=clock-test-util")
+        self.assertIn('qubit-clock = { version = "0.13", features = ["test-util"] }', manifest)
+
+    def test_consumer_manifest_preserves_tokio_fixture(self):
+        manifest = self.consumer_manifest("kind=run features=tokio")
+        self.assertIn('tokio = { version = "1.52", features = ["rt", "macros", "time"] }', manifest)
+        self.assertIn('serde_json = "1"', manifest)
+
+    def test_bilingual_retry_session_guides_declare_direct_clock_dependency(self):
+        root = Path(__file__).parents[1]
+        for name in ("user_guide.md", "user_guide.zh_CN.md"):
+            with self.subTest(document=name):
+                content = (root / "doc" / name).read_text(encoding="utf-8")
+                example_offset = content.index("use qubit_clock::StdTimer;")
+                section_start = content.rfind("\n## ", 0, example_offset) + 1
+                example_annotation = content.rfind("<!-- retry-example:", 0, example_offset)
+                self.assertGreaterEqual(example_annotation, section_start)
+                self.assertEqual(
+                    content[example_annotation:content.index("\n", example_annotation)],
+                    "<!-- retry-example: kind=run features=none deps=clock -->",
+                )
+                self.assertIn("cargo add qubit-clock@0.13", content[section_start:example_annotation])
+
     def test_rust_modifiers_cannot_silently_skip_validation(self):
         with self.assertRaisesRegex(ValueError, "unsupported.*fence"):
             self.parse("```rust,ignore\nfn main() {}\n```\n")

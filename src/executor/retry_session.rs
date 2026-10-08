@@ -92,6 +92,17 @@ impl<E: 'static> RetrySession<E> {
     ///
     /// The timer supplies only the clock; this session never registers waits.
     /// Custom clock panics propagate. Callbacks do not run until admission.
+    ///
+    /// # Parameters
+    /// - `config`: Retry policy and completion callbacks, moved into the
+    ///   session and retained until completion.
+    /// - `timer`: Supplies the clock used to establish the session's origin and
+    ///   later control boundaries. The session does not register waits with
+    ///   this timer; its owner schedules any returned retry deadline.
+    ///
+    /// # Returns
+    /// A fresh session that owns the configuration and has not admitted an
+    /// attempt yet.
     #[inline]
     pub fn new(config: RetryConfig<E>, timer: Arc<dyn Timer>) -> Self {
         Self::new_inner(config, timer, None)
@@ -102,6 +113,18 @@ impl<E: 'static> RetrySession<E> {
     /// `config` and `timer` have the same ownership and clock semantics as
     /// [`Self::new`]. This constructor supports reproducible scheduling without
     /// changing the shared retry policy. Custom clock panics propagate.
+    ///
+    /// # Parameters
+    /// - `config`: Retry policy and completion callbacks, moved into the
+    ///   session and retained until completion.
+    /// - `timer`: Supplies the clock used to establish the session's origin and
+    ///   later control boundaries. The session does not register waits with
+    ///   this timer; its owner schedules any returned retry deadline.
+    /// - `random`: Supplies uniform samples for backoff and jitter decisions.
+    ///
+    /// # Returns
+    /// A fresh session that owns the configuration and has not admitted an
+    /// attempt yet.
     #[inline]
     pub fn new_with_random_source(
         config: RetryConfig<E>,
