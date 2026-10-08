@@ -29,7 +29,7 @@ impl RetryCancellationState {
     ///
     /// # Returns
     /// True after the first release of a cancellation request.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(in crate::executor) fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Acquire)
@@ -85,7 +85,6 @@ impl RetryCancellationState {
     ///
     /// # Returns
     /// Some removed waker, or None if cancellation already drained it.
-    #[inline(always)]
     pub(in crate::executor) fn unregister(&self, registration_id: u64) -> Option<Waker> {
         self.lock_waiters().unregister(registration_id)
     }

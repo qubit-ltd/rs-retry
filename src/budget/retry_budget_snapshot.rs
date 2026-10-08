@@ -60,7 +60,7 @@ impl RetryBudgetSnapshot {
     ///
     /// # Returns
     /// Committed admissions, including any still-active operation.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub const fn attempts(&self) -> u32 {
         self.attempts
@@ -70,7 +70,7 @@ impl RetryBudgetSnapshot {
     ///
     /// # Returns
     /// Cumulative completed-operation duration, excluding callbacks and waits.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub const fn operation_elapsed(&self) -> Duration {
         self.operation_elapsed
@@ -80,7 +80,7 @@ impl RetryBudgetSnapshot {
     ///
     /// # Returns
     /// Flow duration at the sample, including callbacks and waits.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub const fn total_elapsed(&self) -> Duration {
         self.total_elapsed
@@ -90,7 +90,7 @@ impl RetryBudgetSnapshot {
     ///
     /// # Returns
     /// Most recent completed-operation duration, or zero before completion.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub const fn attempt_elapsed(&self) -> Duration {
         self.attempt_elapsed

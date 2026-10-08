@@ -51,7 +51,6 @@ impl Serialize for RetryAdmissionLimits {
     ///
     /// # Errors
     /// Returns any serialization error reported by the destination.
-    #[inline(always)]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -116,7 +115,7 @@ impl RetryAdmissionLimits {
     /// # Returns
     /// Nonzero maximum count including the first operation.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn max_attempts(&self) -> NonZeroU32 {
         self.max_attempts
     }
@@ -127,7 +126,7 @@ impl RetryAdmissionLimits {
     /// Some cumulative operation duration limit, or None if unbounded.
     /// This budget cannot interrupt an already admitted operation.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn operation_time_budget(&self) -> Option<Duration> {
         self.operation_time_budget
     }
@@ -139,7 +138,7 @@ impl RetryAdmissionLimits {
     /// The duration includes callbacks and backoff; admitted success is
     /// preserved.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn total_time_budget(&self) -> Option<Duration> {
         self.total_time_budget
     }

@@ -106,7 +106,7 @@ impl RetryContext {
     /// # Returns
     /// The committed operation-attempt count. A callback before the first
     /// operation starts observes zero.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn attempts(&self) -> u32 {
         self.attempts
@@ -117,7 +117,7 @@ impl RetryContext {
     /// # Returns
     /// `Some(NonZeroU32)` for an attempt-related snapshot, or `None` when no
     /// attempt is current.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn current_attempt(&self) -> Option<NonZeroU32> {
         self.current_attempt
@@ -127,7 +127,7 @@ impl RetryContext {
     ///
     /// # Returns
     /// The configured maximum attempts, including the initial attempt.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn max_attempts(&self) -> u32 {
         self.max_attempts
@@ -137,7 +137,7 @@ impl RetryContext {
     ///
     /// # Returns
     /// The configured maximum retry count after the initial attempt.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn max_retries(&self) -> u32 {
         self.max_attempts.saturating_sub(1)
@@ -147,7 +147,7 @@ impl RetryContext {
     ///
     /// # Returns
     /// `Some(Duration)` for bounded retry flows, or `None` for unlimited flows.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn operation_time_budget(&self) -> Option<Duration> {
         self.operation_time_budget
@@ -157,7 +157,7 @@ impl RetryContext {
     ///
     /// # Returns
     /// `Some(Duration)` for bounded retry flows, or `None` for unlimited flows.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn total_time_budget(&self) -> Option<Duration> {
         self.total_time_budget
@@ -168,7 +168,7 @@ impl RetryContext {
     /// # Returns
     /// Total user operation time observed at this event. Listener execution and
     /// retry sleeps are excluded.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn operation_elapsed(&self) -> Duration {
         self.operation_elapsed
@@ -179,7 +179,7 @@ impl RetryContext {
     /// # Returns
     /// Total retry-flow time observed at this event. Operation execution, retry
     /// sleep, retry-after sleep, and retry-control listener time are included.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn total_elapsed(&self) -> Duration {
         self.total_elapsed
@@ -190,7 +190,7 @@ impl RetryContext {
     /// # Returns
     /// Last completed attempt elapsed time. Before the first completed attempt,
     /// this is zero.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn last_attempt_elapsed(&self) -> Duration {
         self.last_attempt_elapsed
@@ -204,7 +204,7 @@ impl RetryContext {
     /// continuation budgets only decide whether an attempt may start and are
     /// not represented as an attempt timeout. `None` means no current hard
     /// timeout is attached to this snapshot.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn current_hard_attempt_timeout(&self) -> Option<Duration> {
         self.current_hard_attempt_timeout
@@ -215,7 +215,7 @@ impl RetryContext {
     /// # Returns
     /// `Some(Duration)` while a selected delay is retained, including terminal
     /// snapshots; `None` before selection or after the next attempt resets it.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn next_delay(&self) -> Option<Duration> {
         self.next_delay
@@ -225,7 +225,7 @@ impl RetryContext {
     ///
     /// # Returns
     /// `Some(Duration)` when a retry rule supplied a hint; `None` otherwise.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn retry_after_hint(&self) -> Option<Duration> {
         self.retry_after_hint
@@ -238,7 +238,7 @@ impl RetryContext {
     ///
     /// # Returns
     /// A context carrying the selected delay.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn with_next_delay(mut self, delay: Duration) -> Self {
         self.next_delay = Some(delay);
         self
@@ -251,7 +251,7 @@ impl RetryContext {
     ///
     /// # Returns
     /// A copy with only the selected overlay field changed.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn with_retry_after_hint(mut self, hint: Option<Duration>) -> Self {
         self.retry_after_hint = hint;
         self
@@ -264,7 +264,7 @@ impl RetryContext {
     ///
     /// # Returns
     /// A copy with only the selected overlay field changed.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn with_hard_attempt_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.current_hard_attempt_timeout = timeout;
         self

@@ -38,7 +38,6 @@ pub(super) struct JitterStrategyDataRaw {
 ///
 /// # Errors
 /// Returns a deserializer error for a nonnumeric value, including null.
-#[inline(always)]
 fn deserialize_ratio<'de, D>(deserializer: D) -> Result<RatioField, D::Error>
 where
     D: Deserializer<'de>,

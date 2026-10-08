@@ -80,7 +80,7 @@ impl BackoffState {
     /// Zero before the first selection or after reset, otherwise the number
     /// of selected steps, saturating at `u32::MAX`.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn retry_index(&self) -> u32 {
         self.retry_index
     }
@@ -102,7 +102,7 @@ impl BackoffState {
     }
 
     /// Resets the retry index after a stable connection or completed flow.
-    #[inline(always)]
+    #[inline]
     pub fn reset(&mut self) {
         self.retry_index = 0;
     }

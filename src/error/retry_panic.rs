@@ -33,7 +33,7 @@ impl RetryPanic {
     /// `Some(&str)` for static and owned string payloads, or `None` for a
     /// non-string payload.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn message(&self) -> Option<&str> {
         match self {
             Self::StaticStr(message) => Some(message),

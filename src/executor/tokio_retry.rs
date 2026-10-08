@@ -53,7 +53,7 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
     ///
     /// # Returns
     /// This facade with the selected timeout.
-    #[inline(always)]
+    #[inline]
     pub fn hard_attempt_timeout(mut self, timeout: Duration) -> Self {
         self.inner = self.inner.hard_attempt_timeout(timeout);
         self
@@ -66,7 +66,7 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
     ///
     /// # Returns
     /// This facade with the selected timeout.
-    #[inline(always)]
+    #[inline]
     pub fn hard_flow_timeout(mut self, timeout: Duration) -> Self {
         self.inner = self.inner.hard_flow_timeout(timeout);
         self
@@ -79,7 +79,7 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
     ///
     /// # Returns
     /// This facade observing the supplied token.
-    #[inline(always)]
+    #[inline]
     pub fn cancellation_token(mut self, token: RetryCancellationToken) -> Self {
         self.inner = self.inner.cancellation_token(token);
         self
@@ -92,7 +92,7 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
     ///
     /// # Returns
     /// This facade using the supplied timer instead of its Tokio default.
-    #[inline(always)]
+    #[inline]
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
         self.inner = self.inner.timer(timer);
         self
@@ -105,7 +105,7 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
     ///
     /// # Returns
     /// This facade using the supplied random source.
-    #[inline(always)]
+    #[inline]
     pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
         self.inner = self.inner.random_source(random_source);
         self

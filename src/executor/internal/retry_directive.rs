@@ -20,7 +20,7 @@ impl RetryDirective {
     ///
     /// # Returns
     /// The selected delay capped by remaining hard-flow time.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(crate) fn sleep_duration(&self) -> Duration {
         self.sleep_duration

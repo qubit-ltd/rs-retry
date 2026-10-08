@@ -44,7 +44,7 @@ impl<E> AttemptFailure<E> {
     /// # Returns
     /// True for a captured hard timeout, false for application error or panic.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn is_timeout(&self) -> bool {
         matches!(self, Self::TimedOut { .. })
     }
@@ -55,7 +55,7 @@ impl<E> AttemptFailure<E> {
     /// `Some(&E)` for [`Self::Error`], or `None` for timeout and panic
     /// failures.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn as_error(&self) -> Option<&E> {
         match self {
             Self::Error(error) => Some(error),
@@ -68,7 +68,7 @@ impl<E> AttemptFailure<E> {
     /// # Returns
     /// `Some(RetryTimeoutScope)` for [`Self::TimedOut`], or `None` otherwise.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn timeout_scope(&self) -> Option<RetryTimeoutScope> {
         match self {
             Self::TimedOut { scope } => Some(*scope),
@@ -81,7 +81,7 @@ impl<E> AttemptFailure<E> {
     /// # Returns
     /// `Some(&RetryPanic)` for [`Self::Panicked`], or `None` otherwise.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn panic(&self) -> Option<&RetryPanic> {
         match self {
             Self::Panicked { panic } => Some(panic),

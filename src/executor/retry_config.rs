@@ -78,7 +78,6 @@ impl<E> Clone for RetryConfig<E> {
     ///
     /// # Returns
     /// A configuration sharing callbacks while retaining the same pure policy.
-    #[inline(always)]
     fn clone(&self) -> Self {
         Self {
             policy: self.policy.clone(),
@@ -94,7 +93,6 @@ impl<E: 'static> RetryConfig<E> {
     ///
     /// # Returns
     /// A builder with no custom rules or observers.
-    #[inline(always)]
     #[must_use = "configure and build the retry configuration"]
     pub fn builder() -> RetryConfigBuilder<E> {
         RetryConfigBuilder::new()
@@ -110,7 +108,7 @@ impl<E: 'static> RetryConfig<E> {
     ///
     /// # Returns
     /// A configuration owning the supplied components.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new(
         policy: RetryPolicy,
         fallback: RetryFallback,
@@ -130,13 +128,13 @@ impl<E: 'static> RetryConfig<E> {
     /// # Returns
     /// The borrowed immutable policy.
     #[must_use = "use the policy to inspect retry configuration"]
-    #[inline(always)]
+    #[inline]
     pub fn policy(&self) -> &RetryPolicy {
         &self.policy
     }
 
     /// Returns the configured fallback action for internal executors.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(crate) fn fallback(&self) -> RetryFallback {
         self.fallback
@@ -147,7 +145,7 @@ impl<E: 'static> RetryConfig<E> {
     ///
     /// # Returns
     /// The ordered rule collection borrowed from this configuration.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(crate) fn rules(&self) -> &RetryRules<E> {
         &self.rules
@@ -158,7 +156,7 @@ impl<E: 'static> RetryConfig<E> {
     ///
     /// # Returns
     /// The observer collection borrowed from this configuration.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(crate) fn observers(&self) -> &RetryObservers<E> {
         &self.observers

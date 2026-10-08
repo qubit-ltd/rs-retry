@@ -85,7 +85,7 @@ impl<'a, E: 'static> Retry<'a, E> {
     /// # Returns
     ///
     /// A synchronous facade that observes the supplied token.
-    #[inline(always)]
+    #[inline]
     pub fn cancellation_token(mut self, token: RetryCancellationToken) -> Self {
         self.cancellation_token = Some(token);
         self
@@ -98,7 +98,7 @@ impl<'a, E: 'static> Retry<'a, E> {
     ///
     /// # Returns
     /// This facade using the supplied runtime resource.
-    #[inline(always)]
+    #[inline]
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
         self.timer = Some(timer);
         self
@@ -111,7 +111,7 @@ impl<'a, E: 'static> Retry<'a, E> {
     ///
     /// # Returns
     /// This facade using the supplied runtime resource.
-    #[inline(always)]
+    #[inline]
     pub fn random_source(mut self, random: Arc<dyn RetryRandomSource>) -> Self {
         self.random_source = Some(random);
         self
@@ -145,7 +145,6 @@ impl<'a, E: 'static> Retry<'a, E> {
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
-    #[inline(always)]
     pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Result<T, E>,

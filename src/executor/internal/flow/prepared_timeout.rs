@@ -36,7 +36,7 @@ impl PreparedTimeout {
     ///
     /// # Returns
     /// An immutable timeout transaction.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(super) fn new(deadline: MonotonicInstant, duration: Duration, scope: RetryTimeoutScope) -> Self {
         Self {
@@ -50,7 +50,7 @@ impl PreparedTimeout {
     ///
     /// # Returns
     /// The original absolute deadline, unchanged during registration.
-    #[inline(always)]
+    #[inline]
     #[must_use = "inspect the prepared absolute deadline"]
     pub(super) fn deadline(self) -> MonotonicInstant {
         self.deadline
@@ -60,7 +60,7 @@ impl PreparedTimeout {
     ///
     /// # Returns
     /// The duration selected at admission.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(super) fn duration(self) -> Duration {
         self.duration
@@ -70,7 +70,7 @@ impl PreparedTimeout {
     ///
     /// # Returns
     /// The selected hard-timeout source.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(super) fn scope(self) -> RetryTimeoutScope {
         self.scope

@@ -29,7 +29,7 @@ impl RetryAttempt {
     ///
     /// # Returns
     /// The committed one-based admission ordinal, independent of callbacks.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub const fn number(&self) -> u32 {
         self.number

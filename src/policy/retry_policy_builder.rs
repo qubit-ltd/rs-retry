@@ -80,7 +80,7 @@ impl RetryPolicyBuilder {
     ///
     /// # Returns
     /// The owned builder retaining the requested count.
-    #[inline(always)]
+    #[inline]
     pub fn max_attempts(mut self, max_attempts: u32) -> Self {
         self.max_attempts = max_attempts;
         self
@@ -93,7 +93,7 @@ impl RetryPolicyBuilder {
     ///
     /// # Returns
     /// The owned builder with that budget enabled.
-    #[inline(always)]
+    #[inline]
     pub fn operation_time_budget(mut self, elapsed: Duration) -> Self {
         self.operation_time_budget = Some(elapsed);
         self
@@ -107,7 +107,7 @@ impl RetryPolicyBuilder {
     ///
     /// # Returns
     /// The owned builder with the optional budget replaced.
-    #[inline(always)]
+    #[inline]
     pub fn operation_time_budget_opt(mut self, elapsed: Option<Duration>) -> Self {
         self.operation_time_budget = elapsed;
         self
@@ -117,7 +117,7 @@ impl RetryPolicyBuilder {
     ///
     /// # Returns
     /// The owned builder with the corresponding elapsed budget disabled.
-    #[inline(always)]
+    #[inline]
     pub fn without_operation_time_budget(mut self) -> Self {
         self.operation_time_budget = None;
         self
@@ -130,7 +130,7 @@ impl RetryPolicyBuilder {
     ///
     /// # Returns
     /// The owned builder with that budget enabled.
-    #[inline(always)]
+    #[inline]
     pub fn total_time_budget(mut self, elapsed: Duration) -> Self {
         self.total_time_budget = Some(elapsed);
         self
@@ -144,7 +144,7 @@ impl RetryPolicyBuilder {
     ///
     /// # Returns
     /// The owned builder with the optional budget replaced.
-    #[inline(always)]
+    #[inline]
     pub fn total_time_budget_opt(mut self, elapsed: Option<Duration>) -> Self {
         self.total_time_budget = elapsed;
         self
@@ -154,7 +154,7 @@ impl RetryPolicyBuilder {
     ///
     /// # Returns
     /// The owned builder with the corresponding elapsed budget disabled.
-    #[inline(always)]
+    #[inline]
     pub fn without_total_time_budget(mut self) -> Self {
         self.total_time_budget = None;
         self
@@ -168,7 +168,7 @@ impl RetryPolicyBuilder {
     ///
     /// # Returns
     /// The owned builder with the supplied delay configuration.
-    #[inline(always)]
+    #[inline]
     pub fn backoff(mut self, backoff: BackoffPolicy) -> Self {
         self.backoff = backoff;
         self
@@ -198,7 +198,7 @@ impl Default for RetryPolicyBuilder {
     ///
     /// # Returns
     /// A default builder ready for explicit policy customization.
-    #[inline(always)]
+    #[inline]
     fn default() -> Self {
         Self::new()
     }

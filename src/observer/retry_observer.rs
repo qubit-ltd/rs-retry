@@ -34,7 +34,6 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     /// # Parameters
     /// - `_context`: Borrowed frozen success snapshot, excluding this
     ///   callback's time.
-    #[inline(always)]
     fn on_success(&self, _context: &RetryContext) {}
 
     /// Observes a terminal failure with its frozen context.
@@ -52,7 +51,6 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     /// - `_failure`: Borrowed frozen terminal reason; observation cannot
     ///   replace it.
     /// - `_context`: Borrowed snapshot, including failures before admission.
-    #[inline(always)]
     fn on_terminal_failure(&self, _reason: &RetryErrorReason, _context: &RetryContext) {}
 
     /// Observes the context before an attempt is admitted.
@@ -62,7 +60,6 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     ///   admissions.
     ///
     /// A panic is captured as a control failure when invoked by an executor.
-    #[inline(always)]
     fn on_before_attempt(&self, _context: &RetryContext) {}
 
     /// Observes one committed attempt failure.
@@ -73,7 +70,6 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     ///   selection.
     ///
     /// A panic is captured as a control failure when invoked by an executor.
-    #[inline(always)]
     fn on_attempt_failed(&self, _failure: &AttemptFailure<E>, _context: &RetryContext) {}
 
     /// Observes a delay that currently fits the continuation budgets.
@@ -88,7 +84,6 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     /// - `_context`: Provisional scheduling snapshot, not a new admission.
     ///
     /// A panic is captured as a control failure when invoked by an executor.
-    #[inline(always)]
     fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {}
 }
 
@@ -104,7 +99,6 @@ where
     ///
     /// # Panics
     /// Propagates a closure panic to the executor's callback capture boundary.
-    #[inline(always)]
     fn on_attempt_failed(&self, failure: &AttemptFailure<E>, context: &RetryContext) {
         self(failure, context);
     }

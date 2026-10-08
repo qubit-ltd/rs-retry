@@ -152,7 +152,6 @@ impl BackoffPolicy {
     /// # Returns
     /// Fresh state at retry index zero, owning a policy clone and thread RNG.
     #[must_use]
-    #[inline(always)]
     pub fn start(&self) -> BackoffState {
         BackoffState::new_thread(self.clone())
     }
@@ -166,7 +165,6 @@ impl BackoffPolicy {
     /// Fresh state at index zero; the source is shared and the policy is
     /// cloned.
     #[must_use]
-    #[inline(always)]
     pub fn start_with_random_source(&self, random: Arc<dyn RetryRandomSource>) -> BackoffState {
         BackoffState::new(self.clone(), random)
     }
@@ -175,7 +173,7 @@ impl BackoffPolicy {
     ///
     /// # Returns
     /// `Some(limit)` for an explicit final cap, or `None` for no final cap.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn delay_limit(&self) -> Option<Duration> {
         self.delay_limit
@@ -189,7 +187,7 @@ impl BackoffPolicy {
     /// `Some(maximum)` for every current bounded base strategy. The optional
     /// return leaves room for a future strategy without a finite maximum.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn maximum_delay(&self) -> Option<Duration> {
         match &self.strategy {
             BackoffStrategy::Immediate => Some(Duration::ZERO),
@@ -203,7 +201,7 @@ impl BackoffPolicy {
     /// # Returns
     /// The owned policy with variation disabled, retaining hints and the final
     /// cap.
-    #[inline(always)]
+    #[inline]
     pub fn without_jitter(mut self) -> Self {
         self.jitter = JitterStrategy::None;
         self
@@ -213,7 +211,7 @@ impl BackoffPolicy {
     ///
     /// # Returns
     /// The owned policy sampling from zero through each eligible delay.
-    #[inline(always)]
+    #[inline]
     pub fn with_full_jitter(mut self) -> Self {
         self.jitter = JitterStrategy::Full;
         self
@@ -240,7 +238,7 @@ impl BackoffPolicy {
     ///
     /// # Returns
     /// The owned policy selecting an available hint before the final cap.
-    #[inline(always)]
+    #[inline]
     pub fn prefer_retry_after(mut self) -> Self {
         self.retry_after = RetryAfterStrategy::PreferHint;
         self
@@ -254,7 +252,7 @@ impl BackoffPolicy {
     /// # Returns
     /// The owned policy taking the larger of the hint and jittered policy
     /// delay.
-    #[inline(always)]
+    #[inline]
     pub fn use_retry_after_as_minimum(mut self) -> Self {
         self.retry_after = RetryAfterStrategy::AtLeastBackoff;
         self
@@ -264,7 +262,7 @@ impl BackoffPolicy {
     ///
     /// # Returns
     /// The owned policy resolving delays without caller hints.
-    #[inline(always)]
+    #[inline]
     pub fn ignore_retry_after(mut self) -> Self {
         self.retry_after = RetryAfterStrategy::IgnoreHint;
         self
@@ -282,7 +280,7 @@ impl BackoffPolicy {
     ///
     /// # Returns
     /// The owned policy with the cap applied after all other transformations.
-    #[inline(always)]
+    #[inline]
     pub fn limit_delay(mut self, limit: Duration) -> Self {
         self.delay_limit = Some(limit);
         self
@@ -477,7 +475,6 @@ impl Serialize for BackoffPolicy {
     ///
     /// # Errors
     /// Returns any serialization error reported by the destination.
-    #[inline(always)]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

@@ -50,7 +50,7 @@ impl RetryInfrastructureFailure {
     /// `Some(&str)` for clock, timer, and worker-spawn failures, or `None` for
     /// a worker that remained running or whose event channel closed.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn message(&self) -> Option<&str> {
         match self {
             Self::Clock { message } | Self::Timer { message } => Some(message),
@@ -67,7 +67,7 @@ impl RetryInfrastructureFailure {
     /// `Some(WorkerStopTrigger)` for `WorkerStillRunning`, or `None` for other
     /// infrastructure failures.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     #[cfg(feature = "worker")]
     pub fn worker_stop_trigger(&self) -> Option<WorkerStopTrigger> {
         match self {

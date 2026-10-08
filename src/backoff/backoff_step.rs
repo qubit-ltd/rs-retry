@@ -56,7 +56,7 @@ impl BackoffStep {
     /// # Returns
     /// The one-based ordinal assigned when selecting this step.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn retry_index(&self) -> u32 {
         self.retry_index
     }
@@ -66,7 +66,7 @@ impl BackoffStep {
     /// # Returns
     /// The base strategy delay before hint, jitter, and final cap.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn base_delay(&self) -> Duration {
         self.base_delay
     }
@@ -77,7 +77,7 @@ impl BackoffStep {
     /// The final policy delay; an executor may further cap sleep at its
     /// hard-flow deadline.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn effective_delay(&self) -> Duration {
         self.effective_delay
     }
@@ -87,7 +87,7 @@ impl BackoffStep {
     /// # Returns
     /// The rule by which policy and any caller hint were combined.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn source(&self) -> BackoffDelaySource {
         self.source
     }

@@ -108,7 +108,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Returns
     /// This facade with the selected hard timeout enabled.
-    #[inline(always)]
+    #[inline]
     pub fn hard_attempt_timeout(mut self, timeout: Duration) -> Self {
         self.attempt_timeout = Some(timeout);
         self
@@ -122,7 +122,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Returns
     /// This facade with the selected hard timeout enabled.
-    #[inline(always)]
+    #[inline]
     pub fn hard_flow_timeout(mut self, timeout: Duration) -> Self {
         self.flow_timeout = Some(timeout);
         self
@@ -140,7 +140,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Returns
     /// This facade with the supplied cleanup bound.
-    #[inline(always)]
+    #[inline]
     pub fn cancellation_grace(mut self, grace: Duration) -> Self {
         self.cancellation_grace = grace;
         self
@@ -153,7 +153,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Returns
     /// A worker facade that observes the supplied token.
-    #[inline(always)]
+    #[inline]
     pub fn cancellation_token(mut self, token: RetryCancellationToken) -> Self {
         self.cancellation_token = Some(token);
         self
@@ -166,7 +166,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Returns
     /// A worker facade using the supplied thread name.
-    #[inline(always)]
+    #[inline]
     pub fn thread_name(mut self, name: &str) -> Self {
         self.thread_name = name.into();
         self
@@ -179,7 +179,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Returns
     /// A worker facade using the supplied stack size.
-    #[inline(always)]
+    #[inline]
     pub fn worker_stack_size(mut self, stack_size: usize) -> Self {
         self.stack_size = Some(stack_size);
         self
@@ -195,7 +195,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Returns
     /// This facade using the supplied runtime resource.
-    #[inline(always)]
+    #[inline]
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
         self.timer = Some(timer);
         self
@@ -208,7 +208,7 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Returns
     /// This facade using the supplied runtime resource.
-    #[inline(always)]
+    #[inline]
     pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
         self.random_source = Some(random_source);
         self
@@ -241,7 +241,6 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
-    #[inline(always)]
     pub fn run<T, F>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         T: Send + 'static,

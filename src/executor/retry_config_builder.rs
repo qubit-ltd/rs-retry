@@ -56,7 +56,7 @@ pub struct RetryConfigBuilder<E> {
 
 impl<E: 'static> RetryConfigBuilder<E> {
     /// Creates a builder with default policy limits.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn new() -> Self {
         Self {
             policy_builder: RetryPolicyBuilder::new(),
@@ -71,14 +71,14 @@ impl<E: 'static> RetryConfigBuilder<E> {
     ///
     /// Later policy-builder methods replace this override by rebuilding the
     /// embedded builder from the supplied policy.
-    #[inline(always)]
+    #[inline]
     pub fn policy(mut self, policy: RetryPolicy) -> Self {
         self.built_policy = Some(policy);
         self
     }
 
     /// Sets the maximum number of attempts, including the first attempt.
-    #[inline(always)]
+    #[inline]
     pub fn max_attempts(mut self, max_attempts: u32) -> Self {
         self.ensure_policy_builder();
         self.policy_builder = self.policy_builder.max_attempts(max_attempts);
@@ -86,7 +86,7 @@ impl<E: 'static> RetryConfigBuilder<E> {
     }
 
     /// Sets the cumulative operation-time budget.
-    #[inline(always)]
+    #[inline]
     pub fn operation_time_budget(mut self, elapsed: Duration) -> Self {
         self.ensure_policy_builder();
         self.policy_builder = self.policy_builder.operation_time_budget(elapsed);
@@ -94,7 +94,7 @@ impl<E: 'static> RetryConfigBuilder<E> {
     }
 
     /// Sets or removes the cumulative operation-time budget.
-    #[inline(always)]
+    #[inline]
     pub fn operation_time_budget_opt(mut self, elapsed: Option<Duration>) -> Self {
         self.ensure_policy_builder();
         self.policy_builder = self.policy_builder.operation_time_budget_opt(elapsed);
@@ -102,7 +102,7 @@ impl<E: 'static> RetryConfigBuilder<E> {
     }
 
     /// Removes the cumulative operation-time budget.
-    #[inline(always)]
+    #[inline]
     pub fn without_operation_time_budget(mut self) -> Self {
         self.ensure_policy_builder();
         self.policy_builder = self.policy_builder.without_operation_time_budget();
@@ -110,7 +110,7 @@ impl<E: 'static> RetryConfigBuilder<E> {
     }
 
     /// Sets the whole-flow monotonic elapsed budget.
-    #[inline(always)]
+    #[inline]
     pub fn total_time_budget(mut self, elapsed: Duration) -> Self {
         self.ensure_policy_builder();
         self.policy_builder = self.policy_builder.total_time_budget(elapsed);
@@ -118,7 +118,7 @@ impl<E: 'static> RetryConfigBuilder<E> {
     }
 
     /// Sets or removes the whole-flow budget.
-    #[inline(always)]
+    #[inline]
     pub fn total_time_budget_opt(mut self, elapsed: Option<Duration>) -> Self {
         self.ensure_policy_builder();
         self.policy_builder = self.policy_builder.total_time_budget_opt(elapsed);
@@ -126,7 +126,7 @@ impl<E: 'static> RetryConfigBuilder<E> {
     }
 
     /// Removes the whole-flow monotonic elapsed budget.
-    #[inline(always)]
+    #[inline]
     pub fn without_total_time_budget(mut self) -> Self {
         self.ensure_policy_builder();
         self.policy_builder = self.policy_builder.without_total_time_budget();
@@ -134,7 +134,7 @@ impl<E: 'static> RetryConfigBuilder<E> {
     }
 
     /// Sets the pure backoff policy.
-    #[inline(always)]
+    #[inline]
     pub fn backoff(mut self, backoff: BackoffPolicy) -> Self {
         self.ensure_policy_builder();
         self.policy_builder = self.policy_builder.backoff(backoff);
@@ -143,7 +143,6 @@ impl<E: 'static> RetryConfigBuilder<E> {
 
     /// Appends a rule. Rules are evaluated in registration order; the first
     /// non-`UseDefault` decision wins.
-    #[inline(always)]
     pub fn rule<R>(mut self, rule: R) -> Self
     where
         R: RetryRule<E>,
@@ -153,21 +152,21 @@ impl<E: 'static> RetryConfigBuilder<E> {
     }
 
     /// Sets the action for an application error left unclassified by rules.
-    #[inline(always)]
+    #[inline]
     pub fn fallback(mut self, fallback: RetryFallback) -> Self {
         self.fallback = fallback;
         self
     }
 
     /// Appends an already shared rule without wrapping it in another `Arc`.
-    #[inline(always)]
+    #[inline]
     pub fn shared_rule(mut self, rule: Arc<dyn RetryRule<E>>) -> Self {
         self.rules.push(rule);
         self
     }
 
     /// Appends an already shared observer without wrapping it in another `Arc`.
-    #[inline(always)]
+    #[inline]
     pub fn shared_observer(mut self, observer: Arc<dyn RetryObserver<E>>) -> Self {
         self.observers.push(observer);
         self
@@ -176,7 +175,6 @@ impl<E: 'static> RetryConfigBuilder<E> {
     /// Appends an observer. A control callback panic terminates execution with
     /// `RetryErrorReason::CallbackFailed`; completion callback panics are
     /// retained as diagnostics without changing the frozen result.
-    #[inline(always)]
     pub fn observer<O>(mut self, observer: O) -> Self
     where
         O: RetryObserver<E>,
@@ -208,7 +206,6 @@ impl<E: 'static> RetryConfigBuilder<E> {
     }
 
     /// Ensures later policy-builder calls mutate an embedded builder.
-    #[inline(always)]
     fn ensure_policy_builder(&mut self) {
         if let Some(policy) = self.built_policy.take() {
             self.policy_builder = RetryPolicyBuilder::from_policy(policy);

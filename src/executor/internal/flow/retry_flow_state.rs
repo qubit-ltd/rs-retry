@@ -74,7 +74,7 @@ impl RetryFlowState {
     ///
     /// # Returns
     /// True when an enabled hard-flow limit has been reached.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(crate) fn flow_timed_out(&self) -> bool {
         self.flow_timeout
@@ -86,7 +86,6 @@ impl RetryFlowState {
     /// # Returns
     /// Some first exhausted continuation budget, or None if all admit another
     /// action.
-    #[inline(always)]
     #[must_use]
     pub(crate) fn continuation_limit(&self) -> Option<RetryLimitKind> {
         self.budget.retry_limit(Duration::ZERO)
@@ -100,7 +99,6 @@ impl RetryFlowState {
     /// # Returns
     /// Some first budget violated by continuing after this delay, or None if it
     /// fits.
-    #[inline(always)]
     #[must_use]
     pub(crate) fn retry_limit(&self, delay: Duration) -> Option<RetryLimitKind> {
         self.budget.retry_limit(delay)
@@ -111,7 +109,7 @@ impl RetryFlowState {
     /// # Returns
     /// Some saturating remaining time for a hard-flow limit, or None if
     /// unlimited.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(crate) fn flow_remaining(&self) -> Option<Duration> {
         self.flow_timeout
@@ -142,7 +140,6 @@ impl RetryFlowState {
     /// # Returns
     /// Some shortest enabled limit, or None without any hard timeout; ties
     /// belong to Attempt.
-    #[inline(always)]
     #[must_use]
     pub(crate) fn effective_timeout(&self, attempt_timeout: Option<Duration>) -> Option<EffectiveTimeout> {
         EffectiveTimeout::select(attempt_timeout, self.flow_remaining())
@@ -219,7 +216,6 @@ impl RetryFlowState {
     ///
     /// # Returns
     /// Unit after updating total elapsed time.
-    #[inline(always)]
     pub(crate) fn refresh(&mut self, now: MonotonicInstant) -> Result<(), TimeError> {
         self.budget.refresh(now)
     }
@@ -228,7 +224,6 @@ impl RetryFlowState {
     ///
     /// # Parameters
     /// - `now`: Coherent admission sample after all gates pass.
-    #[inline(always)]
     pub(crate) fn begin_attempt(&mut self, now: MonotonicInstant) {
         self.budget.begin_attempt(now);
     }
@@ -244,7 +239,6 @@ impl RetryFlowState {
     /// # Errors
     /// Returns a clock-domain or regression error; no incoherent elapsed value
     /// is committed.
-    #[inline(always)]
     pub(crate) fn finish_attempt(&mut self, now: MonotonicInstant) -> Result<(), TimeError> {
         self.budget.finish_attempt(now)
     }

@@ -52,7 +52,7 @@ impl RetryCancellationToken {
     /// # Returns
     /// A token whose cancellation flag is initially `false`.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }
@@ -63,7 +63,7 @@ impl RetryCancellationToken {
     /// A future borrowing this token. Dropping a pending future unregisters its
     /// waker.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn cancelled(&self) -> RetryCancelled<'_> {
         RetryCancelled::new(self)
     }
@@ -83,7 +83,7 @@ impl RetryCancellationToken {
     ///
     /// `true` when both tokens refer to the same cancellation source; `false`
     /// otherwise.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn shares_source_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.state, &other.state)
@@ -94,7 +94,7 @@ impl RetryCancellationToken {
     /// # Returns
     /// `true` after this token or any of its clones has been cancelled.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn is_cancelled(&self) -> bool {
         self.state.is_cancelled()
     }
@@ -105,7 +105,7 @@ impl RetryCancellationToken {
     /// The first call permanently marks this token and all its clones as
     /// cancelled. Wakers are invoked after the internal registry lock has been
     /// released. Later calls have no effect.
-    #[inline(always)]
+    #[inline]
     pub fn cancel(&self) {
         self.state.cancel();
     }

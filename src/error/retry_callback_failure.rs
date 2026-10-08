@@ -55,7 +55,7 @@ impl RetryCallbackFailure {
     /// # Returns
     /// Rule or observer category recorded when the panic was captured.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn callback(&self) -> RetryCallbackKind {
         self.callback
     }
@@ -65,7 +65,7 @@ impl RetryCallbackFailure {
     /// # Returns
     /// Zero-based registration position within the callback collection.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn index(&self) -> usize {
         self.index
     }
@@ -75,7 +75,7 @@ impl RetryCallbackFailure {
     /// # Returns
     /// Lifecycle phase observed at the capture boundary.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn phase(&self) -> RetryCallbackPhase {
         self.phase
     }
@@ -85,7 +85,7 @@ impl RetryCallbackFailure {
     /// # Returns
     /// Borrowed payload representation; no downcast or allocation occurs.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn panic(&self) -> &RetryPanic {
         &self.panic
     }

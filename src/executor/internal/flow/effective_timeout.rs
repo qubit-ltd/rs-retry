@@ -61,7 +61,7 @@ impl EffectiveTimeout {
     /// # Returns
     /// The selected hard timeout duration.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub(crate) fn duration(self) -> Duration {
         self.duration
     }
@@ -71,7 +71,7 @@ impl EffectiveTimeout {
     /// # Returns
     /// The boundary that wins, with Attempt winning exact ties.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub(crate) fn scope(self) -> RetryTimeoutScope {
         self.scope
     }

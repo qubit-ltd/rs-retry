@@ -49,7 +49,6 @@ where
     ///
     /// # Panics
     /// Propagates closure panic to the executor's rule capture boundary.
-    #[inline(always)]
     fn decide(&self, failure: &AttemptFailure<E>, context: &RetryContext) -> RetryDecision {
         self(failure, context)
     }

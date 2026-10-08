@@ -64,7 +64,7 @@ impl<T> RetrySuccess<T> {
     ///
     /// # Returns
     /// The successful value borrowed without cloning.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn value(&self) -> &T {
         &self.value
@@ -74,7 +74,7 @@ impl<T> RetrySuccess<T> {
     ///
     /// # Returns
     /// The frozen terminal context borrowed from this result.
-    #[inline(always)]
+    #[inline]
     #[must_use = "inspect the final retry context"]
     pub fn context(&self) -> &RetryContext {
         &self.context
@@ -89,7 +89,7 @@ impl<T> RetrySuccess<T> {
     /// The ordered diagnostics; an empty slice means no completion callback
     /// panicked.
     #[must_use = "inspect completion observer diagnostics"]
-    #[inline(always)]
+    #[inline]
     pub fn completion_callback_failures(&self) -> &[RetryCallbackFailure] {
         &self.completion_callback_failures
     }
@@ -101,7 +101,6 @@ impl<T> RetrySuccess<T> {
     /// # Returns
     /// The owned value, context, and diagnostics, without information loss.
     #[must_use = "consume the terminal result, context and completion diagnostics"]
-    #[inline(always)]
     pub fn into_parts(self) -> (T, RetryContext, Vec<RetryCallbackFailure>) {
         (self.value, self.context, self.completion_callback_failures)
     }
@@ -112,7 +111,7 @@ impl<T> RetrySuccess<T> {
     ///
     /// # Returns
     /// The owned successful value; context and diagnostics are dropped.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub fn into_value_discarding_diagnostics(self) -> T {
         self.value
@@ -123,7 +122,6 @@ impl<T> RetrySuccess<T> {
     /// # Parameters
     /// - `failures`: Ordered completion diagnostics replacing the empty
     ///   collection.
-    #[inline(always)]
     pub(crate) fn set_completion_callback_failures(&mut self, failures: Vec<RetryCallbackFailure>) {
         self.completion_callback_failures = failures;
     }

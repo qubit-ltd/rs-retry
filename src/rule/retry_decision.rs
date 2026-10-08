@@ -43,7 +43,7 @@ impl RetryDecision {
     /// Some delay for either hint-carrying retry decision, or None for
     /// delegate, plain retry, and abort. Hint presence alone does not
     /// authorize admission.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(crate) fn retry_after_hint(self) -> Option<Duration> {
         match self {

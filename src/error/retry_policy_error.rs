@@ -42,7 +42,7 @@ impl RetryPolicyError {
     /// # Returns
     /// Borrowed dotted configuration path identifying the rejected value.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn field(&self) -> &str {
         &self.field
     }
@@ -52,7 +52,7 @@ impl RetryPolicyError {
     /// # Returns
     /// Borrowed validation explanation, without allocating a display string.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn message(&self) -> &str {
         &self.message
     }

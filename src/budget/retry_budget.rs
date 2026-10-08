@@ -96,7 +96,6 @@ impl<'a> RetryBudget<'a> {
     ///
     /// # Errors
     /// Returns `Clock` for a domain mismatch or sample regression.
-    #[inline(always)]
     #[must_use = "handle the budget snapshot result"]
     pub fn snapshot(&self) -> Result<RetryBudgetSnapshot, RetryBudgetError> {
         Ok(self.state.snapshot_at(self.clock.now())?)

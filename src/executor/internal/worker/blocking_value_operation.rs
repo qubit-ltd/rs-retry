@@ -33,7 +33,7 @@ impl<T, F> BlockingValueOperation<T, F> {
     ///
     /// # Returns
     /// A new adapter with no captured value.
-    #[inline(always)]
+    #[inline]
     #[must_use = "use the prepared value or inspect the result"]
     pub(in crate::executor) fn new(operation: F) -> Self {
         Self {
@@ -50,7 +50,6 @@ impl<T, F> BlockingValueOperation<T, F> {
     /// # Panics
     /// Panics only if the retry loop reports success without a successful
     /// operation result, which would indicate an internal logic error.
-    #[inline(always)]
     pub(in crate::executor) fn take_value(&self) -> T {
         let mut value = self.value.lock().unwrap_or_else(PoisonError::into_inner);
         value.take().expect("retry loop succeeded without an operation value")

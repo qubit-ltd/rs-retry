@@ -115,7 +115,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     ///
     /// # Returns
     /// This facade with the selected hard timeout enabled.
-    #[inline(always)]
+    #[inline]
     pub fn hard_attempt_timeout(mut self, timeout: Duration) -> Self {
         self.attempt_timeout = Some(timeout);
         self
@@ -129,7 +129,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     ///
     /// # Returns
     /// This facade with the selected hard timeout enabled.
-    #[inline(always)]
+    #[inline]
     pub fn hard_flow_timeout(mut self, timeout: Duration) -> Self {
         self.flow_timeout = Some(timeout);
         self
@@ -142,7 +142,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     ///
     /// # Returns
     /// This facade observing the supplied source.
-    #[inline(always)]
+    #[inline]
     pub fn cancellation_token(mut self, token: RetryCancellationToken) -> Self {
         self.cancellation_token = Some(token);
         self
@@ -155,7 +155,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     ///
     /// # Returns
     /// This facade using the supplied runtime resource.
-    #[inline(always)]
+    #[inline]
     pub fn timer(mut self, timer: Arc<dyn Timer>) -> Self {
         self.timer = Some(timer);
         self
@@ -168,7 +168,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     ///
     /// # Returns
     /// This facade using the supplied runtime resource.
-    #[inline(always)]
+    #[inline]
     pub fn random_source(mut self, random_source: Arc<dyn RetryRandomSource>) -> Self {
         self.random_source = Some(random_source);
         self
@@ -204,7 +204,6 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
-    #[inline(always)]
     pub async fn run<T, F, Fut>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,

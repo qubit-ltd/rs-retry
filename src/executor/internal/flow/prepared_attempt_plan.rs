@@ -45,7 +45,7 @@ impl PreparedAttemptPlan {
     /// # Returns
     /// `Some` containing the registered absolute deadline for a bounded
     /// attempt; None for an unbounded attempt.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(crate) fn deadline(&self) -> Option<MonotonicInstant> {
         self.timeout.map(PreparedTimeout::deadline)
@@ -56,7 +56,7 @@ impl PreparedAttemptPlan {
     /// # Returns
     /// `Some` containing the responsible timeout boundary for a bounded
     /// attempt; None for an unbounded attempt.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(crate) fn scope(&self) -> Option<RetryTimeoutScope> {
         self.timeout.map(PreparedTimeout::scope)
@@ -67,7 +67,7 @@ impl PreparedAttemptPlan {
     /// # Returns
     /// `Some` containing the admission-time duration for a bounded attempt;
     /// None for an unbounded attempt.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(super) fn duration(&self) -> Option<Duration> {
         self.timeout.map(PreparedTimeout::duration)
@@ -78,7 +78,7 @@ impl PreparedAttemptPlan {
     /// # Returns
     /// `Some` containing the deadline and its source for a bounded attempt;
     /// None for an unbounded attempt.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(super) fn deadline_and_scope(&self) -> Option<(MonotonicInstant, RetryTimeoutScope)> {
         self.timeout.map(|timeout| (timeout.deadline(), timeout.scope()))

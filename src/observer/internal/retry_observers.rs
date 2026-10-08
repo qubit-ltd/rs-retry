@@ -77,7 +77,6 @@ impl<E: 'static> RetryObservers<E> {
     ///
     /// # Errors
     /// Returns the first captured observer panic; later observers do not run.
-    #[inline(always)]
     pub(crate) fn try_before_attempt(&self, context: &RetryContext) -> Result<(), RetryCallbackFailure> {
         self.try_each(RetryCallbackPhase::BeforeAttempt, |observer| {
             observer.on_before_attempt(context)
@@ -95,7 +94,6 @@ impl<E: 'static> RetryObservers<E> {
     ///
     /// # Errors
     /// Returns the first captured observer panic; later observers do not run.
-    #[inline(always)]
     pub(crate) fn try_attempt_failed(
         &self,
         failure: &AttemptFailure<E>,
@@ -118,7 +116,6 @@ impl<E: 'static> RetryObservers<E> {
     ///
     /// # Errors
     /// Returns the first captured observer panic; later observers do not run.
-    #[inline(always)]
     pub(crate) fn try_retry_scheduled(
         &self,
         backoff: &BackoffStep,
@@ -140,7 +137,6 @@ impl<E: 'static> RetryObservers<E> {
     /// # Returns
     /// Every captured completion panic in registration order; no allocation
     /// when no callback panics. The original outcome is not changed.
-    #[inline(always)]
     pub(crate) fn notify_success(&self, context: &RetryContext) -> Vec<RetryCallbackFailure> {
         self.notify_each(RetryCallbackPhase::Success, |observer| observer.on_success(context))
     }
@@ -157,7 +153,6 @@ impl<E: 'static> RetryObservers<E> {
     /// # Returns
     /// Every captured completion panic in registration order; no allocation
     /// when no callback panics. The original outcome is not changed.
-    #[inline(always)]
     pub(crate) fn notify_terminal_failure(
         &self,
         reason: &RetryErrorReason,

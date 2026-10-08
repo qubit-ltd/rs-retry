@@ -67,7 +67,7 @@ impl RetryBudgetState {
     ///
     /// # Returns
     /// The original sample, used to anchor absolute flow timeouts.
-    #[inline(always)]
+    #[inline]
     #[must_use = "use the flow start instant"]
     pub(crate) fn started_at(&self) -> MonotonicInstant {
         self.started_at
@@ -77,7 +77,6 @@ impl RetryBudgetState {
     ///
     /// # Returns
     /// True exactly while an admitted operation has not been finished.
-    #[inline(always)]
     #[must_use]
     pub(crate) fn has_active_attempt(&self) -> bool {
         self.attempt_started_at.is_some()
@@ -87,7 +86,6 @@ impl RetryBudgetState {
     ///
     /// # Returns
     /// Committed admissions, never exceeding the validated maximum.
-    #[inline(always)]
     #[must_use]
     pub(crate) fn attempts(&self) -> u32 {
         self.attempts.used()

@@ -67,7 +67,6 @@ impl Serialize for RetryPolicy {
     ///
     /// # Errors
     /// Returns any serialization error reported by the destination.
-    #[inline(always)]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -108,7 +107,6 @@ impl RetryPolicy {
     /// # Returns
     /// A builder defaulting to three attempts, immediate backoff and no elapsed
     /// limits.
-    #[inline(always)]
     pub fn builder() -> RetryPolicyBuilder {
         RetryPolicyBuilder::new()
     }
@@ -131,7 +129,7 @@ impl RetryPolicy {
     /// # Returns
     /// Borrowed immutable limits; inspecting them does not start a flow.
     #[must_use = "inspect the retry limits"]
-    #[inline(always)]
+    #[inline]
     pub fn admission_limits(&self) -> &RetryAdmissionLimits {
         &self.limits
     }
@@ -141,7 +139,7 @@ impl RetryPolicy {
     /// # Returns
     /// Borrowed immutable delay policy shared conceptually across executions.
     #[must_use = "inspect the backoff configuration"]
-    #[inline(always)]
+    #[inline]
     pub fn backoff(&self) -> &BackoffPolicy {
         &self.backoff
     }

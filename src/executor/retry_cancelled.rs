@@ -33,7 +33,7 @@ impl<'a> RetryCancelled<'a> {
     ///
     /// # Returns
     /// An unregistered future; its first pending poll registers the waker.
-    #[inline(always)]
+    #[inline]
     #[must_use = "use the prepared value or inspect the result"]
     pub(super) fn new(token: &'a RetryCancellationToken) -> Self {
         Self {
