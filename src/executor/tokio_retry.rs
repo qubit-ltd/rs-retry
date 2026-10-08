@@ -25,6 +25,33 @@ use crate::RetrySuccess;
 ///
 /// This facade preserves the Tokio-backed default timer while sharing the
 /// runtime-independent retry implementation with [`AsyncRetry`].
+///
+/// # Type Parameters
+/// - `'a`: Lifetime of the borrowed retry configuration.
+/// - `E`: Application error produced by each attempt.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryConfig;
+/// use qubit_retry::TokioRetry;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let runtime = tokio::runtime::Builder::new_current_thread()
+///     .enable_time()
+///     .build()?;
+/// runtime.block_on(async {
+///     let config = RetryConfig::<&str>::builder().max_attempts(1).build()?;
+///     let success = TokioRetry::new(&config)
+///         .run(|| async { Ok::<u64, &str>(7) })
+///         .await.expect("one attempt succeeds");
+///     assert_eq!(*success.value(), 7);
+///     assert_eq!(success.context().attempts(), 1);
+///     Ok::<(), Box<dyn std::error::Error>>(())
+/// })?;
+/// # Ok(())
+/// # }
+/// ```
 #[must_use]
 pub struct TokioRetry<'a, E> {
     /// Runtime-independent async facade configured for this execution.
