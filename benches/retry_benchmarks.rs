@@ -43,7 +43,10 @@ impl RetryObserver<&'static str> for NoopObserver {
 fn observe_failure(_failure: &AttemptFailure<&'static str>, _context: &RetryContext) {}
 
 /// Continues rule-chain dispatch without selecting a terminal decision.
-fn use_default_rule(_failure: &AttemptFailure<&'static str>, _context: &RetryContext) -> RetryDecision {
+fn use_default_rule(
+    _failure: &AttemptFailure<&'static str>,
+    _context: &RetryContext,
+) -> RetryDecision {
     RetryDecision::UseDefault
 }
 
@@ -349,8 +352,10 @@ fn benchmark_async_success(c: &mut Criterion) {
 
         c.bench_function("async_success", |b| {
             b.iter(|| {
-                let result =
-                    runtime.block_on(TokioRetry::new(&retry).run(|| async { Ok::<u64, &'static str>(black_box(42)) }));
+                let result = runtime.block_on(
+                    TokioRetry::new(&retry)
+                        .run(|| async { Ok::<u64, &'static str>(black_box(42)) }),
+                );
                 let _ = black_box(result);
             });
         });

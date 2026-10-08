@@ -57,7 +57,11 @@ fn test_retry_clone_shares_callbacks_but_not_attempt_state() {
         let success = Retry::new(retry)
             .run(|| {
                 calls += 1;
-                if calls == 1 { Err(NonCloneError) } else { Ok(42) }
+                if calls == 1 {
+                    Err(NonCloneError)
+                } else {
+                    Ok(42)
+                }
             })
             .expect("second attempt succeeds");
         assert_eq!(success.context().attempts(), 2);

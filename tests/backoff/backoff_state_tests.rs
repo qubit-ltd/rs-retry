@@ -26,8 +26,9 @@ impl RetryRandomSource for FixedRandom {
 
 #[test]
 fn test_backoff_state_advances_and_resets() {
-    let policy = BackoffPolicy::exponential(Duration::from_millis(10), 2.0, Duration::from_millis(25))
-        .expect("valid exponential policy");
+    let policy =
+        BackoffPolicy::exponential(Duration::from_millis(10), 2.0, Duration::from_millis(25))
+            .expect("valid exponential policy");
     let mut state = policy.start_with_random_source(Arc::new(FixedRandom));
     assert_eq!(
         state.next(BackoffRequest::policy()).effective_delay(),
@@ -71,7 +72,8 @@ fn test_retry_after_hint_modes_select_expected_delay_source() {
     assert_eq!(ignore_step.source(), BackoffDelaySource::Policy);
 
     let jittered = BackoffPolicy::fixed(Duration::from_secs(1)).with_full_jitter();
-    let mut jittered_state = jittered.start_with_random_source(Arc::new(FixedRetryRandomSource::new(0.5)));
+    let mut jittered_state =
+        jittered.start_with_random_source(Arc::new(FixedRetryRandomSource::new(0.5)));
     let jittered_step = jittered_state.next(BackoffRequest::jittered_hint(hint));
     assert_eq!(jittered_step.effective_delay(), Duration::from_millis(1500));
     assert_eq!(jittered_step.source(), BackoffDelaySource::Merged);

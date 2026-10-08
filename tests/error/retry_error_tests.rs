@@ -41,13 +41,19 @@ fn test_retry_error_preserves_terminal_failure_and_context() {
     assert!(matches!(error.reason(), RetryErrorReason::Aborted));
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.last_error(), Some(&TestError("fatal")));
-    assert_eq!(Error::source(&error).map(ToString::to_string), Some("fatal".to_owned()));
+    assert_eq!(
+        Error::source(&error).map(ToString::to_string),
+        Some("fatal".to_owned())
+    );
     assert_eq!(error.to_string(), "retry aborted after 1 attempt(s)");
 
     let (reason, last_failure, context, diagnostics) = error.into_parts();
     assert!(diagnostics.is_empty());
     assert!(matches!(reason, RetryErrorReason::Aborted));
-    assert!(matches!(last_failure, Some(AttemptFailure::Error(TestError("fatal")))));
+    assert!(matches!(
+        last_failure,
+        Some(AttemptFailure::Error(TestError("fatal")))
+    ));
     assert_eq!(context.attempts(), 1);
 }
 
@@ -97,5 +103,8 @@ fn test_map_error_preserves_context_and_completion_diagnostics() {
     assert_eq!(diagnostic.callback(), RetryCallbackKind::Observer);
     assert_eq!(diagnostic.index(), 0);
     assert_eq!(diagnostic.phase(), RetryCallbackPhase::TerminalFailure);
-    assert_eq!(diagnostic.panic().message(), Some("terminal observer panic"));
+    assert_eq!(
+        diagnostic.panic().message(),
+        Some("terminal observer panic")
+    );
 }

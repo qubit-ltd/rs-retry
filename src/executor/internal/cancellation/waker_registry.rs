@@ -56,7 +56,10 @@ impl WakerRegistry {
     ///
     /// # Returns
     /// Some owned waker if present, or None if already removed.
-    pub(in crate::executor::internal) fn unregister(&mut self, registration_id: u64) -> Option<Waker> {
+    pub(in crate::executor::internal) fn unregister(
+        &mut self,
+        registration_id: u64,
+    ) -> Option<Waker> {
         self.wakers.remove(&registration_id)
     }
 

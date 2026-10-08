@@ -82,7 +82,13 @@ fn test_observers_and_rules_cover_current_lifecycle() {
     assert_eq!(callback.phase(), RetryCallbackPhase::BeforeAttempt);
     assert_eq!(observer_error.last_failure(), None);
     assert_eq!(observer_error.context().attempts(), 0);
-    assert_eq!(observer_error.context().current_attempt().map(NonZeroU32::get), Some(1));
+    assert_eq!(
+        observer_error
+            .context()
+            .current_attempt()
+            .map(NonZeroU32::get),
+        Some(1)
+    );
     assert_eq!(counts.started.load(Ordering::SeqCst), 0);
 
     let config2 = RetryConfig::<TestError>::builder()
@@ -107,5 +113,8 @@ fn test_observers_and_rules_cover_current_lifecycle() {
     );
     assert_eq!(counts.failed.load(Ordering::SeqCst), 1);
     assert_eq!(counts.scheduled.load(Ordering::SeqCst), 0);
-    assert_eq!(rule_error.context().current_attempt().map(NonZeroU32::get), Some(1));
+    assert_eq!(
+        rule_error.context().current_attempt().map(NonZeroU32::get),
+        Some(1)
+    );
 }

@@ -52,7 +52,9 @@ impl<T, F> BlockingValueOperation<T, F> {
     /// operation result, which would indicate an internal logic error.
     pub(in crate::executor) fn take_value(&self) -> T {
         let mut value = self.value.lock().unwrap_or_else(PoisonError::into_inner);
-        value.take().expect("retry loop succeeded without an operation value")
+        value
+            .take()
+            .expect("retry loop succeeded without an operation value")
     }
 }
 

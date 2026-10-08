@@ -186,6 +186,9 @@ fn test_control_payload_normal_drop_is_not_leaked() {
     let error = Retry::new(&retry)
         .run(|| Err::<(), _>("business"))
         .expect_err("rule panic should terminate the retry");
-    assert!(matches!(error.reason(), RetryErrorReason::CallbackFailed { .. }));
+    assert!(matches!(
+        error.reason(),
+        RetryErrorReason::CallbackFailed { .. }
+    ));
     assert_eq!(drops.load(Ordering::SeqCst), 1);
 }

@@ -99,17 +99,20 @@ async fn test_async_backoff_registration_does_not_move_flow_deadline() {
             .run(|| async { Err::<(), _>(TestError("retry")) })
             .await
     });
-    let deadline = tokio::task::spawn_blocking(move || receiver.recv_timeout(Duration::from_secs(1)))
-        .await
-        .expect("deadline receiver task")
-        .expect("backoff registration");
+    let deadline =
+        tokio::task::spawn_blocking(move || receiver.recv_timeout(Duration::from_secs(1)))
+            .await
+            .expect("deadline receiver task")
+            .expect("backoff registration");
     if deadline.elapsed_since_origin() != Duration::from_secs(10) {
         task.abort();
         let _ = task.await;
         assert_eq!(deadline.elapsed_since_origin(), Duration::from_secs(10));
         return;
     }
-    clock.advance(Duration::from_secs(20)).expect("reach flow deadline");
+    clock
+        .advance(Duration::from_secs(20))
+        .expect("reach flow deadline");
     let error = task
         .await
         .expect("async retry task completes")
@@ -303,7 +306,10 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
         .run(|| async { Err::<(), _>(TestError("retry")) })
         .await
         .unwrap_err();
-    assert!(matches!(rule_panics.reason(), RetryErrorReason::CallbackFailed { .. }));
+    assert!(matches!(
+        rule_panics.reason(),
+        RetryErrorReason::CallbackFailed { .. }
+    ));
 
     let zero_config = RetryConfig::<TestError>::builder()
         .total_time_budget(Duration::ZERO)
@@ -411,7 +417,9 @@ async fn test_async_facade_reports_timer_failure_with_injected_components() {
     let attempts = AtomicUsize::new(0);
     let config7 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithJitteredHint(Duration::ZERO))
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
+            RetryDecision::RetryWithJitteredHint(Duration::ZERO)
+        })
         .build()
         .expect("valid config");
     let jittered_retry = TokioRetry::new(&config7)

@@ -131,7 +131,11 @@ impl RetryObserver<TestError> for CompletionObserver {
     fn on_before_attempt(&self, _context: &RetryContext) {
         self.started_calls.fetch_add(1, Ordering::SeqCst);
         if self.index == 0 {
-            assert_ne!(self.scenario, CompletionScenario::StartedPanic, "control panic");
+            assert_ne!(
+                self.scenario,
+                CompletionScenario::StartedPanic,
+                "control panic"
+            );
         }
     }
 
@@ -140,13 +144,21 @@ impl RetryObserver<TestError> for CompletionObserver {
             if self.scenario == CompletionScenario::CancelledAfterFailure {
                 self.cancellation.cancel();
             }
-            assert_ne!(self.scenario, CompletionScenario::FailedPanic, "control panic");
+            assert_ne!(
+                self.scenario,
+                CompletionScenario::FailedPanic,
+                "control panic"
+            );
         }
     }
 
     fn on_retry_scheduled(&self, _backoff: &BackoffStep, _context: &RetryContext) {
         if self.index == 0 {
-            assert_ne!(self.scenario, CompletionScenario::ScheduledPanic, "control panic");
+            assert_ne!(
+                self.scenario,
+                CompletionScenario::ScheduledPanic,
+                "control panic"
+            );
             if self.scenario == CompletionScenario::TimedOut {
                 self.clock
                     .advance(Duration::from_secs(1))
@@ -178,7 +190,11 @@ enum CompletionFacade {
 }
 
 /// Exercises real public execution and verifies frozen terminal diagnostics.
-async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionScenario, panic_on_completion: bool) {
+async fn assert_completion_case(
+    facade: CompletionFacade,
+    scenario: CompletionScenario,
+    panic_on_completion: bool,
+) {
     let clock = ManualMonotonicClock::new_shared();
     let records = Arc::new(Mutex::new(Vec::new()));
     let started_calls = Arc::new(AtomicUsize::new(0));
@@ -187,11 +203,12 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
     if scenario == CompletionScenario::CancelledBeforeAttempt {
         cancellation.cancel();
     }
-    let mut policy = RetryPolicy::builder().max_attempts(if scenario == CompletionScenario::Exhausted {
-        1
-    } else {
-        2
-    });
+    let mut policy =
+        RetryPolicy::builder().max_attempts(if scenario == CompletionScenario::Exhausted {
+            1
+        } else {
+            2
+        });
     if scenario == CompletionScenario::TimerFailure {
         policy = policy.backoff(BackoffPolicy::fixed(Duration::from_millis(1)));
     }
@@ -252,7 +269,9 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
             .cancellation_token(cancellation)
             .run(operation),
         CompletionFacade::Worker => {
-            let mut worker = WorkerRetry::new(&retry).timer(timer).cancellation_token(cancellation);
+            let mut worker = WorkerRetry::new(&retry)
+                .timer(timer)
+                .cancellation_token(cancellation);
             if matches!(
                 scenario,
                 CompletionScenario::TimedOut | CompletionScenario::TimerFailureBeforeAttempt
@@ -263,7 +282,9 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
         }
         #[cfg(feature = "tokio")]
         CompletionFacade::Async => {
-            let mut executor = TokioRetry::new(&retry).timer(timer).cancellation_token(cancellation);
+            let mut executor = TokioRetry::new(&retry)
+                .timer(timer)
+                .cancellation_token(cancellation);
             if matches!(
                 scenario,
                 CompletionScenario::TimedOut | CompletionScenario::TimerFailureBeforeAttempt
@@ -310,15 +331,20 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                     } else {
                         RetryLimitKind::Attempts
                     };
-                    assert!(matches!(error.reason(), RetryErrorReason::Exhausted { limit, .. } if *limit == expected));
+                    assert!(
+                        matches!(error.reason(), RetryErrorReason::Exhausted { limit, .. } if *limit == expected)
+                    );
                 }
-                CompletionScenario::CancelledBeforeAttempt | CompletionScenario::CancelledAfterFailure => {
+                CompletionScenario::CancelledBeforeAttempt
+                | CompletionScenario::CancelledAfterFailure => {
                     let expected = if zero_attempts {
                         RetryCancellationPhase::BeforeAttempt
                     } else {
                         RetryCancellationPhase::Backoff
                     };
-                    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. } if *phase == expected));
+                    assert!(
+                        matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. } if *phase == expected)
+                    );
                 }
                 CompletionScenario::StartedPanic
                 | CompletionScenario::FailedPanic
@@ -334,7 +360,8 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                         matches!(error.reason(), RetryErrorReason::CallbackFailed { callback, .. } if callback.phase() == expected && callback.index() == 0)
                     );
                 }
-                CompletionScenario::TimerFailure | CompletionScenario::TimerFailureBeforeAttempt => {
+                CompletionScenario::TimerFailure
+                | CompletionScenario::TimerFailureBeforeAttempt => {
                     assert!(matches!(
                         error.reason(),
                         RetryErrorReason::Infrastructure {
@@ -367,7 +394,10 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
             )
         }
     };
-    assert_eq!(operation_calls.load(Ordering::SeqCst), context.attempts() as usize);
+    assert_eq!(
+        operation_calls.load(Ordering::SeqCst),
+        context.attempts() as usize
+    );
     if scenario == CompletionScenario::StartedPanic {
         assert_eq!(started_calls.load(Ordering::SeqCst), 1);
     }
@@ -378,7 +408,11 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
         assert_eq!(failure.panic().message(), Some("completion panic"));
     }
     let records = records.lock().expect("completion records lock");
-    assert_eq!(records.len(), 3, "each observer receives exactly one terminal callback");
+    assert_eq!(
+        records.len(),
+        3,
+        "each observer receives exactly one terminal callback"
+    );
     for (index, record) in records.iter().enumerate() {
         assert_eq!(record.index, index);
         assert_eq!(record.phase, phase);
@@ -524,7 +558,9 @@ async fn test_completion_dropped_async_future_does_not_notify() {
         future::pending::<Result<(), TestError>>()
     }));
     assert!(matches!(
-        future.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+        future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop())),
         Poll::Pending
     ));
     assert_eq!(operation_calls.load(Ordering::SeqCst), 1);
@@ -548,7 +584,9 @@ async fn test_completion_async_operation_panic_does_not_notify() {
         Ok::<(), TestError>(())
     }));
     let panic = catch_unwind(AssertUnwindSafe(|| {
-        let _ = future.as_mut().poll(&mut Context::from_waker(Waker::noop()));
+        let _ = future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()));
     }));
     assert!(panic.is_err());
     drop(future);
@@ -578,7 +616,9 @@ fn test_completion_result_consumers_preserve_or_explicitly_discard_diagnostics()
         .fallback(RetryFallback::Retry)
         .build()
         .expect("valid config");
-    let success = Retry::new(&retry).run(|| Ok(42)).expect("successful operation");
+    let success = Retry::new(&retry)
+        .run(|| Ok(42))
+        .expect("successful operation");
     assert_eq!(success.completion_callback_failures().len(), 1);
     assert_eq!(success.completion_callback_failures()[0].index(), 1);
     let cloned = success.clone();
@@ -690,7 +730,9 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 };
                 let mut future = Box::pin(async {
                     match facade {
-                        CompletionFacade::Sync => Retry::new(&retry).timer(clock.new_timer()).run(operation),
+                        CompletionFacade::Sync => {
+                            Retry::new(&retry).timer(clock.new_timer()).run(operation)
+                        }
                         CompletionFacade::Worker => WorkerRetry::new(&retry)
                             .timer(clock.new_timer())
                             .run(move |_| operation()),
@@ -708,7 +750,9 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 // forget its payload to avoid recursive Drop aborting the
                 // suite.
                 let outcome = catch_unwind(AssertUnwindSafe(|| {
-                    future.as_mut().poll(&mut Context::from_waker(Waker::noop()))
+                    future
+                        .as_mut()
+                        .poll(&mut Context::from_waker(Waker::noop()))
                 }));
                 let result = match outcome {
                     Ok(Poll::Ready(result)) => result,
@@ -741,7 +785,11 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                             last_failure.as_ref().and_then(AttemptFailure::as_error),
                             Some(&TestError("original error"))
                         );
-                        (context, failures.into_vec(), RetryCallbackPhase::TerminalFailure)
+                        (
+                            context,
+                            failures.into_vec(),
+                            RetryCallbackPhase::TerminalFailure,
+                        )
                     }
                 };
                 assert_eq!(context.attempts(), 1);

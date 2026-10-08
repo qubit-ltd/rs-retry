@@ -297,7 +297,11 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
             let cancellation = self.cancellation_token.as_ref();
             let admission_sample = controller.before_attempt(clock, cancellation)?;
             let plan = controller.prepare_attempt(admission_sample)?;
-            let timeout_future = match plan.deadline().map(|deadline| timer.at(deadline)).transpose() {
+            let timeout_future = match plan
+                .deadline()
+                .map(|deadline| timer.at(deadline))
+                .transpose()
+            {
                 Ok(future) => future,
                 Err(error) => {
                     return Err(controller.record_inactive_infrastructure_failure(
@@ -314,7 +318,12 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                 self.stack_size,
                 self.cancellation_grace,
                 cancellation,
-                timeout_future.map(|future| (plan.scope().expect("registered timeout retains its scope"), future)),
+                timeout_future.map(|future| {
+                    (
+                        plan.scope().expect("registered timeout retains its scope"),
+                        future,
+                    )
+                }),
                 || controller.commit_prepared_attempt(plan, clock, cancellation),
             )?;
 
@@ -410,7 +419,8 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
         clock: &dyn MonotonicClock,
         failure: AttemptFailure<E>,
     ) -> Result<(), RetryError<E>> {
-        let directive = controller.record_failure(failure, clock, self.cancellation_token.as_ref())?;
+        let directive =
+            controller.record_failure(failure, clock, self.cancellation_token.as_ref())?;
         match wait_for_backoff(
             timer,
             directive.deadline(),

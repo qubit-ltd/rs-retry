@@ -53,11 +53,13 @@ fn test_retry_rules_preserve_each_panic_payload() {
     for (payload, expected) in cases {
         let later_calls = Arc::new(AtomicUsize::new(0));
         let retry = RetryConfig::<()>::builder()
-            .rule(move |_: &AttemptFailure<()>, _: &RetryContext| match payload {
-                0 => panic!("static panic"),
-                1 => panic_any(String::from("owned panic")),
-                _ => panic_any(17_u32),
-            })
+            .rule(
+                move |_: &AttemptFailure<()>, _: &RetryContext| match payload {
+                    0 => panic!("static panic"),
+                    1 => panic_any(String::from("owned panic")),
+                    _ => panic_any(17_u32),
+                },
+            )
             .rule({
                 let later_calls = Arc::clone(&later_calls);
                 move |_: &AttemptFailure<()>, _: &RetryContext| {
