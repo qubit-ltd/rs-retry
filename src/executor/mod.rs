@@ -18,6 +18,7 @@ mod retry_cancelled;
 mod retry_config;
 mod retry_config_builder;
 mod retry_session;
+mod retry_session_admission;
 mod retry_session_step;
 #[cfg(feature = "tokio")]
 mod tokio_retry;
@@ -34,6 +35,7 @@ pub use retry_cancelled::RetryCancelled;
 pub use retry_config::RetryConfig;
 pub use retry_config_builder::RetryConfigBuilder;
 pub use retry_session::RetrySession;
+pub use retry_session_admission::RetrySessionAdmission;
 pub use retry_session_step::RetrySessionStep;
 #[cfg(feature = "tokio")]
 pub use tokio_retry::TokioRetry;

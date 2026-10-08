@@ -107,6 +107,41 @@ impl<E: 'static> RetryFlowController<E> {
         self.state.context(None).attempts()
     }
 
+    /// Checks whether an externally scheduled backoff has reached its deadline.
+    ///
+    /// # Errors
+    /// Returns a terminal retry error when the clock sample is invalid, the
+    /// flow budget has expired, or cancellation is observed during backoff.
+    ///
+    /// # Parameters
+    /// - `clock`: Flow clock sampled at the wait boundary.
+    /// - `cancellation`: Optional shared cancellation request.
+    /// - `due`: Backoff deadline in the flow clock's domain.
+    ///
+    /// # Returns
+    /// `true` when admission may continue, or `false` while the deadline is
+    /// still pending.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the controller constructs the lossless public terminal error"
+    )]
+    pub(crate) fn check_backoff_ready(
+        &mut self,
+        clock: &dyn MonotonicClock,
+        cancellation: Option<&RetryCancellationToken>,
+        due: MonotonicInstant,
+    ) -> Result<bool, RetryError<E>> {
+        let now = clock.now();
+        self.refresh_or_error(now)?;
+        if self.state.flow_timed_out() {
+            return Err(self.timed_out(RetryTimeoutScope::Flow));
+        }
+        if Self::is_cancelled(cancellation) {
+            return Err(self.cancelled(RetryCancellationPhase::Backoff));
+        }
+        Self::deadline_reached(now, due).map_err(|error| self.inactive_clock_failure(error))
+    }
+
     /// Checks all pre-attempt gates and invokes the before-attempt observers.
     ///
     /// # Errors

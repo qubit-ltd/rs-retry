@@ -32,6 +32,7 @@ use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetrySession;
+use qubit_retry::RetrySessionAdmission;
 use qubit_retry::RetrySessionStep;
 
 use crate::support::FixedRetryRandomSource;
@@ -201,7 +202,11 @@ fn run_scenario(session: bool, scenario: &str) -> (u32, String, Vec<String>) {
         let mut next_ordinal = 1;
         loop {
             let ordinal = match retry.begin_attempt() {
-                Ok(ordinal) => ordinal,
+                Ok(RetrySessionAdmission::Admitted(ordinal)) => ordinal,
+                Ok(RetrySessionAdmission::Waiting(due)) => {
+                    timer.elapse(due);
+                    continue;
+                }
                 Err(error) => break Err(error),
             };
             let value = operation();
@@ -283,6 +288,65 @@ fn test_retry_session_rechecks_budget_after_wait() {
     assert_eq!(events.iter().filter(|event| event.starts_with("before:")).count(), 1);
 }
 
+/// Repeated early admission checks preserve the pending deadline and callbacks.
+#[test]
+fn test_retry_session_early_admission_waits_until_due() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let config = RetryConfig::builder()
+        .max_attempts(2)
+        .fallback(RetryFallback::Retry)
+        .backoff(BackoffPolicy::fixed(Duration::from_secs(1)))
+        .observer(SessionObserver(Arc::clone(&events)))
+        .build()
+        .expect("valid config");
+    let timer = Arc::new(SessionTimer::new(None));
+    let mut session = RetrySession::new(config, timer.clone());
+
+    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 1));
+    let RetrySessionStep::RetryAt(due) = session.record_result::<()>(Err("busy")) else {
+        panic!("retry should be scheduled");
+    };
+    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due));
+    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due));
+    assert_eq!(timer.clock.now(), MonotonicInstant::new(timer.clock.domain(), Duration::from_secs(1)));
+    assert_eq!(events.lock().expect("event lock").iter().filter(|event| event.starts_with("before:")).count(), 1);
+
+    timer.elapse(due);
+    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 2));
+    assert_eq!(events.lock().expect("event lock").iter().filter(|event| event.starts_with("before:")).count(), 2);
+}
+
+/// Waiting admission rejects regressing and foreign-domain clock samples.
+#[test]
+fn test_retry_session_waiting_rejects_invalid_clock_samples() {
+    for foreign_domain in [false, true] {
+        let timer = Arc::new(SessionTimer::new(None));
+        let config = RetryConfig::builder()
+            .max_attempts(2)
+            .fallback(RetryFallback::Retry)
+            .backoff(BackoffPolicy::fixed(Duration::from_secs(1)))
+            .build()
+            .expect("valid config");
+        let mut session = RetrySession::new(config, timer.clone());
+        assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(_))));
+        assert!(matches!(session.record_result::<()>(Err("busy")), RetrySessionStep::RetryAt(_)));
+
+        let invalid_now = if foreign_domain {
+            MonotonicInstant::new(ClockDomain::new(), Duration::from_secs(1))
+        } else {
+            MonotonicInstant::new(timer.clock.domain(), Duration::ZERO)
+        };
+        *timer.clock.0.lock().expect("clock lock") = invalid_now;
+        let error = session.begin_attempt().expect_err("invalid waiting clock");
+        assert!(matches!(
+            error.reason(),
+            RetryErrorReason::Infrastructure {
+                failure: RetryInfrastructureFailure::Clock { .. }
+            }
+        ));
+    }
+}
+
 /// The session owns all configuration and can be moved into a delivery owner.
 #[test]
 fn test_retry_session_owns_config_and_accepts_non_clone_errors() {
@@ -292,7 +356,10 @@ fn test_retry_session_owns_config_and_accepts_non_clone_errors() {
         let config = RetryConfig::<NonCloneError>::builder().build().expect("valid config");
         RetrySession::new(config, Arc::new(SessionTimer::new(None)))
     };
-    assert_eq!(session.begin_attempt().expect("admitted").get(), 1);
+    let RetrySessionAdmission::Admitted(ordinal) = session.begin_attempt().expect("admitted") else {
+        panic!("fresh session cannot wait");
+    };
+    assert_eq!(ordinal.get(), 1);
     assert!(matches!(session.record_result(Ok(7)), RetrySessionStep::Complete(_)));
 }
 
@@ -332,7 +399,7 @@ fn test_retry_session_enforces_one_outstanding_attempt() {
         .expect("valid config");
     let mut session = RetrySession::new(config, Arc::new(SessionTimer::new(None)));
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.record_result(Ok(1)))).is_err());
-    assert_eq!(session.begin_attempt().expect("admitted").get(), 1);
+    assert!(matches!(session.begin_attempt().expect("admitted"), RetrySessionAdmission::Admitted(ordinal) if ordinal.get() == 1));
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = session.begin_attempt();
