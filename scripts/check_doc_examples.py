@@ -20,7 +20,7 @@ import tomllib
 
 ANNOTATION = re.compile(r"<!-- retry-example: (.*?) -->")
 DOCUMENTS = ("README.md", "README.zh_CN.md", "doc/user_guide.md", "doc/user_guide.zh_CN.md")
-CONSUMER_DEPENDENCIES = {"clock", "clock-test-util"}
+CONSUMER_DEPENDENCIES = {"clock", "clock-test-util", "futures-executor"}
 
 
 def extract(path):
@@ -107,6 +107,8 @@ def consumer_manifest(root: Path, example: dict) -> str:
         manifest += 'qubit-clock = { version = "0.13", features = ["test-util"] }\n'
     elif "clock" in example["deps"]:
         manifest += 'qubit-clock = "0.13"\n'
+    if "futures-executor" in example["deps"]:
+        manifest += 'futures-executor = "0.3"\n'
     manifest += 'serde_json = "1"\n'
     if "tokio" in example["features"]:
         manifest += 'tokio = { version = "1.52", features = ["rt", "macros", "time"] }\n'

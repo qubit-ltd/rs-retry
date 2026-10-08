@@ -46,6 +46,11 @@ class ExampleContractTests(unittest.TestCase):
         examples = self.parse("<!-- retry-example: kind=run features=none deps=clock-test-util -->\n```rust\nfn main() {}\n```\n")
         self.assertEqual(examples[0]["deps"], ["clock-test-util"])
 
+    def test_futures_executor_dependency_is_declared_for_async_example(self):
+        manifest = self.consumer_manifest("kind=run features=async deps=futures-executor")
+        self.assertIn('futures-executor = "0.3"', manifest)
+        self.assertNotIn('tokio = ', manifest)
+
     def test_invalid_dependency_declarations_fail_with_location(self):
         cases = (
             ("kind=run features=none deps=unknown", "rust", "unknown or repeated"),
@@ -83,20 +88,22 @@ class ExampleContractTests(unittest.TestCase):
         self.assertIn('tokio = { version = "1.52", features = ["rt", "macros", "time"] }', manifest)
         self.assertIn('serde_json = "1"', manifest)
 
-    def test_bilingual_retry_session_guides_declare_direct_clock_dependency(self):
+    def test_bilingual_retry_session_guides_declare_test_clock_dependency(self):
         root = Path(__file__).parents[1]
-        for name in ("user_guide.md", "user_guide.zh_CN.md"):
+        for name, heading in (
+            ("user_guide.md", "### Let your scheduler own the wait"),
+            ("user_guide.zh_CN.md", "### 让现有调度器负责等待"),
+        ):
             with self.subTest(document=name):
                 content = (root / "doc" / name).read_text(encoding="utf-8")
-                example_offset = content.index("use qubit_clock::StdTimer;")
-                section_start = content.rfind("\n## ", 0, example_offset) + 1
-                example_annotation = content.rfind("<!-- retry-example:", 0, example_offset)
-                self.assertGreaterEqual(example_annotation, section_start)
+                section = content.split(heading, 1)[1].split("\n### ", 1)[0]
+                example_offset = section.index("use qubit_clock::ManualMonotonicClock;")
+                example_annotation = section.rfind("<!-- retry-example:", 0, example_offset)
                 self.assertEqual(
-                    content[example_annotation:content.index("\n", example_annotation)],
-                    "<!-- retry-example: kind=run features=none deps=clock -->",
+                    section[example_annotation:section.index("\n", example_annotation)],
+                    "<!-- retry-example: kind=run features=none deps=clock-test-util -->",
                 )
-                self.assertIn("cargo add qubit-clock@0.13", content[section_start:example_annotation])
+                self.assertIn("cargo add qubit-clock@0.13 --features test-util", section[:example_annotation])
 
     def test_rust_modifiers_cannot_silently_skip_validation(self):
         with self.assertRaisesRegex(ValueError, "unsupported.*fence"):
