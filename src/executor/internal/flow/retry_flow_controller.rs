@@ -110,8 +110,8 @@ impl<E: 'static> RetryFlowController<E> {
     /// Checks whether an externally scheduled backoff has reached its deadline.
     ///
     /// # Errors
-    /// Returns a terminal retry error when the clock sample is invalid, the
-    /// flow budget has expired, or cancellation is observed during backoff.
+    /// Returns a terminal retry error when the clock sample is invalid or
+    /// cancellation is observed during backoff.
     ///
     /// # Parameters
     /// - `clock`: Flow clock sampled at the wait boundary.
@@ -133,9 +133,6 @@ impl<E: 'static> RetryFlowController<E> {
     ) -> Result<bool, RetryError<E>> {
         let now = clock.now();
         self.refresh_or_error(now)?;
-        if self.state.flow_timed_out() {
-            return Err(self.timed_out(RetryTimeoutScope::Flow));
-        }
         if Self::is_cancelled(cancellation) {
             return Err(self.cancelled(RetryCancellationPhase::Backoff));
         }
@@ -564,7 +561,6 @@ impl<E: 'static> RetryFlowController<E> {
     ///
     /// # Returns
     /// A copy of coherent timing state with current event overlays.
-    #[inline(always)]
     #[must_use = "use the prepared value or inspect the result"]
     fn snapshot(&self) -> RetryContext {
         self.decorate(self.state.context(self.current_attempt))
@@ -577,7 +573,7 @@ impl<E: 'static> RetryFlowController<E> {
     ///
     /// # Returns
     /// True only for a supplied, cancelled token.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     fn is_cancelled(cancellation: Option<&RetryCancellationToken>) -> bool {
         cancellation.is_some_and(RetryCancellationToken::is_cancelled)
@@ -841,7 +837,6 @@ impl<E: 'static> RetryFlowController<E> {
     }
 
     /// Clears the event overlay after callback processing has completed.
-    #[inline(always)]
     fn clear_current_attempt(&mut self) {
         self.current_attempt = None;
         self.current_hard_attempt_timeout = None;

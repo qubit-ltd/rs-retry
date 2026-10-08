@@ -308,12 +308,31 @@ fn test_retry_session_early_admission_waits_until_due() {
     };
     assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due));
     assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due));
-    assert_eq!(timer.clock.now(), MonotonicInstant::new(timer.clock.domain(), Duration::from_secs(1)));
-    assert_eq!(events.lock().expect("event lock").iter().filter(|event| event.starts_with("before:")).count(), 1);
+    assert_eq!(
+        timer.clock.now(),
+        MonotonicInstant::new(timer.clock.domain(), Duration::from_secs(1))
+    );
+    assert_eq!(
+        events
+            .lock()
+            .expect("event lock")
+            .iter()
+            .filter(|event| event.starts_with("before:"))
+            .count(),
+        1
+    );
 
     timer.elapse(due);
     assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 2));
-    assert_eq!(events.lock().expect("event lock").iter().filter(|event| event.starts_with("before:")).count(), 2);
+    assert_eq!(
+        events
+            .lock()
+            .expect("event lock")
+            .iter()
+            .filter(|event| event.starts_with("before:"))
+            .count(),
+        2
+    );
 }
 
 /// Waiting admission rejects regressing and foreign-domain clock samples.
@@ -328,8 +347,14 @@ fn test_retry_session_waiting_rejects_invalid_clock_samples() {
             .build()
             .expect("valid config");
         let mut session = RetrySession::new(config, timer.clone());
-        assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(_))));
-        assert!(matches!(session.record_result::<()>(Err("busy")), RetrySessionStep::RetryAt(_)));
+        assert!(matches!(
+            session.begin_attempt(),
+            Ok(RetrySessionAdmission::Admitted(_))
+        ));
+        assert!(matches!(
+            session.record_result::<()>(Err("busy")),
+            RetrySessionStep::RetryAt(_)
+        ));
 
         let invalid_now = if foreign_domain {
             MonotonicInstant::new(ClockDomain::new(), Duration::from_secs(1))
@@ -399,7 +424,9 @@ fn test_retry_session_enforces_one_outstanding_attempt() {
         .expect("valid config");
     let mut session = RetrySession::new(config, Arc::new(SessionTimer::new(None)));
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.record_result(Ok(1)))).is_err());
-    assert!(matches!(session.begin_attempt().expect("admitted"), RetrySessionAdmission::Admitted(ordinal) if ordinal.get() == 1));
+    assert!(
+        matches!(session.begin_attempt().expect("admitted"), RetrySessionAdmission::Admitted(ordinal) if ordinal.get() == 1)
+    );
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = session.begin_attempt();

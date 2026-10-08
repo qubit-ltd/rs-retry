@@ -51,6 +51,27 @@ enum SessionPhase {
 /// Like [`crate::Retry`], this facade cannot interrupt a running operation and
 /// has no hard timeout API. Configured elapsed budgets are admission limits.
 /// Dropping an unfinished session does not synthesize completion callbacks.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use qubit_clock::StdTimer;
+/// use qubit_retry::{RetryConfig, RetrySession, RetrySessionAdmission, RetrySessionStep};
+///
+/// let config = RetryConfig::<&str>::builder().max_attempts(1).build()?;
+/// let mut session = RetrySession::new(config, Arc::new(StdTimer::new()));
+/// let RetrySessionAdmission::Admitted(ordinal) = session.begin_attempt().expect("admitted") else {
+///     panic!("fresh session cannot wait");
+/// };
+/// assert_eq!(ordinal.get(), 1);
+/// let RetrySessionStep::Complete(success) = session.record_result::<u32>(Ok(7)) else {
+///     panic!("operation succeeded");
+/// };
+/// assert_eq!(*success.value(), 7);
+/// # Ok::<(), qubit_retry::RetryPolicyError>(())
+/// ```
 #[must_use]
 pub struct RetrySession<E> {
     /// Immutable configuration retained for completion notification.
