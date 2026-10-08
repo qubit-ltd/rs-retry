@@ -48,7 +48,7 @@ flowchart TD
   run 的运行时选项（timer、随机源、取消令牌、硬超时、worker 栈大小等），并将
   流程决策委托给控制器。
 - `policy`、`backoff`、`budget` 验证配置并计算是否允许继续，不调用业务回调，也不负责调度操作执行。
-- `executor/internal/retry_flow_controller.rs` 负责一次流程的决策及最后失败；状态快照和计划将准备与准入提交分开。
+- `executor/internal/flow/retry_flow_controller.rs` 负责一次流程的决策及最后失败；状态快照和计划将准备与准入提交分开。
 - 异步结果、worker 事件和 waker 类型保持私有。
 - `AsyncRetry` 默认使用 `StdTimer` 和标准库 future 轮询；`TokioRetry` 复用相同
   流程但默认使用 `TokioTimer`。两者都接受注入的 `Arc<dyn Timer>`，支持确定性

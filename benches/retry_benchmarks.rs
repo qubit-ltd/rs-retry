@@ -8,12 +8,14 @@
 //! Benchmarks for representative retry execution and policy paths.
 
 use std::hint::black_box;
+use std::sync::Arc;
 use std::time::Duration;
 
 use criterion::BatchSize;
 use criterion::Criterion;
 use criterion::criterion_group;
 use criterion::criterion_main;
+use qubit_clock::StdTimer;
 use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffRequest;
@@ -23,8 +25,12 @@ use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
 use qubit_retry::RetryDecision;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
+use qubit_retry::RetrySession;
+use qubit_retry::RetrySessionAdmission;
+use qubit_retry::RetrySessionStep;
 #[cfg(feature = "tokio")]
 use qubit_retry::TokioRetry;
 #[cfg(feature = "worker")]
@@ -364,6 +370,90 @@ fn benchmark_async_success(c: &mut Criterion) {
     let _ = c;
 }
 
+/// Measures construction, admission, and completion for one owned session.
+fn benchmark_retry_session_success(c: &mut Criterion) {
+    let config = RetryConfig::<&'static str>::builder()
+        .max_attempts(1)
+        .backoff(BackoffPolicy::immediate())
+        .build()
+        .expect("valid config");
+    let timer = Arc::new(StdTimer::new());
+    c.bench_function("retry_session_success", |b| {
+        b.iter(|| {
+            let mut session = RetrySession::new(config.clone(), timer.clone());
+            assert!(matches!(
+                session.begin_attempt(),
+                Ok(RetrySessionAdmission::Admitted(_))
+            ));
+            let RetrySessionStep::Complete(success) = session.record_result::<u64>(Ok(black_box(7))) else {
+                panic!("successful attempt must complete");
+            };
+            let _ = black_box(success);
+        });
+    });
+}
+
+/// Measures one immediate retry followed by successful session completion.
+fn benchmark_retry_session_immediate_retry(c: &mut Criterion) {
+    let config = RetryConfig::<&'static str>::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::immediate())
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
+    let timer = Arc::new(StdTimer::new());
+    c.bench_function("retry_session_immediate_retry", |b| {
+        b.iter(|| {
+            let mut session = RetrySession::new(config.clone(), timer.clone());
+            assert!(
+                matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 1)
+            );
+            assert!(matches!(
+                session.record_result::<u64>(Err("busy")),
+                RetrySessionStep::RetryAt(_)
+            ));
+            assert!(
+                matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 2)
+            );
+            let RetrySessionStep::Complete(success) = session.record_result(Ok(black_box(7_u64))) else {
+                panic!("second attempt must complete");
+            };
+            let _ = black_box(success);
+        });
+    });
+}
+
+/// Measures an early admission check without including session preparation.
+fn benchmark_retry_session_waiting_admission(c: &mut Criterion) {
+    let config = RetryConfig::<&'static str>::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::from_secs(60)))
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
+    let timer = Arc::new(StdTimer::new());
+    c.bench_function("retry_session_waiting_admission", |b| {
+        b.iter_batched(
+            || {
+                let mut session = RetrySession::new(config.clone(), timer.clone());
+                assert!(matches!(
+                    session.begin_attempt(),
+                    Ok(RetrySessionAdmission::Admitted(_))
+                ));
+                let RetrySessionStep::RetryAt(due) = session.record_result::<u64>(Err("busy")) else {
+                    panic!("failure must schedule a retry");
+                };
+                (session, due)
+            },
+            |(mut session, due)| {
+                let outcome = black_box(session.begin_attempt());
+                assert!(matches!(outcome, Ok(RetrySessionAdmission::Waiting(actual)) if actual == due));
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
 criterion_group!(
     retry_benches,
     benchmark_sync_success,
@@ -377,5 +467,8 @@ criterion_group!(
     benchmark_rule_chain_decision,
     benchmark_backoff_calculation,
     benchmark_async_success,
+    benchmark_retry_session_success,
+    benchmark_retry_session_immediate_retry,
+    benchmark_retry_session_waiting_admission,
 );
 criterion_main!(retry_benches);

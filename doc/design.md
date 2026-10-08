@@ -54,7 +54,7 @@ flowchart TD
   timeouts, worker stack size), and delegate flow decisions to the controller.
 - `policy`, `backoff`, and `budget` validate values and calculate continuation
   decisions. They do not invoke application callbacks or schedule operation execution.
-- `executor/internal/retry_flow_controller.rs` owns one flow's decisions and
+- `executor/internal/flow/retry_flow_controller.rs` owns one flow's decisions and
   retained failure. State snapshots and plans separate preparation from admission.
 - Async attempt/backoff outcomes and worker event/waker types stay internal.
 - `AsyncRetry` uses `StdTimer` by default and standard-library future polling;

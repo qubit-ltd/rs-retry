@@ -24,6 +24,30 @@
       ]
     },
     {
+      "name": "async",
+      "defaultFeatures": false,
+      "features": [
+        "async"
+      ],
+      "commands": [
+        "check",
+        "test",
+        "doc"
+      ]
+    },
+    {
+      "name": "worker",
+      "defaultFeatures": false,
+      "features": [
+        "worker"
+      ],
+      "commands": [
+        "check",
+        "test",
+        "doc"
+      ]
+    },
+    {
       "name": "tokio",
       "defaultFeatures": false,
       "features": [
