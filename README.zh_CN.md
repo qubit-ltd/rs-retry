@@ -124,6 +124,7 @@ Qubit Retry 将这些判断集中到可复用的 `Retry` 中。每次 `run` 都�
 | 模式 | 适用场景 | 使用边界 |
 | --- | --- | --- |
 | `Retry::new(&config)` | 在当前线程执行耗时可控的操作 | 无法打断正在执行的操作 |
+| `RetrySession::new(config, timer)` | 由外部调度的操作或投递 | 默认 feature 即可使用；调用方等待 `RetryAt`，提前调用 `begin_attempt` 会得到 `Ok(Waiting(due))` |
 | `AsyncRetry::new(&config)` | 在任意 executor 中运行异步代码 | 使用 `StdTimer`，调用方仍需 poll 返回的 future |
 | `TokioRetry::new(&config)` | 调用 Tokio 异步客户端 | 可丢弃尚未完成的 future，无法打断其中的阻塞代码 |
 | `WorkerRetry::new(&config)` | 阻塞操作能够检查取消令牌并退出 | 请求线程退出并等待清理，不能强制终止线程 |
@@ -135,7 +136,7 @@ Qubit Retry 将这些判断集中到可复用的 `Retry` 中。每次 `run` 都�
 ## 延伸阅读
 
 - [中文用户手册](doc/user_guide.zh_CN.md) · [English user guide](doc/user_guide.md)：完整用法、超时、错误处理、配置
-- [Rust API 文档](https://docs.rs/qubit-retry/0.24.0/qubit_retry/)：公开类型与方法
+- [Rust API 文档](https://docs.rs/qubit-retry/0.26.0/qubit_retry/)：公开类型与方法
 - [设计文档](doc/design.zh_CN.md)：执行顺序与内部契约
 - [English README](README.md)
 

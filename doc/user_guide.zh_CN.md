@@ -154,12 +154,61 @@ snapshot-v2, attempts=3
 | 入口 | 所需 feature | 操作要求 | 执行位置 |
 | --- | --- | --- | --- |
 | `Retry::new(&config)` | 无 | `FnMut() -> Result<T, E>`，可借用局部状态 | 调用线程 |
+| `RetrySession::new(config, timer)` | 无 | 调用方逐次提供操作并安排等待 | 外部调度器；提前检查会返回 `Ok(Waiting(due))` |
 | `AsyncRetry::new(&config)` | `async` | `FnMut() -> Fut`，future 无需满足 `Send` 或 `'static` | 由任意 executor poll；默认使用 `StdTimer` |
 | `TokioRetry::new(&config)` | `tokio` | `FnMut() -> Fut`，future 无需满足 `Send` 或 `'static` | Tokio 运行时 |
 | `WorkerRetry::new(&config)` | `worker` | `Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static`；`T`、`E` 须为 `Send + 'static` | 每次尝试创建独立工作线程 |
 
 各执行接口都要求 `E: 'static`，同步与异步模式也不例外；但这不意味着它们的操作闭包必须拥有所有捕获状态。
 规则与观察者会被共享，须满足 `Send + Sync + 'static`。
+
+如果操作投递和重试计时已经由现有调度器负责，可以使用 `RetrySession`。
+默认 feature 即包含此 API。会话不会自行 sleep，也不会注册 timer：
+`record_result` 返回 `RetryAt(due)` 后，调度器应使用传入 timer 所属的时钟域等待，
+再调用 `begin_attempt`。截止时间之前调用会得到
+`Ok(RetrySessionAdmission::Waiting(due))`；此时没有新尝试获准，也不会执行操作。
+等待期间取消会按 `Backoff` 阶段结束会话。
+
+下面用立即退避展示完整准入流程，因此不需要真实等待。第一次结果请求重试，
+第二次准入开始第二次尝试，操作成功后会话完成：
+
+<!-- retry-example: kind=run features=none -->
+```rust
+use std::sync::Arc;
+
+use qubit_clock::StdTimer;
+use qubit_retry::{
+    RetryConfig, RetryFallback, RetrySession, RetrySessionAdmission, RetrySessionStep,
+};
+
+fn main() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(2)
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("有效的重试配置");
+    let mut session = RetrySession::new(config, Arc::new(StdTimer::new()));
+
+    let RetrySessionAdmission::Admitted(first) = session.begin_attempt().expect("已准入") else {
+        panic!("新会话不应处于等待状态");
+    };
+    assert_eq!(first.get(), 1);
+    assert!(matches!(session.record_result::<()>(Err("temporary")), RetrySessionStep::RetryAt(_)));
+
+    let RetrySessionAdmission::Admitted(second) = session.begin_attempt().expect("已准入") else {
+        panic!("立即退避应已就绪");
+    };
+    assert_eq!(second.get(), 2);
+    let RetrySessionStep::Complete(success) = session.record_result(Ok("recovered")) else {
+        panic!("操作已成功");
+    };
+    assert_eq!(*success.value(), "recovered");
+}
+```
+
+退避时间非零时，应等到 `RetryAt` 给出的截止时间再检查。提前检查可能反复返回
+`Waiting(due)`；保留该截止时间并重新安排检查，不要启动操作。若等待期间收到取消请求，
+会话会以 `Backoff` 阶段的取消结果结束。
 
 不绑定具体运行时的异步执行需要开启 `async`：
 

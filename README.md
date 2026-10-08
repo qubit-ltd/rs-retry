@@ -133,6 +133,7 @@ consume another request's retry allowance.
 | Mode | Use it for | Boundary |
 | --- | --- | --- |
 | `Retry::new(&config)` | A bounded operation on the calling thread | Cannot interrupt the operation |
+| `RetrySession::new(config, timer)` | An externally scheduled operation or delivery | Available with default features; caller waits for `RetryAt`, and an early `begin_attempt` returns `Ok(Waiting(due))` |
 | `AsyncRetry::new(&config)` | Async code on any executor | Uses `StdTimer`; the executor still polls the returned future |
 | `TokioRetry::new(&config)` | An async client on Tokio | Cancels a pending future; cannot interrupt blocking code inside it |
 | `WorkerRetry::new(&config)` | Blocking work that checks a cancellation token | Requests thread exit and waits for cleanup; cannot forcibly terminate a thread |
@@ -146,7 +147,7 @@ breaker, or worker pool.
 ## Learn more
 
 - [User guide](doc/user_guide.md) · [中文用户手册](doc/user_guide.zh_CN.md): complete workflows, timeouts, error handling, and configuration
-- [Rust API documentation](https://docs.rs/qubit-retry/0.24.0/qubit_retry/): public types and methods
+- [Rust API documentation](https://docs.rs/qubit-retry/0.26.0/qubit_retry/): public types and methods
 - [Design](doc/design.md): execution ordering and internal contracts
 - [中文 README](README.zh_CN.md)
 

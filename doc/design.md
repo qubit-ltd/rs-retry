@@ -2,7 +2,7 @@
 
 [简体中文](design.zh_CN.md) · [User guide](user_guide.md) · [README](../README.md)
 
-This document records the maintenance contract of **qubit-retry 0.24**. Public
+This document records the maintenance contract of **qubit-retry 0.26.0**. Public
 usage belongs in the user guide; the invariants here govern internal changes.
 
 ## Scope and dependency direction
@@ -88,6 +88,17 @@ An attempt proceeds through preparation and commitment:
 6. Notify failure observers, select the first decisive rule, calculate backoff,
    check continuation, and notify scheduling observers only if currently eligible.
    Recheck after callbacks and actual waiting before another admission.
+
+`RetrySession` exposes these boundaries to an external scheduler. After
+`record_result` returns `RetryAt(due)`, the caller owns the wait and must use
+the session timer's monotonic clock domain. `begin_attempt` returns
+`Ok(RetrySessionAdmission::Waiting(due))` while the deadline is still in the
+future; this is recoverable and does not run observers, admit an attempt, or
+calculate another backoff. Each check validates and refreshes the clock first,
+then checks cancellation as `Backoff`, then checks whether `due` has been
+reached. At or after the deadline, normal before-attempt and commitment checks
+run. Cancellation or invalid time ends the session with the corresponding
+structured terminal error.
 
 Only successful commitment increments `attempts`. `current_attempt` is an overlay:
 it can identify the upcoming before-attempt callback before admission or retained

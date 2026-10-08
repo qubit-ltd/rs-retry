@@ -163,6 +163,7 @@ rules and observers without requiring the application error to implement `Clone`
 | Entry point | Feature | Operation requirements | Where it runs |
 | --- | --- | --- | --- |
 | `Retry::new(&config)` | None | `FnMut() -> Result<T, E>`; can borrow local state | Calling thread |
+| `RetrySession::new(config, timer)` | None | Caller supplies one operation at a time and schedules waits | External scheduler; early admission checks return `Ok(Waiting(due))` |
 | `AsyncRetry::new(&config)` | `async` | `FnMut() -> Fut`; futures need not be `Send` or `'static` | Any executor polling the future; default timer is `StdTimer` |
 | `TokioRetry::new(&config)` | `tokio` | `FnMut() -> Fut`; futures need not be `Send` or `'static` | Tokio runtime |
 | `WorkerRetry::new(&config)` | `worker` | `Fn(AttemptCancellationToken) -> Result<T, E> + Send + Sync + 'static`; `T` and `E`: `Send + 'static` | Dedicated worker thread per attempt |
@@ -170,6 +171,58 @@ rules and observers without requiring the application error to implement `Clone`
 The execution APIs require `E: 'static`, including in sync/async mode; that does
 not require their operation closures to own all captured state. Rules and
 observers are shared `Send + Sync + 'static` callbacks.
+
+Use `RetrySession` when an existing scheduler owns operation delivery and
+retry timing. It is available with the default feature set. The session does
+not sleep or register a timer: after `record_result` returns `RetryAt(due)`,
+the scheduler waits in the supplied timer's clock domain and calls
+`begin_attempt` again. A call before the deadline returns
+`Ok(RetrySessionAdmission::Waiting(due))`; it does not admit or run an
+operation. Cancellation while waiting ends the session with `Backoff`
+attribution.
+
+This minimal example uses immediate backoff to show the complete admission
+protocol without a real delay. The first result requests a retry, the second
+admission starts attempt two, and success completes the session:
+
+<!-- retry-example: kind=run features=none -->
+```rust
+use std::sync::Arc;
+
+use qubit_clock::StdTimer;
+use qubit_retry::{
+    RetryConfig, RetryFallback, RetrySession, RetrySessionAdmission, RetrySessionStep,
+};
+
+fn main() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(2)
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid retry config");
+    let mut session = RetrySession::new(config, Arc::new(StdTimer::new()));
+
+    let RetrySessionAdmission::Admitted(first) = session.begin_attempt().expect("admitted") else {
+        panic!("fresh session cannot wait");
+    };
+    assert_eq!(first.get(), 1);
+    assert!(matches!(session.record_result::<()>(Err("temporary")), RetrySessionStep::RetryAt(_)));
+
+    let RetrySessionAdmission::Admitted(second) = session.begin_attempt().expect("admitted") else {
+        panic!("immediate backoff should be ready");
+    };
+    assert_eq!(second.get(), 2);
+    let RetrySessionStep::Complete(success) = session.record_result(Ok("recovered")) else {
+        panic!("operation succeeded");
+    };
+    assert_eq!(*success.value(), "recovered");
+}
+```
+
+With nonzero backoff, wait until the `RetryAt` deadline before checking again.
+An early check can return `Waiting(due)` repeatedly; preserve that deadline and
+schedule another check without starting the operation. If cancellation is
+requested during this wait, the session reports cancellation at `Backoff`.
 
 Enable runtime-independent async execution with:
 
