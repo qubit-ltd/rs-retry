@@ -59,10 +59,12 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
         self
     }
 
-    /// Sets the wall-clock timeout for the entire flow.
+    /// Sets the deadline for the entire flow using the configured monotonic
+    /// clock.
     ///
     /// # Parameters
-    /// - `timeout`: Hard duration for the complete retry flow.
+    /// - `timeout`: Duration measured by the configured timer's monotonic
+    ///   clock.
     ///
     /// # Returns
     /// This facade with the selected timeout.

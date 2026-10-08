@@ -87,11 +87,10 @@ pub struct AsyncRetry<'a, E> {
 }
 
 impl<'a, E: 'static> AsyncRetry<'a, E> {
-    ///
     /// Creates a facade borrowing the immutable retry definition.
     ///
     /// # Parameters
-    /// - `retry`: Definition that must outlive this facade.
+    /// - `config`: Configuration that must outlive this facade.
     ///
     /// # Returns
     /// An execution facade with default runtime controls.
@@ -121,7 +120,8 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         self
     }
 
-    /// Sets the wall-clock timeout for the entire flow.
+    /// Sets the deadline for the entire flow using the configured monotonic
+    /// clock.
     ///
     /// # Parameters
     /// - `timeout`: Duration measured by the configured monotonic clock; zero
