@@ -176,12 +176,14 @@ serde DTO 拒绝未知或无关字段，并区分 ratio 缺失与 null。
 
 ## 下游所有权边界
 
-| 消费者 | 终态转换与诊断 |
-| --- | --- |
-| rs-http | 借用原错误投影领域 kind/message 和 HTTP 字段，将完整 RetryError 移入 source，保留原 HttpError/后端链及完成诊断 |
-| rs-cas | 保留 CasRetryFailure、timeout_current 投影，在堆上的详情对象中保存完成诊断，提供借用 getter 与无损消费拆解 |
-| rs-event-bus | 空诊断保持既有映射，非空诊断以 RetryCompletionDiagnostics 包装 source/context/diagnostics，保留 Error::source、Clone/Eq |
-| rs-http SSE | 独立组合 RetryBudget 和 BackoffState，执行领域 1ms 下限/服务端 cap，不转换完成观察者诊断 |
+| 消费者 | 终态转换与诊断 | 当前依赖版本 / 验证边界 |
+| --- | --- | --- |
+| rs-http | 借用原错误投影领域 kind/message 和 HTTP 字段，将完整 RetryError 移入 source，保留原 HttpError/后端链及完成诊断 | 依赖 qubit-retry 0.25；尚未验证 0.26 集成 |
+| rs-cas | 保留 CasRetryFailure、timeout_current 投影，在堆上的详情对象中保存完成诊断，提供借用 getter 与无损消费拆解 | 依赖 qubit-retry 0.25；尚未验证 0.26 集成 |
+| rs-event-bus | 空诊断保持既有映射，非空诊断以 RetryCompletionDiagnostics 包装 source/context/diagnostics，保留 Error::source、Clone/Eq | 本地 qubit-retry 0.26 集成 |
+| rs-http SSE | 独立组合 RetryBudget 和 BackoffState，执行领域 1ms 下限/服务端 cap，不转换完成观察者诊断 | 依赖 qubit-retry 0.25；尚未验证 0.26 集成 |
+
+以上版本为 2026-10-08 本地仓库快照；下游升级后须核对锁文件与集成测试，再更新本表。
 
 HTTP 的 method、URL、status、preview、retry_after、log_redactor 均保留，source 所有权不复制。
 EventBus 默认规则对新包装返回 Abort；拦截器来源识别保留共享上下文身份，报告/死信元数据使用稳定包装 kind 和内部领域消息。

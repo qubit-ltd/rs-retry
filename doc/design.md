@@ -231,12 +231,15 @@ keep absent numeric ratio distinct from null.
 
 ## Downstream ownership boundaries
 
-| Consumer | Terminal conversion and diagnostics |
-| --- | --- |
-| rs-http | Outer domain kind/message and HTTP fields are projected by borrowing; complete RetryError is moved into source, preserving the original HttpError/backend chain and completion failures |
-| rs-cas | Preserve CasRetryFailure and timeout_current projection, store completion failures out of line, expose borrowed diagnostics and lossless consuming parts |
-| rs-event-bus | Preserve existing domain mapping for empty diagnostics; otherwise wrap source/context/diagnostics in terminal RetryCompletionDiagnostics with Error::source and Clone/Eq |
-| rs-http SSE | Independently compose RetryBudget and BackoffState; enforce domain 1ms floor/server cap; no completion observer conversion |
+| Consumer | Terminal conversion and diagnostics | Current dependency / verification boundary |
+| --- | --- | --- |
+| rs-http | Outer domain kind/message and HTTP fields are projected by borrowing; complete RetryError is moved into source, preserving the original HttpError/backend chain and completion failures | `qubit-retry 0.25`; integration with 0.26 not yet verified |
+| rs-cas | Preserve CasRetryFailure and timeout_current projection, store completion failures out of line, expose borrowed diagnostics and lossless consuming parts | `qubit-retry 0.25`; integration with 0.26 not yet verified |
+| rs-event-bus | Preserve existing domain mapping for empty diagnostics; otherwise wrap source/context/diagnostics in terminal RetryCompletionDiagnostics with Error::source and Clone/Eq | Local `qubit-retry 0.26` integration |
+| rs-http SSE | Independently compose RetryBudget and BackoffState; enforce domain 1ms floor/server cap; no completion observer conversion | `qubit-retry 0.25`; integration with 0.26 not yet verified |
+
+The dependency versions above reflect the local checkout on 2026-10-08; update
+this table only after checking downstream lockfiles and integration tests.
 
 HTTP method, URL, status, preview, retry_after and log_redactor are retained;
 source ownership is not duplicated. EventBus's default rule aborts on the wrapper;
