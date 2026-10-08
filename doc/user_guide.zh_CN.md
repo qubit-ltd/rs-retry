@@ -162,6 +162,8 @@ snapshot-v2, attempts=3
 各执行接口都要求 `E: 'static`，同步与异步模式也不例外；但这不意味着它们的操作闭包必须拥有所有捕获状态。
 规则与观察者会被共享，须满足 `Send + Sync + 'static`。
 
+### 让现有调度器负责等待
+
 如果操作投递和重试计时已经由现有调度器负责，可以使用 `RetrySession`。
 默认 feature 即包含此 API。会话不会自行 sleep，也不会注册 timer：
 `record_result` 返回 `RetryAt(due)` 后，调度器应使用传入 timer 所属的时钟域等待，
@@ -169,40 +171,50 @@ snapshot-v2, attempts=3
 `Ok(RetrySessionAdmission::Waiting(due))`；此时没有新尝试获准，也不会执行操作。
 等待期间取消会按 `Backoff` 阶段结束会话。
 
-下面用立即退避展示完整准入流程，因此不需要真实等待。第一次结果请求重试，
-第二次准入开始第二次尝试，操作成功后会话完成：
+下面把重试间隔设为 20 ms。第一次操作失败后，`RetryAt(due)` 给出绝对截止时间；
+调用方先确认提前检查会返回 `Waiting(due)`，再由模拟调度器推进时钟并重新申请准入。
+实际应用应把 `due` 交给自己的任务队列：
 
-运行此示例还需要将 `qubit-clock` 添加为直接依赖：
+示例用手动时钟避免真实等待，需要把 `qubit-clock` 添加为直接依赖并开启测试工具：
 
 ```bash
-cargo add qubit-clock@0.13
+cargo add qubit-clock@0.13 --features test-util
 ```
 
-<!-- retry-example: kind=run features=none deps=clock -->
+<!-- retry-example: kind=run features=none deps=clock-test-util -->
 ```rust
-use std::sync::Arc;
+use std::time::Duration;
 
-use qubit_clock::StdTimer;
+use qubit_clock::ManualMonotonicClock;
+use qubit_clock::MonotonicClock;
 use qubit_retry::{
-    RetryConfig, RetryFallback, RetrySession, RetrySessionAdmission, RetrySessionStep,
+    BackoffPolicy, RetryConfig, RetryFallback, RetrySession,
+    RetrySessionAdmission, RetrySessionStep,
 };
 
 fn main() {
     let config = RetryConfig::<&str>::builder()
         .max_attempts(2)
         .fallback(RetryFallback::Retry)
+        .backoff(BackoffPolicy::fixed(Duration::from_millis(20)))
         .build()
         .expect("有效的重试配置");
-    let mut session = RetrySession::new(config, Arc::new(StdTimer::new()));
+    let clock = ManualMonotonicClock::new_shared();
+    let mut session = RetrySession::new(config, clock.new_timer());
 
     let RetrySessionAdmission::Admitted(first) = session.begin_attempt().expect("已准入") else {
         panic!("新会话不应处于等待状态");
     };
     assert_eq!(first.get(), 1);
-    assert!(matches!(session.record_result::<()>(Err("temporary")), RetrySessionStep::RetryAt(_)));
+    let RetrySessionStep::RetryAt(due) = session.record_result::<()>(Err("temporary")) else {
+        panic!("第一次失败应安排重试");
+    };
+    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due));
 
-    let RetrySessionAdmission::Admitted(second) = session.begin_attempt().expect("已准入") else {
-        panic!("立即退避应已就绪");
+    assert_eq!(due.duration_since(clock.now()).expect("相同时钟域"), Duration::from_millis(20));
+    clock.advance_to(due).expect("调度器到达截止时间");
+    let RetrySessionAdmission::Admitted(second) = session.begin_attempt().expect("重试应能准入") else {
+        panic!("截止时间已到");
     };
     assert_eq!(second.get(), 2);
     let RetrySessionStep::Complete(success) = session.record_result(Ok("recovered")) else {
@@ -212,9 +224,13 @@ fn main() {
 }
 ```
 
-退避时间非零时，应等到 `RetryAt` 给出的截止时间再检查。提前检查可能反复返回
-`Waiting(due)`；保留该截止时间并重新安排检查，不要启动操作。若等待期间收到取消请求，
-会话会以 `Backoff` 阶段的取消结果结束。
+`due` 属于传入 `RetrySession` 的计时器时钟域；不要与另一个时钟的时间戳比较。
+提前检查可能反复返回 `Waiting(due)`，此时不要执行操作。调度器应保留该截止时间，
+到期后重新调用 `begin_attempt`，并处理它返回的终止错误。若等待期间收到取消请求，
+会话会以 `Backoff` 阶段的取消结果结束。手动时钟只用于复现调度器到期投递；
+生产环境应使用与会话计时器同域的时钟安排投递。`RetrySession` 自身既不等待，也不注册计时器。
+
+### 不绑定运行时的异步执行
 
 不绑定具体运行时的异步执行需要开启 `async`：
 
@@ -224,8 +240,51 @@ fn main() {
 qubit-retry = { version = "0.26", features = ["async"] }
 ```
 
-`AsyncRetry` 返回标准库 `Future`，默认使用 `StdTimer`；调用方负责提供
-executor。若希望使用 Tokio 原生计时器，请开启 `tokio`：
+`AsyncRetry` 返回标准库 `Future`，默认使用 `StdTimer`；调用方负责提供 executor。
+下面使用 `futures-executor` 运行示例，应用可以换成自己的 executor，而无需更换重试接口。
+除了上面的 `async` feature，还需为示例添加直接依赖：
+
+```bash
+cargo add futures-executor@0.3
+```
+
+<!-- retry-example: kind=run features=async deps=futures-executor -->
+```rust
+use std::io;
+use std::time::Duration;
+
+use futures_executor::block_on;
+use qubit_retry::{AsyncRetry, AttemptFailure, BackoffPolicy, RetryConfig, RetryContext, RetryDecision};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = RetryConfig::builder()
+        .max_attempts(3)
+        .backoff(BackoffPolicy::fixed(Duration::from_millis(5)))
+        .rule(|failure: &AttemptFailure<io::Error>, _: &RetryContext| match failure {
+            AttemptFailure::Error(error) if error.kind() == io::ErrorKind::TimedOut => RetryDecision::Retry,
+            _ => RetryDecision::Abort,
+        })
+        .build()?;
+    let mut responses = [
+        Err(io::Error::new(io::ErrorKind::TimedOut, "storage unavailable")),
+        Ok("snapshot-v2"),
+    ].into_iter();
+
+    let success = block_on(AsyncRetry::new(&config).run(|| {
+        let response = responses.next().expect("示例只有两次响应");
+        async move { response }
+    }))?;
+    assert_eq!(*success.value(), "snapshot-v2");
+    assert_eq!(success.context().attempts(), 2);
+    Ok(())
+}
+```
+
+第一次 future 返回可重试的客户端错误；等待 5 ms 后，执行器通过闭包创建新的 future，
+第二次返回成功。响应数组只模拟客户端行为，不负责安排重试。
+如果客户端可能返回永久错误，保留这样的选择性规则，不要直接把所有错误都设为可重试。
+
+若希望使用 Tokio 原生计时器，请开启 `tokio`：
 
 <!-- retry-example: kind=cargo features=tokio -->
 ```toml
@@ -233,7 +292,7 @@ executor。若希望使用 Tokio 原生计时器，请开启 `tokio`：
 qubit-retry = { version = "0.26", features = ["tokio"] }
 ```
 
-运行手册中的异步示例，还需为应用添加直接 Tokio 依赖：
+运行后文的 `TokioRetry` 示例，还需为应用添加直接 Tokio 依赖：
 
 ```bash
 cargo add tokio@1.52 --features rt,macros,time
@@ -844,16 +903,16 @@ fn main() {
 
 | 现象 | 检查方向 |
 | --- | --- |
-| 配置了 `max_attempts(3)`，却只调用一次 | 未分类错误默认终止。先检查规则与 fallback，再考虑增加次数。 |
-| `attempts() == 0` | 检查预先取消、零预算或零超时、尝试前回调以及基础设施错误。 |
-| 返回 `Exhausted` 而非 `TimedOut` | 软预算限制准入，应检查 `limit`；硬超时错误带有 `scope`。 |
-| 同步操作运行时间超过预算 | 无法打断同步闭包。限制底层 I/O，或选择合适的 async/worker 操作。 |
-| 找不到 `AsyncRetry`、`TokioRetry` 或 `WorkerRetry` | 检查对应的 `async`、`tokio` 或 `worker` feature 是否开启；`AsyncRetry` 只需要调用方提供 executor。 |
-| 操作次数少于重试调度通知数 | 调度不保证准入，后续取消、回调或限制可能阻止执行。 |
-| `WorkerStillRunning` | 检查触发原因及操作、TLS 的清理流程，再决定是否启动替代任务。 |
-| 成功结果中有诊断 | 检查完成观察者，其 panic 不会否定业务成功。 |
-| 服务端等待提示被缩短 | 检查是否允许提示抖动、提示选择方式以及最终延迟上限。 |
-| `Infrastructure::Clock` 或计时器错误 | 检查注入的时钟、计时器及诊断消息，不要伪造耗时值。 |
+| 配置了 `max_attempts(3)`，却只调用一次 | 未分类错误默认终止。先检查规则与 fallback，再考虑增加次数；见[判断可重试错误](#决定哪些失败可以重试)。 |
+| `attempts() == 0` | 检查预先取消、零预算或零超时、尝试前回调以及基础设施错误；见[流程](#理解一次重试流程)与[结果分类](#保留完整结果)。 |
+| 返回 `Exhausted` 而非 `TimedOut` | 软预算限制准入，应检查 `limit`；硬超时错误带有 `scope`。见[预算与超时](#设置预算与超时)。 |
+| 同步操作运行时间超过预算 | 无法打断同步闭包。限制底层 I/O，或选择合适的 async/worker 操作；见[模式选择](#选择执行模式)。 |
+| 找不到 `AsyncRetry`、`TokioRetry` 或 `WorkerRetry` | 检查对应 feature 是否开启；`AsyncRetry` 还需要调用方提供 executor。见[模式选择](#选择执行模式)。 |
+| 操作次数少于重试调度通知数 | 调度不保证准入，后续取消、回调或限制可能阻止执行；见[观察生命周期](#观察生命周期)。 |
+| `WorkerStillRunning` | 检查触发原因及操作、TLS 的清理流程，再决定是否启动替代任务；见[工作线程取消](#工作线程中的阻塞操作)。 |
+| 成功结果中有诊断 | 检查完成观察者，其 panic 不会否定业务成功；见[保留完整结果](#保留完整结果)。 |
+| 服务端等待提示被缩短 | 检查提示抖动、选择方式以及最终延迟上限；见[退避与提示](#配置退避与服务端等待提示)。 |
+| `Infrastructure::Clock` 或计时器错误 | 检查注入的时钟、计时器及诊断消息，不要伪造耗时值；见[测试时钟](#独立使用预算与测试时钟)。 |
 
 远程操作应使用有界重试，并考虑客户端内部是否已经重试，避免叠加放大请求次数。
 对结果不确定的副作用，应提前定义核对与恢复方式。

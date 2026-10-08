@@ -172,6 +172,8 @@ The execution APIs require `E: 'static`, including in sync/async mode; that does
 not require their operation closures to own all captured state. Rules and
 observers are shared `Send + Sync + 'static` callbacks.
 
+### Let your scheduler own the wait
+
 Use `RetrySession` when an existing scheduler owns operation delivery and
 retry timing. It is available with the default feature set. The session does
 not sleep or register a timer: after `record_result` returns `RetryAt(due)`,
@@ -181,41 +183,51 @@ the scheduler waits in the supplied timer's clock domain and calls
 operation. Cancellation while waiting ends the session with `Backoff`
 attribution.
 
-This minimal example uses immediate backoff to show the complete admission
-protocol without a real delay. The first result requests a retry, the second
-admission starts attempt two, and success completes the session:
+This example schedules a retry 20 ms after the first failure. It checks that
+an early admission attempt returns `Waiting(due)`. A manual clock then stands in
+for the scheduler delivering the operation at its deadline. In a service,
+enqueue the operation for that deadline instead:
 
-Add `qubit-clock` as a direct dependency for this example:
+This deterministic example needs a direct `qubit-clock` dependency with its test utility enabled:
 
 ```bash
-cargo add qubit-clock@0.13
+cargo add qubit-clock@0.13 --features test-util
 ```
 
-<!-- retry-example: kind=run features=none deps=clock -->
+<!-- retry-example: kind=run features=none deps=clock-test-util -->
 ```rust
-use std::sync::Arc;
+use std::time::Duration;
 
-use qubit_clock::StdTimer;
+use qubit_clock::ManualMonotonicClock;
+use qubit_clock::MonotonicClock;
 use qubit_retry::{
-    RetryConfig, RetryFallback, RetrySession, RetrySessionAdmission, RetrySessionStep,
+    BackoffPolicy, RetryConfig, RetryFallback, RetrySession,
+    RetrySessionAdmission, RetrySessionStep,
 };
 
 fn main() {
     let config = RetryConfig::<&str>::builder()
         .max_attempts(2)
         .fallback(RetryFallback::Retry)
+        .backoff(BackoffPolicy::fixed(Duration::from_millis(20)))
         .build()
         .expect("valid retry config");
-    let mut session = RetrySession::new(config, Arc::new(StdTimer::new()));
+    let clock = ManualMonotonicClock::new_shared();
+    let mut session = RetrySession::new(config, clock.new_timer());
 
     let RetrySessionAdmission::Admitted(first) = session.begin_attempt().expect("admitted") else {
         panic!("fresh session cannot wait");
     };
     assert_eq!(first.get(), 1);
-    assert!(matches!(session.record_result::<()>(Err("temporary")), RetrySessionStep::RetryAt(_)));
+    let RetrySessionStep::RetryAt(due) = session.record_result::<()>(Err("temporary")) else {
+        panic!("first failure should schedule a retry");
+    };
+    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due));
 
-    let RetrySessionAdmission::Admitted(second) = session.begin_attempt().expect("admitted") else {
-        panic!("immediate backoff should be ready");
+    assert_eq!(due.duration_since(clock.now()).expect("same clock domain"), Duration::from_millis(20));
+    clock.advance_to(due).expect("scheduler reaches the deadline");
+    let RetrySessionAdmission::Admitted(second) = session.begin_attempt().expect("retry should be admitted") else {
+        panic!("the deadline has passed");
     };
     assert_eq!(second.get(), 2);
     let RetrySessionStep::Complete(success) = session.record_result(Ok("recovered")) else {
@@ -225,10 +237,16 @@ fn main() {
 }
 ```
 
-With nonzero backoff, wait until the `RetryAt` deadline before checking again.
-An early check can return `Waiting(due)` repeatedly; preserve that deadline and
-schedule another check without starting the operation. If cancellation is
-requested during this wait, the session reports cancellation at `Backoff`.
+The deadline uses the clock domain of the timer passed to `RetrySession`.
+Do not compare it with timestamps from a different clock. An early check may
+return `Waiting(due)` more than once; keep the deadline and leave the operation
+idle. Once due, call `begin_attempt` again and handle any terminal error it
+returns. Cancellation during the wait ends the session in the `Backoff` phase.
+The manual clock makes scheduled delivery reproducible. In production, schedule
+delivery against the same clock domain as the session timer. `RetrySession`
+neither waits nor registers a timer.
+
+### Run AsyncRetry with your executor
 
 Enable runtime-independent async execution with:
 
@@ -239,8 +257,52 @@ qubit-retry = { version = "0.26", features = ["async"] }
 ```
 
 `AsyncRetry` returns a standard `Future` and uses `StdTimer` by default. The
-executor is supplied by the application. To use Tokio's native timer instead,
-enable `tokio`:
+application supplies an executor. This example uses `futures-executor` to drive
+the future; an application can supply its own executor without changing the
+retry call. Add the example's direct dependency alongside the `async` feature:
+
+```bash
+cargo add futures-executor@0.3
+```
+
+<!-- retry-example: kind=run features=async deps=futures-executor -->
+```rust
+use std::io;
+use std::time::Duration;
+
+use futures_executor::block_on;
+use qubit_retry::{AsyncRetry, AttemptFailure, BackoffPolicy, RetryConfig, RetryContext, RetryDecision};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = RetryConfig::builder()
+        .max_attempts(3)
+        .backoff(BackoffPolicy::fixed(Duration::from_millis(5)))
+        .rule(|failure: &AttemptFailure<io::Error>, _: &RetryContext| match failure {
+            AttemptFailure::Error(error) if error.kind() == io::ErrorKind::TimedOut => RetryDecision::Retry,
+            _ => RetryDecision::Abort,
+        })
+        .build()?;
+    let mut responses = [
+        Err(io::Error::new(io::ErrorKind::TimedOut, "storage unavailable")),
+        Ok("snapshot-v2"),
+    ].into_iter();
+
+    let success = block_on(AsyncRetry::new(&config).run(|| {
+        let response = responses.next().expect("fixture has two responses");
+        async move { response }
+    }))?;
+    assert_eq!(*success.value(), "snapshot-v2");
+    assert_eq!(success.context().attempts(), 2);
+    Ok(())
+}
+```
+
+The first future returns a retryable client error. After a 5 ms delay, the
+closure makes a fresh future and the second attempt succeeds. The response
+array only simulates the client; it does not schedule retries. Keep the selective
+rule when a real client can also return permanent failures.
+
+For Tokio's native timer, enable `tokio`:
 
 <!-- retry-example: kind=cargo features=tokio -->
 ```toml
@@ -248,7 +310,7 @@ enable `tokio`:
 qubit-retry = { version = "0.26", features = ["tokio"] }
 ```
 
-The async examples also need a direct Tokio dependency. Add it with:
+The later `TokioRetry` examples also need a direct Tokio dependency. Add it with:
 
 ```bash
 cargo add tokio@1.52 --features rt,macros,time
@@ -895,16 +957,16 @@ best-effort timing.
 
 | Symptom | What to check |
 | --- | --- |
-| Only one call despite `max_attempts(3)` | Unclassified errors abort by default. Check the rule and fallback before increasing limits. |
-| `attempts() == 0` | Check pre-cancellation, zero budgets/timeouts, before-attempt callbacks, and infrastructure errors. |
-| `Exhausted` instead of `TimedOut` | Soft budgets stop admission; inspect `limit`. Hard timeout errors carry `scope`. |
-| Sync runs longer than the budget | Its closure cannot be interrupted. Bound the underlying I/O or choose a suitable async/worker operation. |
-| `AsyncRetry`, `TokioRetry`, or `WorkerRetry` is unavailable | Enable the matching `async`, `tokio`, or `worker` feature; `AsyncRetry` only needs an executor supplied by the application. |
-| Fewer calls than retry-scheduled notifications | Scheduling does not guarantee admission. Later cancellation, callbacks, or limits can prevent the attempt. |
-| `WorkerStillRunning` | Inspect its trigger and the operation/TLS cleanup protocol before starting replacement work. |
-| A successful result contains diagnostics | Inspect completion observers; their panic does not invalidate the business result. |
-| A server hint became shorter | Check hint jitter permission, hint selection, and the final delay cap. |
-| `Infrastructure::Clock` or timer failure | Check the supplied clock/timer and diagnostic message; do not fabricate elapsed values. |
+| Only one call despite `max_attempts(3)` | Unclassified errors abort by default. Check the rule and fallback before increasing limits; see [failure selection](#choose-which-failures-to-retry). |
+| `attempts() == 0` | Check pre-cancellation, zero budgets/timeouts, before-attempt callbacks, and infrastructure errors; see the [flow](#understand-a-retry-flow) and [result reasons](#preserve-the-final-outcome). |
+| `Exhausted` instead of `TimedOut` | Soft budgets stop admission; inspect `limit`. Hard timeout errors carry `scope`. See [budgets and timeouts](#set-budgets-and-timeouts). |
+| Sync runs longer than the budget | Its closure cannot be interrupted. Bound the underlying I/O or choose a suitable async/worker operation; see [execution modes](#choose-an-execution-mode). |
+| `AsyncRetry`, `TokioRetry`, or `WorkerRetry` is unavailable | Enable the matching feature; `AsyncRetry` also needs an application executor. See [execution modes](#choose-an-execution-mode). |
+| Fewer calls than retry-scheduled notifications | Scheduling does not guarantee admission. Later cancellation, callbacks, or limits can prevent an attempt; see [lifecycle events](#observe-lifecycle-events). |
+| `WorkerStillRunning` | Inspect its trigger and the operation/TLS cleanup protocol before starting replacement work; see [worker cancellation](#blocking-operations-on-a-worker). |
+| A successful result contains diagnostics | Inspect completion observers; their panic does not invalidate the business result. See [result handling](#preserve-the-final-outcome). |
+| A server hint became shorter | Check hint jitter permission, hint selection, and the final delay cap; see [backoff and hints](#configure-backoff-and-server-hints). |
+| `Infrastructure::Clock` or timer failure | Check the supplied clock/timer and diagnostic message; see [test clocks](#use-standalone-budgets-and-test-clocks). |
 
 Keep retries bounded for remote workloads, account for any retry behavior already
 inside the client, and define how uncertain side effects are reconciled. The

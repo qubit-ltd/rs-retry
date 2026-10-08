@@ -133,8 +133,8 @@ consume another request's retry allowance.
 | Mode | Use it for | Boundary |
 | --- | --- | --- |
 | `Retry::new(&config)` | A bounded operation on the calling thread | Cannot interrupt the operation |
-| `RetrySession::new(config, timer)` | An externally scheduled operation or delivery | Available with default features; caller waits for `RetryAt`, and an early `begin_attempt` returns `Ok(Waiting(due))` |
-| `AsyncRetry::new(&config)` | Async code on any executor | Uses `StdTimer`; the executor still polls the returned future |
+| `RetrySession::new(config, timer)` | An externally scheduled operation or delivery; [see the scheduler example](doc/user_guide.md#let-your-scheduler-own-the-wait) | Available with default features; caller waits for `RetryAt`, and an early `begin_attempt` returns `Ok(Waiting(due))` |
+| `AsyncRetry::new(&config)` | Async code on any executor; [see a runnable example](doc/user_guide.md#run-asyncretry-with-your-executor) | Uses `StdTimer`; the executor still polls the returned future |
 | `TokioRetry::new(&config)` | An async client on Tokio | Cancels a pending future; cannot interrupt blocking code inside it |
 | `WorkerRetry::new(&config)` | Blocking work that checks a cancellation token | Requests thread exit and waits for cleanup; cannot forcibly terminate a thread |
 
