@@ -155,9 +155,7 @@ async fn run_matrix(recursive: bool) {
                     controls: Arc::clone(&later),
                     completed: Arc::clone(&completed),
                 })
-                .rule(|_: &AttemptFailure<&'static str>, _: &RetryContext| {
-                    RetryDecision::UseDefault
-                })
+                .rule(|_: &AttemptFailure<&'static str>, _: &RetryContext| RetryDecision::UseDefault)
                 .rule(move |_: &AttemptFailure<&'static str>, _: &RetryContext| {
                     if phase == RetryCallbackPhase::RuleDecision {
                         panic_any(DropPanicPayload {
@@ -178,11 +176,7 @@ async fn run_matrix(recursive: bool) {
                 #[cfg(feature = "worker")]
                 Facade::Worker => WorkerRetry::new(&retry).run(|_| Err::<(), _>("business")),
                 #[cfg(feature = "tokio")]
-                Facade::Async => {
-                    TokioRetry::new(&retry)
-                        .run(|| async { Err::<(), _>("business") })
-                        .await
-                }
+                Facade::Async => TokioRetry::new(&retry).run(|| async { Err::<(), _>("business") }).await,
             };
             let error: RetryError<&'static str> = result.expect_err("callback terminal");
             let RetryErrorReason::CallbackFailed { callback, .. } = error.reason() else {

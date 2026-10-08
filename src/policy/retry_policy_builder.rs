@@ -183,15 +183,10 @@ impl RetryPolicyBuilder {
     /// Returns a max_attempts policy error if the requested count is zero.
     #[inline]
     pub fn build(self) -> Result<RetryPolicy, RetryPolicyError> {
-        let max_attempts = NonZeroU32::new(self.max_attempts).ok_or_else(|| {
-            RetryPolicyError::new("max_attempts", "maximum attempts must be greater than zero")
-        })?;
+        let max_attempts = NonZeroU32::new(self.max_attempts)
+            .ok_or_else(|| RetryPolicyError::new("max_attempts", "maximum attempts must be greater than zero"))?;
         Ok(RetryPolicy::new(
-            RetryAdmissionLimits::new(
-                max_attempts,
-                self.operation_time_budget,
-                self.total_time_budget,
-            ),
+            RetryAdmissionLimits::new(max_attempts, self.operation_time_budget, self.total_time_budget),
             self.backoff,
         ))
     }

@@ -96,15 +96,9 @@ impl BackoffState {
     #[inline]
     pub fn next(&mut self, request: BackoffRequest) -> BackoffStep {
         self.retry_index = self.retry_index.saturating_add(1);
-        let base_delay = self
-            .policy
-            .base_delay(self.retry_index, self.random.as_source());
-        self.policy.resolve(
-            base_delay,
-            request,
-            self.retry_index,
-            self.random.as_source(),
-        )
+        let base_delay = self.policy.base_delay(self.retry_index, self.random.as_source());
+        self.policy
+            .resolve(base_delay, request, self.retry_index, self.random.as_source())
     }
 
     /// Resets the retry index after a stable connection or completed flow.

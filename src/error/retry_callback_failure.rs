@@ -41,12 +41,7 @@ impl RetryCallbackFailure {
     /// classification.
     #[must_use = "retain the callback failure"]
     #[inline]
-    pub fn new(
-        callback: RetryCallbackKind,
-        index: usize,
-        phase: RetryCallbackPhase,
-        panic: RetryPanic,
-    ) -> Self {
+    pub fn new(callback: RetryCallbackKind, index: usize, phase: RetryCallbackPhase, panic: RetryPanic) -> Self {
         Self {
             callback,
             index,

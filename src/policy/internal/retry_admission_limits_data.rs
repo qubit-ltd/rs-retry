@@ -61,14 +61,11 @@ impl TryFrom<RetryAdmissionLimitsData> for RetryAdmissionLimits {
     /// # Errors
     /// Rejects zero attempts and invalid encoded durations.
     fn try_from(data: RetryAdmissionLimitsData) -> Result<Self, Self::Error> {
-        let max_attempts = NonZeroU32::new(data.max_attempts).ok_or_else(|| {
-            RetryPolicyError::new("max_attempts", "maximum attempts must be greater than zero")
-        })?;
+        let max_attempts = NonZeroU32::new(data.max_attempts)
+            .ok_or_else(|| RetryPolicyError::new("max_attempts", "maximum attempts must be greater than zero"))?;
         Ok(Self::new(
             max_attempts,
-            data.operation_time_budget
-                .map(TryInto::try_into)
-                .transpose()?,
+            data.operation_time_budget.map(TryInto::try_into).transpose()?,
             data.total_time_budget.map(TryInto::try_into).transpose()?,
         ))
     }

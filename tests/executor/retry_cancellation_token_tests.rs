@@ -155,11 +155,7 @@ fn drop_cancelling_waker(token: &RetryCancellationToken) -> Waker {
 }
 
 /// Asserts a controlled re-entrant callback completed without deadlocking.
-fn assert_reentrant_callback_completes(
-    receiver: mpsc::Receiver<bool>,
-    handle: thread::JoinHandle<()>,
-    callback: &str,
-) {
+fn assert_reentrant_callback_completes(receiver: mpsc::Receiver<bool>, handle: thread::JoinHandle<()>, callback: &str) {
     match receiver.recv_timeout(Duration::from_secs(5)) {
         Ok(true) => handle
             .join()
@@ -306,10 +302,7 @@ fn test_retry_cancellation_token_repoll_drop_can_reenter_cancellation() {
     assert_reentrant_callback_completes(receiver, handle, "waker replacement drop");
     assert!(token.is_cancelled());
     let mut cancelled = Box::pin(token.cancelled());
-    assert_eq!(
-        Poll::Ready(()),
-        poll_once(cancelled.as_mut(), Waker::noop())
-    );
+    assert_eq!(Poll::Ready(()), poll_once(cancelled.as_mut(), Waker::noop()));
 }
 
 /// Verifies dropping a pending future drops its waker after unlocking the
@@ -324,16 +317,11 @@ fn test_retry_cancellation_token_drop_can_reenter_cancellation() {
         let mut cancelled = Box::pin(thread_token.cancelled());
         let pending = poll_once(cancelled.as_mut(), &waker) == Poll::Pending;
         drop(cancelled);
-        sender
-            .send(pending)
-            .expect("test receiver must remain available");
+        sender.send(pending).expect("test receiver must remain available");
     });
 
     assert_reentrant_callback_completes(receiver, handle, "pending future drop");
     assert!(token.is_cancelled());
     let mut cancelled = Box::pin(token.cancelled());
-    assert_eq!(
-        Poll::Ready(()),
-        poll_once(cancelled.as_mut(), Waker::noop())
-    );
+    assert_eq!(Poll::Ready(()), poll_once(cancelled.as_mut(), Waker::noop()));
 }

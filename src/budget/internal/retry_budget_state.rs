@@ -118,10 +118,7 @@ impl RetryBudgetState {
     /// Returns a domain/regression error without mutating state.
     #[inline]
     #[must_use = "handle the budget snapshot result"]
-    pub(crate) fn snapshot_at(
-        &self,
-        now: MonotonicInstant,
-    ) -> Result<RetryBudgetSnapshot, TimeError> {
+    pub(crate) fn snapshot_at(&self, now: MonotonicInstant) -> Result<RetryBudgetSnapshot, TimeError> {
         let _ = now.duration_since(self.sampled_at)?;
         Ok(RetryBudgetSnapshot::new(
             self.attempts(),

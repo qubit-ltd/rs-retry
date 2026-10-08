@@ -153,8 +153,6 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
         Fut: Future<Output = Result<T, E>>,
     {
         let default_timer = TokioTimer::current();
-        self.inner
-            .run_with_default_timer(&default_timer, operation)
-            .await
+        self.inner.run_with_default_timer(&default_timer, operation).await
     }
 }

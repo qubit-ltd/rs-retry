@@ -72,10 +72,7 @@ impl RetryInfrastructureFailure {
     pub fn worker_stop_trigger(&self) -> Option<WorkerStopTrigger> {
         match self {
             Self::WorkerStillRunning { trigger } => Some(*trigger),
-            Self::Clock { .. }
-            | Self::Timer { .. }
-            | Self::WorkerSpawn { .. }
-            | Self::WorkerChannelClosed => None,
+            Self::Clock { .. } | Self::Timer { .. } | Self::WorkerSpawn { .. } | Self::WorkerChannelClosed => None,
         }
     }
 }
@@ -106,10 +103,7 @@ impl fmt::Display for RetryInfrastructureFailure {
             }
             #[cfg(feature = "worker")]
             Self::WorkerChannelClosed => {
-                write!(
-                    formatter,
-                    "worker event channel closed before exit was confirmed"
-                )
+                write!(formatter, "worker event channel closed before exit was confirmed")
             }
             #[cfg(feature = "worker")]
             Self::WorkerStillRunning { trigger } => {

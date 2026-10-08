@@ -77,10 +77,7 @@ impl<E: 'static> RetryObservers<E> {
     ///
     /// # Errors
     /// Returns the first captured observer panic; later observers do not run.
-    pub(crate) fn try_before_attempt(
-        &self,
-        context: &RetryContext,
-    ) -> Result<(), RetryCallbackFailure> {
+    pub(crate) fn try_before_attempt(&self, context: &RetryContext) -> Result<(), RetryCallbackFailure> {
         self.try_each(RetryCallbackPhase::BeforeAttempt, |observer| {
             observer.on_before_attempt(context)
         })
@@ -141,9 +138,7 @@ impl<E: 'static> RetryObservers<E> {
     /// Every captured completion panic in registration order; no allocation
     /// when no callback panics. The original outcome is not changed.
     pub(crate) fn notify_success(&self, context: &RetryContext) -> Vec<RetryCallbackFailure> {
-        self.notify_each(RetryCallbackPhase::Success, |observer| {
-            observer.on_success(context)
-        })
+        self.notify_each(RetryCallbackPhase::Success, |observer| observer.on_success(context))
     }
 
     /// Notifies every observer of the original terminal failure and context.
@@ -183,11 +178,7 @@ impl<E: 'static> RetryObservers<E> {
     /// # Returns
     /// An ordered vector of panics; later observers run even after an earlier
     /// panic.
-    fn notify_each<F>(
-        &self,
-        phase: RetryCallbackPhase,
-        mut callback: F,
-    ) -> Vec<RetryCallbackFailure>
+    fn notify_each<F>(&self, phase: RetryCallbackPhase, mut callback: F) -> Vec<RetryCallbackFailure>
     where
         F: FnMut(&dyn RetryObserver<E>),
     {
@@ -224,11 +215,7 @@ impl<E: 'static> RetryObservers<E> {
     /// # Errors
     /// Returns the first panic with observer kind, index, phase and decoded
     /// payload.
-    fn try_each<F>(
-        &self,
-        phase: RetryCallbackPhase,
-        mut callback: F,
-    ) -> Result<(), RetryCallbackFailure>
+    fn try_each<F>(&self, phase: RetryCallbackPhase, mut callback: F) -> Result<(), RetryCallbackFailure>
     where
         F: FnMut(&dyn RetryObserver<E>),
     {

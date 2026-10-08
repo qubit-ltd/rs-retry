@@ -112,11 +112,7 @@ impl<E: 'static> RetrySession<E> {
     }
 
     /// Initializes owned state from the supplied runtime resources.
-    fn new_inner(
-        config: RetryConfig<E>,
-        timer: Arc<dyn Timer>,
-        random: Option<Arc<dyn RetryRandomSource>>,
-    ) -> Self {
+    fn new_inner(config: RetryConfig<E>, timer: Arc<dyn Timer>, random: Option<Arc<dyn RetryRandomSource>>) -> Self {
         let controller = RetryFlowController::new(timer.clock().now(), &config, random, None, None);
         Self {
             config,
@@ -153,10 +149,7 @@ impl<E: 'static> RetrySession<E> {
     /// # Panics
     /// Panics if an operation is already active or the session has finished.
     /// Custom clock panics propagate.
-    #[allow(
-        clippy::result_large_err,
-        reason = "preserves lossless terminal retry context"
-    )]
+    #[allow(clippy::result_large_err, reason = "preserves lossless terminal retry context")]
     pub fn begin_attempt(&mut self) -> Result<RetrySessionAdmission, RetryError<E>> {
         assert!(
             matches!(self.phase, SessionPhase::Ready | SessionPhase::Waiting(_)),
@@ -169,27 +162,21 @@ impl<E: 'static> RetrySession<E> {
                 .controller
                 .before_attempt(clock, cancellation)
                 .and_then(|_| self.controller.commit_attempt(clock, cancellation)),
-            SessionPhase::Waiting(due) => {
-                match self
+            SessionPhase::Waiting(due) => match self.controller.check_backoff_ready(clock, cancellation, due) {
+                Ok(false) => return Ok(RetrySessionAdmission::Waiting(due)),
+                Ok(true) => self
                     .controller
-                    .check_backoff_ready(clock, cancellation, due)
-                {
-                    Ok(false) => return Ok(RetrySessionAdmission::Waiting(due)),
-                    Ok(true) => self
-                        .controller
-                        .before_attempt(clock, cancellation)
-                        .and_then(|_| self.controller.commit_attempt(clock, cancellation)),
-                    Err(error) => Err(error),
-                }
-            }
+                    .before_attempt(clock, cancellation)
+                    .and_then(|_| self.controller.commit_attempt(clock, cancellation)),
+                Err(error) => Err(error),
+            },
             SessionPhase::Active | SessionPhase::Finished => unreachable!("phase asserted above"),
         };
         match result {
             Ok(()) => {
                 self.phase = SessionPhase::Active;
                 Ok(RetrySessionAdmission::Admitted(
-                    NonZeroU32::new(self.controller.attempts())
-                        .expect("a committed attempt has a nonzero ordinal"),
+                    NonZeroU32::new(self.controller.attempts()).expect("a committed attempt has a nonzero ordinal"),
                 ))
             }
             Err(error) => {

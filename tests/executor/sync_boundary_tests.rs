@@ -150,9 +150,7 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     let attempts = AtomicU32::new(0);
     let config4 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::RetryWithHint(Duration::ZERO)
-        })
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(Duration::ZERO))
         .observer(DefaultObserver)
         .build()
         .expect("valid config");
@@ -170,9 +168,7 @@ fn test_sync_facade_reports_timer_and_budget_boundaries() {
     let attempts = AtomicU32::new(0);
     let config5 = RetryConfig::<TestError>::builder()
         .policy(retry_once_policy())
-        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::RetryWithJitteredHint(Duration::ZERO)
-        })
+        .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithJitteredHint(Duration::ZERO))
         .build()
         .expect("valid config");
     let jittered_retry = Retry::new(&config5)

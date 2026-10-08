@@ -19,10 +19,7 @@ use crate::support::FixedRetryRandomSource;
 fn test_policy_builders_cover_backoff_variants() {
     let deterministic = Arc::new(FixedRetryRandomSource::new(0.5));
     let mut immediate = BackoffPolicy::immediate().start();
-    assert_eq!(
-        BackoffPolicy::immediate().maximum_delay(),
-        Some(Duration::ZERO)
-    );
+    assert_eq!(BackoffPolicy::immediate().maximum_delay(), Some(Duration::ZERO));
     assert_eq!(
         immediate.next(BackoffRequest::policy()).effective_delay(),
         Duration::ZERO
@@ -54,12 +51,11 @@ fn test_policy_builders_cover_backoff_variants() {
     assert!(hinted.effective_delay() <= Duration::from_millis(15));
     let _ = hinted.source();
 
-    let exponential =
-        BackoffPolicy::exponential(Duration::from_millis(5), 2.0, Duration::from_millis(40))
-            .unwrap()
-            .with_bounded_jitter(0.25)
-            .unwrap()
-            .use_retry_after_as_minimum();
+    let exponential = BackoffPolicy::exponential(Duration::from_millis(5), 2.0, Duration::from_millis(40))
+        .unwrap()
+        .with_bounded_jitter(0.25)
+        .unwrap()
+        .use_retry_after_as_minimum();
     assert_eq!(exponential.maximum_delay(), Some(Duration::from_millis(40)));
     let mut exponential_state = exponential.start_with_random_source(deterministic);
     assert!(
@@ -107,10 +103,9 @@ fn test_policy_builders_cover_backoff_variants() {
         .start_with_random_source(Arc::new(FixedRetryRandomSource::new(1.0)));
     let _ = saturated.next(BackoffRequest::policy());
     let _ = saturated.next(BackoffRequest::policy());
-    let mut equal_uniform =
-        BackoffPolicy::uniform(Duration::from_millis(4), Duration::from_millis(4))
-            .unwrap()
-            .with_full_jitter()
-            .start_with_random_source(Arc::new(FixedRetryRandomSource::new(0.5)));
+    let mut equal_uniform = BackoffPolicy::uniform(Duration::from_millis(4), Duration::from_millis(4))
+        .unwrap()
+        .with_full_jitter()
+        .start_with_random_source(Arc::new(FixedRetryRandomSource::new(0.5)));
     let _ = equal_uniform.next(BackoffRequest::policy());
 }

@@ -72,13 +72,11 @@ fn test_backoff_strategy_data_rejects_unknown_fields_and_tags() {
     });
     let mut unknown_field = valid.clone();
     unknown_field["backoff"]["strategy"]["unexpected"] = json!(true);
-    let error = from_value::<RetryPolicy>(unknown_field)
-        .expect_err("strategy data must reject unknown fields");
+    let error = from_value::<RetryPolicy>(unknown_field).expect_err("strategy data must reject unknown fields");
     assert!(error.to_string().contains("unknown field"));
 
     let mut unknown_tag = valid;
     unknown_tag["backoff"]["strategy"]["type"] = json!("decorrelated");
-    let error =
-        from_value::<RetryPolicy>(unknown_tag).expect_err("strategy data must reject unknown tags");
+    let error = from_value::<RetryPolicy>(unknown_tag).expect_err("strategy data must reject unknown tags");
     assert!(error.to_string().contains("unknown variant"));
 }

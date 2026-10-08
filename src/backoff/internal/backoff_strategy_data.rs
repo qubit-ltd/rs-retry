@@ -55,9 +55,7 @@ impl From<&BackoffStrategy> for BackoffStrategyData {
     fn from(strategy: &BackoffStrategy) -> Self {
         match strategy {
             BackoffStrategy::Immediate => Self::Immediate,
-            BackoffStrategy::Fixed { delay } => Self::Fixed {
-                delay: (*delay).into(),
-            },
+            BackoffStrategy::Fixed { delay } => Self::Fixed { delay: (*delay).into() },
             BackoffStrategy::Uniform { min, max } => Self::Uniform {
                 minimum: (*min).into(),
                 maximum: (*max).into(),

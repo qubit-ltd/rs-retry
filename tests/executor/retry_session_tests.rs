@@ -105,10 +105,10 @@ struct SessionObserver(Arc<Mutex<Vec<String>>>);
 impl RetryObserver<&'static str> for SessionObserver {
     /// Records the upcoming operation ordinal.
     fn on_before_attempt(&self, context: &RetryContext) {
-        self.0.lock().expect("event lock").push(format!(
-            "before:{}",
-            context.current_attempt().expect("ordinal")
-        ));
+        self.0
+            .lock()
+            .expect("event lock")
+            .push(format!("before:{}", context.current_attempt().expect("ordinal")));
     }
     /// Records committed failure notification.
     fn on_attempt_failed(&self, _: &AttemptFailure<&'static str>, context: &RetryContext) {
@@ -150,9 +150,7 @@ fn summarize_reason(reason: &RetryErrorReason) -> String {
 /// Runs a scenario through either facade and returns its observable contract.
 fn run_scenario(session: bool, scenario: &str) -> (u32, String, Vec<String>) {
     let token = RetryCancellationToken::new();
-    let timer = Arc::new(SessionTimer::new(
-        (scenario == "cancel").then(|| token.clone()),
-    ));
+    let timer = Arc::new(SessionTimer::new((scenario == "cancel").then(|| token.clone())));
     let events = Arc::new(Mutex::new(Vec::new()));
     let mut builder = RetryConfig::builder()
         .max_attempts(3)
@@ -167,11 +165,11 @@ fn run_scenario(session: bool, scenario: &str) -> (u32, String, Vec<String>) {
         builder = builder.fallback(RetryFallback::Abort);
     }
     if scenario == "rule" {
-        builder = builder.fallback(RetryFallback::Abort).rule(
-            |_: &AttemptFailure<&'static str>, _: &RetryContext| {
+        builder = builder
+            .fallback(RetryFallback::Abort)
+            .rule(|_: &AttemptFailure<&'static str>, _: &RetryContext| {
                 RetryDecision::RetryWithHint(Duration::from_secs(3))
-            },
-        );
+            });
     }
     if scenario == "budget" {
         builder = builder.total_time_budget(Duration::from_secs(2));
@@ -181,8 +179,7 @@ fn run_scenario(session: bool, scenario: &str) -> (u32, String, Vec<String>) {
     let mut operation = || {
         attempts += 1;
         if scenario == "regress" {
-            *timer.clock.0.lock().expect("clock lock") =
-                MonotonicInstant::new(timer.clock.domain(), Duration::ZERO);
+            *timer.clock.0.lock().expect("clock lock") = MonotonicInstant::new(timer.clock.domain(), Duration::ZERO);
         }
         if scenario == "domain" {
             *timer.clock.0.lock().expect("clock lock") =
@@ -199,12 +196,9 @@ fn run_scenario(session: bool, scenario: &str) -> (u32, String, Vec<String>) {
         }
     };
     let result = if session {
-        let mut retry = RetrySession::new_with_random_source(
-            config,
-            timer.clone(),
-            Arc::new(FixedRetryRandomSource::new(0.5)),
-        )
-        .with_cancellation_token(token);
+        let mut retry =
+            RetrySession::new_with_random_source(config, timer.clone(), Arc::new(FixedRetryRandomSource::new(0.5)))
+                .with_cancellation_token(token);
         let mut next_ordinal = 1;
         loop {
             let ordinal = match retry.begin_attempt() {
@@ -229,15 +223,8 @@ fn run_scenario(session: bool, scenario: &str) -> (u32, String, Vec<String>) {
                         "zero" => Duration::ZERO,
                         _ => Duration::from_secs(1),
                     };
-                    assert_eq!(
-                        due.duration_since(before).expect("same clock domain"),
-                        expected_delay
-                    );
-                    assert_eq!(
-                        timer.clock.now(),
-                        before,
-                        "record_result must not advance time"
-                    );
+                    assert_eq!(due.duration_since(before).expect("same clock domain"), expected_delay);
+                    assert_eq!(timer.clock.now(), before, "record_result must not advance time");
                     assert_eq!(
                         timer.registrations.load(Ordering::SeqCst),
                         0,
@@ -245,10 +232,7 @@ fn run_scenario(session: bool, scenario: &str) -> (u32, String, Vec<String>) {
                     );
                     timer.elapse(due);
                     if scenario == "budget" {
-                        timer.elapse(
-                            due.checked_add(Duration::from_secs(2))
-                                .expect("valid instant"),
-                        );
+                        timer.elapse(due.checked_add(Duration::from_secs(2)).expect("valid instant"));
                     }
                 }
             }
@@ -288,11 +272,7 @@ fn test_retry_session_matches_retry_run() {
         ("jitter", 2, "success"),
     ] {
         let actual = run_scenario(true, scenario);
-        assert_eq!(
-            actual,
-            run_scenario(false, scenario),
-            "scenario: {scenario}"
-        );
+        assert_eq!(actual, run_scenario(false, scenario), "scenario: {scenario}");
         let (attempts, reason, _) = actual;
         assert_eq!(attempts, expected_attempts, "scenario: {scenario}");
         assert_eq!(reason, expected_reason, "scenario: {scenario}");
@@ -305,13 +285,7 @@ fn test_retry_session_rechecks_budget_after_wait() {
     let (attempts, reason, events) = run_scenario(true, "budget");
     assert_eq!(attempts, 1);
     assert_eq!(reason, "exhausted (total elapsed)");
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.starts_with("before:"))
-            .count(),
-        1
-    );
+    assert_eq!(events.iter().filter(|event| event.starts_with("before:")).count(), 1);
 }
 
 /// Repeated early admission checks preserve the pending deadline and callbacks.
@@ -328,18 +302,12 @@ fn test_retry_session_early_admission_waits_until_due() {
     let timer = Arc::new(SessionTimer::new(None));
     let mut session = RetrySession::new(config, timer.clone());
 
-    assert!(
-        matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 1)
-    );
+    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 1));
     let RetrySessionStep::RetryAt(due) = session.record_result::<()>(Err("busy")) else {
         panic!("retry should be scheduled");
     };
-    assert!(
-        matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due)
-    );
-    assert!(
-        matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due)
-    );
+    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due));
+    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due));
     assert_eq!(
         timer.clock.now(),
         MonotonicInstant::new(timer.clock.domain(), Duration::from_secs(1))
@@ -355,9 +323,7 @@ fn test_retry_session_early_admission_waits_until_due() {
     );
 
     timer.elapse(due);
-    assert!(
-        matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 2)
-    );
+    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 2));
     assert_eq!(
         events
             .lock()
@@ -412,20 +378,14 @@ fn test_retry_session_owns_config_and_accepts_non_clone_errors() {
     #[derive(Debug)]
     struct NonCloneError;
     let mut session = {
-        let config = RetryConfig::<NonCloneError>::builder()
-            .build()
-            .expect("valid config");
+        let config = RetryConfig::<NonCloneError>::builder().build().expect("valid config");
         RetrySession::new(config, Arc::new(SessionTimer::new(None)))
     };
-    let RetrySessionAdmission::Admitted(ordinal) = session.begin_attempt().expect("admitted")
-    else {
+    let RetrySessionAdmission::Admitted(ordinal) = session.begin_attempt().expect("admitted") else {
         panic!("fresh session cannot wait");
     };
     assert_eq!(ordinal.get(), 1);
-    assert!(matches!(
-        session.record_result(Ok(7)),
-        RetrySessionStep::Complete(_)
-    ));
+    assert!(matches!(session.record_result(Ok(7)), RetrySessionStep::Complete(_)));
 }
 
 /// Admission cancellation notifies completion once without admitting work.
@@ -438,16 +398,10 @@ fn test_retry_session_cancellation_before_admission_is_terminal() {
         .expect("valid config");
     let token = RetryCancellationToken::new();
     token.cancel();
-    let mut session =
-        RetrySession::new(config, Arc::new(SessionTimer::new(None))).with_cancellation_token(token);
-    let error = session
-        .begin_attempt()
-        .expect_err("cancelled before admission");
+    let mut session = RetrySession::new(config, Arc::new(SessionTimer::new(None))).with_cancellation_token(token);
+    let error = session.begin_attempt().expect_err("cancelled before admission");
     assert_eq!(error.context().attempts(), 0);
-    assert_eq!(
-        summarize_reason(error.reason()),
-        "cancelled (before attempt)"
-    );
+    assert_eq!(summarize_reason(error.reason()), "cancelled (before attempt)");
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = session.begin_attempt();
@@ -469,10 +423,7 @@ fn test_retry_session_enforces_one_outstanding_attempt() {
         .build()
         .expect("valid config");
     let mut session = RetrySession::new(config, Arc::new(SessionTimer::new(None)));
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.record_result(Ok(1))))
-            .is_err()
-    );
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.record_result(Ok(1)))).is_err());
     assert!(
         matches!(session.begin_attempt().expect("admitted"), RetrySessionAdmission::Admitted(ordinal) if ordinal.get() == 1)
     );
@@ -482,14 +433,8 @@ fn test_retry_session_enforces_one_outstanding_attempt() {
         }))
         .is_err()
     );
-    assert!(matches!(
-        session.record_result(Ok(1)),
-        RetrySessionStep::Complete(_)
-    ));
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.record_result(Ok(1))))
-            .is_err()
-    );
+    assert!(matches!(session.record_result(Ok(1)), RetrySessionStep::Complete(_)));
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.record_result(Ok(1)))).is_err());
     assert_eq!(*events.lock().expect("event lock"), ["before:1", "success"]);
 }
 

@@ -168,14 +168,8 @@ fn assert_cancelled(
     assert_eq!(*phase, expected_phase);
     let last_failure = error.last_failure();
     assert_eq!(error.last_failure(), last_failure);
-    assert_eq!(
-        error.last_error(),
-        last_failure.and_then(AttemptFailure::as_error)
-    );
-    assert_eq!(
-        error.reason().to_string(),
-        format!("cancelled ({expected_phase})")
-    );
+    assert_eq!(error.last_error(), last_failure.and_then(AttemptFailure::as_error));
+    assert_eq!(error.reason().to_string(), format!("cancelled ({expected_phase})"));
     error.last_failure()
 }
 
@@ -201,10 +195,7 @@ async fn test_cancellation_token_before_attempt_does_not_construct_operation() {
         .await
         .expect_err("pre-cancellation must stop before constructing an operation");
 
-    assert_eq!(
-        assert_cancelled(&error, RetryCancellationPhase::BeforeAttempt),
-        None
-    );
+    assert_eq!(assert_cancelled(&error, RetryCancellationPhase::BeforeAttempt), None);
     assert_eq!(error.context().attempts(), 0);
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(operation_calls.load(Ordering::SeqCst), 0);
@@ -238,18 +229,9 @@ async fn test_cancellation_token_during_attempt_retains_active_attempt_scope() {
         .await
         .expect_err("attempt cancellation must interrupt a pending operation");
 
-    assert_eq!(
-        assert_cancelled(&error, RetryCancellationPhase::Attempt),
-        None
-    );
+    assert_eq!(assert_cancelled(&error, RetryCancellationPhase::Attempt), None);
     assert_eq!(error.context().attempts(), 1);
-    assert_eq!(
-        error
-            .context()
-            .current_attempt()
-            .map(|attempt| attempt.get()),
-        Some(1)
-    );
+    assert_eq!(error.context().current_attempt().map(|attempt| attempt.get()), Some(1));
     assert_eq!(
         error.context().current_hard_attempt_timeout(),
         Some(Duration::from_secs(5))
@@ -288,9 +270,7 @@ async fn test_backoff_cancellation_wins_when_timer_is_ready_in_same_poll() {
     let config = RetryConfig::<TestError>::builder()
         .max_attempts(2)
         .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
-        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::RetryWithHint(delay)
-        })
+        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
         .build()
         .expect("valid config");
     let executor = TokioRetry::new(&config).cancellation_token(token.clone());
@@ -333,9 +313,7 @@ async fn test_before_attempt_callback_cancellation_stops_before_operation() {
     let rule_calls = Arc::new(AtomicUsize::new(0));
     let config = RetryConfig::<TestError>::builder()
         .max_attempts(2)
-        .observer(CancelOnBeforeAttempt {
-            token: token.clone(),
-        })
+        .observer(CancelOnBeforeAttempt { token: token.clone() })
         .rule({
             let rule_calls = Arc::clone(&rule_calls);
             move |_: &AttemptFailure<TestError>, _: &RetryContext| {
@@ -357,10 +335,7 @@ async fn test_before_attempt_callback_cancellation_stops_before_operation() {
         .await
         .expect_err("callback cancellation must be rechecked before operation");
 
-    assert_eq!(
-        assert_cancelled(&error, RetryCancellationPhase::BeforeAttempt),
-        None
-    );
+    assert_eq!(assert_cancelled(&error, RetryCancellationPhase::BeforeAttempt), None);
     assert_eq!(error.context().attempts(), 0);
     assert_eq!(operation_calls.load(Ordering::SeqCst), 0);
     assert_eq!(rule_calls.load(Ordering::SeqCst), 0);
@@ -463,9 +438,7 @@ async fn test_retry_scheduled_callback_cancellation_stops_before_sleep() {
     let config = RetryConfig::<TestError>::builder()
         .max_attempts(2)
         .backoff(BackoffPolicy::fixed(delay))
-        .observer(CancelOnRetryScheduled {
-            token: token.clone(),
-        })
+        .observer(CancelOnRetryScheduled { token: token.clone() })
         .fallback(RetryFallback::Retry)
         .build()
         .expect("valid config");
@@ -504,9 +477,7 @@ async fn test_backoff_registration_cancellation_wins_over_timer_failure() {
     let config2 = RetryConfig::<TestError>::builder()
         .max_attempts(2)
         .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
-        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::RetryWithHint(delay)
-        })
+        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
         .build()
         .expect("valid config");
     let error = TokioRetry::new(&config2)
@@ -542,9 +513,7 @@ async fn test_async_ready_result_cancellation_and_equal_deadline_priority() {
         let token = RetryCancellationToken::new();
         let operation_token = token.clone();
         let deadline = Duration::from_secs(5);
-        let config3 = RetryConfig::<&str>::builder()
-            .build()
-            .expect("valid config");
+        let config3 = RetryConfig::<&str>::builder().build().expect("valid config");
         let result = TokioRetry::new(&config3)
             .timer(clock.new_timer())
             .hard_attempt_timeout(deadline)
@@ -574,10 +543,8 @@ async fn test_async_ready_result_cancellation_and_equal_deadline_priority() {
         assert_eq!(error.context().attempts(), 1);
         assert_eq!(error.context().operation_elapsed(), deadline);
         if cancel {
-            assert!(
-                matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. }
-                if *phase == if result_ready { RetryCancellationPhase::Backoff } else { RetryCancellationPhase::Attempt })
-            );
+            assert!(matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. }
+                if *phase == if result_ready { RetryCancellationPhase::Backoff } else { RetryCancellationPhase::Attempt }));
             assert_eq!(error.last_error(), result_ready.then_some(&"business"));
         } else {
             assert!(matches!(

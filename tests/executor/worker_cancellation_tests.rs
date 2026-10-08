@@ -91,8 +91,7 @@ impl Future for PendingTimerFuture {
                 .state
                 .waker
                 .lock()
-                .expect("pending timer waker lock should remain valid") =
-                Some(context.waker().clone());
+                .expect("pending timer waker lock should remain valid") = Some(context.waker().clone());
             if self.state.ready.load(Ordering::SeqCst) {
                 Poll::Ready(Ok(()))
             } else {
@@ -183,16 +182,15 @@ fn test_worker_backoff_without_cancellation_token_reaches_next_attempt() {
             .fallback(RetryFallback::Retry)
             .build()
             .expect("valid config");
-        let result =
-            WorkerRetry::new(&config)
-                .timer(timer)
-                .run(move |_: AttemptCancellationToken| {
-                    if runner_operation_calls.fetch_add(1, Ordering::SeqCst) == 0 {
-                        Err(TestError("retry"))
-                    } else {
-                        Ok(42_u32)
-                    }
-                });
+        let result = WorkerRetry::new(&config)
+            .timer(timer)
+            .run(move |_: AttemptCancellationToken| {
+                if runner_operation_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Err(TestError("retry"))
+                } else {
+                    Ok(42_u32)
+                }
+            });
         result_sender
             .send(result)
             .expect("test should receive the retry result");
@@ -259,9 +257,7 @@ fn test_worker_attempt_cancellation_discards_late_success() {
         .run({
             let observed_token = Arc::clone(&observed_token);
             move |token: AttemptCancellationToken| {
-                *observed_token
-                    .lock()
-                    .expect("attempt token slot should remain valid") = Some(token.clone());
+                *observed_token.lock().expect("attempt token slot should remain valid") = Some(token.clone());
                 operation_cancellation.cancel();
                 Ok::<(), TestError>(())
             }
@@ -282,10 +278,7 @@ fn test_worker_attempt_cancellation_discards_late_success() {
             .is_cancelled()
     );
     assert_eq!(error.context().attempts(), 1);
-    assert_eq!(
-        error.context().current_attempt().map(NonZeroU32::get),
-        Some(1)
-    );
+    assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
 }
 
 /// Verifies an unbounded grace still reaps a cooperatively exiting worker.
@@ -312,10 +305,7 @@ fn test_worker_attempt_cancellation_supports_maximum_grace() {
     assert_eq!(*phase, RetryCancellationPhase::Attempt);
     assert!(error.last_failure().is_none());
     assert_eq!(error.context().attempts(), 1);
-    assert_eq!(
-        error.context().current_attempt().map(NonZeroU32::get),
-        Some(1)
-    );
+    assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
 }
 
 /// Verifies a late application error cannot invoke failure callbacks or rules.
@@ -418,10 +408,7 @@ fn test_worker_cancellation_reports_still_running_with_cancellation_trigger() {
         Some(&TestError("previous failure"))
     );
     assert_eq!(error.context().attempts(), 2);
-    assert_eq!(
-        error.context().current_attempt().map(NonZeroU32::get),
-        Some(2)
-    );
+    assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(2));
     assert_eq!(operation_calls.load(Ordering::SeqCst), 2);
     assert_eq!(failed_observer_calls.load(Ordering::SeqCst), 1);
     assert_eq!(rule_calls.load(Ordering::SeqCst), 1);
@@ -450,9 +437,7 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
         let config2 = RetryConfig::<TestError>::builder()
             .max_attempts(2)
             .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
-            .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-                RetryDecision::RetryWithHint(delay)
-            })
+            .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
             .build()
             .expect("valid config");
         let result = WorkerRetry::new(&config2)
@@ -467,9 +452,7 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
             .expect("test should receive the retry result");
     });
 
-    registered_receiver
-        .recv()
-        .expect("backoff timer should be registered");
+    registered_receiver.recv().expect("backoff timer should be registered");
     cancellation.cancel();
     timer_state.complete();
     let error = result_receiver
@@ -489,10 +472,7 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(error.context().next_delay(), Some(Duration::from_secs(4)));
-    assert_eq!(
-        error.context().retry_after_hint(),
-        Some(Duration::from_secs(4))
-    );
+    assert_eq!(error.context().retry_after_hint(), Some(Duration::from_secs(4)));
     assert_eq!(operation_calls.load(Ordering::SeqCst), 1);
 }
 
@@ -510,9 +490,7 @@ fn test_worker_backoff_registration_cancellation_wins_over_timer_failure() {
     let config3 = RetryConfig::<TestError>::builder()
         .max_attempts(2)
         .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
-        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| {
-            RetryDecision::RetryWithHint(delay)
-        })
+        .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
         .build()
         .expect("valid config");
     let error = WorkerRetry::new(&config3)
@@ -539,10 +517,7 @@ fn test_worker_backoff_registration_cancellation_wins_over_timer_failure() {
 /// Verifies a blocked worker retains the attempt-timeout stop trigger.
 #[test]
 fn test_worker_still_running_retains_attempt_timeout_trigger() {
-    assert_blocked_worker_timeout_trigger(
-        RetryTimeoutScope::Attempt,
-        WorkerStopTrigger::AttemptTimeout,
-    );
+    assert_blocked_worker_timeout_trigger(RetryTimeoutScope::Attempt, WorkerStopTrigger::AttemptTimeout);
 }
 
 /// Verifies a blocked worker retains the flow-timeout stop trigger.
@@ -552,15 +527,10 @@ fn test_worker_still_running_retains_flow_timeout_trigger() {
 }
 
 /// Runs one blocked worker and checks its deterministic timeout trigger.
-fn assert_blocked_worker_timeout_trigger(
-    scope: RetryTimeoutScope,
-    expected_trigger: WorkerStopTrigger,
-) {
+fn assert_blocked_worker_timeout_trigger(scope: RetryTimeoutScope, expected_trigger: WorkerStopTrigger) {
     let (release_sender, release_receiver) = mpsc::channel();
     let release_receiver = Arc::new(Mutex::new(release_receiver));
-    let config = RetryConfig::<TestError>::builder()
-        .build()
-        .expect("valid config");
+    let config = RetryConfig::<TestError>::builder().build().expect("valid config");
     let clock = ManualMonotonicClock::new_shared();
     let worker = WorkerRetry::new(&config)
         .timer(clock.new_timer())

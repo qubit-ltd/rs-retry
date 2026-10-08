@@ -165,13 +165,7 @@ impl<'a, E: 'static> Retry<'a, E> {
         let default_timer = StdTimer::new();
         let timer: &dyn Timer = self.timer.as_deref().unwrap_or(&default_timer);
         let clock = timer.clock();
-        let mut controller = RetryFlowController::new(
-            clock.now(),
-            self.config,
-            self.random_source.clone(),
-            None,
-            None,
-        );
+        let mut controller = RetryFlowController::new(clock.now(), self.config, self.random_source.clone(), None, None);
 
         loop {
             let cancellation = self.cancellation_token.as_ref();
@@ -185,17 +179,8 @@ impl<'a, E: 'static> Retry<'a, E> {
                     return Ok(RetrySuccess::new(value, context));
                 }
                 Err(error) => {
-                    let directive = controller.record_failure(
-                        AttemptFailure::Error(error),
-                        clock,
-                        cancellation,
-                    )?;
-                    match wait_for_backoff(
-                        timer,
-                        directive.deadline(),
-                        directive.is_immediate(),
-                        cancellation,
-                    ) {
+                    let directive = controller.record_failure(AttemptFailure::Error(error), clock, cancellation)?;
+                    match wait_for_backoff(timer, directive.deadline(), directive.is_immediate(), cancellation) {
                         BlockingBackoffOutcome::Elapsed => {}
                         BlockingBackoffOutcome::Cancelled => {
                             return Err(controller.record_backoff_cancellation(clock));

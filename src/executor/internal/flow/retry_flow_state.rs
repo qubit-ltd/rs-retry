@@ -141,10 +141,7 @@ impl RetryFlowState {
     /// Some shortest enabled limit, or None without any hard timeout; ties
     /// belong to Attempt.
     #[must_use]
-    pub(crate) fn effective_timeout(
-        &self,
-        attempt_timeout: Option<Duration>,
-    ) -> Option<EffectiveTimeout> {
+    pub(crate) fn effective_timeout(&self, attempt_timeout: Option<Duration>) -> Option<EffectiveTimeout> {
         EffectiveTimeout::select(attempt_timeout, self.flow_remaining())
     }
 
@@ -181,8 +178,7 @@ impl RetryFlowState {
     #[inline]
     #[must_use]
     pub(crate) fn next_attempt(&self) -> NonZeroU32 {
-        NonZeroU32::new(self.budget.attempts().saturating_add(1))
-            .expect("an attempt ordinal is always non-zero")
+        NonZeroU32::new(self.budget.attempts().saturating_add(1)).expect("an attempt ordinal is always non-zero")
     }
 
     /// Builds a context from the latest coherent state snapshot.
@@ -262,10 +258,7 @@ impl RetryFlowState {
     /// # Errors
     /// Returns the clock error when this sample cannot be used.
     #[inline]
-    pub(crate) fn finish_for_infrastructure(
-        &mut self,
-        now: MonotonicInstant,
-    ) -> Result<(), TimeError> {
+    pub(crate) fn finish_for_infrastructure(&mut self, now: MonotonicInstant) -> Result<(), TimeError> {
         if self.budget.has_active_attempt() {
             self.budget.finish_attempt(now)
         } else {
@@ -284,9 +277,7 @@ impl RetryFlowState {
         let request = match decision {
             RetryDecision::RetryWithHint(delay) => BackoffRequest::hint(delay),
             RetryDecision::RetryWithJitteredHint(delay) => BackoffRequest::jittered_hint(delay),
-            RetryDecision::Retry | RetryDecision::UseDefault | RetryDecision::Abort => {
-                BackoffRequest::policy()
-            }
+            RetryDecision::Retry | RetryDecision::UseDefault | RetryDecision::Abort => BackoffRequest::policy(),
         };
         self.backoff.next(request)
     }

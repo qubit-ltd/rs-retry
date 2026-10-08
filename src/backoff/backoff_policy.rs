@@ -134,11 +134,7 @@ impl BackoffPolicy {
     /// # Errors
     /// Returns a policy error for reversed bounds or an invalid multiplier.
     #[inline]
-    pub fn exponential(
-        initial: Duration,
-        multiplier: f64,
-        max: Duration,
-    ) -> Result<Self, RetryPolicyError> {
+    pub fn exponential(initial: Duration, multiplier: f64, max: Duration) -> Result<Self, RetryPolicyError> {
         let policy = Self {
             strategy: BackoffStrategy::Exponential {
                 initial,
@@ -196,9 +192,7 @@ impl BackoffPolicy {
         match &self.strategy {
             BackoffStrategy::Immediate => Some(Duration::ZERO),
             BackoffStrategy::Fixed { delay } => Some(*delay),
-            BackoffStrategy::Uniform { max, .. } | BackoffStrategy::Exponential { max, .. } => {
-                Some(*max)
-            }
+            BackoffStrategy::Uniform { max, .. } | BackoffStrategy::Exponential { max, .. } => Some(*max),
         }
     }
 
@@ -306,9 +300,7 @@ impl BackoffPolicy {
         match &self.strategy {
             BackoffStrategy::Immediate => Duration::ZERO,
             BackoffStrategy::Fixed { delay } => *delay,
-            BackoffStrategy::Uniform { min, max } => {
-                interpolate(*min, *max, random.random_f64_inclusive(0.0, 1.0))
-            }
+            BackoffStrategy::Uniform { min, max } => interpolate(*min, *max, random.random_f64_inclusive(0.0, 1.0)),
             BackoffStrategy::Exponential {
                 initial,
                 multiplier,
@@ -338,9 +330,9 @@ impl BackoffPolicy {
         random: &dyn RetryRandomSource,
     ) -> BackoffStep {
         let step = self.resolve_uncapped(base_delay, request, retry_index, random);
-        let delay = self.delay_limit.map_or(step.effective_delay(), |limit| {
-            step.effective_delay().min(limit)
-        });
+        let delay = self
+            .delay_limit
+            .map_or(step.effective_delay(), |limit| step.effective_delay().min(limit));
         BackoffStep::new(retry_index, base_delay, delay, step.source())
     }
 
@@ -404,9 +396,7 @@ impl BackoffPolicy {
     fn apply_jitter(&self, base: Duration, random: &dyn RetryRandomSource) -> Duration {
         match self.jitter {
             JitterStrategy::None => base,
-            JitterStrategy::Full => {
-                interpolate(Duration::ZERO, base, random.random_f64_inclusive(0.0, 1.0))
-            }
+            JitterStrategy::Full => interpolate(Duration::ZERO, base, random.random_f64_inclusive(0.0, 1.0)),
             JitterStrategy::Bounded { ratio } => {
                 if ratio == 0.0 {
                     return base;
@@ -534,9 +524,7 @@ impl From<&BackoffPolicy> for BackoffPolicyData {
             strategy: (&policy.strategy).into(),
             jitter: policy.jitter.into(),
             retry_after: policy.retry_after.into(),
-            delay_limit: policy
-                .delay_limit
-                .map(crate::policy::internal::DurationData::from),
+            delay_limit: policy.delay_limit.map(crate::policy::internal::DurationData::from),
         }
     }
 }
@@ -582,12 +570,7 @@ impl TryFrom<BackoffPolicyData> for BackoffPolicy {
 /// # Returns
 /// A base delay no greater than `max`, including when growth overflows.
 #[must_use]
-fn exponential_delay(
-    initial: Duration,
-    multiplier: f64,
-    max: Duration,
-    retry_index: u32,
-) -> Duration {
+fn exponential_delay(initial: Duration, multiplier: f64, max: Duration, retry_index: u32) -> Duration {
     if retry_index <= 1 || initial.is_zero() || multiplier == 1.0 {
         return initial.min(max);
     }

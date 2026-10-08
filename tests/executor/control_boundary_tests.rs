@@ -49,16 +49,11 @@ impl CancellingControl {
     /// Simulates callback work without depending on OS scheduling.
     fn act(&self, phase: RetryCallbackPhase) {
         if self.phase == phase {
-            self.clock
-                .advance(Duration::from_secs(7))
-                .expect("valid advance");
+            self.clock.advance(Duration::from_secs(7)).expect("valid advance");
             self.token.cancel();
             if let Some((state, mode, panic_after)) = &self.fault {
                 state.store(*mode, Ordering::SeqCst);
-                assert!(
-                    !panic_after,
-                    "control callback panic after invalidating its clock"
-                );
+                assert!(!panic_after, "control callback panic after invalidating its clock");
             }
         }
     }
@@ -113,20 +108,14 @@ fn build_case(control: CancellingControl) -> RetryConfig<&'static str> {
 /// Checks both elapsed accounting and terminal ownership of the attempt.
 fn assert_cancelled(error: &RetryError<&'static str>, phase: RetryCallbackPhase) {
     let before = phase == RetryCallbackPhase::BeforeAttempt;
-    assert_eq!(
-        error.context().total_elapsed(),
-        Duration::from_secs(7),
-        "{phase:?}"
-    );
+    assert_eq!(error.context().total_elapsed(), Duration::from_secs(7), "{phase:?}");
     assert_eq!(error.context().operation_elapsed(), Duration::ZERO);
     assert_eq!(error.context().attempts(), u32::from(!before));
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(error.context().current_hard_attempt_timeout(), None);
     assert_eq!(error.last_error().copied(), (!before).then_some("offline"));
-    assert!(
-        matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. }
-        if *phase == if before { RetryCancellationPhase::BeforeAttempt } else { RetryCancellationPhase::Backoff })
-    );
+    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. }
+        if *phase == if before { RetryCancellationPhase::BeforeAttempt } else { RetryCancellationPhase::Backoff }));
     assert_eq!(
         error.context().next_delay(),
         (phase == RetryCallbackPhase::RetryScheduled).then_some(Duration::ZERO)
@@ -226,14 +215,9 @@ fn invalid_clock_case(
     phase: RetryCallbackPhase,
     mode: u8,
     panic_after: bool,
-) -> (
-    RetryConfig<&'static str>,
-    Arc<dyn Timer>,
-    RetryCancellationToken,
-) {
+) -> (RetryConfig<&'static str>, Arc<dyn Timer>, RetryCancellationToken) {
     let base = ManualMonotonicClock::new_shared();
-    base.advance(Duration::from_secs(1))
-        .expect("nonzero initial sample");
+    base.advance(Duration::from_secs(1)).expect("nonzero initial sample");
     let clock = InvalidatingClock {
         base: Arc::clone(&base),
         foreign_domain: ManualMonotonicClock::new_shared().domain(),
@@ -250,11 +234,7 @@ fn invalid_clock_case(
 }
 
 /// Invalid post-callback samples cannot replace a coherent snapshot.
-fn assert_clock_terminal(
-    error: &RetryError<&'static str>,
-    phase: RetryCallbackPhase,
-    panic_after: bool,
-) {
+fn assert_clock_terminal(error: &RetryError<&'static str>, phase: RetryCallbackPhase, panic_after: bool) {
     assert_eq!(error.context().total_elapsed(), Duration::ZERO);
     assert_eq!(
         error.context().attempts(),

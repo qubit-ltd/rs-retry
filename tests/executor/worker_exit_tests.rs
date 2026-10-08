@@ -91,9 +91,7 @@ fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger)
         fail: trigger == WorkerStopTrigger::TimerFailure,
     });
     let runner = thread::spawn(move || {
-        let retry = RetryConfig::<&'static str>::builder()
-            .build()
-            .expect("valid config");
+        let retry = RetryConfig::<&'static str>::builder().build().expect("valid config");
         let mut worker = WorkerRetry::new(&retry)
             .timer(timer)
             .cancellation_token(runner_token)
@@ -122,9 +120,7 @@ fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger)
     }
     let result = result_receiver.recv_timeout(Duration::from_secs(2));
     let _ = release_sender.send(());
-    runner
-        .join()
-        .expect("retry runner joins after gate release");
+    runner.join().expect("retry runner joins after gate release");
     entered.expect("worker entered TLS destruction");
     let error = result
         .expect("retry must return before TLS gate release")
@@ -152,11 +148,7 @@ impl Timer for ExitTimer {
         let fail = self.fail;
         Ok(Box::pin(async move {
             future.await?;
-            if fail {
-                Err(TimeError::InstantOverflow)
-            } else {
-                Ok(())
-            }
+            if fail { Err(TimeError::InstantOverflow) } else { Ok(()) }
         }))
     }
 }
