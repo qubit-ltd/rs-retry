@@ -163,3 +163,51 @@ async fn test_async_flow_timeout_caps_retry_sleep() {
     ));
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }
+
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn test_async_overflowing_backoff_is_capped_by_flow_timeout() {
+    let policy = RetryPolicy::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::MAX))
+        .build()
+        .expect("valid policy");
+    let config = RetryConfig::<UnitTestError>::builder()
+        .policy(policy)
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
+    let clock = ManualMonotonicClock::new_shared();
+    let attempts = Arc::new(AtomicU32::new(0));
+    let executor = TokioRetry::new(&config)
+        .hard_flow_timeout(Duration::from_secs(1))
+        .timer(clock.new_timer());
+    let operation_clock = Arc::clone(&clock);
+    let operation_attempts = Arc::clone(&attempts);
+    let future = executor.run(move || {
+        operation_attempts.fetch_add(1, Ordering::SeqCst);
+        operation_clock
+            .advance(Duration::from_nanos(1))
+            .expect("advance inside the first admitted attempt");
+        future::ready(Err::<(), _>(UnitTestError))
+    });
+    tokio::pin!(future);
+
+    let reached = tokio::select! {
+        result = &mut future => panic!("flow ended before its deadline: {result:?}"),
+        reached = clock.advance_to_next_deadline_async() => reached,
+    };
+    assert_eq!(reached.elapsed_since_origin(), Duration::from_secs(1));
+
+    let error = future.await.expect_err("flow deadline stops the retry");
+    assert!(matches!(
+        error.reason(),
+        RetryErrorReason::TimedOut {
+            scope: RetryTimeoutScope::Flow,
+            ..
+        }
+    ));
+    assert_eq!(error.context().attempts(), 1);
+    assert_eq!(error.context().next_delay(), Some(Duration::MAX));
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+}

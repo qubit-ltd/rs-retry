@@ -152,14 +152,17 @@ impl RetryFlowState {
         now: MonotonicInstant,
         delay: Duration,
     ) -> Result<MonotonicInstant, TimeError> {
-        let requested = now.checked_add(delay)?;
         let Some(flow_deadline) = self.flow_deadline()? else {
-            return Ok(requested);
+            return now.checked_add(delay);
         };
-        if requested.elapsed_since_origin() <= flow_deadline.elapsed_since_origin() {
-            Ok(requested)
-        } else {
+        flow_deadline.validate_domain(now.domain())?;
+        let remaining = flow_deadline
+            .elapsed_since_origin()
+            .saturating_sub(now.elapsed_since_origin());
+        if delay >= remaining {
             Ok(flow_deadline)
+        } else {
+            now.checked_add(delay)
         }
     }
 

@@ -437,3 +437,28 @@ fn test_retry_session_enforces_one_outstanding_attempt() {
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.record_result(Ok(1)))).is_err());
     assert_eq!(*events.lock().expect("event lock"), ["before:1", "success"]);
 }
+
+#[test]
+fn test_session_without_flow_timeout_reports_overflowing_backoff() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::fixed(Duration::MAX))
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
+    let timer = Arc::new(SessionTimer::new(None));
+    let mut session = RetrySession::new(config, timer);
+    assert!(matches!(
+        session.begin_attempt(),
+        Ok(RetrySessionAdmission::Admitted(_))
+    ));
+    let RetrySessionStep::Failed(error) = session.record_result::<()>(Err("busy")) else {
+        panic!("unrepresentable uncapped delay must fail");
+    };
+    assert!(matches!(
+        error.reason(),
+        RetryErrorReason::Infrastructure {
+            failure: RetryInfrastructureFailure::Clock { .. }
+        }
+    ));
+}
