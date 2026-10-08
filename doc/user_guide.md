@@ -185,7 +185,13 @@ This minimal example uses immediate backoff to show the complete admission
 protocol without a real delay. The first result requests a retry, the second
 admission starts attempt two, and success completes the session:
 
-<!-- retry-example: kind=run features=none -->
+Add `qubit-clock` as a direct dependency for this example:
+
+```bash
+cargo add qubit-clock@0.13
+```
+
+<!-- retry-example: kind=run features=none deps=clock -->
 ```rust
 use std::sync::Arc;
 
@@ -793,7 +799,7 @@ cargo add qubit-clock@0.13 --features test-util
 
 Advance a manual clock to verify operation time and total time independently:
 
-<!-- retry-example: kind=run features=none -->
+<!-- retry-example: kind=run features=none deps=clock-test-util -->
 ```rust
 use std::time::Duration;
 

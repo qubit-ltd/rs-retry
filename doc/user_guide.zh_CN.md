@@ -172,7 +172,13 @@ snapshot-v2, attempts=3
 下面用立即退避展示完整准入流程，因此不需要真实等待。第一次结果请求重试，
 第二次准入开始第二次尝试，操作成功后会话完成：
 
-<!-- retry-example: kind=run features=none -->
+运行此示例还需要将 `qubit-clock` 添加为直接依赖：
+
+```bash
+cargo add qubit-clock@0.13
+```
+
+<!-- retry-example: kind=run features=none deps=clock -->
 ```rust
 use std::sync::Arc;
 
@@ -750,7 +756,7 @@ cargo add qubit-clock@0.13 --features test-util
 
 通过推进手动时钟，可以分别验证操作耗时与总耗时，无需真实等待：
 
-<!-- retry-example: kind=run features=none -->
+<!-- retry-example: kind=run features=none deps=clock-test-util -->
 ```rust
 use std::time::Duration;
 
