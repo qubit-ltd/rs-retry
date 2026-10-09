@@ -1,1 +1,1 @@
-profiles = ["ci-default", "dependency-policy-default", "local-path-dependencies-default", "pages-default", "style-exceptions-default"]
+profiles = ["local-path-dependencies-default", "pages-default", "style-exceptions-default"]
