@@ -61,6 +61,13 @@ impl<E> Default for RetryObservers<E> {
 }
 
 impl<E: 'static> RetryObservers<E> {
+    /// Creates an ordered observer collection from registered callbacks.
+    ///
+    /// # Parameters
+    /// - `observers`: Callbacks in their invocation order.
+    ///
+    /// # Returns
+    /// A collection sharing the supplied callback objects.
     pub(crate) fn from_vec(observers: Vec<Arc<dyn RetryObserver<E>>>) -> Self {
         Self {
             observers: observers.into(),

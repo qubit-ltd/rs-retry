@@ -10,6 +10,19 @@
 use std::time::Duration;
 
 /// Optional caller-provided delay information for one scheduled retry.
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use qubit_retry::BackoffPolicy;
+/// use qubit_retry::BackoffRequest;
+///
+/// let mut state = BackoffPolicy::fixed(Duration::from_millis(10)).start();
+/// let step = state.next(BackoffRequest::hint(Duration::from_millis(20)));
+/// assert_eq!(step.effective_delay(), Duration::from_millis(20));
+/// ```
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BackoffRequest {
@@ -24,7 +37,6 @@ impl BackoffRequest {
     ///
     /// # Returns
     /// A request without a hint; all selection is delegated to the policy.
-    #[must_use = "use the request when calculating a backoff step"]
     #[inline]
     pub fn policy() -> Self {
         Self {
@@ -40,7 +52,6 @@ impl BackoffRequest {
     ///
     /// # Returns
     /// A hint request whose precedence and final cap are decided by the policy.
-    #[must_use = "use the request when calculating a backoff step"]
     #[inline]
     pub fn hint(delay: Duration) -> Self {
         Self {
@@ -56,7 +67,6 @@ impl BackoffRequest {
     ///
     /// # Returns
     /// A jitter-permitting hint request; final capping still applies.
-    #[must_use = "use the request when calculating a backoff step"]
     #[inline]
     pub fn jittered_hint(delay: Duration) -> Self {
         Self {

@@ -61,7 +61,7 @@ impl RetryObserver<()> for NoopObserver {}
 
 #[test]
 fn test_observers_are_registered_by_retry_builder() {
-    let policy = RetryPolicy::builder().build().unwrap();
+    let policy = RetryPolicy::builder().build().expect("valid policy");
     let retry = RetryConfig::<()>::builder()
         .policy(policy)
         .observer(NoopObserver)

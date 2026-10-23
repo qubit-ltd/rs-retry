@@ -67,6 +67,7 @@ impl RetryCancellationToken {
     pub fn cancelled(&self) -> RetryCancelled<'_> {
         RetryCancelled::new(self)
     }
+
     /// Returns whether this token and `other` share one cancellation source.
     ///
     /// Tokens cloned from one another share a source, so cancellation requested

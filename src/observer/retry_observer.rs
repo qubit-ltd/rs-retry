@@ -21,6 +21,23 @@ use crate::RetryErrorReason;
 /// Implementations are shared across executions and must synchronize their own
 /// mutable state. Control callbacks can affect continuation through
 /// cancellation or elapsed time; completion callbacks see a frozen result.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::AttemptFailure;
+/// use qubit_retry::RetryContext;
+/// use qubit_retry::RetryObserver;
+///
+/// let observer = |failure: &AttemptFailure<std::io::Error>, context: &RetryContext| {
+///     if failure.is_timeout() {
+///         eprintln!("attempt {} timed out", context.attempts());
+///     }
+/// };
+/// let observer: &dyn RetryObserver<std::io::Error> = &observer;
+/// let failure = AttemptFailure::Error(std::io::Error::other("temporary failure"));
+/// observer.on_attempt_failed(&failure, &RetryContext::new(1, 3));
+/// ```
 pub trait RetryObserver<E>: Send + Sync + 'static {
     /// Observes a successful flow with its frozen terminal context.
     ///
@@ -48,8 +65,8 @@ pub trait RetryObserver<E>: Send + Sync + 'static {
     /// guarantee completion notification.
     ///
     /// # Parameters
-    /// - `_failure`: Borrowed frozen terminal reason; observation cannot
-    ///   replace it.
+    /// - `_reason`: Borrowed frozen terminal reason; observation cannot replace
+    ///   it.
     /// - `_context`: Borrowed snapshot, including failures before admission.
     fn on_terminal_failure(&self, _reason: &RetryErrorReason, _context: &RetryContext) {}
 

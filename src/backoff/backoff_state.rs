@@ -92,7 +92,6 @@ impl BackoffState {
     ///
     /// # Returns
     /// The next source-tagged step; advances the saturating retry index once.
-    #[must_use = "use the selected backoff step"]
     #[inline]
     pub fn next(&mut self, request: BackoffRequest) -> BackoffStep {
         self.retry_index = self.retry_index.saturating_add(1);

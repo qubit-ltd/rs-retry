@@ -103,6 +103,7 @@ impl<E: 'static> RetryConfig<E> {
     ///
     /// # Parameters
     /// - `policy`: Immutable limits and backoff.
+    /// - `fallback`: Action for application errors left unclassified by rules.
     /// - `rules`: Ordered decision callbacks.
     /// - `observers`: Ordered lifecycle callbacks.
     ///
@@ -134,6 +135,9 @@ impl<E: 'static> RetryConfig<E> {
     }
 
     /// Returns the configured fallback action for internal executors.
+    ///
+    /// # Returns
+    /// The action used when every rule delegates an application error.
     #[inline]
     #[must_use]
     pub(crate) fn fallback(&self) -> RetryFallback {

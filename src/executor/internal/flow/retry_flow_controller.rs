@@ -561,7 +561,6 @@ impl<E: 'static> RetryFlowController<E> {
     ///
     /// # Returns
     /// A copy of coherent timing state with current event overlays.
-    #[must_use = "use the prepared value or inspect the result"]
     fn snapshot(&self) -> RetryContext {
         self.decorate(self.state.context(self.current_attempt))
     }

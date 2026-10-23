@@ -17,9 +17,20 @@ use std::sync::atomic::Ordering;
 /// [`WorkerRetry::new`](crate::WorkerRetry::new) stops waiting for a worker
 /// thread. The worker must check [`AttemptCancellationToken::is_cancelled`] and
 /// return on its own; Rust threads cannot be safely killed by the executor.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::AttemptCancellationToken;
+///
+/// let token = AttemptCancellationToken::new();
+/// let worker_token = token.clone();
+/// token.cancel();
+/// assert!(worker_token.is_cancelled());
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct AttemptCancellationToken {
-    /// Shared cancellation flag.
+    /// Cancellation state shared by all clones of this token.
     cancelled: Arc<AtomicBool>,
 }
 

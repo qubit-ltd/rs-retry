@@ -19,6 +19,21 @@ use crate::RetryContext;
 ///
 /// Rules are shared across runs and must synchronize mutable state. The first
 /// non-UseDefault decision wins but cannot bypass continuation limits.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::AttemptFailure;
+/// use qubit_retry::RetryContext;
+/// use qubit_retry::RetryDecision;
+/// use qubit_retry::RetryRule;
+///
+/// let rule = |_: &AttemptFailure<String>, _: &RetryContext| RetryDecision::Retry;
+/// let failure = AttemptFailure::Error(String::from("temporary failure"));
+/// let context = RetryContext::new(1, 3);
+///
+/// assert_eq!(RetryRule::decide(&rule, &failure, &context), RetryDecision::Retry);
+/// ```
 pub trait RetryRule<E>: Send + Sync + 'static {
     /// Classifies a committed attempt failure before retry scheduling.
     ///
@@ -30,7 +45,6 @@ pub trait RetryRule<E>: Send + Sync + 'static {
     /// # Returns
     /// UseDefault to delegate, Abort to stop, or a retry request still subject
     /// to cancellation, timeout, and continuation budgets.
-    #[must_use = "the decision controls retry continuation"]
     fn decide(&self, failure: &AttemptFailure<E>, context: &RetryContext) -> RetryDecision;
 }
 

@@ -12,6 +12,23 @@
 /// Implementations must be safe for concurrent use because one retry policy
 /// can be shared across threads. Every returned sample must lie within the
 /// inclusive bounds supplied to the corresponding method.
+///
+/// # Examples
+///
+/// ```
+/// use qubit::RetryRandomSource;
+///
+/// struct MidpointRandomSource;
+///
+/// impl RetryRandomSource for MidpointRandomSource {
+///     fn random_f64_inclusive(&self, min: f64, max: f64) -> f64 {
+///         min + (max - min) / 2.0
+///     }
+/// }
+///
+/// let source = MidpointRandomSource;
+/// assert_eq!(source.random_f64_inclusive(2.0, 6.0), 4.0);
+/// ```
 pub trait RetryRandomSource: Send + Sync {
     /// Samples a floating-point value from an inclusive range.
     ///

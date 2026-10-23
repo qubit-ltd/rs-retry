@@ -64,8 +64,8 @@ impl<T> RetrySuccess<T> {
     ///
     /// # Returns
     /// The successful value borrowed without cloning.
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn value(&self) -> &T {
         &self.value
     }
@@ -74,8 +74,8 @@ impl<T> RetrySuccess<T> {
     ///
     /// # Returns
     /// The frozen terminal context borrowed from this result.
-    #[inline]
     #[must_use = "inspect the final retry context"]
+    #[inline]
     pub fn context(&self) -> &RetryContext {
         &self.context
     }

@@ -11,6 +11,22 @@ use super::RetryPanic;
 use super::RetryTimeoutScope;
 
 /// Attempt classification retained after the application error is moved out.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::{AttemptFailureMetadata, RetryTimeoutScope};
+///
+/// let metadata = AttemptFailureMetadata::TimedOut {
+///     scope: RetryTimeoutScope::Attempt,
+/// };
+/// assert!(matches!(
+///     metadata,
+///     AttemptFailureMetadata::TimedOut {
+///         scope: RetryTimeoutScope::Attempt,
+///     }
+/// ));
+/// ```
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum AttemptFailureMetadata {

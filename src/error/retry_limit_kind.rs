@@ -10,6 +10,15 @@
 use std::fmt;
 
 /// Limit that prevented another retry attempt from starting.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryLimitKind;
+///
+/// let limit = RetryLimitKind::Attempts;
+/// assert_eq!(limit.to_string(), "attempts");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryLimitKind {
     /// The configured attempt count was exhausted.

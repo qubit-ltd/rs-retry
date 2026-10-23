@@ -44,7 +44,6 @@ impl RetryPanic {
 }
 
 impl fmt::Display for RetryPanic {
-    ///
     /// Formats the retained string or the stable non-string payload label.
     ///
     /// # Parameters

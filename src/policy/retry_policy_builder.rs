@@ -16,6 +16,16 @@ use crate::RetryPolicyError;
 use crate::backoff::BackoffPolicy;
 
 /// Validated builder for a pure retry policy.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryPolicyBuilder;
+///
+/// let policy = RetryPolicyBuilder::new().max_attempts(4).build()?;
+/// assert_eq!(policy.admission_limits().max_attempts().get(), 4);
+/// # Ok::<(), qubit_retry::RetryPolicyError>(())
+/// ```
 #[derive(Debug, Clone)]
 #[must_use]
 pub struct RetryPolicyBuilder {

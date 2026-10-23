@@ -434,13 +434,13 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
     let (result_sender, result_receiver) = mpsc::channel();
     let runner = thread::spawn(move || {
         let delay = Duration::from_secs(4);
-        let config2 = RetryConfig::<TestError>::builder()
+        let retry_config = RetryConfig::<TestError>::builder()
             .max_attempts(2)
             .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
             .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
             .build()
             .expect("valid config");
-        let result = WorkerRetry::new(&config2)
+        let result = WorkerRetry::new(&retry_config)
             .timer(timer)
             .cancellation_token(runner_cancellation)
             .run(move |_: AttemptCancellationToken| {
@@ -487,13 +487,13 @@ fn test_worker_backoff_registration_cancellation_wins_over_timer_failure() {
         cancellation: cancellation.clone(),
         registrations: Arc::clone(&registrations),
     });
-    let config3 = RetryConfig::<TestError>::builder()
+    let retry_config = RetryConfig::<TestError>::builder()
         .max_attempts(2)
         .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
         .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
         .build()
         .expect("valid config");
-    let error = WorkerRetry::new(&config3)
+    let error = WorkerRetry::new(&retry_config)
         .timer(timer)
         .cancellation_token(cancellation)
         .run(|_: AttemptCancellationToken| Err::<(), _>(TestError("registration")))

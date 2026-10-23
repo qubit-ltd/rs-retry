@@ -142,11 +142,28 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
 
     /// Executes one future per attempt on the current Tokio runtime.
     ///
+    /// The Tokio timer is selected when this future is polled. The operation
+    /// factory runs once for each admitted attempt.
+    ///
+    /// # Type Parameters
+    /// - `T`: Successful value returned to the caller.
+    /// - `F`: Factory that creates one operation future per attempt.
+    /// - `Fut`: Future produced by the operation factory.
+    ///
     /// # Parameters
     /// - `operation`: Factory creating one future for each admitted attempt.
     ///
     /// # Returns
-    /// The successful value or terminal retry error.
+    /// The successful value with its execution context, or the terminal retry
+    /// error with its context.
+    ///
+    /// # Errors
+    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
+    /// or infrastructure failure.
+    ///
+    /// # Panics
+    /// Operation panics unwind through the caller. Polling this future outside
+    /// a Tokio runtime with an enabled time driver may also panic.
     pub async fn run<T, F, Fut>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,

@@ -12,7 +12,11 @@ use qubit_retry::BackoffRequest;
 
 #[test]
 fn test_constructors_capture_public_delay_inputs() {
-    let _ = BackoffRequest::policy();
-    let _ = BackoffRequest::hint(Duration::from_millis(1));
-    let _ = BackoffRequest::jittered_hint(Duration::from_millis(1));
+    let delay = Duration::from_millis(1);
+    let policy_request = BackoffRequest::policy();
+    let hinted_request = BackoffRequest::hint(delay);
+    let jittered_hint_request = BackoffRequest::jittered_hint(delay);
+
+    assert_ne!(policy_request, hinted_request);
+    assert_ne!(hinted_request, jittered_hint_request);
 }

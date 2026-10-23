@@ -14,6 +14,21 @@ use std::time::Duration;
 /// `total_elapsed` is sampled when this value is created. `operation_elapsed`
 /// includes only durations completed through
 /// [`super::RetryBudget::finish_attempt`].
+///
+/// # Examples
+///
+/// ```
+/// use qubit_clock::ManualMonotonicClock;
+/// use qubit_retry::RetryBudget;
+/// use qubit_retry::RetryPolicy;
+/// use qubit_retry::RetryBudgetSnapshot;
+///
+/// let clock = ManualMonotonicClock::new_shared();
+/// let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
+/// let budget = RetryBudget::new(clock.as_ref(), *policy.admission_limits()).unwrap();
+/// let snapshot: RetryBudgetSnapshot = budget.snapshot().unwrap();
+/// assert_eq!(snapshot.attempts(), 0);
+/// ```
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetryBudgetSnapshot {

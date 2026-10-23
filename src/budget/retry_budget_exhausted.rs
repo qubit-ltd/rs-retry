@@ -11,6 +11,15 @@
 ///
 /// This is not an execution error: a currently running attempt is never
 /// cancelled by this value, and a successful completed attempt always wins.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryBudgetExhausted;
+///
+/// let reason = RetryBudgetExhausted::Attempts;
+/// assert_eq!(reason, RetryBudgetExhausted::Attempts);
+/// ```
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryBudgetExhausted {

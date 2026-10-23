@@ -252,7 +252,7 @@ fn benchmark_sync_no_delay_retries(c: &mut Criterion) {
         .expect("benchmark retry policy should be valid");
     let retry = RetryConfig::<&'static str>::builder()
         .policy(policy)
-        .fallback(qubit_retry::RetryFallback::Retry)
+        .fallback(RetryFallback::Retry)
         .build()
         .expect("valid config");
 
@@ -400,16 +400,18 @@ fn benchmark_retry_session_immediate_retry(c: &mut Criterion) {
     c.bench_function("retry_session_immediate_retry", |b| {
         b.iter(|| {
             let mut session = RetrySession::new(config.clone(), timer.clone());
-            assert!(
-                matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 1)
-            );
+            assert!(matches!(
+                session.begin_attempt(),
+                Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 1
+            ));
             assert!(matches!(
                 session.record_result::<u64>(Err("busy")),
                 RetrySessionStep::RetryAt(_)
             ));
-            assert!(
-                matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 2)
-            );
+            assert!(matches!(
+                session.begin_attempt(),
+                Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 2
+            ));
             let RetrySessionStep::Complete(success) = session.record_result(Ok(black_box(7_u64))) else {
                 panic!("second attempt must complete");
             };
@@ -442,7 +444,10 @@ fn benchmark_retry_session_waiting_admission(c: &mut Criterion) {
             },
             |(mut session, due)| {
                 let outcome = black_box(session.begin_attempt());
-                assert!(matches!(outcome, Ok(RetrySessionAdmission::Waiting(actual)) if actual == due));
+                assert!(matches!(
+                    outcome,
+                    Ok(RetrySessionAdmission::Waiting(actual)) if actual == due
+                ));
             },
             BatchSize::SmallInput,
         );

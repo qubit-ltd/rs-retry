@@ -14,6 +14,20 @@ use super::RetryCallbackPhase;
 use super::RetryPanic;
 
 /// Panic raised by one registered retry callback.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::{RetryCallbackFailure, RetryCallbackKind, RetryCallbackPhase, RetryPanic};
+///
+/// let failure = RetryCallbackFailure::new(
+///     RetryCallbackKind::Rule,
+///     0,
+///     RetryCallbackPhase::RuleDecision,
+///     RetryPanic::NonString,
+/// );
+/// assert_eq!(failure.index(), 0);
+/// ```
 #[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryCallbackFailure {
@@ -39,7 +53,6 @@ impl RetryCallbackFailure {
     /// # Returns
     /// An owned diagnostic with exact callback attribution and payload
     /// classification.
-    #[must_use = "retain the callback failure"]
     #[inline]
     pub fn new(callback: RetryCallbackKind, index: usize, phase: RetryCallbackPhase, panic: RetryPanic) -> Self {
         Self {
@@ -92,7 +105,6 @@ impl RetryCallbackFailure {
 }
 
 impl fmt::Display for RetryCallbackFailure {
-    ///
     /// Formats callback category, index, phase, and captured panic together.
     ///
     /// # Parameters

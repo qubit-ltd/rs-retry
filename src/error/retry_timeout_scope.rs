@@ -10,6 +10,15 @@
 use std::fmt;
 
 /// Scope whose hard timeout stopped retry execution.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryTimeoutScope;
+///
+/// let scope = RetryTimeoutScope::Attempt;
+/// assert_eq!(scope.to_string(), "attempt");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryTimeoutScope {
     /// The timeout applied to one admitted attempt.

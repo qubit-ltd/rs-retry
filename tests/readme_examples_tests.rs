@@ -15,6 +15,7 @@ use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
 use qubit_retry::RetryObserver;
 use qubit_retry::RetryPolicy;
+
 /// Executes the guide's synchronous cancellation contract.
 #[test]
 fn test_readme_synchronous_cancellation() {

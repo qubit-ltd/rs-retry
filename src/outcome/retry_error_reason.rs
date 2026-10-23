@@ -15,7 +15,20 @@ use crate::RetryInfrastructureFailure;
 use crate::RetryLimitKind;
 use crate::RetryTimeoutScope;
 
-/// Terminal reason for a retry flow, independent of its application error.
+/// Describes why a retry flow stopped without completing successfully.
+///
+/// The reason records retry-control or infrastructure failures separately
+/// from the application error produced by an individual attempt.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryErrorReason;
+///
+/// let reason = RetryErrorReason::Aborted;
+/// assert_eq!(reason.to_string(), "aborted");
+/// ```
+#[must_use = "inspect the reason that stopped the retry flow"]
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum RetryErrorReason {

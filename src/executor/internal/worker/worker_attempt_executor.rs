@@ -306,8 +306,8 @@ fn register_cancellation_waker<E: Send + 'static>(
 ///
 /// # Returns
 /// The corresponding stable worker stop trigger.
-#[inline]
 #[must_use = "use the prepared value or inspect the result"]
+#[inline]
 fn timeout_trigger(scope: RetryTimeoutScope) -> WorkerStopTrigger {
     match scope {
         RetryTimeoutScope::Attempt => WorkerStopTrigger::AttemptTimeout,

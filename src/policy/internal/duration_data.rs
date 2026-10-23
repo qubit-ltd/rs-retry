@@ -42,7 +42,7 @@ impl From<Duration> for DurationData {
 }
 
 impl TryFrom<DurationData> for Duration {
-    /// Invalid policy input or encoded duration.
+    /// An error indicating invalid duration wire data.
     type Error = RetryPolicyError;
 
     /// Converts wire data after validating nanoseconds and checked addition.

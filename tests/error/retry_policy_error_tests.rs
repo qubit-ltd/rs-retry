@@ -10,5 +10,8 @@ use qubit_retry::RetryPolicy;
 
 #[test]
 fn test_rejects_zero_attempts() {
-    assert!(RetryPolicy::builder().max_attempts(0).build().is_err());
+    assert!(
+        RetryPolicy::builder().max_attempts(0).build().is_err(),
+        "zero max_attempts must be rejected"
+    );
 }

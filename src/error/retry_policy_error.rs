@@ -59,7 +59,6 @@ impl RetryPolicyError {
 }
 
 impl fmt::Display for RetryPolicyError {
-    ///
     /// Formats the invalid configuration field and validation reason.
     ///
     /// # Parameters

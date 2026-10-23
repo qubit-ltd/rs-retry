@@ -17,6 +17,25 @@ use super::RetryCancellationToken;
 /// Future returned by [`RetryCancellationToken::cancelled`].
 ///
 /// The future is runtime-independent and keeps at most one registered waker.
+///
+/// # Examples
+///
+/// ```
+/// use std::future::Future;
+/// use std::task::Context;
+/// use std::task::Poll;
+/// use std::task::Waker;
+///
+/// use qubit_retry::RetryCancellationToken;
+///
+/// let token = RetryCancellationToken::new();
+/// token.cancel();
+/// let mut future = std::pin::pin!(token.cancelled());
+/// assert_eq!(
+///     Future::poll(future.as_mut(), &mut Context::from_waker(Waker::noop())),
+///     Poll::Ready(()),
+/// );
+/// ```
 #[derive(Debug)]
 pub struct RetryCancelled<'a> {
     /// Token whose cancellation state this future observes.
@@ -34,7 +53,7 @@ impl<'a> RetryCancelled<'a> {
     /// # Returns
     /// An unregistered future; its first pending poll registers the waker.
     #[inline]
-    #[must_use = "use the prepared value or inspect the result"]
+    #[must_use = "poll the future to observe cancellation"]
     pub(super) fn new(token: &'a RetryCancellationToken) -> Self {
         Self {
             token,
@@ -47,7 +66,6 @@ impl Future for RetryCancelled<'_> {
     /// Cancellation carries no payload.
     type Output = ();
 
-    ///
     /// Observes cancellation and atomically registers the current task waker.
     ///
     /// # Parameters
@@ -77,7 +95,6 @@ impl Future for RetryCancelled<'_> {
 }
 
 impl Drop for RetryCancelled<'_> {
-    ///
     /// Unregisters a pending waker and drops it outside the registry lock.
     #[inline]
     fn drop(&mut self) {

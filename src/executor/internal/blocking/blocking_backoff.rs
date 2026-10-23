@@ -27,6 +27,7 @@ use crate::RetryCancellationToken;
 ///
 /// - `timer`: Timer used to register the blocking delay.
 /// - `deadline`: Absolute backoff deadline prepared by the controller.
+/// - `immediate`: Whether the retry can proceed without waiting.
 /// - `cancellation`: Optional flow cancellation token.
 ///
 /// # Returns
@@ -38,6 +39,7 @@ use crate::RetryCancellationToken;
 /// # Panics
 /// Panics if all notification senders disappear while a pending future is
 /// retained, which indicates an internal waker-lifetime invariant violation.
+#[must_use]
 pub(crate) fn wait_for_backoff(
     timer: &dyn Timer,
     deadline: MonotonicInstant,

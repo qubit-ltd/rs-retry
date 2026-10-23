@@ -10,10 +10,10 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use qubit_clock::MonotonicInstant;
 use qubit_clock::Timer;
 
 use super::internal::RetryFlowController;
+use super::internal::RetrySessionPhase;
 use super::retry_session_admission::RetrySessionAdmission;
 use super::retry_session_step::RetrySessionStep;
 use crate::AttemptFailure;
@@ -23,19 +23,6 @@ use crate::RetryError;
 use crate::RetryRandomSource;
 use crate::RetryResult;
 use crate::RetrySuccess;
-
-/// Legal phases of the single outstanding operation protocol.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SessionPhase {
-    /// No attempt has started.
-    Ready,
-    /// One admitted operation awaits its result.
-    Active,
-    /// An external scheduler owns the pending retry wait.
-    Waiting(MonotonicInstant),
-    /// Completion observers have been notified.
-    Finished,
-}
 
 /// Owns a same-thread retry flow without sleeping or registering timers.
 ///
@@ -51,6 +38,10 @@ enum SessionPhase {
 /// Like [`crate::Retry`], this facade cannot interrupt a running operation and
 /// has no hard timeout API. Configured elapsed budgets are admission limits.
 /// Dropping an unfinished session does not synthesize completion callbacks.
+///
+/// # Type Parameters
+/// - `E`: Application error returned by operations and processed by retry
+///   rules.
 ///
 /// # Examples
 ///
@@ -83,7 +74,7 @@ pub struct RetrySession<E> {
     /// Optional external cancellation request.
     cancellation_token: Option<RetryCancellationToken>,
     /// Prevents duplicate admission, recording, and completion callbacks.
-    phase: SessionPhase,
+    phase: RetrySessionPhase,
 }
 
 impl<E: 'static> RetrySession<E> {
@@ -142,12 +133,19 @@ impl<E: 'static> RetrySession<E> {
             controller,
             timer,
             cancellation_token: None,
-            phase: SessionPhase::Ready,
+            phase: RetrySessionPhase::Ready,
         }
     }
 
     /// Observes `token` at admission and failure boundaries, returning this
     /// flow. Cancellation does not interrupt an operation already admitted.
+    ///
+    /// # Parameters
+    /// - `token`: Shared cancellation request observed at retry control
+    ///   boundaries.
+    ///
+    /// # Returns
+    /// This session configured to observe `token`.
     #[inline]
     pub fn with_cancellation_token(mut self, token: RetryCancellationToken) -> Self {
         self.cancellation_token = Some(token);
@@ -164,6 +162,10 @@ impl<E: 'static> RetrySession<E> {
     /// retry deadline never bypasses cancellation, clock validation,
     /// elapsed budgets, or the attempt limit.
     ///
+    /// # Returns
+    /// The admitted one-based attempt ordinal, a pending retry deadline, or a
+    /// terminal error after completion observers run.
+    ///
     /// # Errors
     /// Returns a terminal retry error for rejected admission, invalid clocks,
     /// cancellation, or a panicking control observer. Completion observers run
@@ -175,17 +177,17 @@ impl<E: 'static> RetrySession<E> {
     #[allow(clippy::result_large_err, reason = "preserves lossless terminal retry context")]
     pub fn begin_attempt(&mut self) -> Result<RetrySessionAdmission, RetryError<E>> {
         assert!(
-            matches!(self.phase, SessionPhase::Ready | SessionPhase::Waiting(_)),
+            matches!(self.phase, RetrySessionPhase::Ready | RetrySessionPhase::Waiting(_)),
             "begin_attempt requires a ready or waiting session"
         );
         let clock = self.timer.clock();
         let cancellation = self.cancellation_token.as_ref();
         let result = match self.phase {
-            SessionPhase::Ready => self
+            RetrySessionPhase::Ready => self
                 .controller
                 .before_attempt(clock, cancellation)
                 .and_then(|_| self.controller.commit_attempt(clock, cancellation)),
-            SessionPhase::Waiting(due) => match self.controller.check_backoff_ready(clock, cancellation, due) {
+            RetrySessionPhase::Waiting(due) => match self.controller.check_backoff_ready(clock, cancellation, due) {
                 Ok(false) => return Ok(RetrySessionAdmission::Waiting(due)),
                 Ok(true) => self
                     .controller
@@ -193,17 +195,17 @@ impl<E: 'static> RetrySession<E> {
                     .and_then(|_| self.controller.commit_attempt(clock, cancellation)),
                 Err(error) => Err(error),
             },
-            SessionPhase::Active | SessionPhase::Finished => unreachable!("phase asserted above"),
+            RetrySessionPhase::Active | RetrySessionPhase::Finished => unreachable!("phase asserted above"),
         };
         match result {
             Ok(()) => {
-                self.phase = SessionPhase::Active;
+                self.phase = RetrySessionPhase::Active;
                 Ok(RetrySessionAdmission::Admitted(
                     NonZeroU32::new(self.controller.attempts()).expect("a committed attempt has a nonzero ordinal"),
                 ))
             }
             Err(error) => {
-                self.phase = SessionPhase::Finished;
+                self.phase = RetrySessionPhase::Finished;
                 self.config
                     .complete::<RetrySessionAdmission>(Err(error))
                     .map(RetrySuccess::into_value_discarding_diagnostics)
@@ -223,9 +225,20 @@ impl<E: 'static> RetrySession<E> {
     /// # Panics
     /// Panics without a matching successful `begin_attempt`, or after
     /// completion. Custom random-source and clock panics propagate.
+    ///
+    /// # Type Parameters
+    /// - `T`: Successful value owned by the completed operation.
+    ///
+    /// # Parameters
+    /// - `result`: Outcome produced by the operation admitted for the current
+    ///   attempt.
+    ///
+    /// # Returns
+    /// The next retry deadline, successful value with context, or terminal
+    /// error after completion observers run.
     pub fn record_result<T>(&mut self, result: Result<T, E>) -> RetrySessionStep<T, E> {
         assert!(
-            self.phase == SessionPhase::Active,
+            self.phase == RetrySessionPhase::Active,
             "record_result requires an active attempt"
         );
         let clock = self.timer.clock();
@@ -241,13 +254,13 @@ impl<E: 'static> RetrySession<E> {
             ) {
                 Ok(plan) => {
                     let due = plan.deadline();
-                    self.phase = SessionPhase::Waiting(due);
+                    self.phase = RetrySessionPhase::Waiting(due);
                     return RetrySessionStep::RetryAt(due);
                 }
                 Err(error) => Err(error),
             },
         };
-        self.phase = SessionPhase::Finished;
+        self.phase = RetrySessionPhase::Finished;
         match self.config.complete(terminal) {
             Ok(success) => RetrySessionStep::Complete(success),
             Err(error) => RetrySessionStep::Failed(error),

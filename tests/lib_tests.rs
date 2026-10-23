@@ -37,7 +37,7 @@ impl RetryRule<()> for CountingRule {
 }
 
 #[test]
-fn unclassified_application_error_aborts_by_default() {
+fn test_unclassified_application_error_aborts_by_default() {
     let retry = RetryConfig::<&str>::builder()
         .max_attempts(3)
         .build()
@@ -54,7 +54,7 @@ fn unclassified_application_error_aborts_by_default() {
 }
 
 #[test]
-fn explicit_retry_fallback_retries_unclassified_errors() {
+fn test_explicit_retry_fallback_retries_unclassified_errors() {
     let retry = RetryConfig::<&str>::builder()
         .max_attempts(2)
         .fallback(RetryFallback::Retry)
@@ -72,7 +72,7 @@ fn explicit_retry_fallback_retries_unclassified_errors() {
 }
 
 #[test]
-fn explicit_rule_keeps_order_and_reason() {
+fn test_explicit_rule_keeps_order_and_reason() {
     let retry = RetryConfig::<()>::builder()
         .max_attempts(1)
         .rule(AbortRule)
@@ -84,7 +84,7 @@ fn explicit_rule_keeps_order_and_reason() {
 }
 
 #[test]
-fn clone_shares_callbacks_and_preserves_behavior() {
+fn test_clone_shares_callbacks_and_preserves_behavior() {
     let calls = Arc::new(AtomicUsize::new(0));
     let callback_calls = Arc::clone(&calls);
     let retry = RetryConfig::<()>::builder()
@@ -98,7 +98,7 @@ fn clone_shares_callbacks_and_preserves_behavior() {
 }
 
 #[test]
-fn metadata_split_moves_only_application_error() {
+fn test_metadata_split_moves_only_application_error() {
     let retry = RetryConfig::<String>::builder()
         .max_attempts(1)
         .fallback(RetryFallback::Abort)

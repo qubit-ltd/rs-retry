@@ -23,6 +23,8 @@ pub enum RetryRandomSourceStorage {
 
 impl RetryRandomSourceStorage {
     /// Borrows the stored source through the common random-source interface.
+    #[must_use]
+    #[inline]
     pub fn as_source(&self) -> &dyn RetryRandomSource {
         match self {
             Self::Thread(source) => source,

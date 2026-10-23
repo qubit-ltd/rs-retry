@@ -152,7 +152,7 @@ fn test_final_delay_limit_caps_resolved_delay() {
     let mut wire = to_value(base).expect("serialize base");
     wire["delay_limit"] = json!({"seconds": 10, "nanoseconds": 0});
     let policy: BackoffPolicy = from_value(wire).expect("final limit is supported");
-    let mut state = policy.start_with_random_source(Arc::new(crate::support::FixedRetryRandomSource::new(1.0)));
+    let mut state = policy.start_with_random_source(Arc::new(FixedRetryRandomSource::new(1.0)));
     for request in [
         BackoffRequest::policy(),
         BackoffRequest::hint(Duration::from_secs(100)),

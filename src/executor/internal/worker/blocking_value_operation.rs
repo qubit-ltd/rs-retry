@@ -15,6 +15,7 @@ use crate::AttemptFailure;
 use crate::executor::AttemptCancellationToken;
 
 /// Adapter that stores worker operation success values outside the retry loop.
+///
 /// # Type Parameters
 /// - `T`: Successful value moved into the protected result slot.
 /// - `F`: Shared operation callable from successive worker threads.
@@ -50,6 +51,7 @@ impl<T, F> BlockingValueOperation<T, F> {
     /// # Panics
     /// Panics only if the retry loop reports success without a successful
     /// operation result, which would indicate an internal logic error.
+    #[must_use = "the captured operation value must be used"]
     pub(in crate::executor) fn take_value(&self) -> T {
         let mut value = self.value.lock().unwrap_or_else(PoisonError::into_inner);
         value.take().expect("retry loop succeeded without an operation value")

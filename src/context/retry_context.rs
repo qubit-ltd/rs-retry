@@ -23,6 +23,17 @@ use super::RetryContextParts;
 /// listener and retry-sleep time are excluded. `total_elapsed` is monotonic
 /// elapsed time spent in the retry flow and includes operation execution,
 /// retry sleep, retry-after sleep, and retry-control listener time.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryContext;
+///
+/// let context = RetryContext::new(2, 4);
+/// assert_eq!(context.attempts(), 2);
+/// assert_eq!(context.current_attempt().unwrap().get(), 2);
+/// assert_eq!(context.max_retries(), 3);
+/// ```
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetryContext {
@@ -118,7 +129,6 @@ impl RetryContext {
     /// `Some(NonZeroU32)` for an attempt-related snapshot, or `None` when no
     /// attempt is current.
     #[inline]
-    #[must_use]
     pub fn current_attempt(&self) -> Option<NonZeroU32> {
         self.current_attempt
     }
@@ -148,7 +158,6 @@ impl RetryContext {
     /// # Returns
     /// `Some(Duration)` for bounded retry flows, or `None` for unlimited flows.
     #[inline]
-    #[must_use]
     pub fn operation_time_budget(&self) -> Option<Duration> {
         self.operation_time_budget
     }
@@ -158,7 +167,6 @@ impl RetryContext {
     /// # Returns
     /// `Some(Duration)` for bounded retry flows, or `None` for unlimited flows.
     #[inline]
-    #[must_use]
     pub fn total_time_budget(&self) -> Option<Duration> {
         self.total_time_budget
     }
@@ -205,7 +213,6 @@ impl RetryContext {
     /// not represented as an attempt timeout. `None` means no current hard
     /// timeout is attached to this snapshot.
     #[inline]
-    #[must_use]
     pub fn current_hard_attempt_timeout(&self) -> Option<Duration> {
         self.current_hard_attempt_timeout
     }
@@ -216,7 +223,6 @@ impl RetryContext {
     /// `Some(Duration)` while a selected delay is retained, including terminal
     /// snapshots; `None` before selection or after the next attempt resets it.
     #[inline]
-    #[must_use]
     pub fn next_delay(&self) -> Option<Duration> {
         self.next_delay
     }
@@ -226,7 +232,6 @@ impl RetryContext {
     /// # Returns
     /// `Some(Duration)` when a retry rule supplied a hint; `None` otherwise.
     #[inline]
-    #[must_use]
     pub fn retry_after_hint(&self) -> Option<Duration> {
         self.retry_after_hint
     }

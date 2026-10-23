@@ -8,9 +8,9 @@
 
 use qubit_retry::AttemptCancellationToken;
 use qubit_retry::Retry;
-use qubit_retry::WorkerRetry;
 use qubit_retry::RetryConfig;
 use qubit_retry::RetryPolicy;
+use qubit_retry::WorkerRetry;
 
 fn main() {
     let _ = AttemptCancellationToken::new();

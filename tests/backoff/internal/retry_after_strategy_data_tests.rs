@@ -20,6 +20,7 @@ fn test_retry_after_strategy_data_serializes_every_public_tag() {
         (BackoffPolicy::immediate().ignore_retry_after(), "ignore_hint"),
     ];
     for (policy, expected) in cases {
-        assert_eq!(to_value(policy).unwrap()["retry_after"], expected);
+        let value = to_value(policy).expect("policy should serialize");
+        assert_eq!(value["retry_after"], expected);
     }
 }

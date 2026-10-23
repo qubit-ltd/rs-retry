@@ -26,8 +26,8 @@ impl RetryRandomSource for ThreadRetryRandomSource {
     /// A uniformly distributed floating-point sample.
     ///
     /// # Panics
-    /// Panics when callers supply an invalid or nonfinite range; retry policies
-    /// only request validated finite bounds.
+    /// In debug builds, asserts that the bounds are finite and ordered. Retry
+    /// policies request samples from the validated range `0.0..=1.0`.
     #[inline]
     fn random_f64_inclusive(&self, min: f64, max: f64) -> f64 {
         debug_assert!(min.is_finite() && max.is_finite() && min <= max);

@@ -57,6 +57,13 @@ impl<E> Default for RetryRules<E> {
 }
 
 impl<E: 'static> RetryRules<E> {
+    /// Creates an ordered rule collection from its registered callbacks.
+    ///
+    /// # Parameters
+    /// - `rules`: Shared rule objects in registration order.
+    ///
+    /// # Returns
+    /// A collection that preserves callback order without cloning the rules.
     pub(crate) fn from_vec(rules: Vec<Arc<dyn RetryRule<E>>>) -> Self {
         Self { rules: rules.into() }
     }

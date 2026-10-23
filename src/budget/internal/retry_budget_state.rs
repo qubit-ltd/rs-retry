@@ -50,7 +50,7 @@ impl RetryBudgetState {
     /// # Returns
     /// Empty accounting whose latest sample equals its start.
     #[inline]
-    #[must_use = "use the prepared value or inspect the result"]
+    #[must_use = "retain the budget accounting state"]
     pub(crate) fn new(started_at: MonotonicInstant, limits: RetryAdmissionLimits) -> Self {
         Self {
             limits,
@@ -77,6 +77,7 @@ impl RetryBudgetState {
     ///
     /// # Returns
     /// True exactly while an admitted operation has not been finished.
+    #[inline]
     #[must_use]
     pub(crate) fn has_active_attempt(&self) -> bool {
         self.attempt_started_at.is_some()
@@ -86,6 +87,7 @@ impl RetryBudgetState {
     ///
     /// # Returns
     /// Committed admissions, never exceeding the validated maximum.
+    #[inline]
     #[must_use]
     pub(crate) fn attempts(&self) -> u32 {
         self.attempts.used()
@@ -99,7 +101,6 @@ impl RetryBudgetState {
     /// # Panics
     /// Panics if an internal mutation violated committed clock coherence.
     #[inline]
-    #[must_use = "inspect the budget snapshot"]
     pub(crate) fn snapshot(&self) -> RetryBudgetSnapshot {
         self.snapshot_at(self.sampled_at)
             .expect("committed clock sample must remain coherent")
@@ -117,7 +118,6 @@ impl RetryBudgetState {
     /// # Errors
     /// Returns a domain/regression error without mutating state.
     #[inline]
-    #[must_use = "handle the budget snapshot result"]
     pub(crate) fn snapshot_at(&self, now: MonotonicInstant) -> Result<RetryBudgetSnapshot, TimeError> {
         let _ = now.duration_since(self.sampled_at)?;
         Ok(RetryBudgetSnapshot::new(
@@ -137,7 +137,6 @@ impl RetryBudgetState {
     /// # Returns
     /// `Some(kind)` for the first exhausted limit (attempts, operation, total),
     /// or `None` while all continuation limits permit another operation.
-    #[must_use]
     pub(crate) fn retry_limit(&self, delay: Duration) -> Option<RetryLimitKind> {
         if self.attempts.remaining() == 0 {
             return Some(RetryLimitKind::Attempts);

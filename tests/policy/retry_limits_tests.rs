@@ -10,6 +10,9 @@ use qubit_retry::RetryPolicy;
 
 #[test]
 fn test_policy_exposes_retry_limits() {
-    let policy = RetryPolicy::builder().max_attempts(4).build().unwrap();
+    let policy = RetryPolicy::builder()
+        .max_attempts(4)
+        .build()
+        .expect("valid retry policy should build");
     assert_eq!(policy.admission_limits().max_attempts().get(), 4);
 }

@@ -474,13 +474,13 @@ async fn test_backoff_registration_cancellation_wins_over_timer_failure() {
         token: token.clone(),
         registrations: Arc::clone(&registrations),
     });
-    let config2 = RetryConfig::<TestError>::builder()
+    let config = RetryConfig::<TestError>::builder()
         .max_attempts(2)
         .backoff(BackoffPolicy::fixed(Duration::from_secs(1)).prefer_retry_after())
         .rule(move |_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::RetryWithHint(delay))
         .build()
         .expect("valid config");
-    let error = TokioRetry::new(&config2)
+    let error = TokioRetry::new(&config)
         .timer(timer)
         .cancellation_token(token)
         .run(|| async { Err::<(), _>(TestError("registration")) })
@@ -513,8 +513,8 @@ async fn test_async_ready_result_cancellation_and_equal_deadline_priority() {
         let token = RetryCancellationToken::new();
         let operation_token = token.clone();
         let deadline = Duration::from_secs(5);
-        let config3 = RetryConfig::<&str>::builder().build().expect("valid config");
-        let result = TokioRetry::new(&config3)
+        let config = RetryConfig::<&str>::builder().build().expect("valid config");
+        let result = TokioRetry::new(&config)
             .timer(clock.new_timer())
             .hard_attempt_timeout(deadline)
             .hard_flow_timeout(deadline)

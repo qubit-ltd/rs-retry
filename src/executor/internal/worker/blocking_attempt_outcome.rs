@@ -13,6 +13,7 @@ use crate::AttemptFailure;
 use crate::WorkerStopTrigger;
 
 /// Outcome of starting and waiting for one blocking worker attempt.
+///
 /// # Type Parameters
 /// - `T`: Successful operation payload.
 /// - `E`: Application error retained in an attempt failure.

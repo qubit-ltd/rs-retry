@@ -388,11 +388,11 @@ impl Timer for SuccessCompletionRegressingTimer {
 #[test]
 fn test_sync_retry_success_clock_regression_returns_infrastructure_error() {
     let policy = RetryPolicy::builder().build().unwrap();
-    let config2 = RetryConfig::<TestError>::builder()
+    let successful_completion_config = RetryConfig::<TestError>::builder()
         .policy(policy)
         .build()
         .expect("valid config");
-    let error = Retry::new(&config2)
+    let error = Retry::new(&successful_completion_config)
         .timer(Arc::new(SuccessCompletionRegressingTimer::new()))
         .run(|| Ok::<_, TestError>(42_u32))
         .expect_err("a regressing completion sample must fail");
@@ -411,12 +411,12 @@ fn test_sync_retry_success_clock_regression_returns_infrastructure_error() {
 #[test]
 fn test_sync_retry_clock_failure_precedes_a_returned_abort_decision() {
     let policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
-    let config3 = RetryConfig::<TestError>::builder()
+    let abort_rule_config = RetryConfig::<TestError>::builder()
         .policy(policy)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
         .build()
         .expect("valid config");
-    let error = Retry::new(&config3)
+    let error = Retry::new(&abort_rule_config)
         .timer(rule_terminal_regressing_timer())
         .run(|| Err::<(), _>(TestError("abort")))
         .expect_err("normal rule return requires coherent terminal accounting");
@@ -488,9 +488,11 @@ fn test_sync_retry_callbacks_retain_current_attempt_scope() {
     assert_eq!(result.context().current_attempt(), None);
 }
 
+/// Advances the manual clock before the second attempt to exhaust its budget.
 struct ExhaustsBeforeSecondAttempt(Arc<ManualMonotonicClock>);
 
 impl RetryObserver<TestError> for ExhaustsBeforeSecondAttempt {
+    /// Advances time when the retry flow enters its second attempt.
     fn on_before_attempt(&self, context: &RetryContext) {
         let current_attempt = context
             .current_attempt()
@@ -514,13 +516,13 @@ fn test_sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
         .build()
         .unwrap();
     let attempts = AtomicUsize::new(0);
-    let config4 = RetryConfig::<TestError>::builder()
+    let total_budget_config = RetryConfig::<TestError>::builder()
         .policy(policy)
         .observer(ExhaustsBeforeSecondAttempt(Arc::clone(&clock)))
         .fallback(RetryFallback::Retry)
         .build()
         .expect("valid config");
-    let error = Retry::new(&config4)
+    let error = Retry::new(&total_budget_config)
         .timer(Arc::new(clock.new_timer()))
         .run(|| {
             attempts.fetch_add(1, Ordering::SeqCst);
@@ -543,22 +545,22 @@ fn test_sync_retry_preserves_last_failure_when_next_attempt_is_rejected() {
 
 #[test]
 fn test_sync_retry_matches_shared_terminal_matrix() {
-    let config5 = RetryConfig::<TestError>::builder()
+    let abort_matrix_config = RetryConfig::<TestError>::builder()
         .max_attempts(2)
         .rule(|_: &AttemptFailure<TestError>, _: &RetryContext| RetryDecision::Abort)
         .build()
         .expect("valid config");
-    let abort = Retry::new(&config5)
+    let abort = Retry::new(&abort_matrix_config)
         .run(|| Err::<(), _>(TestError("matrix")))
         .expect_err("the explicit abort rule must terminate after attempt one");
     assert_matrix_abort(&abort);
 
-    let config6 = RetryConfig::<TestError>::builder()
+    let attempt_limit_config = RetryConfig::<TestError>::builder()
         .max_attempts(1)
         .fallback(RetryFallback::Retry)
         .build()
         .expect("valid config");
-    let attempts = Retry::new(&config6)
+    let attempts = Retry::new(&attempt_limit_config)
         .run(|| Err::<(), _>(TestError("matrix")))
         .expect_err("one admitted failure must exhaust the attempt limit");
     assert_matrix_limit(&attempts, RetryLimitKind::Attempts, 1, true);
@@ -573,12 +575,12 @@ fn test_sync_retry_matches_shared_terminal_matrix() {
             RetryLimitKind::TotalElapsed => policy.total_time_budget(Duration::from_secs(1)),
             RetryLimitKind::Attempts => unreachable!(),
         };
-        let config7 = RetryConfig::<TestError>::builder()
+        let elapsed_limit_config = RetryConfig::<TestError>::builder()
             .policy(policy.build().unwrap())
             .fallback(RetryFallback::Retry)
             .build()
             .expect("valid config");
-        let error = Retry::new(&config7)
+        let error = Retry::new(&elapsed_limit_config)
             .timer(clock.new_timer())
             .run(|| {
                 clock
@@ -643,7 +645,7 @@ fn test_sync_retry_refreshes_elapsed_time_between_callback_phases() {
         .backoff(BackoffPolicy::immediate())
         .build()
         .expect("callback elapsed policy should be valid");
-    let config8 = RetryConfig::<TestError>::builder()
+    let callback_elapsed_config = RetryConfig::<TestError>::builder()
         .policy(policy)
         .observer(ElapsedObserverCallback::new(
             Arc::clone(&clock),
@@ -664,7 +666,7 @@ fn test_sync_retry_refreshes_elapsed_time_between_callback_phases() {
         ))
         .build()
         .expect("valid config");
-    let error = Retry::new(&config8)
+    let error = Retry::new(&callback_elapsed_config)
         .timer(clock.new_timer())
         .run(|| Err::<(), _>(TestError("elapsed")))
         .expect_err("scheduled callback time should exhaust the flow");
@@ -746,8 +748,8 @@ fn test_sync_retry_matches_shared_infrastructure_matrix() {
         .expect_err("retry sleep registration failure must be terminal");
     assert_matrix_infrastructure(&timer_error, "timer", 1, None, true);
 
-    let config10 = RetryConfig::<TestError>::builder().build().expect("valid config");
-    let clock_error = Retry::new(&config10)
+    let infrastructure_config = RetryConfig::<TestError>::builder().build().expect("valid config");
+    let clock_error = Retry::new(&infrastructure_config)
         .timer(completion_regressing_timer())
         .run(|| Ok::<_, TestError>(()))
         .expect_err("completion clock regression must be terminal");

@@ -8,6 +8,15 @@
 //! Stable source classification for a selected backoff delay.
 
 /// Stable source classification for a selected delay.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::BackoffDelaySource;
+///
+/// let source = BackoffDelaySource::Hint;
+/// assert_eq!(source, BackoffDelaySource::Hint);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackoffDelaySource {
     /// Delay selected solely from the configured policy.

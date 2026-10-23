@@ -9,7 +9,16 @@
 
 use std::fmt;
 
-/// Lifecycle phase in which a retry callback failed.
+/// Lifecycle phase in which a retry callback failed or a rule made a decision.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryCallbackPhase;
+///
+/// let phase = RetryCallbackPhase::BeforeAttempt;
+/// assert_eq!(phase.to_string(), "before attempt");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryCallbackPhase {
     /// A before-attempt observer was running.
@@ -27,7 +36,6 @@ pub enum RetryCallbackPhase {
 }
 
 impl fmt::Display for RetryCallbackPhase {
-    ///
     /// Formats the stable human-readable label of this classification.
     ///
     /// # Parameters

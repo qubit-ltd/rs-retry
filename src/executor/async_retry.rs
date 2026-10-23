@@ -292,7 +292,9 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
             let timeout_future = match register_timeout(&timer, plan.deadline()) {
                 Ok(timeout_future) => timeout_future,
                 Err(error) => {
-                    return Err(controller.record_inactive_infrastructure_failure(timer_failure(error), clock.now()));
+                    let error = timer_failure(error);
+                    let error = controller.record_inactive_infrastructure_failure(error, clock.now());
+                    return Err(error);
                 }
             };
             controller.commit_prepared_attempt(plan, clock, cancellation)?;
@@ -313,7 +315,8 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                     return Err(controller.record_attempt_cancellation(clock));
                 }
                 AsyncAttemptOutcome::TimerFailed(error) => {
-                    let error = controller.record_active_infrastructure_failure(timer_failure(error), clock.now());
+                    let error = timer_failure(error);
+                    let error = controller.record_active_infrastructure_failure(error, clock.now());
                     return Err(error);
                 }
             };
@@ -323,7 +326,8 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                     return Err(controller.record_backoff_cancellation(clock));
                 }
                 AsyncBackoffOutcome::TimerFailed(error) => {
-                    let error = controller.record_inactive_infrastructure_failure(timer_failure(error), clock.now());
+                    let error = timer_failure(error);
+                    let error = controller.record_inactive_infrastructure_failure(error, clock.now());
                     return Err(error);
                 }
             }
@@ -414,15 +418,15 @@ where
 
 /// Registers the optional absolute deadline before counting the attempt.
 ///
-/// # Errors
-/// Returns the timer's registration error without polling an operation future.
-///
 /// # Parameters
 /// - `timer`: Timer belonging to the current flow clock.
 /// - `deadline`: Absolute deadline, or None to disable the timer.
 ///
 /// # Returns
 /// Some registered future, or None when no deadline was supplied.
+///
+/// # Errors
+/// Returns the timer's registration error without polling an operation future.
 #[inline]
 fn register_timeout(timer: &dyn Timer, deadline: Option<MonotonicInstant>) -> Result<Option<TimerFuture>, TimeError> {
     deadline.map(|deadline| timer.at(deadline)).transpose()
@@ -433,6 +437,7 @@ fn register_timeout(timer: &dyn Timer, deadline: Option<MonotonicInstant>) -> Re
 /// # Parameters
 /// - `timer`: Timer used for the selected delay.
 /// - `deadline`: Absolute backoff deadline.
+/// - `immediate`: Whether the selected delay is zero and needs no timer poll.
 /// - `cancellation`: Optional cancellation source.
 ///
 /// # Returns

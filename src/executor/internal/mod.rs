@@ -10,6 +10,7 @@
 mod blocking;
 mod cancellation;
 mod flow;
+mod session_phase;
 #[cfg(feature = "async")]
 mod tokio;
 #[cfg(feature = "worker")]
@@ -19,6 +20,7 @@ pub(crate) use blocking::BlockingBackoffOutcome;
 pub(crate) use blocking::wait_for_backoff;
 pub(in crate::executor) use cancellation::RetryCancellationState;
 pub(crate) use flow::RetryFlowController;
+pub(in crate::executor) use session_phase::RetrySessionPhase;
 #[cfg(feature = "async")]
 pub(in crate::executor) use tokio::AsyncAttemptOutcome;
 #[cfg(feature = "async")]

@@ -114,8 +114,15 @@ fn assert_cancelled(error: &RetryError<&'static str>, phase: RetryCallbackPhase)
     assert_eq!(error.context().current_attempt(), None);
     assert_eq!(error.context().current_hard_attempt_timeout(), None);
     assert_eq!(error.last_error().copied(), (!before).then_some("offline"));
-    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. }
-        if *phase == if before { RetryCancellationPhase::BeforeAttempt } else { RetryCancellationPhase::Backoff }));
+    assert!(matches!(
+        error.reason(),
+        RetryErrorReason::Cancelled { phase, .. }
+            if *phase == if before {
+                RetryCancellationPhase::BeforeAttempt
+            } else {
+                RetryCancellationPhase::Backoff
+            }
+    ));
     assert_eq!(
         error.context().next_delay(),
         (phase == RetryCallbackPhase::RetryScheduled).then_some(Duration::ZERO)
@@ -245,9 +252,10 @@ fn assert_clock_terminal(error: &RetryError<&'static str>, phase: RetryCallbackP
         (phase != RetryCallbackPhase::BeforeAttempt).then_some("offline")
     );
     if panic_after {
-        assert!(
-            matches!(error.reason(), RetryErrorReason::CallbackFailed { callback, .. } if callback.phase() == phase)
-        );
+        assert!(matches!(
+            error.reason(),
+            RetryErrorReason::CallbackFailed { callback, .. } if callback.phase() == phase
+        ));
     } else {
         assert!(matches!(
             error.reason(),

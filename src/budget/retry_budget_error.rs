@@ -13,6 +13,15 @@ use thiserror::Error;
 use super::RetryBudgetExhausted;
 
 /// A clock failure, invalid attempt token, or normal continuation exhaustion.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryBudgetError;
+///
+/// let error = RetryBudgetError::AttemptInProgress;
+/// assert!(matches!(error, RetryBudgetError::AttemptInProgress));
+/// ```
 #[must_use]
 #[derive(Debug, Error)]
 #[non_exhaustive]

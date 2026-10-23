@@ -10,10 +10,19 @@
 use std::time::Duration;
 
 /// Decision returned by one ordered retry rule.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryDecision;
+/// use std::time::Duration;
+///
+/// let decision = RetryDecision::RetryWithHint(Duration::from_secs(2));
+/// assert_eq!(decision, RetryDecision::RetryWithHint(Duration::from_secs(2)));
+/// ```
 #[must_use]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
-#[derive(Default)]
 pub enum RetryDecision {
     /// Let the next rule or built-in default decide.
     #[default]
@@ -40,6 +49,7 @@ impl RetryDecision {
     /// Returns the caller-provided delay hint carried by this decision.
     ///
     /// # Returns
+    ///
     /// Some delay for either hint-carrying retry decision, or None for
     /// delegate, plain retry, and abort. Hint presence alone does not
     /// authorize admission.

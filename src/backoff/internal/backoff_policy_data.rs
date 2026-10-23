@@ -24,13 +24,14 @@ use super::RetryAfterStrategyData;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BackoffPolicyData {
-    /// Base-delay strategy.
+    /// Describes how the policy calculates its base delay for each retry.
     pub strategy: BackoffStrategyData,
-    /// Jitter strategy.
+    /// Describes the random variation applied to eligible delays.
     pub jitter: JitterStrategyData,
-    /// Retry-after hint strategy.
+    /// Defines how a server-provided retry-after hint affects the delay.
     pub retry_after: RetryAfterStrategyData,
-    /// Optional final delay cap; omitted in older wire configurations.
+    /// Caps the final resolved delay after strategy, hint, and jitter handling.
+    /// Missing values in older wire configurations leave the delay uncapped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delay_limit: Option<crate::policy::internal::DurationData>,
 }

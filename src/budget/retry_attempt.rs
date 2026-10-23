@@ -14,6 +14,21 @@ use std::sync::Arc;
 /// A value is returned by [`super::RetryBudget::begin_attempt`] and must be
 /// consumed by [`super::RetryBudget::finish_attempt`]. It intentionally is not
 /// clonable, so one attempt cannot be finished more than once.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_clock::ManualMonotonicClock;
+/// use qubit_retry::RetryBudget;
+/// use qubit_retry::RetryPolicy;
+///
+/// let clock = ManualMonotonicClock::new_shared();
+/// let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
+/// let mut budget = RetryBudget::new(clock.as_ref(), *policy.admission_limits()).unwrap();
+/// let attempt = budget.begin_attempt().unwrap();
+/// assert_eq!(attempt.number(), 1);
+/// budget.finish_attempt(attempt).unwrap();
+/// ```
 #[must_use]
 #[derive(Debug)]
 pub struct RetryAttempt {

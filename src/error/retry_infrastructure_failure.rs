@@ -49,7 +49,6 @@ impl RetryInfrastructureFailure {
     /// # Returns
     /// `Some(&str)` for clock, timer, and worker-spawn failures, or `None` for
     /// a worker that remained running or whose event channel closed.
-    #[must_use]
     #[inline]
     pub fn message(&self) -> Option<&str> {
         match self {
@@ -66,7 +65,6 @@ impl RetryInfrastructureFailure {
     /// # Returns
     /// `Some(WorkerStopTrigger)` for `WorkerStillRunning`, or `None` for other
     /// infrastructure failures.
-    #[must_use]
     #[inline]
     #[cfg(feature = "worker")]
     pub fn worker_stop_trigger(&self) -> Option<WorkerStopTrigger> {
@@ -78,7 +76,6 @@ impl RetryInfrastructureFailure {
 }
 
 impl fmt::Display for RetryInfrastructureFailure {
-    ///
     /// Formats the infrastructure cause and available runtime diagnostic.
     ///
     /// # Parameters

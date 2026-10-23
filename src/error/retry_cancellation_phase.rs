@@ -10,6 +10,15 @@
 use std::fmt;
 
 /// Retry phase in which cancellation stopped the flow.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryCancellationPhase;
+///
+/// let phase = RetryCancellationPhase::Attempt;
+/// assert_eq!(phase.to_string(), "attempt");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryCancellationPhase {
     /// Cancellation was observed before an operation started.

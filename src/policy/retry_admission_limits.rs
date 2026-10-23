@@ -24,6 +24,17 @@ use serde::de::Error;
 #[cfg(feature = "serde")]
 use super::internal::RetryAdmissionLimitsData;
 /// Limits that decide whether a retry flow may continue.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::RetryPolicy;
+///
+/// let policy = RetryPolicy::builder().max_attempts(4).build()?;
+/// let limits = policy.admission_limits();
+/// assert_eq!(limits.max_attempts().get(), 4);
+/// # Ok::<(), qubit_retry::RetryPolicyError>(())
+/// ```
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetryAdmissionLimits {

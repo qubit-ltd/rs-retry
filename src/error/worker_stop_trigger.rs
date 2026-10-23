@@ -10,6 +10,15 @@
 use std::fmt;
 
 /// Event that requested a worker attempt to stop.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_retry::WorkerStopTrigger;
+///
+/// let trigger = WorkerStopTrigger::Cancellation;
+/// assert_eq!(trigger.to_string(), "cancellation");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkerStopTrigger {
     /// The current attempt timeout expired.

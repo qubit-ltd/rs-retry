@@ -12,6 +12,20 @@ use std::time::Duration;
 use super::backoff_delay_source::BackoffDelaySource;
 
 /// One immutable result from [`crate::BackoffState::next`].
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use qubit_retry::BackoffPolicy;
+/// use qubit_retry::BackoffRequest;
+///
+/// let mut state = BackoffPolicy::fixed(Duration::from_millis(10)).start();
+/// let step = state.next(BackoffRequest::policy());
+/// assert_eq!(step.retry_index(), 1);
+/// assert_eq!(step.effective_delay(), Duration::from_millis(10));
+/// ```
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BackoffStep {
