@@ -43,7 +43,7 @@ async = []
 tokio = ["async", "dep:tokio", "qubit-clock/tokio"]
 
 [dependencies]
-qubit-budget = { version = "0.7", features = ["time"] }
+qubit-budget = { version = "0.10", features = ["time"] }
 qubit-clock = { version = "0.13" }
 fastrand = "^2.5"
 serde = { version = "^1.0", features = ["derive"], optional = true }
