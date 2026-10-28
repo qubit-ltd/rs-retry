@@ -162,10 +162,13 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     /// Sets the OS-visible name assigned to each worker thread.
     ///
     /// # Parameters
-    /// - `name`: Name passed to [`std::thread::Builder`].
+    /// - `name`: Name passed to [`std::thread::Builder`]. An embedded NUL byte
+    ///   is reported by [`Self::run`] as a worker-spawn infrastructure failure;
+    ///   an empty name is allowed.
     ///
     /// # Returns
-    /// A worker facade using the supplied thread name.
+    /// A worker facade using the supplied thread name. The name is validated
+    /// when [`Self::run`] creates an attempt worker.
     #[inline]
     pub fn thread_name(mut self, name: &str) -> Self {
         self.thread_name = name.into();
@@ -232,11 +235,15 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     ///
     /// # Errors
     /// Returns the terminal attempt, cancellation, timeout, budget, callback,
-    /// or infrastructure failure with its context.
+    /// or infrastructure failure with its context. A worker name containing
+    /// NUL is reported as a worker-spawn infrastructure failure before any
+    /// attempt is admitted.
     ///
     /// # Panics
     /// Custom timer, random source, or clock panics are not intercepted. Worker
-    /// operation panics become structured attempt failures.
+    /// operation panics become structured attempt failures. Invalid thread
+    /// names are returned as worker-spawn failures; this does not guarantee
+    /// isolation of arbitrary panics from thread creation.
     #[allow(
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"

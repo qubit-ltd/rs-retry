@@ -23,9 +23,10 @@ pub(in crate::executor) enum BlockingAttemptOutcome<T, E> {
         /// Operation result, available only after worker exit is proven.
         Result<T, AttemptFailure<E>>,
     ),
-    /// The operating-system worker thread could not be started.
+    /// A worker thread could not be created, including because its name was
+    /// invalid.
     WorkerSpawnFailed {
-        /// Diagnostic supplied by the thread runtime.
+        /// Diagnostic describing why a worker could not be created.
         message: Box<str>,
     },
     /// The event channel closed without the complete worker exit protocol.

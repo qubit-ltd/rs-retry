@@ -9,6 +9,8 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -27,6 +29,7 @@ use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryLimitKind;
+use qubit_retry::RetryObserver;
 use qubit_retry::RetryTimeoutScope;
 use qubit_retry::WorkerRetry;
 use qubit_retry::WorkerStopTrigger;
@@ -273,6 +276,75 @@ fn test_worker_facade_accepts_thread_name() {
         .expect("named worker should start");
 
     assert_eq!(result.value().as_deref(), Some("coverage-worker"));
+
+    let empty_name_result = WorkerRetry::new(&config)
+        .thread_name("")
+        .run(|_| Ok::<_, TestError>(thread::current().name().map(str::to_owned)))
+        .expect("empty worker name should remain valid");
+    assert_eq!(empty_name_result.value().as_deref(), Some(""));
+}
+
+#[test]
+fn test_worker_nul_thread_name_returns_spawn_failure() {
+    struct CompletionRecord {
+        calls: Arc<AtomicUsize>,
+        context: Arc<Mutex<Option<RetryContext>>>,
+    }
+    impl RetryObserver<TestError> for CompletionRecord {
+        fn on_terminal_failure(&self, _: &RetryErrorReason, context: &RetryContext) {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            *self.context.lock().expect("completion context lock") = Some(*context);
+        }
+    }
+
+    let operation_calls = Arc::new(AtomicUsize::new(0));
+    let rule_calls = Arc::new(AtomicUsize::new(0));
+    let completion_calls = Arc::new(AtomicUsize::new(0));
+    let completion_context = Arc::new(Mutex::new(None));
+    let config = RetryConfig::<TestError>::builder()
+        .policy(retry_once_policy())
+        .rule({
+            let rule_calls = Arc::clone(&rule_calls);
+            move |_: &AttemptFailure<TestError>, _: &RetryContext| {
+                rule_calls.fetch_add(1, Ordering::SeqCst);
+                RetryDecision::Retry
+            }
+        })
+        .observer(CompletionRecord {
+            calls: Arc::clone(&completion_calls),
+            context: Arc::clone(&completion_context),
+        })
+        .build()
+        .expect("valid config");
+
+    let error = WorkerRetry::new(&config)
+        .thread_name("a\0b")
+        .run({
+            let operation_calls = Arc::clone(&operation_calls);
+            move |_| {
+                operation_calls.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, TestError>(())
+            }
+        })
+        .expect_err("NUL worker name must be reported as a structured failure");
+
+    let RetryErrorReason::Infrastructure {
+        failure: RetryInfrastructureFailure::WorkerSpawn { message },
+        ..
+    } = error.reason()
+    else {
+        panic!("expected worker spawn failure, got {:?}", error.reason());
+    };
+    assert!(!message.is_empty(), "spawn diagnostic should be present");
+    assert!(!message.contains("a\0b"), "diagnostic must not echo the worker name");
+    assert_eq!(error.context().attempts(), 0);
+    assert_eq!(error.context().current_attempt(), None);
+    assert_eq!(operation_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(rule_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(completion_calls.load(Ordering::SeqCst), 1);
+    let terminal_context = completion_context.lock().expect("completion context lock");
+    assert_eq!(terminal_context.as_ref().map(RetryContext::attempts), Some(0));
+    assert_eq!(terminal_context.as_ref().and_then(RetryContext::current_attempt), None);
 }
 
 #[test]

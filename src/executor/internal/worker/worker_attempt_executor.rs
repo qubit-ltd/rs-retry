@@ -92,6 +92,12 @@ impl WorkerAttemptExecutor {
         E: Send + 'static,
         P: FnOnce() -> Result<(), X>,
     {
+        if thread_name.as_bytes().contains(&0) {
+            return Ok(BlockingAttemptOutcome::WorkerSpawnFailed {
+                message: "worker thread name must not contain NUL bytes".into(),
+            });
+        }
+
         // One channel combines completion, cancellation and timer wakeups.
         // Each iteration checks cancellation before timeout readiness, then
         // receives the next queued event. Once the runner drops the receiver,
