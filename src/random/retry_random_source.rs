@@ -16,7 +16,7 @@
 /// # Examples
 ///
 /// ```
-/// use qubit::RetryRandomSource;
+/// use qubit_retry::RetryRandomSource;
 ///
 /// struct MidpointRandomSource;
 ///
