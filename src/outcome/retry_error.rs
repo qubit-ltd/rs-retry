@@ -124,6 +124,19 @@ impl<E> RetryError<E> {
 
     /// Consumes the error into non-generic metadata and an optional application
     /// error.
+    ///
+    /// The returned metadata retains the terminal reason, context, completion
+    /// callback diagnostics, and classification of the last retained failure.
+    /// The application error is moved out when the last failure contains one;
+    /// otherwise the returned error is `None`.
+    ///
+    /// # Type Parameters
+    /// `E` is the application error type, moved into the optional return value
+    /// when the retained last failure contains an application error.
+    ///
+    /// # Returns
+    /// The terminal metadata and the moved application error, if the retained
+    /// last failure was an application error.
     #[must_use]
     pub fn into_metadata_and_error(self) -> (RetryErrorMetadata, Option<E>) {
         let (reason, last_failure, context, completion_callback_failures) = self.into_parts();
