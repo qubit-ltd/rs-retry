@@ -12,11 +12,13 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use std::task::Context;
 use std::task::Poll;
 use std::task::Wake;
 use std::task::Waker;
 use std::time::Duration;
+use std::time::Instant;
 
 use qubit_clock::test_util::FaultInjectingTimer;
 use qubit_clock::test_util::TimerFailurePoint;
@@ -42,16 +44,88 @@ impl Wake for WakeCounter {
     }
 }
 
+struct WakeSignal(mpsc::Sender<()>);
+
+impl Wake for WakeSignal {
+    fn wake(self: Arc<Self>) {
+        let _ = self.0.send(());
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        let _ = self.0.send(());
+    }
+}
+
 fn block_on<F: Future>(future: F) -> F::Output {
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
+    block_on_with_timeout(future, Duration::from_secs(5))
+}
+
+fn block_on_with_timeout<F: Future>(future: F, watchdog: Duration) -> F::Output {
+    let deadline = Instant::now() + watchdog;
+    let (sender, receiver) = mpsc::channel();
+    let waker = Waker::from(Arc::new(WakeSignal(sender)));
+    let mut context = Context::from_waker(&waker);
     let mut future = pin!(future);
     loop {
         match future.as_mut().poll(&mut context) {
             Poll::Ready(value) => return value,
-            Poll::Pending => std::thread::yield_now(),
+            Poll::Pending => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                assert!(!remaining.is_zero(), "async test future exceeded its watchdog");
+                match receiver.recv_timeout(remaining) {
+                    Ok(()) => {}
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        panic!("async test future exceeded its watchdog");
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        panic!("async test wake signal disconnected");
+                    }
+                }
+            }
         }
     }
+}
+
+#[test]
+fn test_block_on_repolls_after_wake() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let result = block_on_with_timeout(
+        std::future::poll_fn({
+            let polls = Arc::clone(&polls);
+            move |context| {
+                if polls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    context.waker().wake_by_ref();
+                    Poll::Pending
+                } else {
+                    Poll::Ready(17)
+                }
+            }
+        }),
+        Duration::from_secs(1),
+    );
+
+    assert_eq!(result, 17);
+    assert_eq!(polls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn test_block_on_does_not_repoll_without_wake() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+        let polls = Arc::clone(&polls);
+        move || {
+            block_on_with_timeout(
+                std::future::poll_fn(move |_| {
+                    polls.fetch_add(1, Ordering::SeqCst);
+                    Poll::<()>::Pending
+                }),
+                Duration::from_millis(20),
+            )
+        }
+    }));
+
+    assert!(result.is_err(), "a future without a wake should hit the watchdog");
+    assert_eq!(polls.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -84,6 +158,70 @@ fn test_async_retry_retries_application_failure_without_tokio() {
 
     assert_eq!(*result.expect("second attempt should succeed").value(), 9);
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn test_async_retry_nonzero_backoff_wakes_executor() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(2)
+        .fallback(RetryFallback::Retry)
+        .backoff(BackoffPolicy::fixed(Duration::from_millis(10)))
+        .build()
+        .expect("config should be valid");
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let result = block_on(AsyncRetry::new(&config).run({
+        let attempts = Arc::clone(&attempts);
+        move || {
+            let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(if attempt == 0 { Err("temporary") } else { Ok(9) })
+        }
+    }));
+
+    assert_eq!(*result.expect("second attempt should succeed").value(), 9);
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn test_async_retry_cross_thread_cancel_wakes_executor() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(2)
+        .build()
+        .expect("config should be valid");
+    let token = RetryCancellationToken::new();
+    let (started_sender, started_receiver) = mpsc::channel();
+    let cancel_token = token.clone();
+    let cancellation_thread = std::thread::spawn(move || {
+        started_receiver
+            .recv_timeout(Duration::from_secs(2))
+            .expect("operation should signal its first poll");
+        cancel_token.cancel();
+    });
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let result = block_on(AsyncRetry::new(&config).cancellation_token(token).run({
+        let attempts = Arc::clone(&attempts);
+        let mut started_sender = Some(started_sender);
+        move || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            let mut started_sender = started_sender.take();
+            std::future::poll_fn(move |_| {
+                if let Some(sender) = started_sender.take() {
+                    sender.send(()).expect("cancellation thread should be waiting");
+                }
+                Poll::<Result<(), &str>>::Pending
+            })
+        }
+    }))
+    .expect_err("cross-thread cancellation should terminate the attempt");
+
+    cancellation_thread.join().expect("cancellation thread should finish");
+    assert!(matches!(
+        result.reason(),
+        RetryErrorReason::Cancelled {
+            phase: RetryCancellationPhase::Attempt,
+        }
+    ));
+    assert_eq!(result.context().attempts(), 1);
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }
 
 #[test]
