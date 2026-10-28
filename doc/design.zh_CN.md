@@ -17,10 +17,12 @@ flowchart TD
         F3[TokioRetry]
         F4[WorkerRetry]
     end
+    SESS[RetrySession]
     F1 --> CFG[RetryConfig]
     F2 --> CFG
     F3 --> CFG
     F4 --> CFG
+    SESS --> CFG
     CFG --> C[RetryFlowController]
     C --> S[RetryFlowState / RetryBudgetState]
     CFG --> P[RetryPolicy / BackoffState]
@@ -29,11 +31,16 @@ flowchart TD
     F2 --> R
     F3 --> R
     F4 --> R
+    SESS --> R
     R --> D[完成观察者与附加诊断]
     F1 --> W[计时器 / 阻塞等待 / worker 协议]
     F2 --> W
     F3 --> W
     F4 --> W
+    SESS --> C
+    SESS --> TC[会话 timer.clock]
+    ES[外部调度器] -. "在同一时钟域等待 RetryAt" .-> TC
+    ES -. "提供操作" .-> SESS
     B[独立 RetryBudget] --> S
 ```
 
@@ -47,6 +54,9 @@ flowchart TD
 - 执行门面（`Retry`、`AsyncRetry`、`TokioRetry`、`WorkerRetry`）接收 `&RetryConfig`，持有每次
   run 的运行时选项（timer、随机源、取消令牌、硬超时、worker 栈大小等），并将
   流程决策委托给控制器。
+- 对外有四种 `run` 执行门面，另有一个由外部驱动的 `RetrySession`。各门面统一经
+  `RetryConfig` 分派完成通知；`TokioRetry` 复用 `AsyncRetry` 流程，因此只分派一次；
+  `RetrySession` 到达终态时也只分派一次。
 - `policy`、`backoff`、`budget` 验证配置并计算是否允许继续，不调用业务回调，也不负责调度操作执行。
 - `executor/internal/flow/retry_flow_controller.rs` 负责一次流程的决策及最后失败；状态快照和计划将准备与准入提交分开。
 - 异步结果、worker 事件和 waker 类型保持私有。
@@ -71,7 +81,13 @@ flowchart TD
 6. 通知失败观察者，选择第一个明确规则，计算退避并检查预算；仅当前允许继续时通知调度观察者。
    回调结束及实际等待后，下一次准入还要复查。
 
-`RetrySession` 将这些边界交给外部调度器处理。`record_result` 返回
+异步退避延迟为零时，每次当前获准继续的重试都会先通过标准库 `Future` 和 waker
+协作挂起一次。恢复后再检查取消；此时取消归因于 `Backoff`。这一步不请求墙上时钟等待，
+也不保证固定等待时长、某个指定任务的优先级，或抢占阻塞中的 `poll`。Future 遵守标准
+契约：返回 `Pending` 后，必须通过传入的 waker 安排唤醒，之后才能在再次 poll 时完成。
+
+`RetrySession` 将这些边界交给外部调度器处理。它只读取 `timer.clock()`，不会注册
+timer，也不会等待 timer。`record_result` 返回
 `RetryAt(due)` 后，由调用方负责等待，并且必须使用会话 timer 对应的单调时钟域。
 截止时间尚未到达时，`begin_attempt` 返回可恢复的
 `Ok(RetrySessionAdmission::Waiting(due))`；它不会运行观察者、准入新尝试或重新计算退避。
@@ -176,14 +192,16 @@ serde DTO 拒绝未知或无关字段，并区分 ratio 缺失与 null。
 
 ## 下游所有权边界
 
-| 消费者 | 终态转换与诊断 | 当前依赖版本 / 验证边界 |
+| 消费者 | 终态转换与诊断 | 依赖事实（2026-10-28） | 验证状态 |
 | --- | --- | --- |
-| rs-http | 借用原错误投影领域 kind/message 和 HTTP 字段，将完整 RetryError 移入 source，保留原 HttpError/后端链及完成诊断 | 依赖 qubit-retry 0.25；尚未验证 0.26 集成 |
-| rs-cas | 保留 CasRetryFailure、timeout_current 投影，在堆上的详情对象中保存完成诊断，提供借用 getter 与无损消费拆解 | 依赖 qubit-retry 0.25；尚未验证 0.26 集成 |
-| rs-event-bus | 空诊断保持既有映射，非空诊断以 RetryCompletionDiagnostics 包装 source/context/diagnostics，保留 Error::source、Clone/Eq | 本地 qubit-retry 0.26 集成 |
-| rs-http SSE | 独立组合 RetryBudget 和 BackoffState，执行领域 1ms 下限/服务端 cap，不转换完成观察者诊断 | 依赖 qubit-retry 0.25；尚未验证 0.26 集成 |
+| rs-http | 借用原错误投影领域 kind/message 和 HTTP 字段，将完整 RetryError 移入 source，保留原 HttpError/后端链及完成诊断 | manifest `0.26`（`tokio`）；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
+| rs-cas | 保留 CasRetryFailure、timeout_current 投影，在堆上的详情对象中保存完成诊断，提供借用 getter 与无损消费拆解 | manifest `0.26`；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
+| rs-event-bus | 空诊断保持既有映射，非空诊断以 RetryCompletionDiagnostics 包装 source/context/diagnostics，保留 Error::source、Clone/Eq | manifest `^0.26`（`worker, async`）；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
+| rs-http SSE | 独立组合 RetryBudget 和 BackoffState，执行领域 1ms 下限/服务端 cap，不转换完成观察者诊断 | 同上，使用 `rs-http` manifest/lock | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
 
-以上版本为 2026-10-08 本地仓库快照；下游升级后须核对锁文件与集成测试，再更新本表。
+2026-10-08 的依赖快照保留为历史记录：当时记载 `rs-http`、`rs-cas` 和 `rs-http` SSE
+依赖 `0.25`，`rs-event-bus` 使用本地 `0.26` 集成。本轮 2026-10-28 的事实仅来自四仓
+当前 manifest 与 lockfile 的只读核查；没有重跑当前本地 path 集成，因此不代表本地集成通过。
 
 HTTP 的 method、URL、status、preview、retry_after、log_redactor 均保留，source 所有权不复制。
 EventBus 默认规则对新包装返回 Abort；拦截器来源识别保留共享上下文身份，报告/死信元数据使用稳定包装 kind 和内部领域消息。

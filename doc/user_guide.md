@@ -154,8 +154,12 @@ prevent it from starting. `context.attempts()` counts admissions;
 
 Defaults are **three total attempts, immediate backoff, no elapsed budgets, and
 abort for unclassified application errors**. A default configuration alone does not
-make failures retryable. Each `run` creates fresh state. Cloning `RetryConfig` shares
-rules and observers without requiring the application error to implement `Clone`.
+make failures retryable. Each `run` creates fresh accounting and backoff state.
+Cloning `RetryConfig` shares
+the callback objects and their mutable state through reference counting, without
+requiring the application error to implement `Clone`; execution counters and backoff
+state remain independent. There are four run facades (`Retry`, `AsyncRetry`,
+`TokioRetry`, and `WorkerRetry`) plus the externally driven `RetrySession`.
 
 ## Choose an execution mode
 
@@ -259,7 +263,13 @@ qubit-retry = { version = "0.26", features = ["async"] }
 `AsyncRetry` returns a standard `Future` and uses `StdTimer` by default. The
 application supplies an executor. This example uses `futures-executor` to drive
 the future; an application can supply its own executor without changing the
-retry call. Add the example's direct dependency alongside the `async` feature:
+retry call. A zero-delay retry that is currently allowed to continue first
+suspends cooperatively once through a standard-library future and waker, then
+checks cancellation again when polled; cancellation at that point is attributed
+to `Backoff`. It requests no wall-clock wait and guarantees neither a fixed wait
+duration, priority for a particular task, nor preemption of a blocking `poll`.
+The future follows the `Future` contract by arranging a wake after returning
+`Pending`. Add the example's direct dependency alongside the `async` feature:
 
 ```bash
 cargo add futures-executor@0.3
@@ -742,7 +752,10 @@ Use a wildcard arm when matching the non-exhaustive reason enum.
 `map_error` converts only the retained application error while preserving
 context, reason, and diagnostics; its `FnOnce` mapper runs zero or one times.
 For domain adapters, `into_metadata_and_error()` separates an optional application
-error from `RetryErrorMetadata`. Prefer preserving the full `RetryError<E>` as a
+error from `RetryErrorMetadata`. `last_attempt()` classifies the retained last
+failure; `None` means no failure classification was retained, not that no attempt
+was admitted. Use `context().attempts()` and `reason()` together to diagnose the
+flow. Prefer preserving the full `RetryError<E>` as a
 source when no projection is needed. `into_value_discarding_diagnostics()` is an
 explicit option for discarding successful context and diagnostics.
 
@@ -942,8 +955,9 @@ random distribution of retries.
 | Identify workers or request stack space | `thread_name(name)` / `worker_stack_size(bytes)` on the worker executor |
 | Wait for cancellation | Poll `is_cancelled()` synchronously or await the flow token's `cancelled()` future |
 
-Cloned `Retry` values share callback objects, including mutable state such as
-counters inside them; synchronize that state when needed. An injected worker
+Cloned `RetryConfig` values share callback objects, including mutable state such as
+counters inside them; synchronize that state when needed. Each execution still has
+independent accounting and backoff state. An injected worker
 timer must progress independently while the calling thread is blocked.
 Standalone `RetryBudgetError` distinguishes `Clock`, `Exhausted`,
 `AttemptInProgress`, and `InvalidAttempt`: invalid timing, an exhausted limit,

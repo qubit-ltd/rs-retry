@@ -20,10 +20,12 @@ flowchart TD
         F3[TokioRetry]
         F4[WorkerRetry]
     end
+    SESS[RetrySession]
     F1 --> CFG[RetryConfig]
     F2 --> CFG
     F3 --> CFG
     F4 --> CFG
+    SESS --> CFG
     CFG --> C[RetryFlowController]
     C --> S[RetryFlowState / RetryBudgetState]
     CFG --> P[RetryPolicy / BackoffState]
@@ -32,11 +34,16 @@ flowchart TD
     F2 --> R
     F3 --> R
     F4 --> R
+    SESS --> R
     R --> D[Completion observers and attached diagnostics]
     F1 --> W[Timers / blocking wait / worker protocol]
     F2 --> W
     F3 --> W
     F4 --> W
+    SESS --> C
+    SESS --> TC[session timer.clock]
+    ES[External scheduler] -. "waits for RetryAt in same clock domain" .-> TC
+    ES -. "supplies operation" .-> SESS
     B[Standalone RetryBudget] --> S
 ```
 
@@ -89,7 +96,16 @@ An attempt proceeds through preparation and commitment:
    check continuation, and notify scheduling observers only if currently eligible.
    Recheck after callbacks and actual waiting before another admission.
 
-`RetrySession` exposes these boundaries to an external scheduler. After
+When async backoff is zero, each retry that is currently allowed to continue first
+performs one cooperative suspension using a standard-library `Future` and waker.
+On resumption, cancellation is attributed to `Backoff`. This boundary requests no
+wall-clock wait and does not promise a fixed wait duration, priority for a particular
+task, or preemption of a blocking `poll`. The future obeys the `Future` contract:
+after returning `Pending`, it arranges a wake through the supplied waker before it
+can complete on a later poll.
+
+`RetrySession` exposes these boundaries to an external scheduler. It reads only
+`timer.clock()`; it does not register a timer or wait on one. After
 `record_result` returns `RetryAt(due)`, the caller owns the wait and must use
 the session timer's monotonic clock domain. `begin_attempt` returns
 `Ok(RetrySessionAdmission::Waiting(due))` while the deadline is still in the
@@ -208,10 +224,12 @@ and completion diagnostics. No lossy failure-consumer alias exists.
 only a retained application error with an `FnOnce` mapper called zero or one times;
 it preserves all other data and imposes no extra Clone/Send/static bounds.
 
-All four public run wrappers delegate exactly once to `RetryConfig::complete`
-after `run_inner` returns. A dropped async run future, outward unwind, or abort
-has no completion guarantee. There is no second completion event after observer
-failure.
+All four run facades dispatch completion exactly once through
+`RetryConfig::complete` after the shared flow returns a frozen result (`TokioRetry`
+shares the `AsyncRetry` flow and does not dispatch a second time). `RetrySession`
+dispatches once when it reaches a terminal state. A dropped async run future, outward
+unwind, or abort has no completion guarantee. There is no second completion event
+after observer failure.
 
 ## Backoff numerical and hint contracts
 
@@ -231,15 +249,18 @@ keep absent numeric ratio distinct from null.
 
 ## Downstream ownership boundaries
 
-| Consumer | Terminal conversion and diagnostics | Current dependency / verification boundary |
+| Consumer | Terminal conversion and diagnostics | Dependency facts (2026-10-28) | Verification status |
 | --- | --- | --- |
-| rs-http | Outer domain kind/message and HTTP fields are projected by borrowing; complete RetryError is moved into source, preserving the original HttpError/backend chain and completion failures | `qubit-retry 0.25`; integration with 0.26 not yet verified |
-| rs-cas | Preserve CasRetryFailure and timeout_current projection, store completion failures out of line, expose borrowed diagnostics and lossless consuming parts | `qubit-retry 0.25`; integration with 0.26 not yet verified |
-| rs-event-bus | Preserve existing domain mapping for empty diagnostics; otherwise wrap source/context/diagnostics in terminal RetryCompletionDiagnostics with Error::source and Clone/Eq | Local `qubit-retry 0.26` integration |
-| rs-http SSE | Independently compose RetryBudget and BackoffState; enforce domain 1ms floor/server cap; no completion observer conversion | `qubit-retry 0.25`; integration with 0.26 not yet verified |
+| rs-http | Outer domain kind/message and HTTP fields are projected by borrowing; complete RetryError is moved into source, preserving the original HttpError/backend chain and completion failures | Manifest `0.26` with `tokio`; lock `0.26.0`, crates.io registry | Manifest/lock read only; current local path integration not rerun |
+| rs-cas | Preserve CasRetryFailure and timeout_current projection, store completion failures out of line, expose borrowed diagnostics and lossless consuming parts | Manifest `0.26`; lock `0.26.0`, crates.io registry | Manifest/lock read only; current local path integration not rerun |
+| rs-event-bus | Preserve existing domain mapping for empty diagnostics; otherwise wrap source/context/diagnostics in terminal RetryCompletionDiagnostics with Error::source and Clone/Eq | Manifest `^0.26` with `worker, async`; lock `0.26.0`, crates.io registry | Manifest/lock read only; current local path integration not rerun |
+| rs-http SSE | Independently compose RetryBudget and BackoffState; enforce domain 1ms floor/server cap; no completion observer conversion | Same `rs-http` manifest/lock above | Manifest/lock read only; current local path integration not rerun |
 
-The dependency versions above reflect the local checkout on 2026-10-08; update
-this table only after checking downstream lockfiles and integration tests.
+The 2026-10-08 dependency snapshot is retained as historical context: the entries
+then recorded `0.25` for `rs-http`, `rs-cas`, and `rs-http` SSE, and local `0.26`
+integration for `rs-event-bus`. The 2026-10-28 facts above come only from reading
+the four current manifests and lockfiles. This round did not rerun local-path
+integration, so it makes no current integration-pass claim.
 
 HTTP method, URL, status, preview, retry_after and log_redactor are retained;
 source ownership is not duplicated. EventBus's default rule aborts on the wrapper;

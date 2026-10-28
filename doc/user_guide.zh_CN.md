@@ -146,8 +146,11 @@ snapshot-v2, attempts=3
 `current_attempt()` 在回调中也可能指即将开始、尚未计数的尝试。
 
 默认配置为：**总共最多三次尝试、立即退避、不设耗时预算，未分类业务错误直接终止**。
-仅创建默认配置，并不会让失败自动重试。每次 `run` 都创建独立状态。
-克隆 `RetryConfig` 会共享规则与观察者，不要求业务错误实现 `Clone`。
+仅创建默认配置，并不会让失败自动重试。每次 `run` 都创建独立计量与退避状态。
+克隆 `RetryConfig` 会通过引用计数共享回调对象，
+回调内部的可变状态也会共享；执行计数与退避状态仍各自独立。此操作不要求业务错误实现 `Clone`。
+公开入口包括四种 `run` 执行门面（`Retry`、`AsyncRetry`、`TokioRetry`、`WorkerRetry`），
+以及由外部调度器驱动的 `RetrySession`。
 
 ## 选择执行模式
 
@@ -241,6 +244,9 @@ qubit-retry = { version = "0.26", features = ["async"] }
 ```
 
 `AsyncRetry` 返回标准库 `Future`，默认使用 `StdTimer`；调用方负责提供 executor。
+零延迟重试当前获准继续时，会通过标准库 future 和 waker 协作挂起一次；再次 poll 恢复后检查取消，
+此时取消归因于 `Backoff`。该边界不请求墙上时钟等待，也不保证固定等待时长、指定任务优先级，
+或抢占阻塞中的 `poll`。Future 遵守标准契约：返回 `Pending` 后安排 waker 唤醒，后续 poll 才能完成。
 下面使用 `futures-executor` 运行示例，应用可以换成自己的 executor，而无需更换重试接口。
 除了上面的 `async` feature，还需为示例添加直接依赖：
 
@@ -703,6 +709,8 @@ Worker 模式先检查取消，再检查超时，最后才接受操作结果与�
 `map_error` 只转换已保留的业务错误，其他原因、上下文和诊断保持不变；
 其 `FnOnce` 转换函数调用零次或一次。
 编写领域适配器时，可以用 `into_metadata_and_error()` 将可选业务错误与 `RetryErrorMetadata` 分开。
+`last_attempt()` 描述保留的最后一次失败分类；返回 `None` 只表示没有保留失败分类，不能据此判断
+是否准入过尝试。诊断时应结合 `context().attempts()` 与 `reason()`。
 不需要拆分时，优先把完整 `RetryError<E>` 保留为错误来源。
 如果明确只需要成功值，可调用 `into_value_discarding_diagnostics()` 丢弃上下文和诊断。
 
@@ -892,8 +900,8 @@ fn main() {
 | 区分工作线程或设置栈大小 | worker 执行器的 `thread_name(name)` / `worker_stack_size(bytes)` |
 | 在取消信号上等待 | 同步检查用 `is_cancelled()`；异步等待用流程令牌的 `cancelled().await` |
 
-克隆的 `Retry` 共享回调对象，因此回调内部的计数器等可变状态也会被共享；需要时使用同步机制。
-注入 worker 计时器时，必须保证计时器能在调用线程阻塞期间独立推进。
+克隆的 `RetryConfig` 共享回调对象，因此回调内部的计数器等可变状态也会被共享；需要时使用同步机制。
+每次执行的计量与退避状态仍相互独立。注入 worker 计时器时，必须保证计时器能在调用线程阻塞期间独立推进。
 独立预算接口的 `RetryBudgetError` 还会区分 `Clock`、`Exhausted`、`AttemptInProgress` 和 `InvalidAttempt`，
 分别用于时钟异常、限制耗尽、前一次尝试未完成以及令牌不属于当前尝试。
 控制回调正常返回后，先刷新时钟，再处理取消或规则决策；时钟样本无效会成为基础设施错误。
