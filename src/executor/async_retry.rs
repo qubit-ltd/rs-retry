@@ -437,12 +437,14 @@ fn register_timeout(timer: &dyn Timer, deadline: Option<MonotonicInstant>) -> Re
 /// # Parameters
 /// - `timer`: Timer used for the selected delay.
 /// - `deadline`: Absolute backoff deadline.
-/// - `immediate`: Whether the selected delay is zero and needs no timer poll.
+/// - `immediate`: Whether the selected delay is zero and needs a cooperative
+///   yield instead of a timer.
 /// - `cancellation`: Optional cancellation source.
 ///
 /// # Returns
 /// Elapsed, cancelled, or timer-failed status; cancellation wins same-poll
-/// readiness.
+/// readiness. An immediate delay yields once to the executor before checking
+/// cancellation again.
 async fn sleep(
     timer: &dyn Timer,
     deadline: MonotonicInstant,
@@ -453,7 +455,12 @@ async fn sleep(
         return AsyncBackoffOutcome::Cancelled;
     }
     if immediate {
-        return AsyncBackoffOutcome::Elapsed;
+        yield_once().await;
+        return if cancellation.is_some_and(RetryCancellationToken::is_cancelled) {
+            AsyncBackoffOutcome::Cancelled
+        } else {
+            AsyncBackoffOutcome::Elapsed
+        };
     }
     let mut timer_future = match timer.at(deadline) {
         Ok(future) => future,
@@ -480,6 +487,24 @@ async fn sleep(
         }
     })
     .await
+}
+
+/// Gives the executor one scheduling opportunity before an immediate retry.
+///
+/// The first poll wakes the current task and returns Pending; the next poll
+/// completes. No timer is registered and no wall-clock delay is requested.
+async fn yield_once() {
+    let mut yielded = false;
+    poll_fn(move |context| {
+        if yielded {
+            Poll::Ready(())
+        } else {
+            yielded = true;
+            context.waker().wake_by_ref();
+            Poll::Pending
+        }
+    })
+    .await;
 }
 
 /// Converts one timer error into the public infrastructure failure model.

@@ -47,6 +47,8 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryCallbackPhase;
+#[cfg(feature = "tokio")]
+use qubit_retry::RetryCancellationPhase;
 use qubit_retry::RetryConfig;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryContext;
@@ -595,4 +597,41 @@ async fn test_async_success_counts_one_started_attempt_with_or_without_timeout()
         .await
         .expect("an immediate operation with a timeout should succeed");
     assert_eq!(with_timeout.context().attempts(), 1);
+}
+
+#[cfg(feature = "tokio")]
+#[tokio::test(flavor = "current_thread")]
+async fn test_tokio_immediate_retry_yields_to_biased_cancellation() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(3)
+        .fallback(RetryFallback::Retry)
+        .backoff(qubit_retry::BackoffPolicy::immediate())
+        .build()
+        .expect("valid config");
+    let token = qubit_retry::RetryCancellationToken::new();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let execution = TokioRetry::new(&config).cancellation_token(token.clone());
+    let retry = execution.run({
+            let attempts = Arc::clone(&attempts);
+            move || {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                async { Err::<(), _>("offline") }
+            }
+        });
+    let cancel = async {
+        token.cancel();
+    };
+    let (result, ()) = tokio::join! {
+        biased;
+        retry,
+        cancel,
+    };
+    let error = result.expect_err("the retry should observe cancellation during backoff");
+
+    assert!(matches!(error.reason(), RetryErrorReason::Cancelled {
+        phase: RetryCancellationPhase::Backoff,
+    }));
+    assert_eq!(error.context().attempts(), 1);
+    assert_eq!(error.last_error(), Some(&"offline"));
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }
