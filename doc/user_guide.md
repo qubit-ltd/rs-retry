@@ -275,6 +275,33 @@ The future follows the `Future` contract by arranging a wake after returning
 cargo add futures-executor@0.3
 ```
 
+Use `run_with_attempt` when the operation needs its admitted attempt ordinal.
+The ordinal starts at one for each run and does not prove that an external side
+effect completed. Existing `run` remains available. Downstream code that only
+maintains a duplicate attempt counter can optionally pass this ordinal to its
+handler and keep using `success.context().attempts()` for the terminal count.
+
+<!-- retry-example: kind=run features=async deps=futures-executor -->
+```rust
+use qubit_retry::{AsyncRetry, BackoffPolicy, RetryConfig, RetryFallback};
+
+fn main() -> Result<(), qubit_retry::RetryPolicyError> {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::immediate())
+        .fallback(RetryFallback::Retry)
+        .build()?;
+    let success = futures_executor::block_on(
+        AsyncRetry::new(&config).run_with_attempt(|attempt| async move {
+            if attempt.get() == 1 { Err("busy") } else { Ok(attempt.get()) }
+        }),
+    ).expect("the second admitted attempt succeeds");
+    assert_eq!(*success.value(), 2);
+    assert_eq!(success.context().attempts(), 2);
+    Ok(())
+}
+```
+
 <!-- retry-example: kind=run features=async deps=futures-executor -->
 ```rust
 use std::io;

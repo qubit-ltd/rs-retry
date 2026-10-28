@@ -90,6 +90,10 @@ An attempt proceeds through preparation and commitment:
 3. In worker mode, spawn both worker and reaper behind a start gate. Failure of
    either spawn leaves zero additional admitted operations.
 4. Recheck admission at commitment, increment attempts once, and release work.
+   `AsyncRetry::run_with_attempt` and `TokioRetry::run_with_attempt` share this
+   async loop and pass that committed, one-based ordinal to the operation
+   factory. The ordinal resets for each run; the original `run` entry points
+   adapt by ignoring it.
 5. On completion, commit operation time and clear active state when appropriate.
    On failure, retain the application error, timeout, or panic for later decisions.
 6. Notify failure observers, select the first decisive rule, calculate backoff,

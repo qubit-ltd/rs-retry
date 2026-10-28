@@ -254,6 +254,32 @@ qubit-retry = { version = "0.26", features = ["async"] }
 cargo add futures-executor@0.3
 ```
 
+若操作需要已准入尝试的序号，可使用 `run_with_attempt`。每次运行的序号从 1 开始，
+它只表示本次操作工厂已被调用，不代表外部副作用已经完成。原有 `run` 仍可继续使用。
+下游若有重复维护尝试计数的代码，可以选择将此序号传给 handler；终态尝试数仍可从
+`success.context().attempts()` 读取。
+
+<!-- retry-example: kind=run features=async deps=futures-executor -->
+```rust
+use qubit_retry::{AsyncRetry, BackoffPolicy, RetryConfig, RetryFallback};
+
+fn main() -> Result<(), qubit_retry::RetryPolicyError> {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::immediate())
+        .fallback(RetryFallback::Retry)
+        .build()?;
+    let success = futures_executor::block_on(
+        AsyncRetry::new(&config).run_with_attempt(|attempt| async move {
+            if attempt.get() == 1 { Err("busy") } else { Ok(attempt.get()) }
+        }),
+    ).expect("第二次已准入的尝试成功");
+    assert_eq!(*success.value(), 2);
+    assert_eq!(success.context().attempts(), 2);
+    Ok(())
+}
+```
+
 <!-- retry-example: kind=run features=async deps=futures-executor -->
 ```rust
 use std::io;
