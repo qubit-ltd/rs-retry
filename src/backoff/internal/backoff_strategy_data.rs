@@ -18,7 +18,7 @@ use crate::policy::internal::DurationData;
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum BackoffStrategyData {
     /// No delay.
-    Immediate,
+    Immediate {},
     /// A fixed delay.
     Fixed {
         /// Delay applied to each retry.
@@ -54,7 +54,7 @@ impl From<&BackoffStrategy> for BackoffStrategyData {
     #[inline]
     fn from(strategy: &BackoffStrategy) -> Self {
         match strategy {
-            BackoffStrategy::Immediate => Self::Immediate,
+            BackoffStrategy::Immediate => Self::Immediate {},
             BackoffStrategy::Fixed { delay } => Self::Fixed { delay: (*delay).into() },
             BackoffStrategy::Uniform { min, max } => Self::Uniform {
                 minimum: (*min).into(),
@@ -89,7 +89,7 @@ impl TryFrom<BackoffStrategyData> for BackoffStrategy {
     /// Rejects non-normalized duration fields.
     fn try_from(data: BackoffStrategyData) -> Result<Self, Self::Error> {
         match data {
-            BackoffStrategyData::Immediate => Ok(Self::Immediate),
+            BackoffStrategyData::Immediate {} => Ok(Self::Immediate),
             BackoffStrategyData::Fixed { delay } => Ok(Self::Fixed {
                 delay: delay.try_into()?,
             }),

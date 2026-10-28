@@ -80,3 +80,43 @@ fn test_backoff_strategy_data_rejects_unknown_fields_and_tags() {
     let error = from_value::<RetryPolicy>(unknown_tag).expect_err("strategy data must reject unknown tags");
     assert!(error.to_string().contains("unknown variant"));
 }
+
+#[test]
+fn test_immediate_strategy_rejects_unknown_and_unrelated_fields() {
+    let valid = json!({
+        "strategy": { "type": "immediate" },
+        "jitter": { "type": "none" },
+        "retry_after": "at_least_backoff"
+    });
+    let policy = from_value::<BackoffPolicy>(valid.clone()).expect("immediate strategy should deserialize");
+    assert_eq!(to_value(&policy).expect("immediate policy should serialize"), valid,);
+    assert_eq!(
+        from_value::<BackoffPolicy>(to_value(policy).expect("policy should serialize"))
+            .expect("immediate policy should round-trip"),
+        BackoffPolicy::immediate(),
+    );
+
+    for extra in [
+        json!(true),
+        json!({ "seconds": 60, "nanoseconds": 0 }),
+        json!({ "seconds": 0, "nanoseconds": 0 }),
+    ] {
+        let mut invalid = valid.clone();
+        let key = if extra.is_boolean() { "unexpected" } else { "delay" };
+        invalid["strategy"][key] = extra;
+        assert!(
+            from_value::<BackoffPolicy>(invalid).is_err(),
+            "immediate strategy should reject {key}"
+        );
+    }
+
+    let retry_policy = json!({
+        "max_attempts": 4,
+        "operation_time_budget": null,
+        "total_time_budget": null,
+        "backoff": valid
+    });
+    let mut invalid_retry_policy = retry_policy;
+    invalid_retry_policy["backoff"]["strategy"]["unexpected"] = json!(true);
+    assert!(from_value::<RetryPolicy>(invalid_retry_policy).is_err());
+}
