@@ -198,6 +198,7 @@ serde DTO 拒绝未知或无关字段，并区分 ratio 缺失与 null。
 | rs-http | 借用原错误投影领域 kind/message 和 HTTP 字段，将完整 RetryError 移入 source，保留原 HttpError/后端链及完成诊断 | manifest `0.26`（`tokio`）；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
 | rs-cas | 保留 CasRetryFailure、timeout_current 投影，在堆上的详情对象中保存完成诊断，提供借用 getter 与无损消费拆解 | manifest `0.26`；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
 | rs-event-bus | 空诊断保持既有映射，非空诊断以 RetryCompletionDiagnostics 包装 source/context/diagnostics，保留 Error::source、Clone/Eq | manifest `^0.26`（`worker, async`）；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
+| rs-event-bus-redis | 与重试相关的行为主要通过 EventBus 消费端测试覆盖；本轮仅记录声明依赖事实 | manifest `0.26`；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
 | rs-http SSE | 独立组合 RetryBudget 和 BackoffState，执行领域 1ms 下限/服务端 cap，不转换完成观察者诊断 | 同上，使用 `rs-http` manifest/lock | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
 
 2026-10-08 的依赖快照保留为历史记录：当时记载 `rs-http`、`rs-cas` 和 `rs-http` SSE
