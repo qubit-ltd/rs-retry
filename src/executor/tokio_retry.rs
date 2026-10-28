@@ -8,6 +8,7 @@
 //! Tokio execution facade for the policy-based retry API.
 
 use std::future::Future;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -164,9 +165,40 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
     /// # Panics
     /// Operation panics unwind through the caller. Polling this future outside
     /// a Tokio runtime with an enabled time driver may also panic.
-    pub async fn run<T, F, Fut>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub async fn run<T, F, Fut>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        self.run_with_attempt(move |_| operation()).await
+    }
+
+    /// Executes one future per admitted attempt and passes its one-based
+    /// ordinal.
+    ///
+    /// The factory is called after admission commits and before its future is
+    /// polled. Ordinals start at one and reset for each call; failed admission
+    /// does not invoke the factory. The future need not be `Send` or `'static`.
+    /// The Tokio timer is selected when this future is polled. Panics
+    /// propagate.
+    ///
+    /// # Parameters
+    /// - `operation`: Factory receiving the admitted attempt ordinal.
+    ///
+    /// # Returns
+    /// The successful value with its execution context, or the terminal retry
+    /// error with its context.
+    ///
+    /// # Errors
+    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
+    /// or infrastructure failure.
+    ///
+    /// # Panics
+    /// Operation panics unwind through the caller. Polling this future outside
+    /// a Tokio runtime with an enabled time driver may also panic.
+    pub async fn run_with_attempt<T, F, Fut>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    where
+        F: FnMut(NonZeroU32) -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
         let default_timer = TokioTimer::current();

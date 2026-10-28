@@ -7,8 +7,10 @@
 // =============================================================================
 //! Public behavior tests for the runtime-independent async retry facade.
 
+use std::cell::Cell;
 use std::future::Future;
 use std::pin::pin;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -29,6 +31,7 @@ use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryConfig;
 use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
+use qubit_retry::RetryLimitKind;
 use qubit_retry::RetryTimeoutScope;
 
 #[derive(Default)]
@@ -158,6 +161,150 @@ fn test_async_retry_retries_application_failure_without_tokio() {
 
     assert_eq!(*result.expect("second attempt should succeed").value(), 9);
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn test_async_retry_attempt_ordinals() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(2)
+        .backoff(BackoffPolicy::immediate())
+        .fallback(RetryFallback::Retry)
+        .build()
+        .expect("valid config");
+    let mut seen = Vec::new();
+    let success = block_on(AsyncRetry::new(&config).run_with_attempt(|attempt| {
+        seen.push(attempt.get());
+        std::future::ready(if attempt.get() == 1 { Err("busy") } else { Ok(7) })
+    }))
+    .expect("second attempt succeeds");
+    assert_eq!(seen, vec![1, 2]);
+    assert_eq!(*success.value(), 7);
+    assert_eq!(success.context().attempts(), 2);
+}
+
+#[test]
+fn test_async_retry_attempt_resets_per_run() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(1)
+        .build()
+        .expect("valid config");
+    let retry = AsyncRetry::new(&config);
+    for _ in 0..2 {
+        let mut seen = Vec::new();
+        let success = block_on(retry.run_with_attempt(|attempt| {
+            seen.push(attempt.get());
+            std::future::ready(Ok::<_, &str>(()))
+        }))
+        .expect("one attempt succeeds");
+        assert_eq!(seen, vec![1]);
+        assert_eq!(success.context().attempts(), 1);
+    }
+}
+
+#[test]
+fn test_async_retry_attempt_not_called_before_admission() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(1)
+        .build()
+        .expect("valid config");
+    let token = RetryCancellationToken::new();
+    token.cancel();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let error = block_on(AsyncRetry::new(&config).cancellation_token(token).run_with_attempt({
+        let calls = Arc::clone(&calls);
+        move |_| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(Ok::<(), &str>(()))
+        }
+    }))
+    .expect_err("pre-cancelled execution must not admit");
+    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { .. }));
+    assert_eq!(error.context().attempts(), 0);
+
+    let zero_budget = RetryConfig::<&str>::builder()
+        .max_attempts(1)
+        .total_time_budget(Duration::ZERO)
+        .build()
+        .expect("valid config");
+    let error = block_on(AsyncRetry::new(&zero_budget).run_with_attempt({
+        let calls = Arc::clone(&calls);
+        move |_| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(Ok::<(), &str>(()))
+        }
+    }))
+    .expect_err("zero budget must prevent admission");
+    assert!(matches!(
+        error.reason(),
+        RetryErrorReason::Exhausted {
+            limit: RetryLimitKind::TotalElapsed
+        }
+    ));
+    assert_eq!(error.context().attempts(), 0);
+
+    let error = block_on(
+        AsyncRetry::new(&config)
+            .hard_attempt_timeout(Duration::ZERO)
+            .run_with_attempt({
+                let calls = Arc::clone(&calls);
+                move |_| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    std::future::ready(Ok::<(), &str>(()))
+                }
+            }),
+    )
+    .expect_err("zero attempt timeout must prevent admission");
+    assert!(matches!(
+        error.reason(),
+        RetryErrorReason::TimedOut {
+            scope: RetryTimeoutScope::Attempt
+        }
+    ));
+    assert_eq!(error.context().attempts(), 0);
+
+    let timer = Arc::new(FaultInjectingTimer::backend_unavailable(
+        TimerFailurePoint::Registration,
+        "test",
+        "timer unavailable",
+    ));
+    let error = block_on(
+        AsyncRetry::new(&config)
+            .hard_attempt_timeout(Duration::from_secs(1))
+            .timer(timer)
+            .run_with_attempt({
+                let calls = Arc::clone(&calls);
+                move |_| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    std::future::ready(Ok::<(), &str>(()))
+                }
+            }),
+    )
+    .expect_err("timer registration fails before admission");
+    assert!(matches!(error.reason(), RetryErrorReason::Infrastructure { .. }));
+    assert_eq!(error.context().attempts(), 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn test_async_retry_attempt_accepts_non_send_future() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(1)
+        .build()
+        .expect("valid config");
+    let value = Rc::new(Cell::new(0));
+    let success = block_on(AsyncRetry::new(&config).run_with_attempt({
+        let value = Rc::clone(&value);
+        move |attempt| {
+            let value = Rc::clone(&value);
+            async move {
+                value.set(attempt.get());
+                Ok::<_, &str>(())
+            }
+        }
+    }))
+    .expect("non-Send future succeeds");
+    assert_eq!(value.get(), 1);
+    assert_eq!(success.context().attempts(), 1);
 }
 
 #[test]

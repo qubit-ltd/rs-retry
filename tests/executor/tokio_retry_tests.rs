@@ -160,6 +160,58 @@ fn test_async_facade_is_available() {
 
 #[cfg(feature = "tokio")]
 #[tokio::test]
+async fn test_tokio_retry_attempt_ordinals() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(2)
+        .fallback(RetryFallback::Retry)
+        .backoff(BackoffPolicy::immediate())
+        .build()
+        .expect("valid config");
+    let mut seen = Vec::new();
+    let success = TokioRetry::new(&config)
+        .run_with_attempt(|attempt| {
+            seen.push(attempt.get());
+            async move { if attempt.get() == 1 { Err("busy") } else { Ok(7) } }
+        })
+        .await
+        .expect("second attempt succeeds");
+    assert_eq!(seen, vec![1, 2]);
+    assert_eq!(*success.value(), 7);
+    assert_eq!(success.context().attempts(), 2);
+}
+
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn test_tokio_retry_attempt_uses_injected_timer() {
+    let config = RetryConfig::<&str>::builder()
+        .max_attempts(1)
+        .build()
+        .expect("valid config");
+    let timer = Arc::new(FaultInjectingTimer::backend_unavailable(
+        TimerFailurePoint::Registration,
+        "test",
+        "injected timer unavailable",
+    ));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let error = TokioRetry::new(&config)
+        .hard_attempt_timeout(Duration::from_secs(1))
+        .timer(timer)
+        .run_with_attempt({
+            let calls = Arc::clone(&calls);
+            move |_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                async { Ok::<(), &str>(()) }
+            }
+        })
+        .await
+        .expect_err("injected timer registration failure is returned");
+    assert!(matches!(error.reason(), RetryErrorReason::Infrastructure { .. }));
+    assert_eq!(error.context().attempts(), 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[cfg(feature = "tokio")]
+#[tokio::test]
 async fn test_tokio_retry_matches_shared_terminal_matrix() {
     let config = RetryConfig::<TestError>::builder()
         .max_attempts(2)

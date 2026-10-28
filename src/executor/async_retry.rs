@@ -10,6 +10,7 @@
 
 use std::future::Future;
 use std::future::poll_fn;
+use std::num::NonZeroU32;
 use std::pin::pin;
 use std::sync::Arc;
 use std::task::Poll;
@@ -34,6 +35,8 @@ use crate::RetrySuccess;
 use crate::RetryTimeoutScope;
 
 /// Runtime-independent async retry execution with explicit timeout controls.
+/// The example uses Tokio's test-only runtime to drive the future; enabling
+/// this crate's `tokio` feature is not required to use `AsyncRetry`.
 ///
 /// # Type Parameters
 /// - `'a`: Lifetime of the borrowed retry definition.
@@ -68,6 +71,11 @@ use crate::RetryTimeoutScope;
 ///         phase: RetryCancellationPhase::Attempt, ..
 ///     }));
 /// }
+/// # let runtime = tokio::runtime::Builder::new_current_thread()
+/// #     .enable_time()
+/// #     .build()
+/// #     .expect("doctest runtime should be available");
+/// # runtime.block_on(run());
 /// ```
 #[must_use]
 pub struct AsyncRetry<'a, E> {
@@ -204,9 +212,39 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
     )]
-    pub async fn run<T, F, Fut>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    pub async fn run<T, F, Fut>(&self, mut operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
     where
         F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        self.run_with_attempt(move |_| operation()).await
+    }
+
+    /// Executes one future per admitted attempt and passes its one-based
+    /// ordinal.
+    ///
+    /// The factory is called after admission commits and before its future is
+    /// polled. Ordinals start at one and reset for each call to this method;
+    /// attempts that fail admission do not invoke the factory. The factory's
+    /// future need not be `Send` or `'static`, and panics propagate.
+    /// Completion observers run synchronously once with the frozen result.
+    ///
+    /// # Parameters
+    /// - `operation`: Factory receiving the admitted attempt ordinal.
+    ///
+    /// # Returns
+    /// The successful value with its frozen context and completion diagnostics.
+    ///
+    /// # Errors
+    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
+    /// or infrastructure failure with its context.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the public error intentionally retains lossless terminal context"
+    )]
+    pub async fn run_with_attempt<T, F, Fut>(&self, operation: F) -> Result<RetrySuccess<T>, RetryError<E>>
+    where
+        F: FnMut(NonZeroU32) -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
         let default_timer = StdTimer::new();
@@ -247,7 +285,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         operation: F,
     ) -> Result<RetrySuccess<T>, RetryError<E>>
     where
-        F: FnMut() -> Fut,
+        F: FnMut(NonZeroU32) -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
         self.config.complete(self.run_inner(default_timer, operation).await)
@@ -272,7 +310,7 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
         mut operation: F,
     ) -> Result<RetrySuccess<T>, RetryError<E>>
     where
-        F: FnMut() -> Fut,
+        F: FnMut(NonZeroU32) -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
         let timer: &dyn Timer = self.timer.as_deref().unwrap_or(default_timer);
@@ -298,7 +336,8 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
                 }
             };
             controller.commit_prepared_attempt(plan, clock, cancellation)?;
-            let outcome = execute_attempt(timeout_future, plan.scope(), cancellation, operation()).await;
+            let attempt = NonZeroU32::new(controller.attempts()).expect("a committed attempt has a nonzero ordinal");
+            let outcome = execute_attempt(timeout_future, plan.scope(), cancellation, operation(attempt)).await;
 
             let directive = match outcome {
                 AsyncAttemptOutcome::Completed(Ok(value)) => {
