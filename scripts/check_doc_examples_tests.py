@@ -1,8 +1,10 @@
 """Regression tests for the documentation executable-block contract."""
 import importlib.util
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 SPEC = importlib.util.spec_from_file_location("check_doc_examples", Path(__file__).with_name("check_doc_examples.py"))
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -124,6 +126,56 @@ class ExampleContractTests(unittest.TestCase):
         example = self.parse('<!-- retry-example: kind=cargo features=none -->\n```toml\n[dependencies]\nqubit-retry = "0.21"\n```\n')[0]
         with self.assertRaisesRegex(ValueError, "version"):
             MODULE.cargo_dependency(example, "0.22.0")
+
+
+class FetchExecutionTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        (self.root / "Cargo.toml").write_text('[package]\nversion = "0.26.0"\n', encoding="utf-8")
+        (self.root / "Cargo.lock").write_text("version = 4\n", encoding="utf-8")
+        self.document = self.root / "doc" / "user_guide.md"
+        self.document.parent.mkdir()
+        self.example = dict(
+            path=self.document, line=12, kind="run", features=[], deps=[], code="fn main() {}\n"
+        )
+
+    def execute(self, fetch=False, run_results=()):
+        calls = []
+        self.last_calls = calls
+
+        def run(command, **kwargs):
+            calls.append((command, kwargs))
+            result = run_results[len(calls) - 1] if len(calls) <= len(run_results) else subprocess.CompletedProcess(command, 0, "")
+            return result
+
+        with mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/cargo"), \
+                mock.patch.object(MODULE, "extract", side_effect=lambda path: [self.example] if path == self.document else []), \
+                mock.patch.object(MODULE.subprocess, "run", side_effect=run):
+            MODULE.run_examples(self.root, fetch=fetch)
+        return calls
+
+    def test_default_execution_stays_offline(self):
+        calls = self.execute()
+        self.assertEqual([call[0] for call in calls], [["cargo", "run", "--offline", "--quiet"]])
+
+    def test_fetch_precedes_offline_run(self):
+        calls = self.execute(fetch=True)
+        self.assertEqual([call[0] for call in calls], [
+            ["cargo", "fetch"], ["cargo", "run", "--offline", "--quiet"]
+        ])
+        self.assertEqual(calls[0][1]["timeout"], 120)
+        self.assertEqual(calls[0][1]["cwd"], calls[1][1]["cwd"])
+
+    def test_fetch_failure_skips_run(self):
+        with self.assertRaisesRegex(ValueError, "documentation example failed"):
+            self.execute(fetch=True, run_results=[subprocess.CompletedProcess(["cargo", "fetch"], 1, "fetch failed")])
+        self.assertEqual([call[0] for call in self.last_calls], [["cargo", "fetch"]])
+
+    def test_fetch_failure_retains_document_location(self):
+        with self.assertRaisesRegex(ValueError, r"doc/user_guide.md:12"):
+            self.execute(fetch=True, run_results=[subprocess.CompletedProcess(["cargo", "fetch"], 1, "fetch failed")])
 
 
 if __name__ == "__main__":

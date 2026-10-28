@@ -934,4 +934,6 @@ fn main() {
 
 在仓库根目录运行 `python3 -B scripts/check_doc_examples.py`，可以编译并执行两种语言的 README
 和手册中所有带标注的 Rust/Cargo 代码块。检查器使用当前源码的 path 依赖、临时消费 crate
-和离线 Cargo 解析，因此运行前需要缓存相应依赖。
+和离线 Cargo 解析，因此运行前需要缓存相应依赖。冷缓存或 CI 环境可运行
+`python3 -B scripts/check_doc_examples.py --fetch`，先为每个临时消费者下载依赖，再离线运行。
+仓库 local CI hook 会运行 checker 回归和启用 fetch 的文档检查；临时消费者与 Cargo target 目录均位于仓库外。

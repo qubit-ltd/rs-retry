@@ -280,9 +280,12 @@ Drop panic, interval endpoints, diagnostics ownership, and worker exit proof.
 Do not replace those with timing-sensitive sleeps or wall-clock thresholds.
 
 CI covers default/none, serde-only, tokio-only, and all features, strict rustdoc,
-doctests, benchmark compilation, and bilingual executable examples. Documentation
-blocks carry explicit feature annotations and execute in temporary consumer crates
-using the current path dependency. The checker preserves file/line diagnostics.
+doctests, benchmark compilation, and bilingual executable examples. The local
+project hook runs checker unit tests and the checker with `--fetch`; direct checker
+invocation stays offline by default. Fetch prepares each temporary consumer before
+its offline run, and all consumers and the shared Cargo target directory stay
+outside the repository. Documentation blocks carry explicit feature annotations
+and use the current path dependency. The checker preserves file/line diagnostics.
 Benchmarks compare representative sync, retry, completion-observer, and worker
 costs; performance is measured separately from correctness.
 

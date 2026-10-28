@@ -216,6 +216,8 @@ EventBus 默认规则对新包装返回 Abort；拦截器来源识别保留共�
 不使用依赖调度运气的 sleep 或绝对耗时阈值替代正确性断言。
 
 CI 覆盖默认/无 feature、serde-only、tokio-only、all-features、严格 rustdoc、doctest、benchmark 编译以及双语可执行示例。
+项目 local hook 运行 checker 单元测试和带 `--fetch` 的 checker；直接调用 checker 时默认离线。
+Fetch 为每个临时消费者预备依赖后再离线运行，消费者和共享 Cargo target 目录均位于仓库外。
 文档代码块显式标注 feature，在引用当前 path 依赖的临时消费 crate 中运行，并保留原文件与行号定位。
 benchmark 比较具有代表性的同步成功、重试、完成观察者和 worker 成本；性能测量独立于正确性测试。
 

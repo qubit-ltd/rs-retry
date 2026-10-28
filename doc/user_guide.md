@@ -996,4 +996,8 @@ thread pool.
 From the repository root, run `python3 -B scripts/check_doc_examples.py` to compile
 and execute every annotated Rust/Cargo block in both README and guide languages.
 The checker uses this checkout as a path dependency, temporary consumer crates,
-and offline Cargo resolution; dependencies must already be cached.
+and offline Cargo resolution; dependencies must already be cached. For a cold cache
+or CI, run `python3 -B scripts/check_doc_examples.py --fetch` to fetch each temporary
+consumer's dependencies before its offline run.
+The repository's local CI hook runs the checker tests and this fetch-enabled check;
+all temporary consumers and their Cargo target directory stay outside the repository.

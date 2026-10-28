@@ -8,6 +8,7 @@ Examples run from a fresh temporary directory, using this checkout via a path
 dependency. Clock test utilities and serde_json are available as explicit
 example fixtures, never as public re-exports from qubit-retry.
 """
+import argparse
 import json
 import os
 from pathlib import Path
@@ -115,7 +116,7 @@ def consumer_manifest(root: Path, example: dict) -> str:
     return manifest
 
 
-def run_examples(root):
+def run_examples(root, fetch=False):
     """Compile and run every language variant without relying on repository cwd."""
     if shutil.which("cargo") is None:
         raise ValueError("cargo is required to verify documentation examples")
@@ -141,13 +142,20 @@ def run_examples(root):
                 (consumer / "src/main.rs").write_text(code, encoding="utf-8")
                 env = os.environ.copy()
                 env["CARGO_TARGET_DIR"] = str(workspace / "target")
+                if fetch:
+                    fetched = subprocess.run(
+                        ["cargo", "fetch"], cwd=consumer, env=env,
+                        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120,
+                    )
+                    if fetched.returncode:
+                        raise ValueError(f"cargo fetch failed (exit {fetched.returncode})\n{fetched.stdout}")
                 completed = subprocess.run(
                     ["cargo", "run", "--offline", "--quiet"], cwd=consumer, env=env,
                     text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120,
                 )
                 if completed.returncode:
                     raise ValueError(completed.stdout)
-            except (ValueError, subprocess.TimeoutExpired) as error:
+            except (ValueError, subprocess.TimeoutExpired, OSError) as error:
                 raise ValueError(f"{location}: documentation example failed\n{error}") from error
             print(f"PASS {location} ({example['kind']}, features={example['features']})", flush=True)
     print(f"Verified {len(examples)} documentation examples in both languages.")
@@ -155,8 +163,14 @@ def run_examples(root):
 
 def main():
     """Use this script's checkout, independent of the caller's working directory."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--fetch", action="store_true",
+        help="fetch each temporary consumer's dependencies before its offline run",
+    )
+    args = parser.parse_args()
     try:
-        run_examples(Path(__file__).resolve().parents[1])
+        run_examples(Path(__file__).resolve().parents[1], fetch=args.fetch)
     except (ValueError, OSError) as error:
         print(error, file=sys.stderr)
         return 1
