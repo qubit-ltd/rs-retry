@@ -174,7 +174,6 @@ impl BackoffPolicy {
     /// # Returns
     /// `Some(limit)` for an explicit final cap, or `None` for no final cap.
     #[inline]
-    #[must_use]
     pub fn delay_limit(&self) -> Option<Duration> {
         self.delay_limit
     }
@@ -186,7 +185,6 @@ impl BackoffPolicy {
     /// # Returns
     /// `Some(maximum)` for every current bounded base strategy. The optional
     /// return leaves room for a future strategy without a finite maximum.
-    #[must_use]
     #[inline]
     pub fn maximum_delay(&self) -> Option<Duration> {
         match &self.strategy {

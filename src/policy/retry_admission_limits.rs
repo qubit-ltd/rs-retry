@@ -136,7 +136,6 @@ impl RetryAdmissionLimits {
     /// # Returns
     /// Some cumulative operation duration limit, or None if unbounded.
     /// This budget cannot interrupt an already admitted operation.
-    #[must_use]
     #[inline]
     pub fn operation_time_budget(&self) -> Option<Duration> {
         self.operation_time_budget
@@ -148,7 +147,6 @@ impl RetryAdmissionLimits {
     /// Some monotonic flow duration limit, or None if unbounded.
     /// The duration includes callbacks and backoff; admitted success is
     /// preserved.
-    #[must_use]
     #[inline]
     pub fn total_time_budget(&self) -> Option<Duration> {
         self.total_time_budget

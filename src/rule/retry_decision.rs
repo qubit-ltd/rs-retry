@@ -54,7 +54,6 @@ impl RetryDecision {
     /// delegate, plain retry, and abort. Hint presence alone does not
     /// authorize admission.
     #[inline]
-    #[must_use]
     pub(crate) fn retry_after_hint(self) -> Option<Duration> {
         match self {
             Self::RetryWithHint(hint) | Self::RetryWithJitteredHint(hint) => Some(hint),
