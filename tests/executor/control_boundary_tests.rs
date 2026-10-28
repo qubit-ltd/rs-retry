@@ -34,6 +34,7 @@ use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryObserver;
 #[cfg(feature = "tokio")]
 use qubit_retry::TokioRetry;
+#[cfg(feature = "worker")]
 use qubit_retry::WorkerRetry;
 
 /// Advances virtual time and cancels at precisely one selected control phase.
@@ -138,20 +139,22 @@ fn test_regression_control_cancellation_refreshes_blocking_context() {
         RetryCallbackPhase::RuleDecision,
         RetryCallbackPhase::RetryScheduled,
     ] {
-        for worker in [false, true] {
-            let (retry, clock, token) = cancellation_case(phase);
-            let error = if worker {
-                WorkerRetry::new(&retry)
-                    .timer(clock.new_timer())
-                    .cancellation_token(token)
-                    .run(|_| Err::<(), _>("offline"))
-            } else {
-                Retry::new(&retry)
-                    .timer(clock.new_timer())
-                    .cancellation_token(token)
-                    .run(|| Err::<(), _>("offline"))
-            }
+        let (retry, clock, token) = cancellation_case(phase);
+        let error = Retry::new(&retry)
+            .timer(clock.new_timer())
+            .cancellation_token(token)
+            .run(|| Err::<(), _>("offline"))
             .expect_err("callback cancellation terminates execution");
+        assert_cancelled(&error, phase);
+
+        #[cfg(feature = "worker")]
+        {
+            let (retry, clock, token) = cancellation_case(phase);
+            let error = WorkerRetry::new(&retry)
+                .timer(clock.new_timer())
+                .cancellation_token(token)
+                .run(|_| Err::<(), _>("offline"))
+                .expect_err("callback cancellation terminates execution");
             assert_cancelled(&error, phase);
         }
     }
@@ -280,20 +283,22 @@ fn test_control_clock_failures_and_cancellation_have_explicit_precedence() {
     ] {
         for mode in [1, 2] {
             for panic_after in [false, true] {
-                for worker in [false, true] {
-                    let (retry, timer, token) = invalid_clock_case(phase, mode, panic_after);
-                    let error = if worker {
-                        WorkerRetry::new(&retry)
-                            .timer(timer)
-                            .cancellation_token(token)
-                            .run(|_| Err::<(), _>("offline"))
-                    } else {
-                        Retry::new(&retry)
-                            .timer(timer)
-                            .cancellation_token(token)
-                            .run(|| Err::<(), _>("offline"))
-                    }
+                let (retry, timer, token) = invalid_clock_case(phase, mode, panic_after);
+                let error = Retry::new(&retry)
+                    .timer(timer)
+                    .cancellation_token(token)
+                    .run(|| Err::<(), _>("offline"))
                     .expect_err("invalid clock or callback panic must terminate");
+                assert_clock_terminal(&error, phase, panic_after);
+
+                #[cfg(feature = "worker")]
+                {
+                    let (retry, timer, token) = invalid_clock_case(phase, mode, panic_after);
+                    let error = WorkerRetry::new(&retry)
+                        .timer(timer)
+                        .cancellation_token(token)
+                        .run(|_| Err::<(), _>("offline"))
+                        .expect_err("invalid clock or callback panic must terminate");
                     assert_clock_terminal(&error, phase, panic_after);
                 }
             }

@@ -22,7 +22,6 @@ mod before_attempt_tests;
 mod blocking_attempt_tests;
 #[cfg(feature = "worker")]
 mod blocking_value_operation_tests;
-#[cfg(feature = "worker")]
 mod control_boundary_tests;
 mod internal;
 mod retry_cancellation_state_tests;

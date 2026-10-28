@@ -172,6 +172,7 @@ impl RetryObserver<TestError> for CompletionObserver {
 #[derive(Clone, Copy, Debug)]
 enum CompletionFacade {
     Sync,
+    #[cfg(feature = "worker")]
     Worker,
     #[cfg(feature = "tokio")]
     Async,
@@ -251,6 +252,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
             .timer(timer)
             .cancellation_token(cancellation)
             .run(operation),
+        #[cfg(feature = "worker")]
         CompletionFacade::Worker => {
             let mut worker = WorkerRetry::new(&retry).timer(timer).cancellation_token(cancellation);
             if matches!(
@@ -410,6 +412,7 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
 async fn test_completion_matrix_preserves_result_context_and_observer_order() {
     for facade in [
         CompletionFacade::Sync,
+        #[cfg(feature = "worker")]
         CompletionFacade::Worker,
         #[cfg(feature = "tokio")]
         CompletionFacade::Async,
@@ -662,6 +665,7 @@ impl RetryObserver<TestError> for CompletionDropPanicObserver {
 async fn test_completion_payload_drop_panic_preserves_result_and_later_observers() {
     for facade in [
         CompletionFacade::Sync,
+        #[cfg(feature = "worker")]
         CompletionFacade::Worker,
         #[cfg(feature = "tokio")]
         CompletionFacade::Async,
@@ -691,6 +695,7 @@ async fn test_completion_payload_drop_panic_preserves_result_and_later_observers
                 let mut future = Box::pin(async {
                     match facade {
                         CompletionFacade::Sync => Retry::new(&retry).timer(clock.new_timer()).run(operation),
+                        #[cfg(feature = "worker")]
                         CompletionFacade::Worker => WorkerRetry::new(&retry)
                             .timer(clock.new_timer())
                             .run(move |_| operation()),
