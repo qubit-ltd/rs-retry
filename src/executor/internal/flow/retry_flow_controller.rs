@@ -409,7 +409,7 @@ impl<E: 'static> RetryFlowController<E> {
             return Err(self.callback_failed_after_refresh(callback, scheduled_context, clock));
         }
         self.clear_current_attempt();
-        let _ = self.refresh_after_control_callback(clock, cancellation, RetryCancellationPhase::Backoff)?;
+        let backoff_now = self.refresh_after_control_callback(clock, cancellation, RetryCancellationPhase::Backoff)?;
         if self.state.flow_timed_out() {
             return Err(self.timed_out(RetryTimeoutScope::Flow));
         }
@@ -422,7 +422,7 @@ impl<E: 'static> RetryFlowController<E> {
 
         let deadline = self
             .state
-            .backoff_deadline(clock.now(), backoff.effective_delay())
+            .backoff_deadline(backoff_now, backoff.effective_delay())
             .map_err(|error| self.inactive_clock_failure(error))?;
         Ok(PreparedBackoffPlan::new(deadline, backoff.effective_delay().is_zero()))
     }

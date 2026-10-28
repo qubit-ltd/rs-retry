@@ -7,6 +7,7 @@
 // =============================================================================
 //! Compares owned single-step execution with the synchronous retry facade.
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
@@ -38,7 +39,10 @@ use qubit_retry::RetrySessionStep;
 use crate::support::FixedRetryRandomSource;
 
 /// Mutable clock permits deterministic time advancement and invalid samples.
-struct SessionClock(Mutex<MonotonicInstant>);
+struct SessionClock {
+    current: Mutex<MonotonicInstant>,
+    scripted: Mutex<VecDeque<MonotonicInstant>>,
+}
 
 impl MonotonicClock for SessionClock {
     /// Returns the currently injected domain.
@@ -47,7 +51,11 @@ impl MonotonicClock for SessionClock {
     }
     /// Returns the current scripted sample.
     fn now(&self) -> MonotonicInstant {
-        *self.0.lock().expect("clock lock")
+        self.scripted
+            .lock()
+            .expect("scripted clock lock")
+            .pop_front()
+            .unwrap_or_else(|| *self.current.lock().expect("clock lock"))
     }
     /// Rejects nested timers; tests use the enclosing timer.
     fn new_timer(&self) -> Arc<dyn Timer> {
@@ -66,10 +74,10 @@ impl SessionTimer {
     /// Constructs a deterministic timer starting at one second.
     fn new(cancel_on_wait: Option<RetryCancellationToken>) -> Self {
         Self {
-            clock: SessionClock(Mutex::new(MonotonicInstant::new(
-                ClockDomain::new(),
-                Duration::from_secs(1),
-            ))),
+            clock: SessionClock {
+                current: Mutex::new(MonotonicInstant::new(ClockDomain::new(), Duration::from_secs(1))),
+                scripted: Mutex::new(VecDeque::new()),
+            },
             registrations: AtomicUsize::new(0),
             cancel_on_wait,
         }
@@ -80,7 +88,7 @@ impl SessionTimer {
         if let Some(token) = &self.cancel_on_wait {
             token.cancel();
         } else {
-            *self.clock.0.lock().expect("clock lock") = deadline;
+            *self.clock.current.lock().expect("clock lock") = deadline;
         }
     }
 }
@@ -137,6 +145,23 @@ impl RetryObserver<&'static str> for SessionObserver {
     }
 }
 
+/// Installs clock samples immediately after retry scheduling is observed.
+struct ScriptRetryBoundarySamples {
+    timer: Arc<SessionTimer>,
+    samples: Vec<MonotonicInstant>,
+}
+
+impl RetryObserver<&'static str> for ScriptRetryBoundarySamples {
+    fn on_retry_scheduled(&self, _: &BackoffStep, _: &RetryContext) {
+        self.timer
+            .clock
+            .scripted
+            .lock()
+            .expect("scripted clock lock")
+            .extend(self.samples.iter().copied());
+    }
+}
+
 /// Compares structured clock failures without process-local domain identifiers.
 fn summarize_reason(reason: &RetryErrorReason) -> String {
     match reason {
@@ -179,10 +204,11 @@ fn run_scenario(session: bool, scenario: &str) -> (u32, String, Vec<String>) {
     let mut operation = || {
         attempts += 1;
         if scenario == "regress" {
-            *timer.clock.0.lock().expect("clock lock") = MonotonicInstant::new(timer.clock.domain(), Duration::ZERO);
+            *timer.clock.current.lock().expect("clock lock") =
+                MonotonicInstant::new(timer.clock.domain(), Duration::ZERO);
         }
         if scenario == "domain" {
-            *timer.clock.0.lock().expect("clock lock") =
+            *timer.clock.current.lock().expect("clock lock") =
                 MonotonicInstant::new(ClockDomain::new(), Duration::from_secs(1));
         }
         if scenario == "success"
@@ -361,7 +387,7 @@ fn test_retry_session_waiting_rejects_invalid_clock_samples() {
         } else {
             MonotonicInstant::new(timer.clock.domain(), Duration::ZERO)
         };
-        *timer.clock.0.lock().expect("clock lock") = invalid_now;
+        *timer.clock.current.lock().expect("clock lock") = invalid_now;
         let error = session.begin_attempt().expect_err("invalid waiting clock");
         assert!(matches!(
             error.reason(),
@@ -461,4 +487,92 @@ fn test_session_without_flow_timeout_reports_overflowing_backoff() {
             failure: RetryInfrastructureFailure::Clock { .. }
         }
     ));
+}
+
+/// Uses the last validated callback-boundary sample to calculate the deadline.
+#[test]
+fn test_session_backoff_uses_last_validated_sample() {
+    for foreign_domain in [false, true] {
+        let timer = Arc::new(SessionTimer::new(None));
+        let valid = MonotonicInstant::new(timer.clock.domain(), Duration::from_secs(5));
+        let extra_sample = MonotonicInstant::new(
+            if foreign_domain {
+                ClockDomain::new()
+            } else {
+                valid.domain()
+            },
+            if foreign_domain {
+                Duration::from_secs(8)
+            } else {
+                Duration::ZERO
+            },
+        );
+        let config = RetryConfig::builder()
+            .max_attempts(2)
+            .fallback(RetryFallback::Retry)
+            .backoff(BackoffPolicy::fixed(Duration::from_secs(2)))
+            .observer(ScriptRetryBoundarySamples {
+                timer: Arc::clone(&timer),
+                samples: vec![valid, extra_sample],
+            })
+            .build()
+            .expect("valid config");
+        let mut session = RetrySession::new(config, timer.clone());
+        assert!(matches!(
+            session.begin_attempt(),
+            Ok(RetrySessionAdmission::Admitted(_))
+        ));
+        let RetrySessionStep::RetryAt(deadline) = session.record_result::<()>(Err("busy")) else {
+            panic!("retry should be scheduled");
+        };
+        assert_eq!(deadline, MonotonicInstant::new(valid.domain(), Duration::from_secs(7)));
+        assert_eq!(
+            timer.clock.scripted.lock().expect("scripted clock lock").len(),
+            1,
+            "the post-boundary invalid sample must remain unread"
+        );
+    }
+}
+
+/// Rejects an invalid sample at the boundary used to refresh the context.
+#[test]
+fn test_session_backoff_rejects_invalid_boundary_sample() {
+    for foreign_domain in [false, true] {
+        let timer = Arc::new(SessionTimer::new(None));
+        let invalid = MonotonicInstant::new(
+            if foreign_domain {
+                ClockDomain::new()
+            } else {
+                timer.clock.domain()
+            },
+            Duration::ZERO,
+        );
+        let config = RetryConfig::builder()
+            .max_attempts(2)
+            .fallback(RetryFallback::Retry)
+            .backoff(BackoffPolicy::fixed(Duration::from_secs(2)))
+            .observer(ScriptRetryBoundarySamples {
+                timer: Arc::clone(&timer),
+                samples: vec![invalid],
+            })
+            .build()
+            .expect("valid config");
+        let mut session = RetrySession::new(config, timer);
+        assert!(matches!(
+            session.begin_attempt(),
+            Ok(RetrySessionAdmission::Admitted(_))
+        ));
+        let RetrySessionStep::Failed(error) = session.record_result::<()>(Err("busy")) else {
+            panic!("invalid boundary sample must fail");
+        };
+        assert!(matches!(
+            error.reason(),
+            RetryErrorReason::Infrastructure {
+                failure: RetryInfrastructureFailure::Clock { .. }
+            }
+        ));
+        assert_eq!(error.context().attempts(), 1);
+        assert_eq!(error.context().current_attempt(), None);
+        assert_eq!(error.context().next_delay(), Some(Duration::from_secs(2)));
+    }
 }
