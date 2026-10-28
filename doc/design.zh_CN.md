@@ -176,7 +176,8 @@ waker 使用弱 sender，不能掩盖 worker/reaper sender 均已消失的情况
 `into_value_discarding_diagnostics` 会同时丢弃上下文。`map_error` 只消费已保留的业务错误，
 `FnOnce` 映射函数调用零次或一次，其他数据全部保留，不额外要求 Clone/Send/static。
 
-三个公开 run 在 `run_inner` 返回后恰好调用一次 `RetryConfig::complete`。
+四种 run 执行门面在 `run_inner` 返回后恰好经 `RetryConfig::complete` 分派一次；
+`TokioRetry` 复用 `AsyncRetry` 流程，不会重复分派。`RetrySession` 到达终态时也只分派一次。
 异步 run future 被丢弃、向外展开栈或进程 abort 时不保证通知；完成观察者失败不会再触发第二次完成事件。
 
 ## 退避数值与提示契约
