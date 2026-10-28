@@ -612,12 +612,12 @@ async fn test_tokio_immediate_retry_yields_to_biased_cancellation() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let execution = TokioRetry::new(&config).cancellation_token(token.clone());
     let retry = execution.run({
-            let attempts = Arc::clone(&attempts);
-            move || {
-                attempts.fetch_add(1, Ordering::SeqCst);
-                async { Err::<(), _>("offline") }
-            }
-        });
+        let attempts = Arc::clone(&attempts);
+        move || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            async { Err::<(), _>("offline") }
+        }
+    });
     let cancel = async {
         token.cancel();
     };
@@ -628,9 +628,12 @@ async fn test_tokio_immediate_retry_yields_to_biased_cancellation() {
     };
     let error = result.expect_err("the retry should observe cancellation during backoff");
 
-    assert!(matches!(error.reason(), RetryErrorReason::Cancelled {
-        phase: RetryCancellationPhase::Backoff,
-    }));
+    assert!(matches!(
+        error.reason(),
+        RetryErrorReason::Cancelled {
+            phase: RetryCancellationPhase::Backoff,
+        }
+    ));
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.last_error(), Some(&"offline"));
     assert_eq!(attempts.load(Ordering::SeqCst), 1);

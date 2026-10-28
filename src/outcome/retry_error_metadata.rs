@@ -64,8 +64,8 @@ impl RetryErrorMetadata {
     /// This is not a record of whether the latest operation started.
     /// Cancellation or an infrastructure failure may terminate an admitted
     /// operation without recording an attempt failure; an earlier failure may
-    /// remain retained. Inspect [`context`](Self::context) and [`reason`](Self::reason)
-    /// together when diagnosing execution.
+    /// remain retained. Inspect [`context`](Self::context) and
+    /// [`reason`](Self::reason) together when diagnosing execution.
     ///
     /// # Returns
     /// `Some` with the retained failure classification, or `None` when no

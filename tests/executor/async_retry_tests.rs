@@ -218,9 +218,12 @@ fn test_async_immediate_retry_cancellation_is_attributed_to_backoff() {
         panic!("cancellation during the immediate backoff should finish");
     };
     let error = result.expect_err("the cancelled retry should fail");
-    assert!(matches!(error.reason(), RetryErrorReason::Cancelled {
-        phase: RetryCancellationPhase::Backoff,
-    }));
+    assert!(matches!(
+        error.reason(),
+        RetryErrorReason::Cancelled {
+            phase: RetryCancellationPhase::Backoff,
+        }
+    ));
     assert_eq!(error.context().attempts(), 1);
     assert_eq!(error.last_error(), Some(&"offline"));
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
