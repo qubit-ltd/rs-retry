@@ -37,7 +37,8 @@ impl<E> Clone for RetryObservers<E> {
     /// objects.
     ///
     /// # Returns
-    /// A collection sharing callbacks but owning its independent vector.
+    /// A collection sharing the same Arc-backed observer slice and callback
+    /// objects.
     #[inline]
     fn clone(&self) -> Self {
         Self {

@@ -10,6 +10,18 @@
 use std::fmt;
 
 /// Callback category that failed while controlling a retry flow.
+///
+/// This classifies which callback failed. The terminal reason describes why
+/// the flow stopped, while completion callback diagnostics retain failures
+/// that occurred after the terminal state was frozen.
+///
+/// # Examples
+/// ```
+/// use qubit_retry::RetryCallbackKind;
+///
+/// let kind = RetryCallbackKind::Observer;
+/// assert!(matches!(kind, RetryCallbackKind::Observer));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryCallbackKind {
     /// A retry rule callback.

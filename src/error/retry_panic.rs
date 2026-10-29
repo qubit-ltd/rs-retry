@@ -10,6 +10,18 @@
 use std::fmt;
 
 /// Panic payload retained without exposing dynamically typed data.
+///
+/// # Examples
+/// ```
+/// use qubit_retry::RetryPanic;
+///
+/// let static_message = RetryPanic::StaticStr("temporary failure");
+/// assert_eq!(static_message.message(), Some("temporary failure"));
+/// let owned_message = RetryPanic::String("owned failure".to_owned());
+/// assert_eq!(owned_message.message(), Some("owned failure"));
+/// let non_string = RetryPanic::NonString;
+/// assert_eq!(non_string.message(), None);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RetryPanic {
     /// A borrowed static string panic payload.

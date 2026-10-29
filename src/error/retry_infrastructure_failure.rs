@@ -13,6 +13,29 @@ use std::fmt;
 use super::WorkerStopTrigger;
 
 /// Infrastructure failure that prevented safe retry-flow continuation.
+///
+/// # Examples
+/// ```
+/// use qubit_retry::RetryInfrastructureFailure;
+///
+/// let failure = RetryInfrastructureFailure::Timer {
+///     message: "timer unavailable".into(),
+/// };
+/// assert_eq!(failure.message(), Some("timer unavailable"));
+/// ```
+///
+/// With the `worker` feature, a worker stop trigger can be inspected as well:
+///
+/// ```
+/// # #[cfg(feature = "worker")] {
+/// use qubit_retry::{RetryInfrastructureFailure, WorkerStopTrigger};
+///
+/// let failure = RetryInfrastructureFailure::WorkerStillRunning {
+///     trigger: WorkerStopTrigger::Cancellation,
+/// };
+/// assert_eq!(failure.worker_stop_trigger(), Some(WorkerStopTrigger::Cancellation));
+/// # }
+/// ```
 #[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RetryInfrastructureFailure {
@@ -44,11 +67,12 @@ pub enum RetryInfrastructureFailure {
 }
 
 impl RetryInfrastructureFailure {
-    /// Returns the infrastructure diagnostic message.
+    /// Returns the diagnostic text for failures that carry one.
     ///
     /// # Returns
-    /// `Some(&str)` for clock, timer, and worker-spawn failures, or `None` for
-    /// a worker that remained running or whose event channel closed.
+    /// `Some(&str)` for clock, timer, and (with `worker`) worker-spawn
+    /// failures. Returns `None` for a closed worker event channel or a worker
+    /// that remained running after a stop request.
     #[inline]
     pub fn message(&self) -> Option<&str> {
         match self {
@@ -60,7 +84,7 @@ impl RetryInfrastructureFailure {
         }
     }
 
-    /// Returns the trigger for a worker that remained running.
+    /// Returns the event that requested a still-running worker to stop.
     ///
     /// # Returns
     /// `Some(WorkerStopTrigger)` for `WorkerStillRunning`, or `None` for other

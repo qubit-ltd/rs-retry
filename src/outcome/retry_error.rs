@@ -19,6 +19,12 @@ use crate::RetryErrorReason;
 
 /// Error returned when a retry flow terminates without a successful result.
 ///
+/// The terminal `reason` and `context` are frozen when the flow ends. The
+/// retained `last_failure` can come from an earlier attempt if a later
+/// cancellation or infrastructure failure ends the flow. The
+/// `completion_callback_failures` are diagnostics recorded after that
+/// terminal snapshot.
+///
 /// # Examples
 /// ```
 /// use qubit_retry::{Retry, RetryConfig, RetryErrorReason, RetryFallback};
@@ -102,11 +108,29 @@ impl<E> RetryError<E> {
         &self.completion_callback_failures
     }
 
-    /// Maps an application error while preserving terminal metadata and failure
-    /// classification.
+    /// Maps a retained application error while preserving terminal metadata
+    /// and failure classification.
     ///
-    /// The mapper runs only when the last failure contains an application
-    /// error.
+    /// This consumes the error. The mapper is called exactly once if the
+    /// retained last failure contains an application error, and zero times for
+    /// timeout, panic, or no retained failure. The mapped error replaces only
+    /// that application error; the terminal reason, retained attempt metadata,
+    /// context, and completion callback diagnostics are preserved.
+    ///
+    /// # Type Parameters
+    /// - `U`: Type of the mapped application error.
+    /// - `F`: One-shot mapping function.
+    ///
+    /// # Parameters
+    /// - `map`: Function applied to the retained application error, if any.
+    ///
+    /// # Returns
+    /// A terminal error with the same reason, context, and diagnostics, and
+    /// with its retained application error mapped when present.
+    ///
+    /// # Panics
+    /// A panic from `map` propagates to the caller; it is not converted into a
+    /// callback failure.
     pub fn map_error<U, F: FnOnce(E) -> U>(self, map: F) -> RetryError<U> {
         RetryError {
             reason: self.reason,
@@ -116,8 +140,13 @@ impl<E> RetryError<E> {
         }
     }
 
-    /// Consumes the error into its reason, last failure, context, and callback
-    /// diagnostics.
+    /// Consumes the error into its terminal reason, retained failure, frozen
+    /// context, and completion callback diagnostics.
+    ///
+    /// The returned tuple contains, in order: the terminal reason; the
+    /// optional retained attempt failure; the frozen retry context; and a
+    /// boxed slice of completion callback failures recorded after the
+    /// terminal state was frozen.
     #[must_use = "inspect the decomposed terminal error"]
     pub fn into_parts(
         self,

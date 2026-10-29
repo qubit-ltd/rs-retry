@@ -11,6 +11,15 @@ use std::error::Error;
 use std::fmt;
 
 /// Invalid retry policy input.
+///
+/// # Examples
+/// ```
+/// use qubit_retry::RetryPolicy;
+///
+/// let error = RetryPolicy::builder().max_attempts(0).build().unwrap_err();
+/// assert_eq!(error.field(), "max_attempts");
+/// assert_eq!(error.message(), "maximum attempts must be greater than zero");
+/// ```
 #[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryPolicyError {
