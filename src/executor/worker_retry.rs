@@ -129,17 +129,22 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
     }
 
     /// Sets the real-time grace period used after requesting cooperative
-    /// cancellation. This OS-thread cleanup bound always uses standard wall
-    /// duration, even when attempts and backoff use an injected manual
-    /// timer. It prevents a stopped virtual clock from retaining an
-    /// uncooperative worker indefinitely.
+    /// cancellation. Cleanup uses standard monotonic time independently of
+    /// the injected timer.
+    ///
+    /// If adding grace to the current standard `Instant` cannot represent a
+    /// deadline, cleanup waits without a time bound. This includes
+    /// `Duration::MAX`, even after cancellation, a hard timeout, or an active
+    /// timer failure. The wait includes worker exit and thread-local storage
+    /// destruction.
     ///
     /// # Parameters
-    /// - `grace`: Maximum real-time cleanup wait; zero performs only an
-    ///   immediate join check.
+    /// - `grace`: Cleanup wait when its deadline is representable; zero
+    ///   performs only an immediate exit check. An unrepresentable deadline
+    ///   means an unbounded wait.
     ///
     /// # Returns
-    /// This facade with the supplied cleanup bound.
+    /// This facade with the supplied cleanup grace.
     #[inline]
     pub fn cancellation_grace(mut self, grace: Duration) -> Self {
         self.cancellation_grace = grace;

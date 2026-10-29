@@ -199,13 +199,18 @@ loss of both worker/reaper senders. A disconnected incomplete protocol becomes
 an infrastructure error, never proof of successful exit.
 
 On cancellation, timeout, or active timer failure, cancel the attempt token and
-observe exit only for the configured real-time grace. Unrelated events do not
-reset the deadline; a join marker alone proves exit during cleanup. An expired
-grace returns `WorkerStillRunning` with Cancellation, AttemptTimeout, FlowTimeout,
-or TimerFailure attribution. A channel failure remains structural failure.
-The flow never starts another worker while the previous one may remain alive.
-Uncooperative work or TLS destruction can leave worker and reaper threads alive;
-no timeout/cancellation means the normal exit wait can remain unbounded.
+observe exit using standard monotonic time, independently of the injected timer.
+Unrelated events do not reset a representable deadline; a join marker alone
+proves exit during cleanup. If the deadline is representable, expiry returns
+`WorkerStillRunning` with Cancellation, AttemptTimeout, FlowTimeout, or
+TimerFailure attribution. If `Instant::checked_add(grace)` cannot represent a
+deadline, cleanup waits without a time bound instead, including after those
+triggers; `Duration::MAX` is such a grace. Do not rely on a platform-wide maximum
+finite grace. A channel failure remains structural failure. The flow never
+starts another worker while the previous one may remain alive. Worker exit
+includes TLS destruction. Uncooperative work or TLS destruction can leave worker
+and reaper threads alive; with no timeout or cancellation, the normal exit wait
+can also remain unbounded.
 
 ## Panic isolation and completion ownership
 

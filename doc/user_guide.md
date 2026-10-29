@@ -745,12 +745,18 @@ Each attempt creates a worker and a reaper thread; there is no pool. Worker mode
 checks cancellation, then timeout, before accepting a result with confirmed
 thread exit. Exit includes thread-local storage (TLS) destruction.
 
-`cancellation_grace` defaults to 100 ms; the example sets one second. It uses real
-monotonic time even with an injected timer. If cleanup exceeds it, the result is
-`Infrastructure { failure: WorkerStillRunning { trigger } }`. The flow starts no
-further attempt, but the worker and reaper may remain alive. Do not automatically
-start replacement work that could overlap it. Without a timeout or cancellation,
-waiting for worker exit can be unbounded. Threads cannot be forcibly killed.
+`cancellation_grace` defaults to 100 ms; the example sets one second. Cleanup
+uses real monotonic time even with an injected timer. Zero checks for worker exit
+immediately. For a representable deadline, cleanup waits up to the grace and
+returns `Infrastructure { failure: WorkerStillRunning { trigger } }` if the
+worker has not exited; exit includes TLS destruction. If adding the grace to the
+current standard `Instant` cannot represent a deadline, cleanup instead waits
+without a time bound, including after cancellation, a hard timeout, or an active
+timer failure. `Duration::MAX` is an example of an unrepresentable grace, and
+there is no platform-wide maximum finite grace to rely on. The flow starts no
+further attempt while the worker may remain alive. Do not automatically start
+replacement work that could overlap it. Without a timeout or cancellation, the
+normal worker-exit wait can also be unbounded. Threads cannot be forcibly killed.
 
 ## Handle results and observe execution
 
