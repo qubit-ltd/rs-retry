@@ -6,5 +6,9 @@ publish = false
 
 [workspace]
 
+[features]
+default = []
+worker = ["qubit-retry/worker"]
+
 [dependencies]
 qubit-retry = { path = "../../..", default-features = false }

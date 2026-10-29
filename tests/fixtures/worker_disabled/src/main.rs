@@ -7,13 +7,13 @@
 // =============================================================================
 
 use qubit_retry::AttemptCancellationToken;
-use qubit_retry::Retry;
 use qubit_retry::RetryConfig;
-use qubit_retry::RetryPolicy;
 use qubit_retry::WorkerRetry;
 
 fn main() {
     let _ = AttemptCancellationToken::new();
-    let retry = RetryConfig::<()>::builder().build();
-    let _ = WorkerRetry::new(&retry);
+    let config = RetryConfig::<()>::builder()
+        .build()
+        .expect("valid fixture config");
+    let _ = WorkerRetry::new(&config);
 }
