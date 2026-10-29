@@ -35,7 +35,9 @@ impl<E> Clone for RetryRules<E> {
     /// Clones the ordered rule references without duplicating callback objects.
     ///
     /// # Returns
-    /// A collection sharing callbacks but owning its independent vector.
+    /// A collection sharing the same immutable ordered rule slice and callback
+    /// objects through reference counting; no rule vector or operation error is
+    /// cloned.
     #[inline]
     fn clone(&self) -> Self {
         Self {

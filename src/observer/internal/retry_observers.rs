@@ -149,13 +149,15 @@ impl<E: 'static> RetryObservers<E> {
         self.notify_each(RetryCallbackPhase::Success, |observer| observer.on_success(context))
     }
 
-    /// Notifies every observer of the original terminal failure and context.
+    /// Notifies every observer of the terminal reason and frozen context.
     ///
     /// Returns all caught panics in registration order without replacing the
     /// failure or invoking any retry controls.
     ///
     /// # Parameters
-    /// - `failure`: Frozen original terminal failure.
+    /// - `reason`: Frozen terminal reason, distinct from any retained attempt
+    ///   failure; terminal notification can also occur before the first
+    ///   attempt.
     /// - `context`: Frozen context, including zero-attempt failures.
     ///
     /// # Returns
