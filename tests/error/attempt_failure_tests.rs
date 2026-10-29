@@ -23,6 +23,7 @@ fn test_map_error_consumes_application_error_once() {
 
     let mapped = original.map_error(move |NonCloneError(mut error)| {
         error.push_str(&suffix);
+        drop(suffix);
         error
     });
 

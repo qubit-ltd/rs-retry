@@ -82,6 +82,7 @@ fn test_map_error_preserves_context_and_completion_diagnostics() {
 
     let mapped = error.map_error(move |NonCloneError(mut error)| {
         error.push_str(&suffix);
+        drop(suffix);
         error
     });
 
