@@ -12,6 +12,8 @@ mod retry_facade_matrix;
 mod retry_once_policy;
 mod test_error;
 mod unit_test_error;
+#[cfg(feature = "worker")]
+mod worker_watchdog;
 
 pub(crate) use advancing_observer::AdvancingObserver;
 pub(crate) use fixed_retry_random_source::FixedRetryRandomSource;
@@ -34,3 +36,7 @@ pub(crate) use retry_facade_matrix::rule_terminal_regressing_timer;
 pub(crate) use retry_once_policy::retry_once_policy;
 pub(crate) use test_error::TestError;
 pub(crate) use unit_test_error::UnitTestError;
+#[cfg(feature = "worker")]
+pub(crate) use worker_watchdog::run_worker_test;
+#[cfg(feature = "worker")]
+pub(crate) use worker_watchdog::wait_for_cancellation;

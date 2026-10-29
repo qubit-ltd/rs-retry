@@ -7,6 +7,7 @@
 // =============================================================================
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
@@ -31,6 +32,8 @@ use qubit_retry::RetryTimeoutScope;
 use qubit_retry::WorkerRetry;
 
 use crate::support::UnitTestError;
+use crate::support::run_worker_test;
+use crate::support::wait_for_cancellation;
 
 /// Timer that advances time only when a caller incorrectly registers a
 /// relative delay, making deadline drift externally observable.
@@ -90,68 +93,80 @@ fn test_worker_facade_retries_with_cooperative_token() {
 
 #[test]
 fn test_worker_attempt_timeout_has_a_distinct_terminal_reason() {
-    let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let retry = RetryConfig::<UnitTestError>::builder()
-        .policy(policy)
-        .fallback(RetryFallback::Retry)
-        .build()
-        .expect("valid config");
-    let clock = ManualMonotonicClock::new_shared();
-    let operation_clock = Arc::clone(&clock);
-    let error = WorkerRetry::new(&retry)
-        .timer(clock.new_timer())
-        .hard_attempt_timeout(Duration::from_millis(1))
-        .cancellation_grace(Duration::from_millis(50))
-        .run(move |token| {
-            operation_clock
-                .advance(Duration::from_millis(1))
-                .expect("expire admitted attempt");
-            while !token.is_cancelled() {
-                thread::yield_now();
-            }
-            Err::<(), _>(UnitTestError)
-        })
-        .unwrap_err();
+    run_worker_test(|| {
+        let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
+        let retry = RetryConfig::<UnitTestError>::builder()
+            .policy(policy)
+            .fallback(RetryFallback::Retry)
+            .build()
+            .expect("valid config");
+        let clock = ManualMonotonicClock::new_shared();
+        let operation_clock = Arc::clone(&clock);
+        let watchdog_fired = Arc::new(AtomicBool::new(false));
+        let operation_watchdog = Arc::clone(&watchdog_fired);
+        let error = WorkerRetry::new(&retry)
+            .timer(clock.new_timer())
+            .hard_attempt_timeout(Duration::from_millis(1))
+            .cancellation_grace(Duration::from_millis(50))
+            .run(move |token| {
+                operation_clock
+                    .advance(Duration::from_millis(1))
+                    .expect("expire admitted attempt");
+                wait_for_cancellation(&token, &operation_watchdog);
+                Err::<(), _>(UnitTestError)
+            })
+            .unwrap_err();
 
-    assert!(matches!(
-        error.reason(),
-        RetryErrorReason::TimedOut {
-            scope: RetryTimeoutScope::Attempt,
-        }
-    ));
+        assert!(matches!(
+            error.reason(),
+            RetryErrorReason::TimedOut {
+                scope: RetryTimeoutScope::Attempt,
+            }
+        ));
+        assert!(
+            !watchdog_fired.load(Ordering::SeqCst),
+            "worker cancellation watchdog fired"
+        );
+    });
 }
 
 #[test]
 fn test_worker_shorter_flow_timeout_reports_flow_source() {
-    let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
-    let retry = RetryConfig::<UnitTestError>::builder()
-        .policy(policy)
-        .build()
-        .expect("valid config");
-    let clock = ManualMonotonicClock::new_shared();
-    let operation_clock = Arc::clone(&clock);
-    let error = WorkerRetry::new(&retry)
-        .timer(clock.new_timer())
-        .hard_attempt_timeout(Duration::from_secs(1))
-        .hard_flow_timeout(Duration::from_millis(10))
-        .cancellation_grace(Duration::from_millis(50))
-        .run(move |token| {
-            operation_clock
-                .advance(Duration::from_millis(10))
-                .expect("expire admitted attempt");
-            while !token.is_cancelled() {
-                thread::yield_now();
-            }
-            Err::<(), _>(UnitTestError)
-        })
-        .expect_err("flow timeout should terminate retry");
+    run_worker_test(|| {
+        let policy = RetryPolicy::builder().max_attempts(1).build().unwrap();
+        let retry = RetryConfig::<UnitTestError>::builder()
+            .policy(policy)
+            .build()
+            .expect("valid config");
+        let clock = ManualMonotonicClock::new_shared();
+        let operation_clock = Arc::clone(&clock);
+        let watchdog_fired = Arc::new(AtomicBool::new(false));
+        let operation_watchdog = Arc::clone(&watchdog_fired);
+        let error = WorkerRetry::new(&retry)
+            .timer(clock.new_timer())
+            .hard_attempt_timeout(Duration::from_secs(1))
+            .hard_flow_timeout(Duration::from_millis(10))
+            .cancellation_grace(Duration::from_millis(50))
+            .run(move |token| {
+                operation_clock
+                    .advance(Duration::from_millis(10))
+                    .expect("expire admitted attempt");
+                wait_for_cancellation(&token, &operation_watchdog);
+                Err::<(), _>(UnitTestError)
+            })
+            .expect_err("flow timeout should terminate retry");
 
-    assert!(matches!(
-        error.reason(),
-        RetryErrorReason::TimedOut {
-            scope: RetryTimeoutScope::Flow,
-        }
-    ));
+        assert!(matches!(
+            error.reason(),
+            RetryErrorReason::TimedOut {
+                scope: RetryTimeoutScope::Flow,
+            }
+        ));
+        assert!(
+            !watchdog_fired.load(Ordering::SeqCst),
+            "worker cancellation watchdog fired"
+        );
+    });
 }
 
 #[test]

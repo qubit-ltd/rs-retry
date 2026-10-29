@@ -10,11 +10,13 @@ use std::num::NonZeroU32;
 use std::panic::panic_any;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 
 use qubit_clock::ManualMonotonicClock;
 use qubit_clock::MonotonicClock;
@@ -55,6 +57,8 @@ use crate::support::assert_matrix_timeout;
 use crate::support::callback_elapsed_records;
 use crate::support::completion_regressing_timer;
 use crate::support::rule_terminal_regressing_timer;
+use crate::support::run_worker_test;
+use crate::support::wait_for_cancellation;
 
 /// A destructor panic must not replace the original payload classification.
 #[test]
@@ -376,53 +380,59 @@ fn test_worker_retry_refreshes_elapsed_time_after_callback_panics() {
 
 #[test]
 fn test_worker_retry_matches_shared_infrastructure_and_timeout_matrix() {
-    let timer_config = RetryConfig::<TestError>::builder()
-        .max_attempts(2)
-        .backoff(BackoffPolicy::fixed(Duration::from_millis(1)))
-        .fallback(RetryFallback::Retry)
-        .build()
-        .expect("valid config");
-    let timer_error = WorkerRetry::new(&timer_config)
-        .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
-            TimerFailurePoint::Registration,
-            "matrix",
-            "offline",
-        )))
-        .run(|_| Err::<(), _>(TestError("matrix")))
-        .expect_err("retry sleep registration failure must be terminal");
-    assert_matrix_infrastructure(&timer_error, "timer", 1, None, true);
+    run_worker_test(|| {
+        let timer_config = RetryConfig::<TestError>::builder()
+            .max_attempts(2)
+            .backoff(BackoffPolicy::fixed(Duration::from_millis(1)))
+            .fallback(RetryFallback::Retry)
+            .build()
+            .expect("valid config");
+        let timer_error = WorkerRetry::new(&timer_config)
+            .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
+                TimerFailurePoint::Registration,
+                "matrix",
+                "offline",
+            )))
+            .run(|_| Err::<(), _>(TestError("matrix")))
+            .expect_err("retry sleep registration failure must be terminal");
+        assert_matrix_infrastructure(&timer_error, "timer", 1, None, true);
 
-    let config8 = RetryConfig::<TestError>::builder().build().expect("valid config");
-    let clock_error = WorkerRetry::new(&config8)
-        .timer(completion_regressing_timer())
-        .run(|_| Ok::<_, TestError>(()))
-        .expect_err("completion clock regression must be terminal");
-    assert_matrix_infrastructure(&clock_error, "clock", 1, None, false);
+        let config8 = RetryConfig::<TestError>::builder().build().expect("valid config");
+        let clock_error = WorkerRetry::new(&config8)
+            .timer(completion_regressing_timer())
+            .run(|_| Ok::<_, TestError>(()))
+            .expect_err("completion clock regression must be terminal");
+        assert_matrix_infrastructure(&clock_error, "clock", 1, None, false);
 
-    for scope in [RetryTimeoutScope::Attempt, RetryTimeoutScope::Flow] {
-        let config = RetryConfig::<TestError>::builder().build().expect("valid config");
-        let clock = ManualMonotonicClock::new_shared();
-        let operation_clock = Arc::clone(&clock);
-        let worker = WorkerRetry::new(&config)
-            .timer(clock.new_timer())
-            .cancellation_grace(Duration::from_secs(1));
-        let worker = match scope {
-            RetryTimeoutScope::Attempt => worker.hard_attempt_timeout(Duration::from_millis(1)),
-            RetryTimeoutScope::Flow => worker.hard_flow_timeout(Duration::from_millis(1)),
-        };
-        let error = worker
-            .run(move |token| {
-                operation_clock
-                    .advance(Duration::from_millis(1))
-                    .expect("expire admitted attempt");
-                while !token.is_cancelled() {
-                    thread::yield_now();
-                }
-                Err::<(), _>(TestError("ignored after timeout"))
-            })
-            .expect_err("the cooperative worker must report its timeout");
-        assert_matrix_timeout(&error, scope, 1);
-    }
+        for scope in [RetryTimeoutScope::Attempt, RetryTimeoutScope::Flow] {
+            let config = RetryConfig::<TestError>::builder().build().expect("valid config");
+            let clock = ManualMonotonicClock::new_shared();
+            let operation_clock = Arc::clone(&clock);
+            let worker = WorkerRetry::new(&config)
+                .timer(clock.new_timer())
+                .cancellation_grace(Duration::from_secs(1));
+            let worker = match scope {
+                RetryTimeoutScope::Attempt => worker.hard_attempt_timeout(Duration::from_millis(1)),
+                RetryTimeoutScope::Flow => worker.hard_flow_timeout(Duration::from_millis(1)),
+            };
+            let watchdog_fired = Arc::new(AtomicBool::new(false));
+            let operation_watchdog = Arc::clone(&watchdog_fired);
+            let error = worker
+                .run(move |token| {
+                    operation_clock
+                        .advance(Duration::from_millis(1))
+                        .expect("expire admitted attempt");
+                    wait_for_cancellation(&token, &operation_watchdog);
+                    Err::<(), _>(TestError("ignored after timeout"))
+                })
+                .expect_err("the cooperative worker must report its timeout");
+            assert_matrix_timeout(&error, scope, 1);
+            assert!(
+                !watchdog_fired.load(Ordering::SeqCst),
+                "worker cancellation watchdog fired"
+            );
+        }
+    });
 }
 
 #[test]
@@ -474,40 +484,51 @@ fn test_worker_retry_reports_still_running_with_active_scope() {
 /// Advancing the injected clock, not wall time, must expire a worker attempt.
 #[test]
 fn test_worker_timeout_uses_injected_timer() {
-    let clock = ManualMonotonicClock::new_shared();
-    let worker_clock = Arc::clone(&clock);
-    let cancellation = RetryCancellationToken::new();
-    let worker_cancellation = cancellation.clone();
-    let (started_sender, started_receiver) = mpsc::channel();
-    let handle = thread::spawn(move || {
-        let config10 = RetryConfig::<TestError>::builder().build().expect("valid config");
-        WorkerRetry::new(&config10)
-            .timer(worker_clock.new_timer())
-            .hard_attempt_timeout(Duration::from_secs(3600))
-            .cancellation_token(worker_cancellation)
-            .cancellation_grace(Duration::from_secs(1))
-            .run(move |token| {
-                started_sender.send(()).expect("test controller alive");
-                while !token.is_cancelled() {
-                    thread::yield_now();
-                }
-                Err::<(), _>(TestError("stopped"))
-            })
-            .map_err(Box::new)
+    run_worker_test(|| {
+        let clock = ManualMonotonicClock::new_shared();
+        let worker_clock = Arc::clone(&clock);
+        let cancellation = RetryCancellationToken::new();
+        let worker_cancellation = cancellation.clone();
+        let watchdog_fired = Arc::new(AtomicBool::new(false));
+        let operation_watchdog = Arc::clone(&watchdog_fired);
+        let (started_sender, started_receiver) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let config10 = RetryConfig::<TestError>::builder().build().expect("valid config");
+            WorkerRetry::new(&config10)
+                .timer(worker_clock.new_timer())
+                .hard_attempt_timeout(Duration::from_secs(3600))
+                .cancellation_token(worker_cancellation)
+                .cancellation_grace(Duration::from_secs(1))
+                .run(move |token| {
+                    started_sender.send(()).expect("test controller alive");
+                    wait_for_cancellation(&token, &operation_watchdog);
+                    Err::<(), _>(TestError("stopped"))
+                })
+                .map_err(Box::new)
+        });
+        started_receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("operation starts");
+        let deadline = clock.wait_for_next_deadline(Duration::from_secs(1));
+        if deadline.is_some() {
+            clock.advance(Duration::from_secs(3600)).expect("advance to timeout");
+        } else {
+            cancellation.cancel();
+        }
+        let runner_deadline = Instant::now() + Duration::from_secs(10);
+        while !handle.is_finished() {
+            assert!(Instant::now() < runner_deadline, "worker runner did not exit");
+            thread::yield_now();
+        }
+        let error = handle.join().expect("runner joins").expect_err("worker stops");
+        assert!(deadline.is_some(), "worker timeout must register on its injected timer");
+        assert_matrix_timeout(&error, RetryTimeoutScope::Attempt, 1);
+        assert_eq!(error.context().operation_elapsed(), Duration::from_secs(3600));
+        assert!(
+            !watchdog_fired.load(Ordering::SeqCst),
+            "worker cancellation watchdog fired"
+        );
     });
-    started_receiver
-        .recv_timeout(Duration::from_secs(5))
-        .expect("operation starts");
-    let deadline = clock.wait_for_next_deadline(Duration::from_secs(1));
-    if deadline.is_some() {
-        clock.advance(Duration::from_secs(3600)).expect("advance to timeout");
-    } else {
-        cancellation.cancel();
-    }
-    let error = handle.join().expect("runner joins").expect_err("worker stops");
-    assert!(deadline.is_some(), "worker timeout must register on its injected timer");
-    assert_matrix_timeout(&error, RetryTimeoutScope::Attempt, 1);
-    assert_eq!(error.context().operation_elapsed(), Duration::from_secs(3600));
 }
 
 /// A failed timeout registration must not release or count an operation.
@@ -530,23 +551,29 @@ fn test_worker_timeout_registration_failure_does_not_admit_operation() {
 /// cause.
 #[test]
 fn test_worker_timeout_poll_failure_reaps_operation() {
-    let chain_config3 = RetryConfig::<TestError>::builder().build().expect("valid config");
-    let error = WorkerRetry::new(&chain_config3)
-        .hard_attempt_timeout(Duration::from_secs(1))
-        .cancellation_grace(Duration::from_secs(1))
-        .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
-            TimerFailurePoint::Completion,
-            "attempt",
-            "offline",
-        )))
-        .run(|token| {
-            while !token.is_cancelled() {
-                thread::yield_now();
-            }
-            Ok::<(), TestError>(())
-        })
-        .expect_err("timer failure wins after cleanup");
-    assert_matrix_infrastructure(&error, "timer", 1, None, false);
+    run_worker_test(|| {
+        let chain_config3 = RetryConfig::<TestError>::builder().build().expect("valid config");
+        let watchdog_fired = Arc::new(AtomicBool::new(false));
+        let operation_watchdog = Arc::clone(&watchdog_fired);
+        let error = WorkerRetry::new(&chain_config3)
+            .hard_attempt_timeout(Duration::from_secs(1))
+            .cancellation_grace(Duration::from_secs(1))
+            .timer(Arc::new(FaultInjectingTimer::backend_unavailable(
+                TimerFailurePoint::Completion,
+                "attempt",
+                "offline",
+            )))
+            .run(move |token| {
+                wait_for_cancellation(&token, &operation_watchdog);
+                Ok::<(), TestError>(())
+            })
+            .expect_err("timer failure wins after cleanup");
+        assert!(
+            !watchdog_fired.load(Ordering::SeqCst),
+            "worker cancellation watchdog fired"
+        );
+        assert_matrix_infrastructure(&error, "timer", 1, None, false);
+    });
 }
 
 /// A timer failure cannot permit another attempt while the old worker is still
