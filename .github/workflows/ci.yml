@@ -26,14 +26,11 @@ jobs:
       id-token: write
     uses: qubit-ltd/rs-infra-ci/.github/workflows/github-ci.yml@main
 
-  prepare-feature-matrix:
+  validate-feature-matrix:
     runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - name: Validate and generate feature matrix
-        id: matrix
+      - name: Validate feature matrix configuration
         run: |
           set -euo pipefail
           config=.infra/ci/cargo-matrix.json
@@ -52,12 +49,3 @@ jobs:
               and ((.features // []) | type == "array" and all(.[]; type == "string"))
             )
           ' "$config" > /dev/null
-          matrix=$(jq -c '{include: [.checks[] | {
-            name,
-            commands: (.commands | join(",")),
-            default_features: (if has("defaultFeatures") then .defaultFeatures else true end),
-            all_features: (if has("allFeatures") then .allFeatures else false end),
-            features: ((.features // []) | join(",")),
-            packages: ((.packages // []) | join(","))
-          }]}' "$config")
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
