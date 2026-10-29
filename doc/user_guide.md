@@ -205,7 +205,8 @@ use std::time::Duration;
 use qubit_clock::ManualMonotonicClock;
 use qubit_clock::MonotonicClock;
 use qubit_retry::{
-    BackoffPolicy, RetryConfig, RetryFallback, RetrySession,
+    BackoffPolicy, RetryCancellationToken, RetryConfig, RetryErrorReason,
+    RetryFallback, RetrySession,
     RetrySessionAdmission, RetrySessionStep,
 };
 
@@ -217,7 +218,9 @@ fn main() {
         .build()
         .expect("valid retry config");
     let clock = ManualMonotonicClock::new_shared();
-    let mut session = RetrySession::new(config, clock.new_timer());
+    let cancellation = RetryCancellationToken::new();
+    let mut session = RetrySession::new(config, clock.new_timer())
+        .with_cancellation_token(cancellation.clone());
 
     let RetrySessionAdmission::Admitted(first) = session.begin_attempt().expect("admitted") else {
         panic!("fresh session cannot wait");
@@ -238,6 +241,16 @@ fn main() {
         panic!("operation succeeded");
     };
     assert_eq!(*success.value(), "recovered");
+
+    cancellation.cancel();
+    let cancelled_config = RetryConfig::<&str>::builder()
+        .build()
+        .expect("valid cancelled-session config");
+    let mut cancelled_session = RetrySession::new(cancelled_config, clock.new_timer())
+        .with_cancellation_token(cancellation);
+    let error = cancelled_session.begin_attempt().expect_err("pre-cancelled session stops");
+    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { .. }));
+    assert_eq!(error.context().attempts(), 0);
 }
 ```
 
@@ -249,6 +262,18 @@ returns. Cancellation during the wait ends the session in the `Backoff` phase.
 The manual clock makes scheduled delivery reproducible. In production, schedule
 delivery against the same clock domain as the session timer. `RetrySession`
 neither waits nor registers a timer.
+
+Execute an operation only after [`begin_attempt`](https://docs.rs/qubit-retry/0.26.0/qubit_retry/struct.RetrySession.html#method.begin_attempt)
+returns `Admitted`, and report exactly one result for that admission with
+[`record_result`](https://docs.rs/qubit-retry/0.26.0/qubit_retry/struct.RetrySession.html#method.record_result).
+`Waiting` does not admit an operation. Calling `begin_attempt` while an operation
+is active, recording a result without a matching admission, or calling either
+method after termination is a programming error that panics. Stop driving the
+session after `Complete`, `Failed`, or an admission error. Configure session
+cancellation with `with_cancellation_token`. Cancellation is checked at
+admission and failure boundaries; it does not interrupt an admitted operation
+or wake your external scheduler. The scheduler must observe the token and drive
+the session again when appropriate.
 
 ### Run AsyncRetry with your executor
 

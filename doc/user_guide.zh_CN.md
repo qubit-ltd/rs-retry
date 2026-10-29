@@ -191,7 +191,8 @@ use std::time::Duration;
 use qubit_clock::ManualMonotonicClock;
 use qubit_clock::MonotonicClock;
 use qubit_retry::{
-    BackoffPolicy, RetryConfig, RetryFallback, RetrySession,
+    BackoffPolicy, RetryCancellationToken, RetryConfig, RetryErrorReason,
+    RetryFallback, RetrySession,
     RetrySessionAdmission, RetrySessionStep,
 };
 
@@ -203,7 +204,9 @@ fn main() {
         .build()
         .expect("有效的重试配置");
     let clock = ManualMonotonicClock::new_shared();
-    let mut session = RetrySession::new(config, clock.new_timer());
+    let cancellation = RetryCancellationToken::new();
+    let mut session = RetrySession::new(config, clock.new_timer())
+        .with_cancellation_token(cancellation.clone());
 
     let RetrySessionAdmission::Admitted(first) = session.begin_attempt().expect("已准入") else {
         panic!("新会话不应处于等待状态");
@@ -224,6 +227,16 @@ fn main() {
         panic!("操作已成功");
     };
     assert_eq!(*success.value(), "recovered");
+
+    cancellation.cancel();
+    let cancelled_config = RetryConfig::<&str>::builder()
+        .build()
+        .expect("有效的取消会话配置");
+    let mut cancelled_session = RetrySession::new(cancelled_config, clock.new_timer())
+        .with_cancellation_token(cancellation);
+    let error = cancelled_session.begin_attempt().expect_err("预先取消的会话应停止");
+    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { .. }));
+    assert_eq!(error.context().attempts(), 0);
 }
 ```
 
@@ -232,6 +245,14 @@ fn main() {
 到期后重新调用 `begin_attempt`，并处理它返回的终止错误。若等待期间收到取消请求，
 会话会以 `Backoff` 阶段的取消结果结束。手动时钟只用于复现调度器到期投递；
 生产环境应使用与会话计时器同域的时钟安排投递。`RetrySession` 自身既不等待，也不注册计时器。
+
+只有 [`begin_attempt`](https://docs.rs/qubit-retry/0.26.0/qubit_retry/struct.RetrySession.html#method.begin_attempt)
+返回 `Admitted` 后才能执行操作；每次准入必须且只能通过
+[`record_result`](https://docs.rs/qubit-retry/0.26.0/qubit_retry/struct.RetrySession.html#method.record_result)
+登记一次结果。`Waiting` 不会准入操作。在操作仍进行时再次调用 `begin_attempt`、没有对应准入就登记结果，
+或在会话终止后调用这两个方法，都是会 panic 的状态误用。会话返回 `Complete`、`Failed` 或准入错误后，
+调用方应停止继续驱动。会话取消应使用 `with_cancellation_token` 配置。取消仅在准入和失败处理边界检查，
+不会打断已准入的操作，也不会唤醒外部调度器；调度器应观察令牌，并在适当时机再次驱动会话。
 
 ### 不绑定运行时的异步执行
 
