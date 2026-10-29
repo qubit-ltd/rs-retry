@@ -554,7 +554,7 @@ If the remaining budget cannot fit the required wait, stop retrying.
 | Setting | Configured on | What it limits |
 | --- | --- | --- |
 | `max_attempts(n)` | Policy builder | Total attempts, including the first; zero is invalid |
-| `operation_time_budget(d)` | Policy builder | Cumulative admitted-operation time; excludes backoff and control callbacks |
+| `operation_time_budget(d)` | Policy builder | Cumulative admitted-attempt time from admission to accounting completion; excludes backoff and control callbacks |
 | `total_time_budget(d)` | Policy builder | Flow elapsed time, including control callbacks and backoff |
 | `hard_attempt_timeout(d)` | Async/worker executor | Waiting for one attempt |
 | `hard_flow_timeout(d)` | Async/worker executor | Waiting across the flow, including retries and backoff |
@@ -563,6 +563,12 @@ Both elapsed budgets are **soft admission limits**. If an operation starts with
 time remaining and finishes successfully after the budget, that success is
 retained when completion accounting is valid. A zero elapsed budget is valid but
 prevents even the first attempt. Omitted budgets mean no elapsed limit.
+Operation elapsed time uses the configured clock, not CPU time. In async mode it
+includes the admitted future's lifetime, including waits. In worker mode it also
+includes post-admission scheduling, TLS destruction, exit confirmation, and
+cleanup observed before the terminal snapshot. A failed worker's exit wait can
+therefore exhaust the operation budget and prevent another attempt, while a
+successful admitted operation remains successful under the soft limit.
 
 For a remote read, you might set a 10 s total budget on the policy, then a 2 s
 attempt timeout and a 5 s flow timeout on its async executor. These settings
@@ -757,6 +763,11 @@ there is no platform-wide maximum finite grace to rely on. The flow starts no
 further attempt while the worker may remain alive. Do not automatically start
 replacement work that could overlap it. Without a timeout or cancellation, the
 normal worker-exit wait can also be unbounded. Threads cannot be forcibly killed.
+The operation-time snapshot includes the worker's post-admission exit and cleanup
+wait observed before accounting completes. If grace expires while a worker is
+still alive, the result is frozen then; later time from that residual worker is
+not tracked. Grace waiting uses standard `Instant`, while reported elapsed time
+uses the configured timer clock.
 
 ## Handle results and observe execution
 
@@ -931,8 +942,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The two-second operation contributes to both counters; the one-second wait only
-contributes to total time. Finish each attempt token before beginning the next.
+The two-second admitted-attempt span contributes to both counters; the one-second
+wait only contributes to total time. A snapshot with an unfinished attempt does
+not invent its unaccounted elapsed time. Finish each attempt token before
+beginning the next.
 Tokens belong to their original budget; dropping an unfinished token prevents
 further admission in that budget. `check_retry_after` validates a proposed wait,
 and admission rechecks limits after the actual wait.

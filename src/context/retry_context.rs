@@ -19,10 +19,13 @@ use super::RetryContextParts;
 ///
 /// `attempts` counts operations that actually started, while `current_attempt`
 /// identifies the attempt associated with the current callback or operation.
-/// `operation_elapsed` is cumulative user operation execution time only;
-/// listener and retry-sleep time are excluded. `total_elapsed` is monotonic
-/// elapsed time spent in the retry flow and includes operation execution,
-/// retry sleep, retry-after sleep, and retry-control listener time.
+/// `operation_elapsed` is cumulative admitted-attempt time from admission to
+/// accounting completion; retry backoff and control callbacks are excluded.
+/// In worker mode it includes post-admission scheduling, TLS destruction, exit
+/// confirmation, and cleanup observed before the terminal snapshot.
+/// `total_elapsed` is monotonic elapsed time spent in the retry flow and
+/// includes operation execution, retry sleep, retry-after sleep, and
+/// retry-control listener time.
 ///
 /// # Examples
 ///
@@ -43,11 +46,11 @@ pub struct RetryContext {
     current_attempt: Option<NonZeroU32>,
     /// Configured maximum attempts.
     max_attempts: u32,
-    /// Configured maximum cumulative user operation time.
+    /// Configured maximum cumulative admitted-attempt time.
     operation_time_budget: Option<Duration>,
     /// Configured maximum total retry-flow elapsed time.
     total_time_budget: Option<Duration>,
-    /// Cumulative user operation time consumed by this retry flow.
+    /// Cumulative admitted-attempt time consumed by this retry flow.
     operation_elapsed: Duration,
     /// Total monotonic time consumed by this retry flow.
     total_elapsed: Duration,
@@ -153,7 +156,7 @@ impl RetryContext {
         self.max_attempts.saturating_sub(1)
     }
 
-    /// Returns the optional cumulative user operation time budget.
+    /// Returns the optional cumulative admitted-attempt time budget.
     ///
     /// # Returns
     /// `Some(Duration)` for bounded retry flows, or `None` for unlimited flows.
@@ -171,11 +174,14 @@ impl RetryContext {
         self.total_time_budget
     }
 
-    /// Returns cumulative user operation time consumed by the retry flow.
+    /// Returns cumulative admitted-attempt time consumed by the retry flow.
     ///
     /// # Returns
-    /// Total user operation time observed at this event. Listener execution and
-    /// retry sleeps are excluded.
+    /// Cumulative admitted-attempt time observed at this event, measured with
+    /// the configured clock rather than CPU time. It spans admission through
+    /// accounting completion and excludes retry backoff and control callbacks.
+    /// In worker mode it includes post-admission scheduling, TLS destruction,
+    /// exit confirmation, and cleanup observed before the terminal snapshot.
     #[inline]
     #[must_use]
     pub fn operation_elapsed(&self) -> Duration {
@@ -196,8 +202,11 @@ impl RetryContext {
     /// Returns elapsed time spent in the last completed attempt.
     ///
     /// # Returns
-    /// Last completed attempt elapsed time. Before the first completed attempt,
-    /// this is zero.
+    /// Time from admission to accounting completion for the last completed
+    /// attempt, measured with the configured clock. In worker mode it includes
+    /// post-admission scheduling, TLS destruction, exit confirmation, and
+    /// cleanup observed before the terminal snapshot. Before the first
+    /// completed attempt, this is zero.
     #[inline]
     #[must_use]
     pub fn last_attempt_elapsed(&self) -> Duration {

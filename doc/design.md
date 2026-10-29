@@ -94,8 +94,12 @@ An attempt proceeds through preparation and commitment:
    async loop and pass that committed, one-based ordinal to the operation
    factory. The ordinal resets for each run; the original `run` entry points
    adapt by ignoring it.
-5. On completion, commit operation time and clear active state when appropriate.
-   On failure, retain the application error, timeout, or panic for later decisions.
+5. On completion, commit admitted-attempt time from admission through accounting
+   completion, then clear active state when appropriate. This uses the configured
+   clock, not CPU time; it excludes retry backoff and control callbacks. In worker
+   mode it includes post-admission scheduling, TLS destruction, exit confirmation,
+   and cleanup observed before the terminal snapshot. On failure, retain the
+   application error, timeout, or panic for later decisions.
 6. Notify failure observers, select the first decisive rule, calculate backoff,
    check continuation, and notify scheduling observers only if currently eligible.
    Recheck after callbacks and actual waiting before another admission.
@@ -211,6 +215,15 @@ starts another worker while the previous one may remain alive. Worker exit
 includes TLS destruction. Uncooperative work or TLS destruction can leave worker
 and reaper threads alive; with no timeout or cancellation, the normal exit wait
 can also remain unbounded.
+
+Worker attempt accounting ends after normal exit confirmation or after the
+terminal infrastructure snapshot. Cancellation cleanup observed before that
+snapshot can contribute to `operation_elapsed`; the grace deadline itself uses
+standard `Instant`, while elapsed values use the configured timer clock. Time
+consumed by a worker that remains alive after the frozen result is not tracked.
+Because operation budgets are soft admission limits, a failed attempt whose
+worker-exit wait exhausts the budget cannot start another attempt; successful
+admitted work remains successful even when accounting exceeds the budget.
 
 ## Panic isolation and completion ownership
 

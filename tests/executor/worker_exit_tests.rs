@@ -27,7 +27,9 @@ use qubit_clock::TimerFuture;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryConfig;
 use qubit_retry::RetryErrorReason;
+use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
+use qubit_retry::RetryLimitKind;
 use qubit_retry::WorkerRetry;
 use qubit_retry::WorkerStopTrigger;
 
@@ -111,17 +113,26 @@ fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger)
         let _ = result_sender.send(result);
     });
     let entered = entered_receiver.recv_timeout(Duration::from_secs(2));
+    let clock_advance = if entered.is_ok() {
+        let elapsed = if trigger == WorkerStopTrigger::Cancellation {
+            Duration::from_secs(7)
+        } else {
+            Duration::from_secs(60)
+        };
+        Some(clock.advance(elapsed))
+    } else {
+        None
+    };
     if trigger == WorkerStopTrigger::Cancellation || entered.is_err() {
         token.cancel();
-    } else {
-        clock
-            .advance(Duration::from_secs(60))
-            .expect("expire original deadline");
     }
     let result = result_receiver.recv_timeout(Duration::from_secs(2));
     let _ = release_sender.send(());
     runner.join().expect("retry runner joins after gate release");
     entered.expect("worker entered TLS destruction");
+    clock_advance
+        .expect("clock advance attempted")
+        .expect("advance TLS span");
     let error = result
         .expect("retry must return before TLS gate release")
         .expect_err("worker still exiting");
@@ -129,7 +140,86 @@ fn assert_tls_exit_is_bounded(operation_fails: bool, trigger: WorkerStopTrigger)
         failure: RetryInfrastructureFailure::WorkerStillRunning { trigger: actual }, ..
     } if *actual == trigger));
     assert_eq!(error.context().attempts(), 1);
+    let expected_elapsed = if trigger == WorkerStopTrigger::Cancellation {
+        Duration::from_secs(7)
+    } else {
+        Duration::from_secs(60)
+    };
+    assert_eq!(error.context().operation_elapsed(), expected_elapsed);
+    assert_eq!(error.context().last_attempt_elapsed(), expected_elapsed);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_worker_success_accounts_tls_exit_time() {
+    assert_tls_exit_time_accounted(false);
+}
+
+#[test]
+fn test_worker_failure_tls_time_exhausts_operation_budget() {
+    assert_tls_exit_time_accounted(true);
+}
+
+/// Advances only the TLS exit span and checks completed-attempt accounting.
+fn assert_tls_exit_time_accounted(operation_fails: bool) {
+    let (entered_sender, entered_receiver) = mpsc::channel();
+    let (release_sender, release_receiver) = mpsc::channel();
+    let (result_sender, result_receiver) = mpsc::channel();
+    let gate = Mutex::new(Some(ExitGate {
+        entered: entered_sender,
+        release: release_receiver,
+    }));
+    let clock = ManualMonotonicClock::new_shared();
+    let runner_clock = Arc::clone(&clock);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let operation_calls = Arc::clone(&calls);
+    let runner = thread::spawn(move || {
+        let config = RetryConfig::<&'static str>::builder()
+            .max_attempts(2)
+            .operation_time_budget(Duration::from_secs(5))
+            .fallback(RetryFallback::Retry)
+            .build()
+            .expect("valid config");
+        let result = WorkerRetry::new(&config).timer(runner_clock.new_timer()).run(move |_| {
+            operation_calls.fetch_add(1, Ordering::SeqCst);
+            EXIT_GATE.with(|slot| {
+                *slot.borrow_mut() = gate.lock().expect("gate lock").take();
+            });
+            if operation_fails { Err("retryable") } else { Ok(()) }
+        });
+        let _ = result_sender.send(result);
+    });
+    let entered = entered_receiver.recv_timeout(Duration::from_secs(2));
+    let advanced = if entered.is_ok() {
+        Some(clock.advance(Duration::from_secs(7)))
+    } else {
+        None
+    };
+    // Release before every assertion, including synchronization failures.
+    let _ = release_sender.send(());
+    let received = result_receiver.recv_timeout(Duration::from_secs(2));
+    runner.join().expect("runner joins after TLS release");
+    entered.expect("worker entered TLS destruction");
+    advanced.expect("clock advance attempted").expect("advance TLS span");
+    let result = received.expect("runner returns after TLS release");
+    let context = if operation_fails {
+        let error = result.expect_err("TLS span exhausts operation budget");
+        assert!(matches!(
+            error.reason(),
+            RetryErrorReason::Exhausted {
+                limit: RetryLimitKind::OperationElapsed,
+            }
+        ));
+        assert_eq!(error.last_error(), Some(&"retryable"));
+        *error.context()
+    } else {
+        let success = result.expect("soft budget does not revoke success");
+        *success.context()
+    };
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(context.attempts(), 1);
+    assert_eq!(context.operation_elapsed(), Duration::from_secs(7));
+    assert_eq!(context.last_attempt_elapsed(), Duration::from_secs(7));
 }
 
 /// Converts a manually released timeout into a controlled poll failure.
