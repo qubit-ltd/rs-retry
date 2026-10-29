@@ -325,6 +325,15 @@ impl<'a, E: Send + 'static> WorkerRetry<'a, E> {
                 || controller.commit_prepared_attempt(plan, clock, cancellation),
             )?;
 
+            if matches!(
+                &outcome,
+                BlockingAttemptOutcome::Completed(Err(_))
+                    | BlockingAttemptOutcome::Stopped { .. }
+                    | BlockingAttemptOutcome::TimerFailed { .. }
+            ) {
+                operation.discard_value();
+            }
+
             match outcome {
                 BlockingAttemptOutcome::Completed(Ok(())) => {
                     let context = controller.finish_success(clock)?;

@@ -56,6 +56,19 @@ impl<T, F> BlockingValueOperation<T, F> {
         let mut value = self.value.lock().unwrap_or_else(PoisonError::into_inner);
         value.take().expect("retry loop succeeded without an operation value")
     }
+
+    /// Discards a captured value after its worker has exited.
+    ///
+    /// The value is removed while holding the slot lock and dropped after the
+    /// lock is released. Call this only when the worker is known to have
+    /// exited and its result will not be used.
+    pub(in crate::executor) fn discard_value(&self) {
+        let discarded = {
+            let mut slot = self.value.lock().unwrap_or_else(PoisonError::into_inner);
+            slot.take()
+        };
+        drop(discarded);
+    }
 }
 
 impl<T, E, F> BlockingAttempt<E> for BlockingValueOperation<T, F>
