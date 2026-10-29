@@ -1,7 +1,10 @@
 """Regression tests for retry configuration API migration."""
+from contextlib import redirect_stderr
 import importlib.util
+from io import StringIO
 from pathlib import Path
 import unittest
+from unittest import mock
 
 SPEC = importlib.util.spec_from_file_location(
     "migrate_retry_config_api",
@@ -12,6 +15,17 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ImportMigrationTests(unittest.TestCase):
+    def test_retired_entrypoint_never_scans_reads_writes_or_migrates(self):
+        diagnostic = StringIO()
+        with mock.patch.object(Path, "rglob", side_effect=AssertionError("must not scan")), \
+                mock.patch.object(Path, "read_text", side_effect=AssertionError("must not read")), \
+                mock.patch.object(Path, "write_text", side_effect=AssertionError("must not write")), \
+                mock.patch.object(MODULE, "migrate", side_effect=AssertionError("must not transform")), \
+                redirect_stderr(diagnostic):
+            self.assertEqual(MODULE.main(), 2)
+        self.assertIn("retired", diagnostic.getvalue())
+        self.assertIn("No files were modified", diagnostic.getvalue())
+
     def test_grouped_import_adds_each_required_symbol(self):
         for symbol in ("RetryConfig", "TokioRetry", "WorkerRetry"):
             for group in ("Retry, RetryPolicy", "\n    Retry,\n    RetryPolicy,\n"):

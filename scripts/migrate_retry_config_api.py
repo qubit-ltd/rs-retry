@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Migrate rs-retry tests/benches from Retry.sync() API to RetryConfig + executors."""
+"""Historical text-rewrite helpers for an earlier retry API migration.
+
+These helpers do not recognize arbitrary Rust syntax and must not be applied
+directly to current source files. The command-line migration entrypoint is retired.
+"""
 
 from __future__ import annotations
 
@@ -234,21 +238,14 @@ def should_migrate(text: str) -> bool:
 
 
 def main() -> int:
-    root = Path(__file__).resolve().parents[1]
-    paths = list((root / "tests").rglob("*.rs")) + [root / "benches" / "retry_benchmarks.rs"]
-    for path in paths:
-        if "target" in path.parts:
-            continue
-        original = path.read_text()
-        if not should_migrate(original):
-            continue
-        updated = migrate(original)
-        updated = fix_policy_build_corruption(updated)
-        updated = unwrap_retry_config_build(updated)
-        if updated != original:
-            path.write_text(updated)
-            print(f"updated {path.relative_to(root)}")
-    return 0
+    """Reject automatic use of this historical text-rewrite migration."""
+    print(
+        "This historical retry API migration command is retired. "
+        "No files were modified. Migrate version-specific call sites manually "
+        "and run the relevant tests; do not apply these helpers to arbitrary Rust source.",
+        file=sys.stderr,
+    )
+    return 2
 
 
 if __name__ == "__main__":
