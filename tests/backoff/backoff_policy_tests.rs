@@ -64,6 +64,31 @@ fn test_bounded_zero_jitter_preserves_large_duration_exactly() {
     assert_eq!(actual, initial);
 }
 
+#[test]
+fn test_bounded_nonzero_jitter_preserves_exact_interval_samples() {
+    let base = Duration::from_millis(100);
+    for (sample, expected_ms) in [(0.0, 75), (0.5, 100), (1.0, 125)] {
+        let mut state = BackoffPolicy::fixed(base)
+            .with_bounded_jitter(0.25)
+            .expect("valid bounded jitter")
+            .start_with_random_source(Arc::new(FixedRetryRandomSource::new(sample)));
+        let step = state.next(BackoffRequest::policy());
+        assert_eq!(step.base_delay(), base);
+        assert_eq!(step.effective_delay(), Duration::from_millis(expected_ms));
+    }
+}
+
+#[test]
+fn test_bounded_full_ratio_allows_zero_lower_endpoint() {
+    let mut state = BackoffPolicy::fixed(Duration::from_millis(100))
+        .with_bounded_jitter(1.0)
+        .expect("valid full ratio")
+        .start_with_random_source(Arc::new(FixedRetryRandomSource::new(0.0)));
+    let step = state.next(BackoffRequest::policy());
+    assert_eq!(step.base_delay(), Duration::from_millis(100));
+    assert_eq!(step.effective_delay(), Duration::ZERO);
+}
+
 /// The first exponential retry must use the configured initial Duration
 /// exactly.
 #[test]

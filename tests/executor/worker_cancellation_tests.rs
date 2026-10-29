@@ -19,7 +19,9 @@ use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
 use std::thread;
+use std::thread::JoinHandle;
 use std::time::Duration;
+use std::time::Instant;
 
 use qubit_clock::ManualMonotonicClock;
 use qubit_clock::MonotonicClock;
@@ -44,6 +46,19 @@ use qubit_retry::WorkerRetry;
 use qubit_retry::WorkerStopTrigger;
 
 use crate::support::TestError;
+
+/// Joins a retry runner only after it has exited within the test watchdog.
+fn join_runner_before_watchdog(runner: JoinHandle<()>) {
+    let started = Instant::now();
+    while !runner.is_finished() {
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "worker retry runner failed to exit before watchdog"
+        );
+        thread::sleep(Duration::from_millis(1));
+    }
+    runner.join().expect("worker retry runner should not panic");
+}
 
 /// Counts attempt-failed observer callbacks.
 struct CountAttemptFailed {
@@ -196,15 +211,17 @@ fn test_worker_backoff_without_cancellation_token_reaches_next_attempt() {
             .expect("test should receive the retry result");
     });
 
-    registered_receiver
-        .recv_timeout(Duration::from_secs(2))
-        .expect("worker backoff timer should be registered");
+    let registered = registered_receiver.recv_timeout(Duration::from_secs(2));
+    if registered.is_err() {
+        timer_state.complete();
+        panic!("worker backoff timer registration did not complete: {registered:?}");
+    }
     timer_state.complete();
-    let result = result_receiver.recv_timeout(Duration::from_secs(2));
-    runner.join().expect("worker retry runner should not panic");
-    let success = result
-        .expect("completed timer should wake the worker backoff")
-        .expect("the second worker attempt should succeed");
+    let success = result_receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("worker backoff result did not arrive before watchdog");
+    join_runner_before_watchdog(runner);
+    let success = success.expect("the second worker attempt should succeed");
 
     assert_eq!(*success.value(), 42);
     assert_eq!(success.context().attempts(), 2);
@@ -452,14 +469,19 @@ fn test_worker_backoff_cancellation_wins_over_timer_completion() {
             .expect("test should receive the retry result");
     });
 
-    registered_receiver.recv().expect("backoff timer should be registered");
+    let registered = registered_receiver.recv_timeout(Duration::from_secs(2));
+    if registered.is_err() {
+        cancellation.cancel();
+        timer_state.complete();
+        panic!("worker backoff timer registration did not complete: {registered:?}");
+    }
     cancellation.cancel();
     timer_state.complete();
     let error = result_receiver
-        .recv()
-        .expect("cancelled retry should return")
+        .recv_timeout(Duration::from_secs(2))
+        .expect("cancelled worker backoff result did not arrive before watchdog")
         .expect_err("backoff cancellation must terminate the retry");
-    runner.join().expect("worker retry runner should not panic");
+    join_runner_before_watchdog(runner);
 
     let RetryErrorReason::Cancelled { phase } = error.reason() else {
         panic!("expected a cancellation terminal");
