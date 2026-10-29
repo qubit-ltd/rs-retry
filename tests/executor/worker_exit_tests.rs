@@ -33,6 +33,8 @@ use qubit_retry::RetryLimitKind;
 use qubit_retry::WorkerRetry;
 use qubit_retry::WorkerStopTrigger;
 
+use crate::support::run_worker_test;
+
 struct ExitGate {
     entered: Sender<()>,
     release: Receiver<()>,
@@ -53,25 +55,25 @@ thread_local! {
 /// finishes.
 #[test]
 fn test_worker_exit_cancellation_bounds_tls_destructor() {
-    assert_tls_exit_is_bounded(false, WorkerStopTrigger::Cancellation);
+    run_worker_test(|| assert_tls_exit_is_bounded(false, WorkerStopTrigger::Cancellation));
 }
 
 /// A returned business error cannot trigger another attempt before thread exit.
 #[test]
 fn test_worker_exit_error_cancellation_bounds_tls_destructor() {
-    assert_tls_exit_is_bounded(true, WorkerStopTrigger::Cancellation);
+    run_worker_test(|| assert_tls_exit_is_bounded(true, WorkerStopTrigger::Cancellation));
 }
 
 /// The original manual attempt deadline remains active during TLS destruction.
 #[test]
 fn test_worker_exit_timeout_bounds_tls_destructor() {
-    assert_tls_exit_is_bounded(false, WorkerStopTrigger::AttemptTimeout);
+    run_worker_test(|| assert_tls_exit_is_bounded(false, WorkerStopTrigger::AttemptTimeout));
 }
 
 /// A failed timer poll also bounds the wait for TLS destruction.
 #[test]
 fn test_worker_exit_timer_failure_bounds_tls_destructor() {
-    assert_tls_exit_is_bounded(false, WorkerStopTrigger::TimerFailure);
+    run_worker_test(|| assert_tls_exit_is_bounded(false, WorkerStopTrigger::TimerFailure));
 }
 
 /// Installs a controlled destructor and always releases it before asserting.

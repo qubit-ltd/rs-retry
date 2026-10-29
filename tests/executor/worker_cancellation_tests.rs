@@ -46,6 +46,7 @@ use qubit_retry::WorkerRetry;
 use qubit_retry::WorkerStopTrigger;
 
 use crate::support::TestError;
+use crate::support::run_worker_test;
 
 /// Joins a retry runner only after it has exited within the test watchdog.
 fn join_runner_before_watchdog(runner: JoinHandle<()>) {
@@ -301,28 +302,30 @@ fn test_worker_attempt_cancellation_discards_late_success() {
 /// Verifies an unbounded grace still reaps a cooperatively exiting worker.
 #[test]
 fn test_worker_attempt_cancellation_supports_maximum_grace() {
-    let cancellation = RetryCancellationToken::new();
-    let operation_cancellation = cancellation.clone();
-    let config = RetryConfig::<TestError>::builder()
-        .max_attempts(2)
-        .build()
-        .expect("valid config");
-    let error = WorkerRetry::new(&config)
-        .cancellation_grace(Duration::MAX)
-        .cancellation_token(cancellation)
-        .run(move |_: AttemptCancellationToken| {
-            operation_cancellation.cancel();
-            Ok::<(), TestError>(())
-        })
-        .expect_err("cooperative cancellation must remain a cancellation terminal");
+    run_worker_test(|| {
+        let cancellation = RetryCancellationToken::new();
+        let operation_cancellation = cancellation.clone();
+        let config = RetryConfig::<TestError>::builder()
+            .max_attempts(2)
+            .build()
+            .expect("valid config");
+        let error = WorkerRetry::new(&config)
+            .cancellation_grace(Duration::MAX)
+            .cancellation_token(cancellation)
+            .run(move |_: AttemptCancellationToken| {
+                operation_cancellation.cancel();
+                Ok::<(), TestError>(())
+            })
+            .expect_err("cooperative cancellation must remain a cancellation terminal");
 
-    let RetryErrorReason::Cancelled { phase } = error.reason() else {
-        panic!("expected a cancellation terminal");
-    };
-    assert_eq!(*phase, RetryCancellationPhase::Attempt);
-    assert!(error.last_failure().is_none());
-    assert_eq!(error.context().attempts(), 1);
-    assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
+        let RetryErrorReason::Cancelled { phase } = error.reason() else {
+            panic!("expected a cancellation terminal");
+        };
+        assert_eq!(*phase, RetryCancellationPhase::Attempt);
+        assert!(error.last_failure().is_none());
+        assert_eq!(error.context().attempts(), 1);
+        assert_eq!(error.context().current_attempt().map(NonZeroU32::get), Some(1));
+    });
 }
 
 /// Verifies a late application error cannot invoke failure callbacks or rules.
