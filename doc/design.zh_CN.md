@@ -202,11 +202,13 @@ serde DTO 拒绝未知或无关字段，并区分 ratio 缺失与 null。
 
 ## 下游所有权边界
 
+下列行为描述已于 2026-10-29 按当前下游源码核对；带日期的依赖列仍是历史快照。本次源码核对不代表本地 path 集成已通过。
+
 | 消费者 | 终态转换与诊断 | 依赖事实（2026-10-28） | 验证状态 |
 | --- | --- | --- |
 | rs-http | 借用原错误投影领域 kind/message 和 HTTP 字段，将完整 RetryError 移入 source，保留原 HttpError/后端链及完成诊断 | manifest `0.26`（`tokio`）；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
-| rs-cas | 保留 CasRetryFailure、timeout_current 投影，在堆上的详情对象中保存完成诊断，提供借用 getter 与无损消费拆解 | manifest `0.26`；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
-| rs-event-bus | 空诊断保持既有映射，非空诊断以 RetryCompletionDiagnostics 包装 source/context/diagnostics，保留 Error::source、Clone/Eq | manifest `^0.26`（`worker, async`）；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
+| rs-cas | 消费 `RetryError`，映射为 CAS 自有终态、上下文和 `CasAttemptFailure`；完成回调失败转换为 `CasDiagnostic`。`into_last_failure` 只返回保留的失败并丢弃其余元数据。 | manifest `0.26`；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
+| rs-event-bus | `PublishError::Retry` 与 `DeliveryError::Retry` 完整持有 `Box<RetryError<...>>`，包括终态上下文和完成诊断；这两个领域错误不提供旧描述中的 `Clone`/`Eq` 合同。 | manifest `^0.26`（`worker, async`）；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
 | rs-event-bus-redis | 与重试相关的行为主要通过 EventBus 消费端测试覆盖；本轮仅记录声明依赖事实 | manifest `0.26`；lock `0.26.0`，crates.io registry | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
 | rs-http SSE | 独立组合 RetryBudget 和 BackoffState，执行领域 1ms 下限/服务端 cap，不转换完成观察者诊断 | 同上，使用 `rs-http` manifest/lock | 只读核对 manifest/lock；本轮未重跑当前本地 path 集成 |
 
@@ -214,8 +216,7 @@ serde DTO 拒绝未知或无关字段，并区分 ratio 缺失与 null。
 依赖 `0.25`，`rs-event-bus` 使用本地 `0.26` 集成。本轮 2026-10-28 的事实仅来自四仓
 当前 manifest 与 lockfile 的只读核查；没有重跑当前本地 path 集成，因此不代表本地集成通过。
 
-HTTP 的 method、URL、status、preview、retry_after、log_redactor 均保留，source 所有权不复制。
-EventBus 默认规则对新包装返回 Abort；拦截器来源识别保留共享上下文身份，报告/死信元数据使用稳定包装 kind 和内部领域消息。
+HTTP 的 method、URL、status、preview、`retry_after`、`log_redactor` 均保留，source 所有权不复制。EventBus 在领域层 Retry 变体中直接保留完整重试终态错误。
 内置适配层成功路径当前不注册完成观察者，明确丢弃空诊断；未来增加注册入口必须在同次变更提供成功诊断出口。
 
 ## 验证契约

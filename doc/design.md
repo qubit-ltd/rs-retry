@@ -271,11 +271,13 @@ keep absent numeric ratio distinct from null.
 
 ## Downstream ownership boundaries
 
+The behavior descriptions below were checked against the current downstream source on 2026-10-29. The dated dependency columns remain historical snapshots; this source review does not establish a local-path integration pass.
+
 | Consumer | Terminal conversion and diagnostics | Dependency facts (2026-10-28) | Verification status |
 | --- | --- | --- |
 | rs-http | Outer domain kind/message and HTTP fields are projected by borrowing; complete RetryError is moved into source, preserving the original HttpError/backend chain and completion failures | Manifest `0.26` with `tokio`; lock `0.26.0`, crates.io registry | Manifest/lock read only; current local path integration not rerun |
-| rs-cas | Preserve CasRetryFailure and timeout_current projection, store completion failures out of line, expose borrowed diagnostics and lossless consuming parts | Manifest `0.26`; lock `0.26.0`, crates.io registry | Manifest/lock read only; current local path integration not rerun |
-| rs-event-bus | Preserve existing domain mapping for empty diagnostics; otherwise wrap source/context/diagnostics in terminal RetryCompletionDiagnostics with Error::source and Clone/Eq | Manifest `^0.26` with `worker, async`; lock `0.26.0`, crates.io registry | Manifest/lock read only; current local path integration not rerun |
+| rs-cas | Consumes `RetryError` into CAS-owned termination, context, and `CasAttemptFailure`; converts completion failures into `CasDiagnostic`. `into_last_failure` returns only the retained failure and discards the remaining metadata. | Manifest `0.26`; lock `0.26.0`, crates.io registry | Manifest/lock read only; current local path integration not rerun |
+| rs-event-bus | `PublishError::Retry` and `DeliveryError::Retry` retain the complete `Box<RetryError<...>>`, including terminal context and completion diagnostics. These domain errors do not provide the previously described `Clone`/`Eq` contract. | Manifest `^0.26` with `worker, async`; lock `0.26.0`, crates.io registry | Manifest/lock read only; current local path integration not rerun |
 | rs-event-bus-redis | Retry-related behavior is primarily exercised through EventBus consumer tests; this round records the declared dependency only | Manifest `0.26`; lock `0.26.0`, crates.io registry | Manifest/lock read only; current local path integration not rerun |
 | rs-http SSE | Independently compose RetryBudget and BackoffState; enforce domain 1ms floor/server cap; no completion observer conversion | Same `rs-http` manifest/lock above | Manifest/lock read only; current local path integration not rerun |
 
@@ -285,13 +287,12 @@ integration for `rs-event-bus`. The 2026-10-28 facts above come only from readin
 the four current manifests and lockfiles. This round did not rerun local-path
 integration, so it makes no current integration-pass claim.
 
-HTTP method, URL, status, preview, retry_after and log_redactor are retained;
-source ownership is not duplicated. EventBus's default rule aborts on the wrapper;
-interceptor provenance preserves shared context identity, and reporting/dead-letter
-metadata sees its stable wrapper kind plus underlying domain message. Built-in
-adapter success paths register no completion observers and explicitly discard
-empty diagnostics. Future observer registration requires a success diagnostic
-outlet as part of the same change.
+HTTP method, URL, status, preview, `retry_after` and `log_redactor` are retained;
+source ownership is not duplicated. EventBus retains the terminal retry error
+directly in its domain retry variants. Built-in adapter success paths register
+no completion observers and explicitly discard empty diagnostics. Future
+observer registration requires a success diagnostic outlet as part of the same
+change.
 
 ## Verification contract
 
