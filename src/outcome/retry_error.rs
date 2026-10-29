@@ -69,14 +69,27 @@ impl<E> RetryError<E> {
         &self.context
     }
 
-    /// Returns the most recent attempt failure, when one exists.
+    /// Returns the most recently retained attempt failure, when one exists.
+    ///
+    /// This failure may belong to an earlier attempt. Cancellation or an
+    /// infrastructure failure can terminate a later admitted attempt without
+    /// replacing it. Inspect `reason()` and `context()` together for
+    /// attribution.
     #[must_use = "inspect the last attempt failure"]
     pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
         self.last_failure.as_ref()
     }
 
-    /// Returns the application error from the most recent attempt, when one
-    /// exists.
+    /// Returns the application error in the most recently retained failure.
+    ///
+    /// The error may belong to an earlier attempt, rather than the last
+    /// admitted operation. Inspect `reason()` and `context()` together for
+    /// attribution.
+    ///
+    /// # Returns
+    /// `Some` when the retained failure contains an application error;
+    /// otherwise `None`, including when no attempt failure has been
+    /// retained.
     #[must_use = "inspect the application error"]
     pub fn last_error(&self) -> Option<&E> {
         self.last_failure.as_ref().and_then(AttemptFailure::as_error)
@@ -163,7 +176,7 @@ impl<E> RetryError<E> {
     }
 }
 
-impl<E: fmt::Display> fmt::Display for RetryError<E> {
+impl<E> fmt::Display for RetryError<E> {
     /// Formats the terminal reason and number of admitted attempts.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -176,7 +189,12 @@ impl<E: fmt::Display> fmt::Display for RetryError<E> {
 }
 
 impl<E: Error + 'static> Error for RetryError<E> {
-    /// Exposes the last application error as the standard error source.
+    /// Exposes the application error in the most recently retained failure.
+    ///
+    /// The error may belong to an earlier attempt. Cancellation or an
+    /// infrastructure failure can terminate a later admitted attempt without
+    /// replacing it. Inspect `reason()` and `context()` together for
+    /// attribution.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         self.last_error().map(|error| error as &(dyn Error + 'static))
     }

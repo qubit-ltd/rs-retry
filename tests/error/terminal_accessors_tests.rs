@@ -60,3 +60,11 @@ fn test_retry_error_terminal_accessors_are_lossless() {
     assert_eq!(context.attempts(), 1);
     assert_eq!(context.current_attempt(), None);
 }
+
+#[test]
+fn test_retry_error_display_supports_non_display_application_error() {
+    let config = RetryConfig::<()>::builder().build().expect("valid config");
+    let error = Retry::new(&config).run(|| Err::<(), _>(())).unwrap_err();
+    assert_eq!(format!("{error}"), "retry aborted after 1 attempt(s)");
+    assert_eq!(error.to_string(), "retry aborted after 1 attempt(s)");
+}

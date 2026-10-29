@@ -75,6 +75,7 @@ mod asynchronous {
 
     use qubit_clock::test_util::FaultInjectingTimer;
     use qubit_clock::test_util::TimerFailurePoint;
+    use qubit_retry::AttemptFailure;
     use qubit_retry::AttemptFailureMetadata;
     use qubit_retry::RetryCancellationPhase;
     use qubit_retry::RetryCancellationToken;
@@ -134,6 +135,11 @@ mod asynchronous {
             })
             .await
             .expect_err("second attempt cancelled");
+        assert_eq!(error.last_error(), Some(&"first failure"));
+        assert!(matches!(
+            error.last_failure(),
+            Some(AttemptFailure::Error("first failure"))
+        ));
         let (metadata, application_error) = error.into_metadata_and_error();
         assert_eq!(metadata.context().attempts(), 2);
         assert!(matches!(
