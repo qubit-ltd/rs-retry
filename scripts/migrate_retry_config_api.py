@@ -96,20 +96,12 @@ def facade_for_chain(chain: str) -> str:
 
 
 def replace_facade_calls(text: str) -> str:
-    # inline: retry.sync().method... -> Retry::new(&retry).method...
-    text = re.sub(r"(\w+)\.sync\(\)\.", r"Retry::new(&\1).", text)
-    text = re.sub(r"(\w+)\.tokio\(\)\.", r"TokioRetry::new(&\1).", text)
-    text = re.sub(r"(\w+)\.worker\(\)\.", r"WorkerRetry::new(&\1).", text)
-
-    # standalone facade without following dot: retry.sync() -> Retry::new(&retry)
-    text = re.sub(r"(\w+)\.sync\(\)", r"Retry::new(&\1)", text)
-    text = re.sub(r"(\w+)\.tokio\(\)", r"TokioRetry::new(&\1)", text)
-    text = re.sub(r"(\w+)\.worker\(\)", r"WorkerRetry::new(&\1)", text)
-
-    # multiline orphaned .sync() / .tokio() / .worker()
-    text = re.sub(r"\n(\s*)\.(sync|tokio|worker)\(\)\s*\n", r"\n", text)
-
-    return text
+    facades = {"sync": "Retry", "tokio": "TokioRetry", "worker": "WorkerRetry"}
+    return re.sub(
+        r"(\w+)\s*\.(sync|tokio|worker)\(\)",
+        lambda match: facades[match.group(2)] + "::new(&" + match.group(1) + ")",
+        text,
+    )
 
 
 def fix_helper_return_types(text: str) -> str:

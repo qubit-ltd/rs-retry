@@ -64,6 +64,36 @@ class ImportMigrationTests(unittest.TestCase):
                 self.assertIn(facade + "::new(&retry).run(operation)", result)
                 self.assertNotIn("." + old + "()", result)
 
+    def test_multiline_facades_preserve_kind_and_are_idempotent(self):
+        for old, facade in (("sync", "Retry"), ("tokio", "TokioRetry"), ("worker", "WorkerRetry")):
+            with self.subTest(old=old):
+                source = "retry\n    ." + old + "()\n    .run(operation);\n"
+                result = MODULE.migrate(source)
+                self.assertIn(facade + "::new(&retry)", result)
+                self.assertNotIn("." + old + "()", result)
+                self.assertEqual(MODULE.migrate(result), result)
+
+    def test_multiline_facades_preserve_following_options_and_await(self):
+        cases = (
+            ("sync", "Retry", "    .hard_attempt_timeout(timeout)\n    .run(operation);"),
+            ("tokio", "TokioRetry", "\n    .timer(timer)\n    .run(operation).await;"),
+            ("worker", "WorkerRetry", "    .worker_thread_name(name)\n    .run(operation);"),
+        )
+        for old, facade, rest in cases:
+            with self.subTest(old=old):
+                source = "retry\n\n  ." + old + "()\n" + rest + "\n"
+                result = MODULE.migrate(source)
+                self.assertIn(facade + "::new(&retry)", result)
+                self.assertIn(rest, result)
+                self.assertEqual(MODULE.migrate(result), result)
+
+    def test_same_line_facade_and_independent_value_remain_supported(self):
+        source = "let executor = retry.tokio();\nlet result = retry.worker().run(operation);\n"
+        result = MODULE.migrate(source)
+        self.assertIn("let executor = TokioRetry::new(&retry);", result)
+        self.assertIn("WorkerRetry::new(&retry).run(operation)", result)
+        self.assertEqual(MODULE.migrate(result), result)
+
 
 if __name__ == "__main__":
     unittest.main()
