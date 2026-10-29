@@ -101,11 +101,18 @@ fn test_policy_builders_cover_backoff_variants() {
         .with_bounded_jitter(1.0)
         .unwrap()
         .start_with_random_source(Arc::new(FixedRetryRandomSource::new(1.0)));
-    let _ = saturated.next(BackoffRequest::policy());
-    let _ = saturated.next(BackoffRequest::policy());
+    for expected_index in [1, 2] {
+        let step = saturated.next(BackoffRequest::policy());
+        assert_eq!(step.retry_index(), expected_index);
+        assert_eq!(step.base_delay(), Duration::MAX);
+        assert_eq!(step.effective_delay(), Duration::MAX);
+    }
     let mut equal_uniform = BackoffPolicy::uniform(Duration::from_millis(4), Duration::from_millis(4))
         .unwrap()
         .with_full_jitter()
         .start_with_random_source(Arc::new(FixedRetryRandomSource::new(0.5)));
-    let _ = equal_uniform.next(BackoffRequest::policy());
+    let step = equal_uniform.next(BackoffRequest::policy());
+    assert_eq!(step.retry_index(), 1);
+    assert_eq!(step.base_delay(), Duration::from_millis(4));
+    assert_eq!(step.effective_delay(), Duration::from_millis(2));
 }
