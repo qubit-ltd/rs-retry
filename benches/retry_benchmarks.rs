@@ -317,18 +317,74 @@ fn benchmark_rule_chain_decision(c: &mut Criterion) {
     });
 }
 
-/// Measures one exponential backoff calculation with fresh state.
+/// Measures first, growing, capped, and jittered exponential backoff steps.
 fn benchmark_backoff_calculation(c: &mut Criterion) {
     let policy = BackoffPolicy::exponential(Duration::from_millis(10), 2.0, Duration::from_secs(1))
         .expect("benchmark backoff policy should be valid");
     let request = BackoffRequest::policy();
 
-    c.bench_function("backoff_calculation", |b| {
+    let first = policy.start().next(request);
+    assert_eq!(first.effective_delay(), Duration::from_millis(10));
+    c.bench_function("backoff_calculation/first", |b| {
         b.iter_batched(
             || policy.start(),
             |mut state| {
-                let step = state.next(black_box(request));
-                let _ = black_box(step);
+                let _ = black_box(state.next(black_box(request)));
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    let mut growth_check = policy.start();
+    let _ = growth_check.next(request);
+    assert_eq!(growth_check.next(request).effective_delay(), Duration::from_millis(20));
+    c.bench_function("backoff_calculation/growth", |b| {
+        b.iter_batched(
+            || {
+                let mut state = policy.start();
+                let _ = state.next(request);
+                state
+            },
+            |mut state| {
+                let _ = black_box(state.next(black_box(request)));
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    let mut capped_check = policy.start();
+    for _ in 0..7 {
+        let _ = capped_check.next(request);
+    }
+    assert_eq!(capped_check.next(request).effective_delay(), Duration::from_secs(1));
+    c.bench_function("backoff_calculation/capped", |b| {
+        b.iter_batched(
+            || {
+                let mut state = policy.start();
+                for _ in 0..7 {
+                    let _ = state.next(request);
+                }
+                state
+            },
+            |mut state| {
+                let _ = black_box(state.next(black_box(request)));
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    let jitter_policy = policy.clone().with_full_jitter();
+    let jitter_check = jitter_policy.start().next(request);
+    assert!(jitter_check.effective_delay() <= jitter_check.base_delay());
+    c.bench_function("backoff_calculation/jitter", |b| {
+        b.iter_batched(
+            || {
+                let mut state = jitter_policy.start();
+                let _ = state.next(request);
+                state
+            },
+            |mut state| {
+                let _ = black_box(state.next(black_box(request)));
             },
             BatchSize::SmallInput,
         );
@@ -373,17 +429,20 @@ fn benchmark_retry_session_success(c: &mut Criterion) {
         .build()
         .expect("valid config");
     let timer = Arc::new(StdTimer::new());
+    let mut contract = RetrySession::new(config.clone(), timer.clone());
+    assert!(matches!(
+        contract.begin_attempt(),
+        Ok(RetrySessionAdmission::Admitted(_))
+    ));
+    assert!(matches!(
+        contract.record_result::<u64>(Ok(7)),
+        RetrySessionStep::Complete(_)
+    ));
     c.bench_function("retry_session_success", |b| {
         b.iter(|| {
             let mut session = RetrySession::new(config.clone(), timer.clone());
-            assert!(matches!(
-                session.begin_attempt(),
-                Ok(RetrySessionAdmission::Admitted(_))
-            ));
-            let RetrySessionStep::Complete(success) = session.record_result::<u64>(Ok(black_box(7))) else {
-                panic!("successful attempt must complete");
-            };
-            let _ = black_box(success);
+            let _ = black_box(session.begin_attempt());
+            let _ = black_box(session.record_result::<u64>(Ok(black_box(7))));
         });
     });
 }
@@ -397,25 +456,24 @@ fn benchmark_retry_session_immediate_retry(c: &mut Criterion) {
         .build()
         .expect("valid config");
     let timer = Arc::new(StdTimer::new());
+    let mut contract = RetrySession::new(config.clone(), timer.clone());
+    assert!(matches!(contract.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 1));
+    assert!(matches!(
+        contract.record_result::<u64>(Err("busy")),
+        RetrySessionStep::RetryAt(_)
+    ));
+    assert!(matches!(contract.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 2));
+    assert!(matches!(
+        contract.record_result(Ok(7_u64)),
+        RetrySessionStep::Complete(_)
+    ));
     c.bench_function("retry_session_immediate_retry", |b| {
         b.iter(|| {
             let mut session = RetrySession::new(config.clone(), timer.clone());
-            assert!(matches!(
-                session.begin_attempt(),
-                Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 1
-            ));
-            assert!(matches!(
-                session.record_result::<u64>(Err("busy")),
-                RetrySessionStep::RetryAt(_)
-            ));
-            assert!(matches!(
-                session.begin_attempt(),
-                Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 2
-            ));
-            let RetrySessionStep::Complete(success) = session.record_result(Ok(black_box(7_u64))) else {
-                panic!("second attempt must complete");
-            };
-            let _ = black_box(success);
+            let _ = black_box(session.begin_attempt());
+            let _ = black_box(session.record_result::<u64>(Err(black_box("busy"))));
+            let _ = black_box(session.begin_attempt());
+            let _ = black_box(session.record_result(Ok(black_box(7_u64))));
         });
     });
 }
@@ -429,6 +487,15 @@ fn benchmark_retry_session_waiting_admission(c: &mut Criterion) {
         .build()
         .expect("valid config");
     let timer = Arc::new(StdTimer::new());
+    let mut contract = RetrySession::new(config.clone(), timer.clone());
+    assert!(matches!(
+        contract.begin_attempt(),
+        Ok(RetrySessionAdmission::Admitted(_))
+    ));
+    let RetrySessionStep::RetryAt(due) = contract.record_result::<u64>(Err("busy")) else {
+        panic!("failure must schedule a retry");
+    };
+    assert!(matches!(contract.begin_attempt(), Ok(RetrySessionAdmission::Waiting(actual)) if actual == due));
     c.bench_function("retry_session_waiting_admission", |b| {
         b.iter_batched(
             || {
@@ -442,12 +509,8 @@ fn benchmark_retry_session_waiting_admission(c: &mut Criterion) {
                 };
                 (session, due)
             },
-            |(mut session, due)| {
-                let outcome = black_box(session.begin_attempt());
-                assert!(matches!(
-                    outcome,
-                    Ok(RetrySessionAdmission::Waiting(actual)) if actual == due
-                ));
+            |(mut session, _due)| {
+                let _ = black_box(session.begin_attempt());
             },
             BatchSize::SmallInput,
         );
