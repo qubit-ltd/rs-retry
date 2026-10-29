@@ -18,8 +18,15 @@ def add_imports(text: str) -> str:
         if line_needle in text and import_line not in text:
             if "use qubit_retry::Retry;" in text:
                 text = text.replace("use qubit_retry::Retry;", f"use qubit_retry::Retry;\n{import_line}")
-            elif "use qubit_retry::{" in text and line_needle.split("::")[1] not in text.split("use qubit_retry::{")[1].split("}")[0]:
-                text = text.replace("use qubit_retry::{", f"use qubit_retry::{{{line_needle.split('::')[1]}, ", 1)
+            elif "use qubit_retry::{" in text:
+                group = text.split("use qubit_retry::{", 1)[1].split("}", 1)[0]
+                imported = [entry.strip() for entry in group.split(",")]
+                if line_needle not in imported:
+                    text = text.replace(
+                        "use qubit_retry::{",
+                        f"use qubit_retry::{{{line_needle}, ",
+                        1,
+                    )
             else:
                 # first use line
                 for i, line in enumerate(text.splitlines(True)):
