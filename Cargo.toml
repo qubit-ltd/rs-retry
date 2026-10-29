@@ -43,18 +43,18 @@ async = []
 tokio = ["async", "dep:tokio", "qubit-clock/tokio"]
 
 [dependencies]
-qubit-budget = { version = "0.10", features = ["time"] }
-qubit-clock = { version = "0.13" }
+qubit-budget = { version = "^0.10", features = ["time"] }
+qubit-clock = "^0.13"
 fastrand = "^2.5"
 serde = { version = "^1.0", features = ["derive"], optional = true }
 thiserror = "^2.0"
-tokio = { version = "^1.53", features = ["time", "rt", "macros"], optional = true }
+tokio = { version = "^1.54", features = ["time", "rt", "macros"], optional = true }
 
 [dev-dependencies]
 criterion = "^0.8"
-qubit-clock = { version = "0.13", features = ["test-util"] }
+qubit-clock = { version = "^0.13", features = ["test-util"] }
 serde_json = "^1.0"
-tokio = { version = "1.53", features = ["full", "test-util"] }
+tokio = { version = "^1.54", features = ["full", "test-util"] }
 
 [package.metadata.docs.rs]
 all-features = true
