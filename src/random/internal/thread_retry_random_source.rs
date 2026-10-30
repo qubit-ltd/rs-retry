@@ -7,6 +7,8 @@
 // =============================================================================
 //! Default retry random source backed by `fastrand`'s thread-local generator.
 
+use fastrand::f64_inclusive;
+
 use crate::RetryRandomSource;
 
 /// Default random source that samples from the current thread-local generator.
@@ -34,6 +36,6 @@ impl RetryRandomSource for ThreadRetryRandomSource {
         if min == max {
             return min;
         }
-        min + (max - min) * fastrand::f64_inclusive()
+        min + (max - min) * f64_inclusive()
     }
 }

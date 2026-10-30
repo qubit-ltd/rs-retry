@@ -13,26 +13,29 @@ use std::time::Duration;
 
 use crate::RetryTimeoutScope;
 
-/// Effective hard timeout selected for one attempt.
+/// Hard timeout and cancellation boundary selected for one attempt.
 #[derive(Clone, Copy)]
 pub(crate) struct EffectiveTimeout {
-    /// Duration until cancellation.
+    /// Maximum duration before this timeout cancels the attempt.
     duration: Duration,
-    /// Boundary responsible for cancellation.
+    /// Whether the attempt or complete retry flow supplied the selected limit.
     scope: RetryTimeoutScope,
 }
 
 impl EffectiveTimeout {
-    /// Selects the shorter hard timeout while retaining its source.
+    /// Selects the shorter configured hard timeout and retains its source.
     ///
-    /// An exact tie is attributed to the configured attempt timeout.
+    /// The per-attempt timeout wins exact ties. A missing limit does not
+    /// constrain selection; when both limits are missing, no timeout is
+    /// selected.
     ///
     /// # Parameters
-    /// - `attempt_timeout`: Per-attempt limit, or None for no limit.
-    /// - `flow_remaining`: Remaining hard-flow time, or None for no limit.
+    /// - `attempt_timeout`: Remaining per-attempt limit, or `None` if unset.
+    /// - `flow_remaining`: Remaining hard-flow limit, or `None` if unset.
     ///
     /// # Returns
-    /// Some shorter enabled limit; None when neither is configured.
+    /// `Some` with the shorter configured limit and its source, or `None` if
+    /// neither limit is configured.
     pub(crate) fn select(attempt_timeout: Option<Duration>, flow_remaining: Option<Duration>) -> Option<Self> {
         match (attempt_timeout, flow_remaining) {
             (Some(attempt), Some(flow)) if attempt <= flow => Some(Self {
@@ -55,7 +58,7 @@ impl EffectiveTimeout {
         }
     }
 
-    /// Returns the selected duration.
+    /// Returns the selected duration before the timeout boundary is reached.
     ///
     /// # Returns
     /// The selected hard timeout duration.
@@ -65,7 +68,7 @@ impl EffectiveTimeout {
         self.duration
     }
 
-    /// Returns the boundary responsible for cancellation.
+    /// Returns which configured timeout supplied the selected duration.
     ///
     /// # Returns
     /// The boundary that wins, with Attempt winning exact ties.

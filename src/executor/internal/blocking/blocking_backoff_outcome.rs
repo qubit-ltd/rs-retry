@@ -10,6 +10,7 @@
 use qubit_clock::TimeError;
 
 /// Result of waiting for one blocking retry delay.
+#[must_use]
 pub(crate) enum BlockingBackoffOutcome {
     /// The configured delay elapsed.
     Elapsed,

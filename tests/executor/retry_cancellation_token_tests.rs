@@ -33,22 +33,26 @@ struct WakeCounter {
 
 impl WakeCounter {
     /// Returns the number of wake notifications observed so far.
+    #[inline]
     fn count(&self) -> usize {
         self.wakes.load(Ordering::SeqCst)
     }
 }
 
 impl Wake for WakeCounter {
+    #[inline]
     fn wake(self: Arc<Self>) {
         self.wake_by_ref();
     }
 
+    #[inline]
     fn wake_by_ref(self: &Arc<Self>) {
         self.wakes.fetch_add(1, Ordering::SeqCst);
     }
 }
 
 /// Creates a counter and a waker that records notifications in that counter.
+#[must_use]
 fn counting_waker() -> (Arc<WakeCounter>, Waker) {
     let counter = Arc::new(WakeCounter::default());
     let waker = Waker::from(Arc::clone(&counter));
@@ -101,6 +105,7 @@ unsafe fn drop_cancel_on_clone_waker(data: *const ()) {
 }
 
 /// Creates a waker that cancels the supplied token when it is cloned.
+#[must_use]
 fn cancel_on_clone_waker(token: &RetryCancellationToken) -> Waker {
     let token = Arc::new(token.clone());
     let raw_waker = RawWaker::new(Arc::into_raw(token).cast(), &CANCEL_ON_CLONE_WAKER_VTABLE);
@@ -146,6 +151,7 @@ unsafe fn drop_drop_cancel_waker(data: *const ()) {
 }
 
 /// Creates a waker that cancels `token` whenever a cloned waker is dropped.
+#[must_use]
 fn drop_cancelling_waker(token: &RetryCancellationToken) -> Waker {
     let token = Arc::new(token.clone());
     let raw_waker = RawWaker::new(Arc::into_raw(token).cast(), &DROP_CANCEL_WAKER_VTABLE);

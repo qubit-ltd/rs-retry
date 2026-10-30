@@ -31,7 +31,6 @@ pub enum RetryCallbackKind {
 }
 
 impl fmt::Display for RetryCallbackKind {
-    ///
     /// Formats the stable human-readable label of this classification.
     ///
     /// # Parameters

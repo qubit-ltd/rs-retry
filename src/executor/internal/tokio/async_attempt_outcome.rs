@@ -15,6 +15,7 @@ use crate::RetryTimeoutScope;
 /// # Type Parameters
 /// - `T`: Successful value owned by the completed operation.
 /// - `E`: Application error owned by the completed operation.
+#[must_use]
 pub(in crate::executor) enum AsyncAttemptOutcome<T, E> {
     /// The operation future completed before its timeout.
     Completed(

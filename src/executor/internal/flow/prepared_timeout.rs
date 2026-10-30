@@ -51,7 +51,6 @@ impl PreparedTimeout {
     /// # Returns
     /// The original absolute deadline, unchanged during registration.
     #[inline]
-    #[must_use = "inspect the prepared absolute deadline"]
     pub(super) fn deadline(self) -> MonotonicInstant {
         self.deadline
     }

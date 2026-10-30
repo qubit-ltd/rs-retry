@@ -10,6 +10,7 @@
 use qubit_clock::TimeError;
 
 /// Result of waiting for one retry delay.
+#[must_use]
 pub(in crate::executor) enum AsyncBackoffOutcome {
     /// The delay elapsed normally.
     Elapsed,

@@ -195,7 +195,9 @@ impl<E: 'static> RetrySession<E> {
                     .and_then(|_| self.controller.commit_attempt(clock, cancellation)),
                 Err(error) => Err(error),
             },
-            RetrySessionPhase::Active | RetrySessionPhase::Finished => unreachable!("phase asserted above"),
+            RetrySessionPhase::Active | RetrySessionPhase::Finished => {
+                unreachable!("phase asserted above")
+            }
         };
         match result {
             Ok(()) => {

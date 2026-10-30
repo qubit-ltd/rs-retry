@@ -17,6 +17,6 @@ fn test_builder_accepts_backoff_policy() {
     let policy = RetryPolicy::builder()
         .backoff(BackoffPolicy::fixed(delay))
         .build()
-        .unwrap();
+        .expect("valid retry policy should build");
     assert_eq!(policy.backoff().maximum_delay(), Some(delay));
 }

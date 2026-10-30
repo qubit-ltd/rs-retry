@@ -17,6 +17,12 @@ fn test_constructors_capture_public_delay_inputs() {
     let hinted_request = BackoffRequest::hint(delay);
     let jittered_hint_request = BackoffRequest::jittered_hint(delay);
 
-    assert_ne!(policy_request, hinted_request);
-    assert_ne!(hinted_request, jittered_hint_request);
+    assert_ne!(
+        policy_request, hinted_request,
+        "policy and hinted requests must represent different inputs"
+    );
+    assert_ne!(
+        hinted_request, jittered_hint_request,
+        "hinted and jittered-hint requests must represent different inputs"
+    );
 }

@@ -182,6 +182,11 @@ impl<'a, E: 'static> TokioRetry<'a, E> {
     /// The Tokio timer is selected when this future is polled. Panics
     /// propagate.
     ///
+    /// # Type Parameters
+    /// - `T`: Successful value returned to the caller.
+    /// - `F`: Factory that creates one operation future per admitted attempt.
+    /// - `Fut`: Future produced by the operation factory.
+    ///
     /// # Parameters
     /// - `operation`: Factory receiving the admitted attempt ordinal.
     ///

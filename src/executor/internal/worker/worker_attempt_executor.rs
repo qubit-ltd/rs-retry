@@ -49,6 +49,11 @@ pub(in crate::executor) struct WorkerAttemptExecutor;
 impl WorkerAttemptExecutor {
     /// Runs one blocking attempt on a worker thread.
     ///
+    /// # Type Parameters
+    /// - `E`: Owned application error transferred across the worker boundary.
+    /// - `X`: Admission error returned directly to the facade.
+    /// - `P`: One-shot callback that commits admission.
+    ///
     /// # Parameters
     /// - `operation`: Shared blocking operation.
     /// - `thread_name`: OS-visible worker name.
@@ -70,11 +75,6 @@ impl WorkerAttemptExecutor {
     /// Operation panics are converted into [`AttemptFailure::Panicked`]. The
     /// worker waits behind a start gate until both threads exist, so either
     /// spawn failure is never counted as an operation attempt.
-    ///
-    /// # Type Parameters
-    /// - `E`: Owned application error transferred across the worker boundary.
-    /// - `X`: Admission error returned directly to the facade.
-    /// - `P`: One-shot callback that commits admission.
     ///
     /// # Errors
     /// Returns the admission callback error without releasing the operation
@@ -285,12 +285,15 @@ thread_local! {
 
 /// Polls a cancellation future once with an event-channel waker.
 ///
+/// # Type Parameters
+/// - `E`: Application error carried by worker events.
+///
 /// # Parameters
 /// - `future`: Cancellation future to register.
 /// - `sender`: Worker event sender weakly referenced by the waker.
 ///
-/// # Type Parameters
-/// - `E`: Application error carried by worker events.
+/// # Returns
+/// Unit; polling may enqueue a wake event when cancellation is ready.
 #[inline]
 fn register_cancellation_waker<E: Send + 'static>(
     future: &mut Pin<Box<crate::RetryCancelled<'_>>>,
@@ -312,7 +315,7 @@ fn register_cancellation_waker<E: Send + 'static>(
 ///
 /// # Returns
 /// The corresponding stable worker stop trigger.
-#[must_use = "use the prepared value or inspect the result"]
+#[must_use = "use this trigger to report why the worker stopped"]
 #[inline]
 fn timeout_trigger(scope: RetryTimeoutScope) -> WorkerStopTrigger {
     match scope {

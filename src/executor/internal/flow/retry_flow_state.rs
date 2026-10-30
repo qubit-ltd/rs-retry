@@ -125,7 +125,6 @@ impl RetryFlowState {
     /// # Returns
     /// Some absolute hard-flow deadline, or None when no limit is configured.
     #[inline]
-    #[must_use = "use the prepared value or inspect the result"]
     pub(crate) fn flow_deadline(&self) -> Result<Option<MonotonicInstant>, TimeError> {
         self.flow_timeout
             .map(|timeout| self.budget.started_at().checked_add(timeout))
@@ -146,6 +145,20 @@ impl RetryFlowState {
     }
 
     /// Prepares an absolute deadline from the current control-boundary sample.
+    ///
+    /// The deadline is capped at the hard-flow deadline when that limit is
+    /// enabled and would expire before the proposed delay.
+    ///
+    /// # Parameters
+    /// - `now`: Current monotonic sample in the flow's clock domain.
+    /// - `delay`: Proposed backoff delay.
+    ///
+    /// # Returns
+    /// The absolute deadline for the proposed delay, capped by the flow limit.
+    ///
+    /// # Errors
+    /// Returns a clock error if the flow deadline overflows, belongs to another
+    /// clock domain, or cannot be compared with `now`.
     #[inline]
     pub(crate) fn backoff_deadline(
         &self,

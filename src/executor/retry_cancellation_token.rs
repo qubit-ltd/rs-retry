@@ -84,8 +84,8 @@ impl RetryCancellationToken {
     ///
     /// `true` when both tokens refer to the same cancellation source; `false`
     /// otherwise.
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn shares_source_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.state, &other.state)
     }

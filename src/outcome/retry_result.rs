@@ -12,8 +12,9 @@ use super::RetrySuccess;
 
 /// Result returned by a retry executor after success or terminal failure.
 ///
-/// `T` is the successful operation value, and `E` is the application error
-/// from the last failed attempt, when one exists.
+/// # Type Parameters
+/// - `T`: The successful operation value.
+/// - `E`: The application error from the last failed attempt, when one exists.
 ///
 /// # Examples
 ///

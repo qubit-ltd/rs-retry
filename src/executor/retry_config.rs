@@ -20,20 +20,9 @@ use crate::rule::RetryRules;
 /// Runtime resources such as clocks, timers, and random sources belong to the
 /// selected execution facade, so cloning a configuration is cheap and
 /// deterministic.
+/// Feature-enabled builds can also use the async, Tokio, or worker facades.
 ///
 /// Construct an executor with [`Retry::new`](super::Retry::new).
-#[cfg_attr(
-    feature = "async",
-    doc = " For runtime-independent async code use [`AsyncRetry::new`](super::AsyncRetry::new)."
-)]
-#[cfg_attr(
-    feature = "tokio",
-    doc = " For async code use [`TokioRetry::new`](super::TokioRetry::new)."
-)]
-#[cfg_attr(
-    feature = "worker",
-    doc = " For blocking offload use [`WorkerRetry::new`](super::WorkerRetry::new)."
-)]
 ///
 /// # Type Parameters
 /// - `E`: Application error passed by reference to shared rules and observers.
@@ -93,7 +82,6 @@ impl<E: 'static> RetryConfig<E> {
     ///
     /// # Returns
     /// A builder with no custom rules or observers.
-    #[must_use = "configure and build the retry configuration"]
     pub fn builder() -> RetryConfigBuilder<E> {
         RetryConfigBuilder::new()
     }
@@ -139,7 +127,6 @@ impl<E: 'static> RetryConfig<E> {
     /// # Returns
     /// The action used when every rule delegates an application error.
     #[inline]
-    #[must_use]
     pub(crate) fn fallback(&self) -> RetryFallback {
         self.fallback
     }

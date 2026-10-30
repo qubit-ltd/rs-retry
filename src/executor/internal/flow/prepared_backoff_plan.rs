@@ -9,7 +9,12 @@
 
 use qubit_clock::MonotonicInstant;
 
-/// Backoff registration data shared by all executor facades.
+/// Backoff registration data shared by executor facades.
+///
+/// The flow controller prepares the absolute deadline and whether the
+/// effective delay is zero. Executor facades must consume this plan to
+/// register the timer or proceed immediately.
+#[must_use = "a prepared backoff plan must be registered or handled immediately"]
 pub(crate) struct PreparedBackoffPlan {
     /// Absolute deadline at which the selected backoff ends.
     deadline: MonotonicInstant,
@@ -25,9 +30,8 @@ impl PreparedBackoffPlan {
     /// - `immediate`: Whether the selected backoff has no delay.
     ///
     /// # Returns
-    /// An immutable plan containing the deadline and immediate flag.
+    /// A plan that the executor must register or handle immediately.
     #[inline]
-    #[must_use]
     pub(crate) fn new(deadline: MonotonicInstant, immediate: bool) -> Self {
         Self { deadline, immediate }
     }

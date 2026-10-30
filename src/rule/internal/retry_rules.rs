@@ -21,6 +21,7 @@ use crate::rule::RetryDecision;
 use crate::rule::RetryRule;
 
 /// Ordered rules. The first concrete decision wins.
+///
 /// # Type Parameters
 /// - `E`: Application error borrowed while each rule selects its decision.
 pub(crate) struct RetryRules<E> {

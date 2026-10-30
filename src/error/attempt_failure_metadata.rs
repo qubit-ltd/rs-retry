@@ -27,6 +27,7 @@ use super::RetryTimeoutScope;
 ///     }
 /// ));
 /// ```
+#[must_use]
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum AttemptFailureMetadata {

@@ -21,7 +21,9 @@ use crate::RetryErrorReason;
 use crate::internal::retry_panic_from_payload;
 use crate::observer::RetryObserver;
 
-/// Ordered observer collection.
+/// Stores observers in registration order and shares their callback objects
+/// across retry configuration clones without cloning application errors.
+///
 /// # Type Parameters
 /// - `E`: Application error borrowed by the shared lifecycle observers.
 pub(crate) struct RetryObservers<E> {
@@ -30,11 +32,9 @@ pub(crate) struct RetryObservers<E> {
     observers: Arc<[Arc<dyn RetryObserver<E>>]>,
 }
 
-/// Clones the ordered observer references without cloning the operation error.
 impl<E> Clone for RetryObservers<E> {
-    ///
-    /// Clones the ordered observer references without duplicating callback
-    /// objects.
+    /// Shares the ordered observer references without duplicating callback
+    /// objects or cloning an operation error.
     ///
     /// # Returns
     /// A collection sharing the same Arc-backed observer slice and callback
@@ -48,8 +48,8 @@ impl<E> Clone for RetryObservers<E> {
 }
 
 impl<E> Default for RetryObservers<E> {
-    ///
-    /// Creates an empty ordered observer collection.
+    /// Creates an empty ordered observer collection without allocating a
+    /// backing vector.
     ///
     /// # Returns
     /// A collection with no registered callbacks and no vector allocation.
@@ -145,6 +145,7 @@ impl<E: 'static> RetryObservers<E> {
     /// # Returns
     /// Every captured completion panic in registration order; no allocation
     /// when no callback panics. The original outcome is not changed.
+    #[must_use = "captured observer panics must be attached to the retry outcome"]
     pub(crate) fn notify_success(&self, context: &RetryContext) -> Vec<RetryCallbackFailure> {
         self.notify_each(RetryCallbackPhase::Success, |observer| observer.on_success(context))
     }
@@ -163,6 +164,7 @@ impl<E: 'static> RetryObservers<E> {
     /// # Returns
     /// Every captured completion panic in registration order; no allocation
     /// when no callback panics. The original outcome is not changed.
+    #[must_use = "captured observer panics must be attached to the retry outcome"]
     pub(crate) fn notify_terminal_failure(
         &self,
         reason: &RetryErrorReason,
@@ -188,6 +190,7 @@ impl<E: 'static> RetryObservers<E> {
     /// # Returns
     /// An ordered vector of panics; later observers run even after an earlier
     /// panic.
+    #[must_use = "captured observer panics must be attached to the retry outcome"]
     fn notify_each<F>(&self, phase: RetryCallbackPhase, mut callback: F) -> Vec<RetryCallbackFailure>
     where
         F: FnMut(&dyn RetryObserver<E>),

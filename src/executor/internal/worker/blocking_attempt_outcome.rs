@@ -17,6 +17,7 @@ use crate::WorkerStopTrigger;
 /// # Type Parameters
 /// - `T`: Successful operation payload.
 /// - `E`: Application error retained in an attempt failure.
+#[must_use]
 pub(in crate::executor) enum BlockingAttemptOutcome<T, E> {
     /// The worker completed and returned its operation result.
     Completed(

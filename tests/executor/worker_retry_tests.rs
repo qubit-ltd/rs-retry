@@ -117,7 +117,7 @@ fn test_regression_worker_preserves_non_string_payload_after_drop_panic() {
 
 #[test]
 fn test_worker_facade_is_available() {
-    let policy = RetryPolicy::builder().build().unwrap();
+    let policy = RetryPolicy::builder().build().expect("default policy should be valid");
     let retry = RetryConfig::<()>::builder()
         .policy(policy)
         .build()
@@ -129,7 +129,10 @@ fn test_worker_facade_is_available() {
 fn test_worker_spawn_failure_preserves_infrastructure_diagnostic() {
     let operation_calls = Arc::new(AtomicUsize::new(0));
     let rule_calls = Arc::new(AtomicUsize::new(0));
-    let policy = RetryPolicy::builder().max_attempts(2).build().unwrap();
+    let policy = RetryPolicy::builder()
+        .max_attempts(2)
+        .build()
+        .expect("two-attempt policy should be valid");
     let retry = RetryConfig::<TestError>::builder()
         .policy(policy)
         .rule({
@@ -151,7 +154,7 @@ fn test_worker_spawn_failure_preserves_infrastructure_diagnostic() {
                 Err::<(), _>(TestError("operation should not run"))
             }
         })
-        .unwrap_err();
+        .expect_err("worker spawn should fail for an unrepresentable stack size");
 
     assert_eq!(operation_calls.load(Ordering::SeqCst), 0);
     assert_eq!(rule_calls.load(Ordering::SeqCst), 0);
@@ -226,7 +229,7 @@ fn test_worker_retry_matches_shared_terminal_matrix() {
         };
         let operation_clock = Arc::clone(&clock);
         let config5 = RetryConfig::<TestError>::builder()
-            .policy(policy.build().unwrap())
+            .policy(policy.build().expect("matrix policy should be valid"))
             .fallback(RetryFallback::Retry)
             .build()
             .expect("valid config");

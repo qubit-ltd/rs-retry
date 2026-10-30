@@ -63,6 +63,15 @@ pub enum RetryErrorReason {
 
 impl fmt::Display for RetryErrorReason {
     /// Formats the stable terminal-reason label and associated details.
+    ///
+    /// # Parameters
+    /// - `formatter`: Destination supplied by the formatting machinery.
+    ///
+    /// # Returns
+    /// The result of writing this diagnostic representation.
+    ///
+    /// # Errors
+    /// Returns a formatting error if the destination rejects a write.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Aborted => formatter.write_str("aborted"),

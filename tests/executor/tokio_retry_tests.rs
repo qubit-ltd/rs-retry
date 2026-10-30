@@ -49,6 +49,8 @@ use qubit_retry::BackoffPolicy;
 use qubit_retry::RetryCallbackPhase;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryCancellationPhase;
+#[cfg(feature = "tokio")]
+use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryConfig;
 #[cfg(feature = "tokio")]
 use qubit_retry::RetryContext;
@@ -657,10 +659,10 @@ async fn test_tokio_immediate_retry_yields_to_biased_cancellation() {
     let config = RetryConfig::<&str>::builder()
         .max_attempts(3)
         .fallback(RetryFallback::Retry)
-        .backoff(qubit_retry::BackoffPolicy::immediate())
+        .backoff(BackoffPolicy::immediate())
         .build()
         .expect("valid config");
-    let token = qubit_retry::RetryCancellationToken::new();
+    let token = RetryCancellationToken::new();
     let attempts = Arc::new(AtomicUsize::new(0));
     let execution = TokioRetry::new(&config).cancellation_token(token.clone());
     let retry = execution.run({

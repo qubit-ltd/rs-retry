@@ -16,6 +16,7 @@ use super::worker_event::WorkerEvent;
 
 /// Waker that forwards cancellation and timer readiness into the worker event
 /// channel.
+///
 /// # Type Parameters
 /// - `E`: Application error carried by the shared event channel.
 pub(super) struct WorkerWake<E> {

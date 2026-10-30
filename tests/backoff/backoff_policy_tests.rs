@@ -103,13 +103,29 @@ fn test_exponential_first_retry_preserves_large_initial_duration_exactly() {
     assert_eq!(actual, initial);
 }
 
+/// Zero exponential delay remains zero after the multiplier power overflows.
+#[test]
+fn test_exponential_zero_initial_remains_zero_after_many_retries() {
+    let mut state = BackoffPolicy::exponential(Duration::ZERO, 2.0, Duration::from_secs(10))
+        .expect("zero initial delay is valid")
+        .start();
+    let mut step = state.next(BackoffRequest::policy());
+
+    for _ in 1..2048 {
+        step = state.next(BackoffRequest::policy());
+    }
+
+    assert_eq!(step.retry_index(), 2048);
+    assert_eq!(step.effective_delay(), Duration::ZERO);
+}
+
 #[test]
 #[cfg(feature = "serde")]
 fn test_policy_serde_round_trip_preserves_valid_policy() {
     let policy = BackoffPolicy::exponential(Duration::from_millis(10), 2.0, Duration::from_secs(1))
-        .unwrap()
+        .expect("valid exponential policy")
         .with_bounded_jitter(0.25)
-        .unwrap()
+        .expect("valid bounded jitter")
         .prefer_retry_after();
     let encoded = to_value(&policy).expect("policy should serialize");
     let decoded: BackoffPolicy = from_value(encoded).expect("policy should decode");
@@ -119,8 +135,9 @@ fn test_policy_serde_round_trip_preserves_valid_policy() {
 #[test]
 #[cfg(feature = "serde")]
 fn test_policy_serde_rejects_invalid_uniform_bounds() {
-    let policy = BackoffPolicy::uniform(Duration::from_secs(1), Duration::from_secs(2)).unwrap();
-    let mut encoded = to_value(policy).unwrap();
+    let policy =
+        BackoffPolicy::uniform(Duration::from_secs(1), Duration::from_secs(2)).expect("ordered uniform bounds");
+    let mut encoded = to_value(policy).expect("policy should serialize");
     encoded["strategy"]["minimum"] = json!({"seconds": 3, "nanoseconds": 0});
     let error = from_value::<BackoffPolicy>(encoded).expect_err("reversed uniform bounds must be rejected");
     assert!(error.to_string().contains("minimum delay"));
@@ -129,8 +146,9 @@ fn test_policy_serde_rejects_invalid_uniform_bounds() {
 #[test]
 #[cfg(feature = "serde")]
 fn test_policy_serde_rejects_invalid_exponential_values() {
-    let policy = BackoffPolicy::exponential(Duration::from_secs(1), 2.0, Duration::from_secs(2)).unwrap();
-    let mut reversed = to_value(&policy).unwrap();
+    let policy = BackoffPolicy::exponential(Duration::from_secs(1), 2.0, Duration::from_secs(2))
+        .expect("valid exponential policy");
+    let mut reversed = to_value(&policy).expect("policy should serialize");
     reversed["strategy"]["initial"] = json!({
         "seconds": 3,
         "nanoseconds": 0
@@ -138,7 +156,7 @@ fn test_policy_serde_rejects_invalid_exponential_values() {
     let error = from_value::<BackoffPolicy>(reversed).expect_err("an initial delay above maximum must be rejected");
     assert!(error.to_string().contains("initial delay"));
 
-    let mut multiplier = to_value(policy).unwrap();
+    let mut multiplier = to_value(policy).expect("policy should serialize");
     multiplier["strategy"]["multiplier"] = json!(0.5);
     let error = from_value::<BackoffPolicy>(multiplier).expect_err("a multiplier below one must be rejected");
     assert!(error.to_string().contains("multiplier"));
@@ -149,8 +167,8 @@ fn test_policy_serde_rejects_invalid_exponential_values() {
 fn test_policy_serde_rejects_invalid_jitter_ratio() {
     let policy = BackoffPolicy::fixed(Duration::from_secs(1))
         .with_bounded_jitter(0.25)
-        .unwrap();
-    let mut encoded = to_value(policy).unwrap();
+        .expect("valid bounded jitter");
+    let mut encoded = to_value(policy).expect("policy should serialize");
     encoded["jitter"]["ratio"] = json!(1.5);
     let error = from_value::<BackoffPolicy>(encoded).expect_err("a jitter ratio above one must be rejected");
     assert!(error.to_string().contains("jitter ratio"));

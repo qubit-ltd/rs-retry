@@ -68,6 +68,7 @@ impl<E> AttemptFailure<E> {
     /// # Returns
     /// `Some(&E)` for [`Self::Error`], or `None` for timeout and panic
     /// failures.
+    #[must_use]
     #[inline]
     pub fn as_error(&self) -> Option<&E> {
         match self {
@@ -80,6 +81,7 @@ impl<E> AttemptFailure<E> {
     ///
     /// # Returns
     /// `Some(RetryTimeoutScope)` for [`Self::TimedOut`], or `None` otherwise.
+    #[must_use]
     #[inline]
     pub fn timeout_scope(&self) -> Option<RetryTimeoutScope> {
         match self {
@@ -92,6 +94,7 @@ impl<E> AttemptFailure<E> {
     ///
     /// # Returns
     /// `Some(&RetryPanic)` for [`Self::Panicked`], or `None` otherwise.
+    #[must_use]
     #[inline]
     pub fn panic(&self) -> Option<&RetryPanic> {
         match self {
@@ -130,6 +133,7 @@ impl<E> AttemptFailure<E> {
     ///
     /// # Returns
     /// `Some(E)` for [`Self::Error`], or `None` for timeout and panic failures.
+    #[must_use]
     #[inline]
     pub fn into_error(self) -> Option<E> {
         match self {

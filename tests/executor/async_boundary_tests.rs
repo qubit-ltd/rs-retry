@@ -131,6 +131,7 @@ struct SecondRegistrationFailsTimer {
 
 #[cfg(feature = "tokio")]
 impl SecondRegistrationFailsTimer {
+    #[must_use]
     fn new() -> Self {
         Self {
             clock: ManualMonotonicClock::new_shared(),

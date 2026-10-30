@@ -24,6 +24,7 @@ impl FixedRetryRandomSource {
     /// # Returns
     ///
     /// A deterministic random source.
+    #[must_use]
     #[inline(always)]
     pub(crate) const fn new(f64_sample: f64) -> Self {
         Self { f64_sample }

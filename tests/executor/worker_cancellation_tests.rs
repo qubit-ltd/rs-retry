@@ -139,6 +139,7 @@ struct CancellingFailingTimer {
 
 impl Timer for CancellingFailingTimer {
     /// Returns the stable manual clock used by this timer.
+    #[inline]
     fn clock(&self) -> &dyn MonotonicClock {
         self.clock.as_ref()
     }
@@ -153,6 +154,7 @@ impl Timer for CancellingFailingTimer {
 
 impl Timer for PendingTimer {
     /// Returns the stable manual clock used by this timer.
+    #[inline]
     fn clock(&self) -> &dyn MonotonicClock {
         self.clock.as_ref()
     }
@@ -170,6 +172,7 @@ impl Timer for PendingTimer {
 
 impl RetryObserver<TestError> for CountAttemptFailed {
     /// Records one failed-attempt callback.
+    #[inline]
     fn on_attempt_failed(&self, _failure: &AttemptFailure<TestError>, _context: &RetryContext) {
         self.calls.fetch_add(1, Ordering::SeqCst);
     }

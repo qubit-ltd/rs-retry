@@ -16,5 +16,5 @@ pub(crate) fn retry_once_policy() -> RetryPolicy {
         .max_attempts(2)
         .backoff(BackoffPolicy::fixed(Duration::from_millis(1)))
         .build()
-        .unwrap()
+        .expect("valid retry policy should build")
 }

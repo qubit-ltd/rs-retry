@@ -31,6 +31,7 @@ impl WakerRegistry {
     /// The assigned identifier and Some previous waker, or None for a new
     /// entry. The caller drops the previous waker after releasing its outer
     /// lock.
+    #[must_use]
     pub(in crate::executor::internal) fn register(
         &mut self,
         registration_id: Option<u64>,
@@ -65,6 +66,7 @@ impl WakerRegistry {
     /// # Returns
     /// All owned wakers for invocation outside the outer lock; the registry is
     /// empty afterward.
+    #[must_use]
     pub(in crate::executor::internal) fn take_all(&mut self) -> Vec<Waker> {
         self.wakers.drain().map(|(_, waker)| waker).collect()
     }

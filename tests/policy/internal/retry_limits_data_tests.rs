@@ -21,7 +21,10 @@ fn test_retry_limits_data_rejects_invalid_attempts_duration_and_fields() {
         "total_time_budget": null
     });
     let error = from_value::<RetryAdmissionLimits>(zero_attempts).expect_err("zero max attempts must be rejected");
-    assert!(error.to_string().contains("max_attempts"));
+    assert!(
+        error.to_string().contains("max_attempts"),
+        "unexpected error for zero max attempts: {error}"
+    );
 
     let invalid_duration = json!({
         "max_attempts": 4,
@@ -30,7 +33,10 @@ fn test_retry_limits_data_rejects_invalid_attempts_duration_and_fields() {
     });
     let error = from_value::<RetryAdmissionLimits>(invalid_duration)
         .expect_err("invalid retry-limit duration must be rejected");
-    assert!(error.to_string().contains("nanoseconds"));
+    assert!(
+        error.to_string().contains("nanoseconds"),
+        "unexpected error for invalid duration: {error}"
+    );
 
     let unknown_field = json!({
         "max_attempts": 4,
@@ -39,5 +45,8 @@ fn test_retry_limits_data_rejects_invalid_attempts_duration_and_fields() {
         "unexpected": true
     });
     let error = from_value::<RetryAdmissionLimits>(unknown_field).expect_err("retry limits must reject unknown fields");
-    assert!(error.to_string().contains("unknown field"));
+    assert!(
+        error.to_string().contains("unknown field"),
+        "unexpected error for an unknown field: {error}"
+    );
 }

@@ -28,7 +28,8 @@ use super::WorkerStopTrigger;
 ///
 /// ```
 /// # #[cfg(feature = "worker")] {
-/// use qubit_retry::{RetryInfrastructureFailure, WorkerStopTrigger};
+/// use qubit_retry::RetryInfrastructureFailure;
+/// use qubit_retry::WorkerStopTrigger;
 ///
 /// let failure = RetryInfrastructureFailure::WorkerStillRunning {
 ///     trigger: WorkerStopTrigger::Cancellation,
@@ -73,6 +74,7 @@ impl RetryInfrastructureFailure {
     /// `Some(&str)` for clock, timer, and (with `worker`) worker-spawn
     /// failures. Returns `None` for a closed worker event channel or a worker
     /// that remained running after a stop request.
+    #[must_use]
     #[inline]
     pub fn message(&self) -> Option<&str> {
         match self {
@@ -89,6 +91,7 @@ impl RetryInfrastructureFailure {
     /// # Returns
     /// `Some(WorkerStopTrigger)` for `WorkerStillRunning`, or `None` for other
     /// infrastructure failures.
+    #[must_use]
     #[inline]
     #[cfg(feature = "worker")]
     pub fn worker_stop_trigger(&self) -> Option<WorkerStopTrigger> {

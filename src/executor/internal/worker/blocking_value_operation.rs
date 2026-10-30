@@ -20,9 +20,11 @@ use crate::executor::AttemptCancellationToken;
 /// - `T`: Successful value moved into the protected result slot.
 /// - `F`: Shared operation callable from successive worker threads.
 pub(in crate::executor) struct BlockingValueOperation<T, F> {
-    /// Wrapped caller operation.
+    /// Caller operation invoked once for each blocking attempt with that
+    /// attempt's cancellation token.
     operation: F,
-    /// Successful value produced by the operation.
+    /// Holds the value from a successful attempt until the retry loop takes it
+    /// or discards it after the worker exits.
     value: Mutex<Option<T>>,
 }
 

@@ -16,6 +16,7 @@
 ///
 /// assert_eq!(RetryFallback::default(), RetryFallback::Abort);
 /// ```
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RetryFallback {
     /// Stop after the first unclassified application error.

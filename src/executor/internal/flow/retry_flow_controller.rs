@@ -103,6 +103,7 @@ impl<E: 'static> RetryFlowController<E> {
 
     /// Returns the number of operations admitted by this controller.
     #[inline]
+    #[must_use]
     pub(crate) fn attempts(&self) -> u32 {
         self.state.context(None).attempts()
     }

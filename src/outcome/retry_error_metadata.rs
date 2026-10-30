@@ -36,6 +36,7 @@ use crate::RetryErrorReason;
 /// assert!(metadata.completion_callback_failures().is_empty());
 /// # Ok::<(), qubit_retry::RetryPolicyError>(())
 /// ```
+#[must_use = "inspect the terminal retry error metadata"]
 #[derive(Debug)]
 pub struct RetryErrorMetadata {
     /// Terminal reason independent of the application error type.

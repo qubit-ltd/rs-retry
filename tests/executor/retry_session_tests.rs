@@ -328,12 +328,21 @@ fn test_retry_session_early_admission_waits_until_due() {
     let timer = Arc::new(SessionTimer::new(None));
     let mut session = RetrySession::new(config, timer.clone());
 
-    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 1));
+    assert!(matches!(
+        session.begin_attempt(),
+        Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 1
+    ));
     let RetrySessionStep::RetryAt(due) = session.record_result::<()>(Err("busy")) else {
         panic!("retry should be scheduled");
     };
-    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due));
-    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due));
+    assert!(matches!(
+        session.begin_attempt(),
+        Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due
+    ));
+    assert!(matches!(
+        session.begin_attempt(),
+        Ok(RetrySessionAdmission::Waiting(waiting)) if waiting == due
+    ));
     assert_eq!(
         timer.clock.now(),
         MonotonicInstant::new(timer.clock.domain(), Duration::from_secs(1))
@@ -349,7 +358,10 @@ fn test_retry_session_early_admission_waits_until_due() {
     );
 
     timer.elapse(due);
-    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 2));
+    assert!(matches!(
+        session.begin_attempt(),
+        Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 2
+    ));
     assert_eq!(
         events
             .lock()
@@ -449,10 +461,11 @@ fn test_retry_session_enforces_one_outstanding_attempt() {
         .build()
         .expect("valid config");
     let mut session = RetrySession::new(config, Arc::new(SessionTimer::new(None)));
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.record_result(Ok(1)))).is_err());
-    assert!(
-        matches!(session.begin_attempt().expect("admitted"), RetrySessionAdmission::Admitted(ordinal) if ordinal.get() == 1)
-    );
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { session.record_result(Ok(1)) })).is_err());
+    assert!(matches!(
+        session.begin_attempt().expect("admitted"),
+        RetrySessionAdmission::Admitted(ordinal) if ordinal.get() == 1
+    ));
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = session.begin_attempt();
@@ -460,7 +473,7 @@ fn test_retry_session_enforces_one_outstanding_attempt() {
         .is_err()
     );
     assert!(matches!(session.record_result(Ok(1)), RetrySessionStep::Complete(_)));
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.record_result(Ok(1)))).is_err());
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { session.record_result(Ok(1)) })).is_err());
     assert_eq!(*events.lock().expect("event lock"), ["before:1", "success"]);
 }
 

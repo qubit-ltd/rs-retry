@@ -238,6 +238,10 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     /// # Errors
     /// Returns the terminal attempt, cancellation, timeout, budget, callback,
     /// or infrastructure failure with its context.
+    ///
+    /// # Panics
+    /// Operation panics unwind through the caller; custom timer, random source,
+    /// or clock panics are not intercepted.
     #[allow(
         clippy::result_large_err,
         reason = "the public error intentionally retains lossless terminal context"
@@ -300,6 +304,14 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     /// # Returns
     /// The successful value or terminal retry error with completion
     /// diagnostics.
+    ///
+    /// # Errors
+    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
+    /// or infrastructure failure with its context.
+    ///
+    /// # Panics
+    /// Operation panics unwind through the caller; custom timer, random source,
+    /// or clock panics are not intercepted.
     #[allow(
         clippy::result_large_err,
         reason = "the internal helper propagates the lossless public terminal error"

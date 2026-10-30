@@ -41,6 +41,21 @@ pub struct RetryPolicyBuilder {
 }
 
 impl RetryPolicyBuilder {
+    /// Creates a builder with three attempts and immediate retries.
+    ///
+    /// # Returns
+    /// A builder with three total attempts, no elapsed limits, and immediate
+    /// backoff.
+    #[inline]
+    pub fn new() -> Self {
+        Self {
+            max_attempts: 3,
+            operation_time_budget: None,
+            total_time_budget: None,
+            backoff: BackoffPolicy::immediate(),
+        }
+    }
+
     /// Creates a builder initialized from a validated policy.
     ///
     /// # Parameters
@@ -65,21 +80,6 @@ impl RetryPolicyBuilder {
             builder = builder.without_total_time_budget();
         }
         builder
-    }
-
-    /// Creates a builder with three attempts and immediate retries.
-    ///
-    /// # Returns
-    /// A builder with three total attempts, no elapsed limits, and immediate
-    /// backoff.
-    #[inline]
-    pub fn new() -> Self {
-        Self {
-            max_attempts: 3,
-            operation_time_budget: None,
-            total_time_budget: None,
-            backoff: BackoffPolicy::immediate(),
-        }
     }
 
     /// Sets the maximum number of attempts, including the first attempt.
@@ -203,7 +203,6 @@ impl RetryPolicyBuilder {
 }
 
 impl Default for RetryPolicyBuilder {
-    ///
     /// Creates the same unbounded-time, three-attempt builder as `new`.
     ///
     /// # Returns

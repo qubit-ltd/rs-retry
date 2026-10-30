@@ -35,10 +35,14 @@ impl RetryCancellationState {
         self.cancelled.load(Ordering::Acquire)
     }
 
-    /// Requests cancellation and wakes every currently registered waiter.
+    /// Requests cancellation and wakes the registered waiters.
     ///
     /// Wakers leave the registry before invocation, so re-entrant callbacks
     /// cannot observe the registry mutex as locked.
+    ///
+    /// # Panics
+    /// A registered waker's callback may panic. If it does, later wakers from
+    /// this cancellation request are dropped without being invoked.
     pub(in crate::executor) fn cancel(&self) {
         if self.cancelled.swap(true, Ordering::AcqRel) {
             return;
@@ -64,6 +68,7 @@ impl RetryCancellationState {
     /// registration, Some removed waker if cancellation raced with
     /// registration or None otherwise, and whether cancellation has been
     /// observed.
+    #[must_use = "retain the registration ID and drop returned wakers after this method returns"]
     pub(in crate::executor) fn register(
         &self,
         registration_id: Option<u64>,

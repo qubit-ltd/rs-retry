@@ -26,6 +26,7 @@ use crate::RetryPanic;
 ///
 /// # Returns
 /// A borrowed static string, owned String, or NonString classification.
+#[must_use]
 pub(crate) fn retry_panic_from_payload(payload: Box<dyn Any + Send>) -> RetryPanic {
     match catch_unwind(AssertUnwindSafe(|| decode_retry_panic_payload(payload))) {
         Ok(panic) => panic,
@@ -49,6 +50,7 @@ pub(crate) fn retry_panic_from_payload(payload: Box<dyn Any + Send>) -> RetryPan
 /// # Panics
 /// A non-string payload destructor may panic; callers must use the protected
 /// decoder boundary.
+#[must_use]
 fn decode_retry_panic_payload(payload: Box<dyn Any + Send>) -> RetryPanic {
     let payload = match payload.downcast::<&'static str>() {
         Ok(message) => return RetryPanic::StaticStr(*message),

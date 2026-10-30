@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Terminal retry errors and their result alias.
+//! Terminal errors produced by retry executors.
 
 use std::error::Error;
 use std::fmt;
@@ -103,6 +103,10 @@ impl<E> RetryError<E> {
 
     /// Returns completion callback failures captured after the terminal result
     /// was frozen.
+    ///
+    /// # Returns
+    /// A borrowed slice containing each callback panic captured after the
+    /// terminal reason and context were frozen; it is empty when none failed.
     #[must_use = "inspect completion callback diagnostics"]
     pub fn completion_callback_failures(&self) -> &[RetryCallbackFailure] {
         &self.completion_callback_failures
@@ -179,7 +183,7 @@ impl<E> RetryError<E> {
     /// # Returns
     /// The terminal metadata and the moved application error, if the retained
     /// last failure was an application error.
-    #[must_use]
+    #[must_use = "retain the terminal metadata and optional application error"]
     pub fn into_metadata_and_error(self) -> (RetryErrorMetadata, Option<E>) {
         let (reason, last_failure, context, completion_callback_failures) = self.into_parts();
         let (last_attempt, application_error) = match last_failure {

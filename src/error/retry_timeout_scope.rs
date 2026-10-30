@@ -28,7 +28,6 @@ pub enum RetryTimeoutScope {
 }
 
 impl fmt::Display for RetryTimeoutScope {
-    ///
     /// Formats the stable human-readable label of this classification.
     ///
     /// # Parameters

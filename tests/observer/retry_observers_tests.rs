@@ -312,7 +312,10 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                     } else {
                         RetryLimitKind::Attempts
                     };
-                    assert!(matches!(error.reason(), RetryErrorReason::Exhausted { limit, .. } if *limit == expected));
+                    assert!(matches!(
+                        error.reason(),
+                        RetryErrorReason::Exhausted { limit, .. } if *limit == expected
+                    ));
                 }
                 CompletionScenario::CancelledBeforeAttempt | CompletionScenario::CancelledAfterFailure => {
                     let expected = if zero_attempts {
@@ -320,7 +323,10 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                     } else {
                         RetryCancellationPhase::Backoff
                     };
-                    assert!(matches!(error.reason(), RetryErrorReason::Cancelled { phase, .. } if *phase == expected));
+                    assert!(matches!(
+                        error.reason(),
+                        RetryErrorReason::Cancelled { phase, .. } if *phase == expected
+                    ));
                 }
                 CompletionScenario::StartedPanic
                 | CompletionScenario::FailedPanic
@@ -332,9 +338,11 @@ async fn assert_completion_case(facade: CompletionFacade, scenario: CompletionSc
                         CompletionScenario::ScheduledPanic => RetryCallbackPhase::RetryScheduled,
                         _ => RetryCallbackPhase::RuleDecision,
                     };
-                    assert!(
-                        matches!(error.reason(), RetryErrorReason::CallbackFailed { callback, .. } if callback.phase() == expected && callback.index() == 0)
-                    );
+                    assert!(matches!(
+                        error.reason(),
+                        RetryErrorReason::CallbackFailed { callback, .. }
+                            if callback.phase() == expected && callback.index() == 0
+                    ));
                 }
                 CompletionScenario::TimerFailure | CompletionScenario::TimerFailureBeforeAttempt => {
                     assert!(matches!(

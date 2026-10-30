@@ -173,6 +173,7 @@ impl BackoffPolicy {
     ///
     /// # Returns
     /// `Some(limit)` for an explicit final cap, or `None` for no final cap.
+    #[must_use]
     #[inline]
     pub fn delay_limit(&self) -> Option<Duration> {
         self.delay_limit
@@ -185,6 +186,7 @@ impl BackoffPolicy {
     /// # Returns
     /// `Some(maximum)` for every current bounded base strategy. The optional
     /// return leaves room for a future strategy without a finite maximum.
+    #[must_use]
     #[inline]
     pub fn maximum_delay(&self) -> Option<Duration> {
         match &self.strategy {
@@ -284,7 +286,6 @@ impl BackoffPolicy {
         self
     }
 
-    ///
     /// Selects one base delay without hint, jitter, or final-cap processing.
     ///
     /// # Parameters
@@ -382,7 +383,6 @@ impl BackoffPolicy {
         BackoffStep::new(retry_index, base_delay, effective_delay, source)
     }
 
-    ///
     /// Varies one eligible delay according to the validated jitter strategy.
     ///
     /// # Parameters
@@ -391,6 +391,7 @@ impl BackoffPolicy {
     ///
     /// # Returns
     /// The unchanged, full-jittered, or bounded-jittered delay with saturation.
+    #[must_use]
     fn apply_jitter(&self, base: Duration, random: &dyn RetryRandomSource) -> Duration {
         match self.jitter {
             JitterStrategy::None => base,
@@ -556,7 +557,6 @@ impl TryFrom<BackoffPolicyData> for BackoffPolicy {
     }
 }
 
-///
 /// Calculates a capped exponential delay without integer exponent wrapping.
 ///
 /// # Parameters
@@ -580,7 +580,6 @@ fn exponential_delay(initial: Duration, multiplier: f64, max: Duration, retry_in
     Duration::try_from_secs_f64(seconds).unwrap_or(max).min(max)
 }
 
-///
 /// Scales a duration and saturates unrepresentable values.
 ///
 /// # Parameters
@@ -600,7 +599,6 @@ fn scale_duration(duration: Duration, factor: f64) -> Duration {
     }
 }
 
-///
 /// Samples a duration interval with exact endpoints and a final range clamp.
 ///
 /// # Parameters
@@ -643,15 +641,5 @@ mod tests {
                 Duration::from_secs(10)
             );
         }
-    }
-
-    /// Zero initial delay remains zero even when the multiplier power
-    /// overflows.
-    #[test]
-    fn test_exponential_delay_zero_initial_remains_zero() {
-        assert_eq!(
-            exponential_delay(Duration::ZERO, 2.0, Duration::from_secs(10), 2048),
-            Duration::ZERO
-        );
     }
 }

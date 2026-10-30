@@ -7,17 +7,6 @@
 // =============================================================================
 //! State phases for an externally driven retry session.
 
-use qubit_clock::MonotonicInstant;
+mod retry_session_phase;
 
-/// Legal phases of the single outstanding operation protocol.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(in crate::executor) enum RetrySessionPhase {
-    /// No attempt has started.
-    Ready,
-    /// One admitted operation awaits its result.
-    Active,
-    /// An external scheduler owns the pending retry wait.
-    Waiting(MonotonicInstant),
-    /// Completion observers have been notified.
-    Finished,
-}
+pub(in crate::executor) use retry_session_phase::RetrySessionPhase;
