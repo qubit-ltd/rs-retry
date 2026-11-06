@@ -25,6 +25,9 @@ use crate::RetryErrorReason;
 /// `completion_callback_failures` are diagnostics recorded after that
 /// terminal snapshot.
 ///
+/// # Type Parameters
+/// - `E`: Application error type retained by a failed attempt, when present.
+///
 /// # Examples
 /// ```
 /// use qubit_retry::{Retry, RetryConfig, RetryErrorReason, RetryFallback};
@@ -42,14 +45,27 @@ use crate::RetryErrorReason;
 #[must_use]
 #[derive(Debug)]
 pub struct RetryError<E> {
+    /// Terminal reason recorded when the retry flow ended.
     reason: RetryErrorReason,
+    /// Most recently retained attempt failure, which may predate termination;
+    /// `None` when no attempt failure was retained.
     last_failure: Option<AttemptFailure<E>>,
+    /// Retry context frozen at termination.
     context: RetryContext,
+    /// Callback panic diagnostics recorded after the terminal snapshot.
     completion_callback_failures: Box<[RetryCallbackFailure]>,
 }
 
 impl<E> RetryError<E> {
     /// Creates a terminal error before completion callbacks are notified.
+    ///
+    /// # Parameters
+    /// - `reason`: Reason that terminated the retry flow.
+    /// - `last_failure`: Most recently retained attempt failure, if any.
+    /// - `context`: Retry context frozen when the flow terminated.
+    ///
+    /// # Returns
+    /// A terminal error with no completion callback failures recorded yet.
     pub(crate) fn new(
         reason: RetryErrorReason,
         last_failure: Option<AttemptFailure<E>>,
@@ -64,13 +80,21 @@ impl<E> RetryError<E> {
     }
 
     /// Returns the reason that terminated the retry flow.
+    ///
+    /// # Returns
+    /// The terminal reason recorded when the retry flow ended.
     #[must_use = "inspect the terminal reason"]
+    #[inline]
     pub const fn reason(&self) -> &RetryErrorReason {
         &self.reason
     }
 
     /// Returns the frozen context at which the retry flow terminated.
+    ///
+    /// # Returns
+    /// The retry context snapshot taken at termination.
     #[must_use = "inspect the terminal context"]
+    #[inline]
     pub const fn context(&self) -> &RetryContext {
         &self.context
     }
@@ -81,7 +105,11 @@ impl<E> RetryError<E> {
     /// infrastructure failure can terminate a later admitted attempt without
     /// replacing it. Inspect `reason()` and `context()` together for
     /// attribution.
-    #[must_use = "inspect the last attempt failure"]
+    ///
+    /// # Returns
+    /// `Some` with the most recently retained attempt failure, or `None` when
+    /// no attempt failure was retained.
+    #[inline]
     pub fn last_failure(&self) -> Option<&AttemptFailure<E>> {
         self.last_failure.as_ref()
     }
@@ -96,7 +124,7 @@ impl<E> RetryError<E> {
     /// `Some` when the retained failure contains an application error;
     /// otherwise `None`, including when no attempt failure has been
     /// retained.
-    #[must_use = "inspect the application error"]
+    #[inline]
     pub fn last_error(&self) -> Option<&E> {
         self.last_failure.as_ref().and_then(AttemptFailure::as_error)
     }
@@ -108,6 +136,7 @@ impl<E> RetryError<E> {
     /// A borrowed slice containing each callback panic captured after the
     /// terminal reason and context were frozen; it is empty when none failed.
     #[must_use = "inspect completion callback diagnostics"]
+    #[inline]
     pub fn completion_callback_failures(&self) -> &[RetryCallbackFailure] {
         &self.completion_callback_failures
     }
@@ -151,6 +180,11 @@ impl<E> RetryError<E> {
     /// optional retained attempt failure; the frozen retry context; and a
     /// boxed slice of completion callback failures recorded after the
     /// terminal state was frozen.
+    ///
+    /// # Returns
+    /// The terminal reason, optional retained failure, frozen context, and
+    /// completion callback diagnostics in that order. The retained failure is
+    /// `None` when no attempt failure was recorded.
     #[must_use = "inspect the decomposed terminal error"]
     pub fn into_parts(
         self,
@@ -181,8 +215,8 @@ impl<E> RetryError<E> {
     /// when the retained last failure contains an application error.
     ///
     /// # Returns
-    /// The terminal metadata and the moved application error, if the retained
-    /// last failure was an application error.
+    /// The terminal metadata and `Some(E)` when the retained failure contains
+    /// an application error; otherwise the error value is `None`.
     #[must_use = "retain the terminal metadata and optional application error"]
     pub fn into_metadata_and_error(self) -> (RetryErrorMetadata, Option<E>) {
         let (reason, last_failure, context, completion_callback_failures) = self.into_parts();
@@ -204,6 +238,9 @@ impl<E> RetryError<E> {
     }
 
     /// Stores completion callback diagnostics on the frozen terminal error.
+    ///
+    /// # Parameters
+    /// - `failures`: Callback failures recorded after the terminal snapshot.
     pub(crate) fn set_completion_callback_failures(&mut self, failures: Vec<RetryCallbackFailure>) {
         self.completion_callback_failures = failures.into_boxed_slice();
     }
@@ -211,6 +248,15 @@ impl<E> RetryError<E> {
 
 impl<E> fmt::Display for RetryError<E> {
     /// Formats the terminal reason and number of admitted attempts.
+    ///
+    /// # Parameters
+    /// - `formatter`: Formatter that receives the terminal error description.
+    ///
+    /// # Returns
+    /// `Ok(())` when formatting succeeds, or the formatter's error otherwise.
+    ///
+    /// # Errors
+    /// Returns the formatter's error when the destination rejects a write.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
@@ -228,6 +274,10 @@ impl<E: Error + 'static> Error for RetryError<E> {
     /// infrastructure failure can terminate a later admitted attempt without
     /// replacing it. Inspect `reason()` and `context()` together for
     /// attribution.
+    ///
+    /// # Returns
+    /// `Some` with the retained application error when it implements
+    /// `Error + 'static`; otherwise `None`.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         self.last_error().map(|error| error as &(dyn Error + 'static))
     }

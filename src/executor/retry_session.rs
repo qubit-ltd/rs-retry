@@ -126,6 +126,16 @@ impl<E: 'static> RetrySession<E> {
     }
 
     /// Initializes owned state from the supplied runtime resources.
+    ///
+    /// # Parameters
+    /// - `config`: Retry policy and completion callbacks retained by the
+    ///   session.
+    /// - `timer`: Supplies the clock used to establish the session's origin.
+    /// - `random`: Optional source of uniform backoff and jitter samples.
+    ///
+    /// # Returns
+    /// A fresh session that owns the supplied resources and has not admitted
+    /// an attempt yet.
     fn new_inner(config: RetryConfig<E>, timer: Arc<dyn Timer>, random: Option<Arc<dyn RetryRandomSource>>) -> Self {
         let controller = RetryFlowController::new(timer.clock().now(), &config, random, None, None);
         Self {

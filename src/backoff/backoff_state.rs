@@ -64,6 +64,9 @@ impl BackoffState {
     }
 
     /// Creates an empty state using the default thread-local random source.
+    ///
+    /// # Parameters
+    /// - `policy`: Owned configuration for the new sequence.
     #[must_use]
     #[inline]
     pub(crate) fn new_thread(policy: BackoffPolicy) -> Self {

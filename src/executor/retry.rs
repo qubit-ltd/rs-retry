@@ -154,6 +154,22 @@ impl<'a, E: 'static> Retry<'a, E> {
 
     /// Executes retry controls and freezes the final result before completion
     /// observers run. Returns the original terminal error on control failure.
+    ///
+    /// # Type Parameters
+    /// - `T`: Successful value returned by the operation.
+    /// - `F`: Same-thread operation invoked for each admitted attempt.
+    ///
+    /// # Parameters
+    /// - `operation`: Operation whose failures are classified by the retry
+    ///   configuration.
+    ///
+    /// # Returns
+    /// The successful value and frozen execution context, or the terminal
+    /// error produced by the retry flow.
+    ///
+    /// # Errors
+    /// Returns the terminal attempt, cancellation, timeout, budget, callback,
+    /// or infrastructure failure.
     #[allow(
         clippy::result_large_err,
         reason = "the internal helper propagates the lossless public terminal error"

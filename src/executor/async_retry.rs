@@ -229,6 +229,11 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     /// future need not be `Send` or `'static`, and panics propagate.
     /// Completion observers run synchronously once with the frozen result.
     ///
+    /// # Type Parameters
+    /// - `T`: Successful value returned to the caller.
+    /// - `F`: Attempt factory receiving the admitted attempt ordinal.
+    /// - `Fut`: Future produced for one attempt; need not be Send or static.
+    ///
     /// # Parameters
     /// - `operation`: Factory receiving the admitted attempt ordinal.
     ///
@@ -296,6 +301,11 @@ impl<'a, E: 'static> AsyncRetry<'a, E> {
     }
 
     /// Executes the retry loop with a caller-selected default timer.
+    ///
+    /// # Type Parameters
+    /// - `T`: Successful value returned to the caller.
+    /// - `F`: Attempt factory receiving the admitted attempt ordinal.
+    /// - `Fut`: Future produced for one attempt; need not be Send or static.
     ///
     /// # Parameters
     /// - `default_timer`: Timer used when this facade has no injected timer.

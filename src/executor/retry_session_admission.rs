@@ -37,9 +37,15 @@ use qubit_clock::MonotonicInstant;
 #[must_use]
 pub enum RetrySessionAdmission {
     /// An operation may start now with this one-based attempt number.
-    Admitted(NonZeroU32),
+    Admitted(
+        /// The attempt ordinal the caller must associate with this operation.
+        NonZeroU32,
+    ),
     /// The same retry remains pending until this instant in the session's
     /// monotonic clock domain. The caller should wait until then and call
     /// `begin_attempt` again; an early check may return this outcome again.
-    Waiting(MonotonicInstant),
+    Waiting(
+        /// The earliest instant at which the session can be checked again.
+        MonotonicInstant,
+    ),
 }

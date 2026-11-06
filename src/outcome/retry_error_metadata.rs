@@ -100,6 +100,9 @@ impl RetryErrorMetadata {
 
 impl fmt::Display for RetryErrorMetadata {
     /// Formats the terminal reason and number of admitted attempts.
+    ///
+    /// # Parameters
+    /// - `formatter`: Destination supplied by the formatting machinery.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,

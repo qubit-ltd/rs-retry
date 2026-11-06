@@ -19,9 +19,17 @@ use crate::random::ThreadRetryRandomSource;
 #[derive(Clone)]
 pub enum RetryRandomSourceStorage {
     /// Thread-local random source used by the default constructor.
-    Thread(ThreadRetryRandomSource),
+    Thread(
+        /// Generator selected from the current thread when backoff state is
+        /// initialized with the default random source.
+        ThreadRetryRandomSource,
+    ),
     /// Caller-provided random source shared by the state.
-    Custom(Arc<dyn RetryRandomSource>),
+    Custom(
+        /// Shared ownership keeps the caller-provided generator alive for the
+        /// lifetime of the backoff state.
+        Arc<dyn RetryRandomSource>,
+    ),
 }
 
 impl RetryRandomSourceStorage {

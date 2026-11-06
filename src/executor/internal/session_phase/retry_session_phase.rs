@@ -20,7 +20,10 @@ pub(in crate::executor) enum RetrySessionPhase {
     /// One admitted operation awaits its result.
     Active,
     /// An external scheduler owns the pending retry wait.
-    Waiting(MonotonicInstant),
+    Waiting(
+        /// Absolute deadline retained while the external scheduler waits.
+        MonotonicInstant,
+    ),
     /// Completion observers have been notified.
     Finished,
 }

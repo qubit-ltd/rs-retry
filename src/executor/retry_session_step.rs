@@ -44,10 +44,19 @@ use crate::RetrySuccess;
 #[must_use]
 pub enum RetrySessionStep<T, E> {
     /// The operation succeeded; completion observers have been notified.
-    Complete(RetrySuccess<T>),
+    Complete(
+        /// Successful value and diagnostics retained by the session outcome.
+        RetrySuccess<T>,
+    ),
     /// Resume at this absolute instant in the session timer's clock domain.
     /// The owner supplies the wait and must call `begin_attempt` again.
-    RetryAt(MonotonicInstant),
+    RetryAt(
+        /// Absolute retry deadline, measured by the session timer's clock.
+        MonotonicInstant,
+    ),
     /// The flow terminated; completion observers have been notified.
-    Failed(RetryError<E>),
+    Failed(
+        /// Terminal failure, including its reason and recorded context.
+        RetryError<E>,
+    ),
 }
