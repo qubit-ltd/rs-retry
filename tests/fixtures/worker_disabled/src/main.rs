@@ -12,8 +12,6 @@ use qubit_retry::WorkerRetry;
 
 fn main() {
     let _ = AttemptCancellationToken::new();
-    let config = RetryConfig::<()>::builder()
-        .build()
-        .expect("valid fixture config");
+    let config = RetryConfig::<()>::builder().build().expect("valid fixture config");
     let _ = WorkerRetry::new(&config);
 }
