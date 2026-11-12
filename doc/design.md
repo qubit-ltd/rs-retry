@@ -1,8 +1,8 @@
 # Qubit Retry Design
 
-[简体中文](design.zh_CN.md) · [User guide](user_guide.md) · [README](../README.md) · [API reference](https://docs.rs/qubit-retry/0.26.3/qubit_retry/)
+[简体中文](design.zh_CN.md) · [User guide](user_guide.md) · [README](../README.md) · [API reference](https://docs.rs/qubit-retry/0.26.5/qubit_retry/)
 
-This document records the maintenance contract of **qubit-retry 0.26.3**. Public
+This document records the maintenance contract of **qubit-retry 0.26.5**. Public
 usage belongs in the user guide; the invariants here govern internal changes.
 
 ## Scope and dependency direction
