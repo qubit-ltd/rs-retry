@@ -128,6 +128,85 @@ class ExampleContractTests(unittest.TestCase):
             MODULE.cargo_dependency(example, "0.22.0")
 
 
+class DocumentVersionTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        for name in MODULE.VERSIONED_DOCUMENTS:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            declaration = "**qubit-retry 0.26.2**\n" if name in MODULE.VERSION_DECLARATIONS else ""
+            path.write_text(
+                f"{declaration}[API](https://docs.rs/qubit-retry/0.26.2/qubit_retry/)\n",
+                encoding="utf-8",
+            )
+
+    def test_all_current_versions_are_accepted(self):
+        MODULE.check_document_versions(self.root, "0.26.2")
+
+    def test_each_guide_and_design_declaration_must_match(self):
+        for name in MODULE.VERSION_DECLARATIONS:
+            with self.subTest(document=name):
+                path = self.root / name
+                path.write_text(path.read_text(encoding="utf-8").replace("0.26.2", "0.26.0", 1), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, rf"{name}:1.*0\.26\.0.*0\.26\.2"):
+                    MODULE.check_document_versions(self.root, "0.26.2")
+                path.write_text(path.read_text(encoding="utf-8").replace("0.26.0", "0.26.2", 1), encoding="utf-8")
+
+    def test_missing_and_repeated_declarations_are_rejected(self):
+        path = self.root / "doc/user_guide.md"
+        path.write_text("[API](https://docs.rs/qubit-retry/0.26.2/qubit_retry/)\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, r"doc/user_guide.md:1.*missing"):
+            MODULE.check_document_versions(self.root, "0.26.2")
+        path.write_text("**qubit-retry 0.26.2**\n**qubit-retry 0.26.2**\n[API](https://docs.rs/qubit-retry/0.26.2/qubit_retry/)\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, r"doc/user_guide.md:2.*repeated"):
+            MODULE.check_document_versions(self.root, "0.26.2")
+
+    def test_api_link_must_match_and_keeps_its_line(self):
+        for name, prefix in (("README.md", "# README\n"), ("doc/user_guide.md", "**qubit-retry 0.26.2**\n")):
+            with self.subTest(document=name):
+                path = self.root / name
+                path.write_text(
+                    f"{prefix}[API](https://docs.rs/qubit-retry/0.26.0/qubit_retry/)\n",
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(ValueError, rf"{name}:2.*0\.26\.0.*0\.26\.2"):
+                    MODULE.check_document_versions(self.root, "0.26.2")
+                path.write_text(
+                    f"{prefix}[API](https://docs.rs/qubit-retry/0.26.2/qubit_retry/)\n",
+                    encoding="utf-8",
+                )
+
+    def test_unversioned_docs_rs_links_are_allowed(self):
+        path = self.root / "README.md"
+        path.write_text("[API](https://docs.rs/qubit-retry/qubit_retry/)\n", encoding="utf-8")
+        MODULE.check_document_versions(self.root, "0.26.2")
+
+    def test_historical_design_files_are_not_scanned(self):
+        history = self.root / "doc/design-2025.md"
+        history.write_text("**qubit-retry 0.26.0**\n[API](https://docs.rs/qubit-retry/0.26.0/qubit_retry/)\n", encoding="utf-8")
+        MODULE.check_document_versions(self.root, "0.26.2")
+
+    def test_package_version_change_requires_document_sync(self):
+        with self.assertRaisesRegex(ValueError, "0.26.3"):
+            MODULE.check_document_versions(self.root, "0.26.3")
+        for name in MODULE.VERSIONED_DOCUMENTS:
+            path = self.root / name
+            path.write_text(path.read_text(encoding="utf-8").replace("0.26.2", "0.26.3"), encoding="utf-8")
+        MODULE.check_document_versions(self.root, "0.26.3")
+
+    def test_guide_api_titles_match_the_target_version(self):
+        titles = {
+            "doc/user_guide.md": "API reference for 0.26.2",
+            "doc/user_guide.zh_CN.md": "0.26.2 API 文档",
+        }
+        for name, expected in titles.items():
+            with self.subTest(document=name):
+                content = (Path(__file__).parents[1] / name).read_text(encoding="utf-8")
+                self.assertIn(expected, content)
+
+
 class FetchExecutionTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -135,8 +214,15 @@ class FetchExecutionTests(unittest.TestCase):
         self.root = Path(self.directory.name)
         (self.root / "Cargo.toml").write_text('[package]\nversion = "0.26.0"\n', encoding="utf-8")
         (self.root / "Cargo.lock").write_text("version = 4\n", encoding="utf-8")
+        for name in MODULE.VERSIONED_DOCUMENTS:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            declaration = "**qubit-retry 0.26.0**\n" if name in MODULE.VERSION_DECLARATIONS else ""
+            path.write_text(
+                f"{declaration}[API](https://docs.rs/qubit-retry/0.26.0/qubit_retry/)\n",
+                encoding="utf-8",
+            )
         self.document = self.root / "doc" / "user_guide.md"
-        self.document.parent.mkdir()
         self.example = dict(
             path=self.document, line=12, kind="run", features=[], deps=[], code="fn main() {}\n"
         )

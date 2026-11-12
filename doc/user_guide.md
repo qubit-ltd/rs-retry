@@ -1,8 +1,8 @@
 # Qubit Retry User Guide
 
-[简体中文](user_guide.zh_CN.md) · [README](../README.md) · [API reference](https://docs.rs/qubit-retry/0.26.0/qubit_retry/)
+[简体中文](user_guide.zh_CN.md) · [README](../README.md) · [API reference](https://docs.rs/qubit-retry/0.26.2/qubit_retry/)
 
-This guide covers **qubit-retry 0.26.0** and requires **Rust 1.94+**. It is for
+This guide covers **qubit-retry 0.26.2** and requires **Rust 1.94+**. It is for
 Rust developers adding retries to clients, storage access, or reconnect loops.
 You supply the operation and decide which failures are safe to retry.
 
@@ -263,9 +263,9 @@ The manual clock makes scheduled delivery reproducible. In production, schedule
 delivery against the same clock domain as the session timer. `RetrySession`
 neither waits nor registers a timer.
 
-Execute an operation only after [`begin_attempt`](https://docs.rs/qubit-retry/0.26.0/qubit_retry/struct.RetrySession.html#method.begin_attempt)
+Execute an operation only after [`begin_attempt`](https://docs.rs/qubit-retry/0.26.2/qubit_retry/struct.RetrySession.html#method.begin_attempt)
 returns `Admitted`, and report exactly one result for that admission with
-[`record_result`](https://docs.rs/qubit-retry/0.26.0/qubit_retry/struct.RetrySession.html#method.record_result).
+[`record_result`](https://docs.rs/qubit-retry/0.26.2/qubit_retry/struct.RetrySession.html#method.record_result).
 `Waiting` does not admit an operation. Calling `begin_attempt` while an operation
 is active, recording a result without a matching admission, or calling either
 method after termination is a programming error that panics. Stop driving the
@@ -1061,7 +1061,7 @@ thread pool.
 ## Further reading and documentation checks
 
 - [English README](../README.md) · [中文 README](../README.zh_CN.md)
-- [API reference for 0.26.0](https://docs.rs/qubit-retry/0.26.0/qubit_retry/)
+- [API reference for 0.26.2](https://docs.rs/qubit-retry/0.26.2/qubit_retry/)
 - [Design](design.md) · [中文用户手册](user_guide.zh_CN.md)
 
 From the repository root, run `python3 -B scripts/check_doc_examples.py` to compile

@@ -21,6 +21,8 @@ import tomllib
 
 ANNOTATION = re.compile(r"<!-- retry-example: (.*?) -->")
 DOCUMENTS = ("README.md", "README.zh_CN.md", "doc/user_guide.md", "doc/user_guide.zh_CN.md")
+VERSIONED_DOCUMENTS = (*DOCUMENTS, "doc/design.md", "doc/design.zh_CN.md")
+VERSION_DECLARATIONS = ("doc/user_guide.md", "doc/user_guide.zh_CN.md", "doc/design.md", "doc/design.zh_CN.md")
 CONSUMER_DEPENDENCIES = {"clock", "clock-test-util", "futures-executor"}
 
 
@@ -97,6 +99,31 @@ def cargo_dependency(example, version):
     return dependency
 
 
+def check_document_versions(root: Path, version: str) -> None:
+    """Ensure version declarations and versioned API links match the package."""
+    declaration_pattern = re.compile(r"\*\*qubit-retry ([0-9]+\.[0-9]+\.[0-9]+)\*\*")
+    api_pattern = re.compile(r"https://docs\.rs/qubit-retry/([^/]+)/qubit_retry/")
+    for name in VERSIONED_DOCUMENTS:
+        text = (root / name).read_text(encoding="utf-8")
+        links = list(api_pattern.finditer(text))
+        for link in links:
+            line = text.count("\n", 0, link.start()) + 1
+            if link.group(1) != version:
+                raise ValueError(f"{name}:{line}: API link version {link.group(1)}; expected {version}")
+        if name not in VERSION_DECLARATIONS:
+            continue
+        declarations = list(declaration_pattern.finditer(text))
+        if not declarations:
+            raise ValueError(f"{name}:1: missing qubit-retry version declaration; expected {version}")
+        if len(declarations) != 1:
+            line = text.count("\n", 0, declarations[1].start()) + 1
+            raise ValueError(f"{name}:{line}: repeated qubit-retry version declaration; expected exactly one {version}")
+        declaration = declarations[0]
+        line = text.count("\n", 0, declaration.start()) + 1
+        if declaration.group(1) != version:
+            raise ValueError(f"{name}:{line}: declared version {declaration.group(1)}; expected {version}")
+
+
 def consumer_manifest(root: Path, example: dict) -> str:
     """Build the smallest consumer manifest required by one documentation example."""
     manifest = (
@@ -121,6 +148,7 @@ def run_examples(root, fetch=False):
     if shutil.which("cargo") is None:
         raise ValueError("cargo is required to verify documentation examples")
     package = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
+    check_document_versions(root, package["package"]["version"])
     examples = [example for name in DOCUMENTS for example in extract(root / name)]
     if not examples:
         raise ValueError("no executable documentation examples found")

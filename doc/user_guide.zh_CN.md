@@ -1,8 +1,8 @@
 # Qubit Retry 用户手册
 
-[English](user_guide.md) · [README](../README.zh_CN.md) · [API 文档](https://docs.rs/qubit-retry/0.26.0/qubit_retry/)
+[English](user_guide.md) · [README](../README.zh_CN.md) · [API 文档](https://docs.rs/qubit-retry/0.26.2/qubit_retry/)
 
-本手册适用于 **qubit-retry 0.26.0**，需要 **Rust 1.94 或更新版本**，
+本手册适用于 **qubit-retry 0.26.2**，需要 **Rust 1.94 或更新版本**，
 面向需要为客户端、存储访问或重连循环添加重试能力的 Rust 开发者。
 业务操作由你提供，哪些错误可以安全重试也由业务决定。
 
@@ -246,9 +246,9 @@ fn main() {
 会话会以 `Backoff` 阶段的取消结果结束。手动时钟只用于复现调度器到期投递；
 生产环境应使用与会话计时器同域的时钟安排投递。`RetrySession` 自身既不等待，也不注册计时器。
 
-只有 [`begin_attempt`](https://docs.rs/qubit-retry/0.26.0/qubit_retry/struct.RetrySession.html#method.begin_attempt)
+只有 [`begin_attempt`](https://docs.rs/qubit-retry/0.26.2/qubit_retry/struct.RetrySession.html#method.begin_attempt)
 返回 `Admitted` 后才能执行操作；每次准入必须且只能通过
-[`record_result`](https://docs.rs/qubit-retry/0.26.0/qubit_retry/struct.RetrySession.html#method.record_result)
+[`record_result`](https://docs.rs/qubit-retry/0.26.2/qubit_retry/struct.RetrySession.html#method.record_result)
 登记一次结果。`Waiting` 不会准入操作。在操作仍进行时再次调用 `begin_attempt`、没有对应准入就登记结果，
 或在会话终止后调用这两个方法，都是会 panic 的状态误用。会话返回 `Complete`、`Failed` 或准入错误后，
 调用方应停止继续驱动。会话取消应使用 `with_cancellation_token` 配置。取消仅在准入和失败处理边界检查，
@@ -985,7 +985,7 @@ fn main() {
 ## 延伸阅读与文档校验
 
 - [中文 README](../README.zh_CN.md) · [English README](../README.md)
-- [0.26.0 API 文档](https://docs.rs/qubit-retry/0.26.0/qubit_retry/)
+- [0.26.2 API 文档](https://docs.rs/qubit-retry/0.26.2/qubit_retry/)
 - [设计文档](design.zh_CN.md) · [English user guide](user_guide.md)
 
 在仓库根目录运行 `python3 -B scripts/check_doc_examples.py`，可以编译并执行两种语言的 README

@@ -1,8 +1,8 @@
 # Qubit Retry 设计文档
 
-[English](design.md) · [用户指南](user_guide.zh_CN.md) · [README](../README.zh_CN.md)
+[English](design.md) · [用户指南](user_guide.zh_CN.md) · [README](../README.zh_CN.md) · [API 文档](https://docs.rs/qubit-retry/0.26.2/qubit_retry/)
 
-本文记录 **qubit-retry 0.26.0** 的长期维护契约。公开 API 的使用方法见用户指南；内部实现变更应遵守这里的不变量。
+本文记录 **qubit-retry 0.26.2** 的长期维护契约。公开 API 的使用方法见用户指南；内部实现变更应遵守这里的不变量。
 
 ## 范围与依赖方向
 
