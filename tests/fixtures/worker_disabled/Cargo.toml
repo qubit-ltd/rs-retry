@@ -11,4 +11,4 @@ default = []
 worker = ["qubit-retry/worker"]
 
 [dependencies]
-qubit-retry = { path = "../../..", default-features = false }
+qubit-retry = { path = "../../../", default-features = false , version = "^0.26" }
