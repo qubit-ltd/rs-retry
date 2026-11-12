@@ -197,9 +197,11 @@ class DocumentVersionTests(unittest.TestCase):
         MODULE.check_document_versions(self.root, "0.26.3")
 
     def test_guide_api_titles_match_the_target_version(self):
+        root = Path(__file__).parents[1]
+        version = MODULE.tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
         titles = {
-            "doc/user_guide.md": "API reference for 0.26.2",
-            "doc/user_guide.zh_CN.md": "0.26.2 API 文档",
+            "doc/user_guide.md": f"API reference for {version}",
+            "doc/user_guide.zh_CN.md": f"{version} API 文档",
         }
         for name, expected in titles.items():
             with self.subTest(document=name):
