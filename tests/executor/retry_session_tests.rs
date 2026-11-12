@@ -15,6 +15,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use qubit_clock::ClockDomain;
+use qubit_clock::ManualMonotonicClock;
 use qubit_clock::MonotonicClock;
 use qubit_clock::MonotonicInstant;
 use qubit_clock::TimeError;
@@ -24,6 +25,8 @@ use qubit_retry::AttemptFailure;
 use qubit_retry::BackoffPolicy;
 use qubit_retry::BackoffStep;
 use qubit_retry::Retry;
+use qubit_retry::RetryCallbackKind;
+use qubit_retry::RetryCallbackPhase;
 use qubit_retry::RetryCancellationToken;
 use qubit_retry::RetryConfig;
 use qubit_retry::RetryContext;
@@ -32,11 +35,121 @@ use qubit_retry::RetryErrorReason;
 use qubit_retry::RetryFallback;
 use qubit_retry::RetryInfrastructureFailure;
 use qubit_retry::RetryObserver;
+use qubit_retry::RetryPanic;
 use qubit_retry::RetrySession;
 use qubit_retry::RetrySessionAdmission;
 use qubit_retry::RetrySessionStep;
 
 use crate::support::FixedRetryRandomSource;
+
+/// Timer backed by an explicitly advanced clock for completion assertions.
+struct CompletionTimer(Arc<ManualMonotonicClock>);
+
+impl Timer for CompletionTimer {
+    fn clock(&self) -> &dyn MonotonicClock {
+        self.0.as_ref()
+    }
+
+    fn at(&self, _deadline: MonotonicInstant) -> Result<TimerFuture, TimeError> {
+        panic!("RetrySession must not register a timer")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompletionObservation {
+    index: usize,
+    phase: RetryCallbackPhase,
+    context: RetryContext,
+}
+
+/// Captures the terminal snapshot before moving virtual time and panicking.
+struct CompletionAuditObserver {
+    index: usize,
+    panic_on_completion: bool,
+    records: Arc<Mutex<Vec<CompletionObservation>>>,
+    clock: Arc<ManualMonotonicClock>,
+}
+
+impl CompletionAuditObserver {
+    fn complete(&self, phase: RetryCallbackPhase, context: &RetryContext) {
+        self.records
+            .lock()
+            .expect("completion records lock")
+            .push(CompletionObservation {
+                index: self.index,
+                phase,
+                context: *context,
+            });
+        self.clock
+            .advance(Duration::from_secs(10))
+            .expect("advance completion clock");
+        if self.panic_on_completion {
+            panic!("completion audit");
+        }
+    }
+}
+
+impl RetryObserver<&'static str> for CompletionAuditObserver {
+    fn on_success(&self, context: &RetryContext) {
+        self.complete(RetryCallbackPhase::Success, context);
+    }
+
+    fn on_terminal_failure(&self, _reason: &RetryErrorReason, context: &RetryContext) {
+        self.complete(RetryCallbackPhase::TerminalFailure, context);
+    }
+}
+
+fn completion_audit_config(
+    clock: Arc<ManualMonotonicClock>,
+    records: Arc<Mutex<Vec<CompletionObservation>>>,
+    panic_flags: [bool; 2],
+    fallback: RetryFallback,
+) -> RetryConfig<&'static str> {
+    RetryConfig::builder()
+        .max_attempts(1)
+        .fallback(fallback)
+        .observer(CompletionAuditObserver {
+            index: 0,
+            panic_on_completion: panic_flags[0],
+            records: Arc::clone(&records),
+            clock: Arc::clone(&clock),
+        })
+        .observer(CompletionAuditObserver {
+            index: 1,
+            panic_on_completion: panic_flags[1],
+            records,
+            clock,
+        })
+        .build()
+        .expect("valid config")
+}
+
+fn assert_finished_calls_panic_and_notifications_stay_once(
+    session: &mut RetrySession<&'static str>,
+    records: &Arc<Mutex<Vec<CompletionObservation>>>,
+) {
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = session.begin_attempt();
+        }))
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = session.record_result(Ok(99));
+        }))
+        .is_err()
+    );
+    assert_eq!(records.lock().expect("completion records lock").len(), 2);
+}
+
+fn assert_completion_diagnostics(failures: &[qubit_retry::RetryCallbackFailure], phase: RetryCallbackPhase) {
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].callback(), RetryCallbackKind::Observer);
+    assert_eq!(failures[0].index(), 0);
+    assert_eq!(failures[0].phase(), phase);
+    assert_eq!(failures[0].panic(), &RetryPanic::StaticStr("completion audit"));
+}
 
 /// Mutable clock permits deterministic time advancement and invalid samples.
 struct SessionClock {
@@ -475,6 +588,189 @@ fn test_retry_session_enforces_one_outstanding_attempt() {
     assert!(matches!(session.record_result(Ok(1)), RetrySessionStep::Complete(_)));
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { session.record_result(Ok(1)) })).is_err());
     assert_eq!(*events.lock().expect("event lock"), ["before:1", "success"]);
+}
+
+/// Completion panics are retained without changing success or its frozen
+/// context.
+#[test]
+fn test_retry_session_success_retains_completion_panic_and_freezes_context() {
+    let clock = ManualMonotonicClock::new_shared();
+    let records = Arc::new(Mutex::new(Vec::new()));
+    let config = completion_audit_config(
+        Arc::clone(&clock),
+        Arc::clone(&records),
+        [true, false],
+        RetryFallback::Abort,
+    );
+    let mut session = RetrySession::new(config, Arc::new(CompletionTimer(Arc::clone(&clock))));
+
+    assert!(matches!(session.begin_attempt(), Ok(RetrySessionAdmission::Admitted(ordinal)) if ordinal.get() == 1));
+    let RetrySessionStep::Complete(success) = session.record_result(Ok(7)) else {
+        panic!("success must remain successful despite observer panic");
+    };
+    assert_eq!(*success.value(), 7);
+    assert_eq!(success.context().attempts(), 1);
+    assert_completion_diagnostics(success.completion_callback_failures(), RetryCallbackPhase::Success);
+    let observations = records.lock().expect("completion records lock");
+    assert_eq!(observations.iter().map(|item| item.index).collect::<Vec<_>>(), [0, 1]);
+    assert!(
+        observations
+            .iter()
+            .all(|item| item.phase == RetryCallbackPhase::Success)
+    );
+    assert!(observations.iter().all(|item| item.context == *success.context()));
+    assert_eq!(success.context().total_elapsed(), Duration::ZERO);
+    drop(observations);
+
+    assert_finished_calls_panic_and_notifications_stay_once(&mut session, &records);
+    let before_drop = records.lock().expect("completion records lock").clone();
+    drop(session);
+    assert_eq!(*records.lock().expect("completion records lock"), before_drop);
+}
+
+/// Abort failure keeps the application error and terminal snapshot after
+/// observer panic.
+#[test]
+fn test_retry_session_abort_retains_completion_panic_and_freezes_context() {
+    let clock = ManualMonotonicClock::new_shared();
+    let records = Arc::new(Mutex::new(Vec::new()));
+    let config = completion_audit_config(
+        Arc::clone(&clock),
+        Arc::clone(&records),
+        [true, false],
+        RetryFallback::Abort,
+    );
+    let mut session = RetrySession::new(config, Arc::new(CompletionTimer(Arc::clone(&clock))));
+
+    assert!(matches!(
+        session.begin_attempt(),
+        Ok(RetrySessionAdmission::Admitted(_))
+    ));
+    let RetrySessionStep::Failed(error) = session.record_result::<()>(Err("offline")) else {
+        panic!("Abort fallback must terminate as failure");
+    };
+    assert!(matches!(error.reason(), RetryErrorReason::Aborted));
+    assert_eq!(error.last_error(), Some(&"offline"));
+    assert_eq!(error.context().attempts(), 1);
+    assert_completion_diagnostics(
+        error.completion_callback_failures(),
+        RetryCallbackPhase::TerminalFailure,
+    );
+    let observations = records.lock().expect("completion records lock");
+    assert_eq!(observations.iter().map(|item| item.index).collect::<Vec<_>>(), [0, 1]);
+    assert!(
+        observations
+            .iter()
+            .all(|item| item.phase == RetryCallbackPhase::TerminalFailure)
+    );
+    assert!(observations.iter().all(|item| item.context == *error.context()));
+    assert_eq!(error.context().total_elapsed(), Duration::ZERO);
+    drop(observations);
+
+    assert_finished_calls_panic_and_notifications_stay_once(&mut session, &records);
+    let before_drop = records.lock().expect("completion records lock").clone();
+    drop(session);
+    assert_eq!(*records.lock().expect("completion records lock"), before_drop);
+}
+
+/// Pre-admission cancellation notifies completion at zero attempts exactly
+/// once.
+#[test]
+fn test_retry_session_cancelled_before_attempt_retains_completion_panic() {
+    let clock = ManualMonotonicClock::new_shared();
+    let records = Arc::new(Mutex::new(Vec::new()));
+    let config = completion_audit_config(
+        Arc::clone(&clock),
+        Arc::clone(&records),
+        [true, false],
+        RetryFallback::Abort,
+    );
+    let token = RetryCancellationToken::new();
+    token.cancel();
+    let mut session =
+        RetrySession::new(config, Arc::new(CompletionTimer(Arc::clone(&clock)))).with_cancellation_token(token);
+
+    let error = session
+        .begin_attempt()
+        .expect_err("pre-cancelled session must terminate");
+    assert!(matches!(
+        error.reason(),
+        RetryErrorReason::Cancelled {
+            phase: qubit_retry::RetryCancellationPhase::BeforeAttempt
+        }
+    ));
+    assert_eq!(error.context().attempts(), 0);
+    assert_eq!(error.last_failure(), None);
+    assert_completion_diagnostics(
+        error.completion_callback_failures(),
+        RetryCallbackPhase::TerminalFailure,
+    );
+    let observations = records.lock().expect("completion records lock");
+    assert_eq!(observations.iter().map(|item| item.index).collect::<Vec<_>>(), [0, 1]);
+    assert!(
+        observations
+            .iter()
+            .all(|item| item.phase == RetryCallbackPhase::TerminalFailure)
+    );
+    assert!(observations.iter().all(|item| item.context == *error.context()));
+    drop(observations);
+
+    assert_finished_calls_panic_and_notifications_stay_once(&mut session, &records);
+    let before_drop = records.lock().expect("completion records lock").clone();
+    drop(session);
+    assert_eq!(*records.lock().expect("completion records lock"), before_drop);
+}
+
+/// Multiple completion panics are diagnosed in observer registration order.
+#[test]
+fn test_retry_session_success_retains_multiple_completion_panics_in_order() {
+    let clock = ManualMonotonicClock::new_shared();
+    let records = Arc::new(Mutex::new(Vec::new()));
+    let config = completion_audit_config(
+        Arc::clone(&clock),
+        Arc::clone(&records),
+        [true, true],
+        RetryFallback::Abort,
+    );
+    let mut session = RetrySession::new(config, Arc::new(CompletionTimer(Arc::clone(&clock))));
+
+    assert!(matches!(
+        session.begin_attempt(),
+        Ok(RetrySessionAdmission::Admitted(_))
+    ));
+    let RetrySessionStep::Complete(success) = session.record_result(Ok(7)) else {
+        panic!("success value must survive completion observer panics");
+    };
+    assert_eq!(*success.value(), 7);
+    let failures = success.completion_callback_failures();
+    assert_eq!(
+        failures.iter().map(|failure| failure.index()).collect::<Vec<_>>(),
+        [0, 1]
+    );
+    assert!(
+        failures
+            .iter()
+            .all(|failure| failure.callback() == RetryCallbackKind::Observer)
+    );
+    assert!(
+        failures
+            .iter()
+            .all(|failure| failure.phase() == RetryCallbackPhase::Success)
+    );
+    assert!(
+        failures
+            .iter()
+            .all(|failure| failure.panic() == &RetryPanic::StaticStr("completion audit"))
+    );
+    let observations = records.lock().expect("completion records lock");
+    assert_eq!(observations.iter().map(|item| item.index).collect::<Vec<_>>(), [0, 1]);
+    assert!(observations.iter().all(|item| item.context == *success.context()));
+    drop(observations);
+
+    assert_finished_calls_panic_and_notifications_stay_once(&mut session, &records);
+    let before_drop = records.lock().expect("completion records lock").clone();
+    drop(session);
+    assert_eq!(*records.lock().expect("completion records lock"), before_drop);
 }
 
 #[test]
